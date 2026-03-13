@@ -18,6 +18,7 @@ The image and video models are picked the way the chat model is — from what th
 
 ### Changed
 
+- zh / zh-TW avatar strings say 形象 where they said 脸 (`nm_avatar_settings_subtitle`, `nm_avatar_describe_title`, `nm_avatar_footer`).
 - versionCode 17; installs over 0.1.15 without losing data.
 
 ## [0.1.15] - 2026-09-25 · Stage
