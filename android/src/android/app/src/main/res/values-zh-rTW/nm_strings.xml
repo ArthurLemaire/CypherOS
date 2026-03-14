@@ -406,12 +406,12 @@
     <string name="nm_media_section_chat">對話模型</string>
     <string name="nm_media_chat_footer">預設模型群組。所有對話、動態和每日例程都跑在它上面。</string>
     <string name="nm_media_section_image">圖像模型</string>
-    <string name="nm_media_image_footer">用於更換形象（四張候選和各個姿勢）以及你在對話裡要的任何圖片。阿里雲百煉：qwen-image-3.0-pro（畫圖和擺姿勢都用它）。OpenAI：gpt-image-1。任何提供 OpenAI images 介面的服務商都可以。</string>
+    <string name="nm_media_image_footer">用於更換形象（四張候選和各個姿勢）以及你在對話裡要的任何圖片。列表是服務商回報給這把 key 的模型，只留下能畫圖的。阿里雲百煉：qwen-image-3.0-pro（畫圖和擺姿勢都用它）。OpenAI：gpt-image-1。任何提供 OpenAI images 介面的服務商都可以。</string>
     <string name="nm_media_image_none">你的服務商裡沒有能畫圖的。新增一個 OpenAI 相容的服務商（阿里雲百煉、OpenAI、xAI、OpenRouter 或自訂網址）並填入 API key；形象是用你自己的 key 畫的。</string>
     <string name="nm_media_image_off">設定之前無法更換形象，也畫不了圖。你問起時它會告訴你。</string>
     <string name="nm_media_need_model">在下方填寫模型名稱</string>
     <string name="nm_media_section_video">影片模型</string>
-    <string name="nm_media_video_footer">讓形象動起來——每個狀態一段循環短片——以及你要的任何短片。阿里雲百煉：MiniMax/MiniMax-H3，需在百煉主控台的模型卡片上開通一次。按影片秒數計費；一套形象是四段幾秒的短片。</string>
+    <string name="nm_media_video_footer">讓形象動起來——每個狀態一段循環短片——以及你要的任何短片。阿里雲百煉：MiniMax/MiniMax-H3（推薦）或通義萬相影片模型；列表裡是這把 key 能用的，每個模型需在百煉控制台的模型卡片上開通一次。按影片秒數計費；一套形象是四段幾秒的短片。</string>
     <string name="nm_media_video_none">還沒有阿里雲百煉的服務商——nanoMuse 目前對接的是它的影片介面。新增一個（可以和圖像模型用同一把 key）形象就會動起來；之前保持靜態圖。</string>
     <string name="nm_media_video_off">可選。不設定的話形象保持靜態，也做不了影片。</string>
     <string name="nm_media_video_off_option">不用影片模型</string>
@@ -425,6 +425,13 @@
     <string name="nm_media_clips_make">產生</string>
     <string name="nm_media_clips_redo">重做</string>
     <string name="nm_media_clips_running">產生中…</string>
+    <string name="nm_media_models_on">%1$s 上可用的模型</string>
+    <string name="nm_media_recommended">推薦</string>
+    <string name="nm_media_checking">正在檢查這把 key 能用哪些模型…</string>
+    <string name="nm_media_recheck">重新檢查</string>
+    <string name="nm_media_image_none_found">這個服務商上沒找到圖像模型。可以在下方手動填寫，或填好 key 後重新檢查。</string>
+    <string name="nm_media_video_none_found">這把 key 下沒有可用的影片模型。可以在下方手動填寫，或重新檢查。</string>
+    <string name="nm_media_other_model">其他模型名</string>
     <string name="nm_avatar_status_animating">正在產生動態 %1$d/%2$d…</string>
     <string name="nm_avatar_clips_coming">我還會做四段短片讓自己動起來——在背景用你的影片模型，要幾分鐘。</string>
 

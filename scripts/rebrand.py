@@ -37,8 +37,8 @@ RES = MAIN / "res"
 
 APP_ID = "io.github.nanomuse.app"
 NAME = "nanoMuse"
-VERSION_NAME = "0.1.15"
-VERSION_CODE = 16
+VERSION_NAME = "0.1.16"
+VERSION_CODE = 17
 REPO = "nano-muse/nanoMuse"
 REPO_URL = f"https://github.com/{REPO}"
 PRIVACY_URL = f"{REPO_URL}/blob/main/docs/privacy.md"
