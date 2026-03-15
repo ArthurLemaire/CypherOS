@@ -17,10 +17,12 @@ it is a gesture first and a letter second.
   `0 0 100 100` in tile coordinates, gradient fill.
 - `assets/brand/nanomuse-icon.svg` — white squircle tile (`rx=27`) + mark. This is the app icon.
 - `assets/brand/nanomuse-icon-on-blue.svg` — the icon on the brand-blue backdrop, for
-  store listings, README hero, splash.
+  store listings and the splash only. Wherever the icon stands for the app — README, site,
+  social card, favicon — it is the plain tile: white, the mark, a hairline edge, no backdrop.
 - `assets/brand/nanomuse-mark-rgba-688.png` — the stroke with alpha, 688 px, raster fallback.
-- `docs/app-icon.png` — the source render with rounded corners (22 % radius, transparent), 512 px:
-  the icon as it sits on a home screen. This is the README hero and the picture to use wherever
+- `docs/app-icon.png` — the tile rendered with rounded corners (27 % radius, transparent
+  outside, a hairline `#D9D9DE` edge so it keeps its shape on white), 512 px: the icon as it
+  sits on a home screen. This is the README hero and the picture to use wherever
   the app is shown as an app.
 
 The icon is **not** the mascot. The red panda (`web/src/components/redPandaShapes.ts`) is the
