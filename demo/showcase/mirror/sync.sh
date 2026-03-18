@@ -1,7 +1,8 @@
 #!/bin/sh
-# Keeps the project site's mirror current. Fetches nano-muse/nano-muse.github.io (the site
-# behind https://nano-muse.github.io) into a shallow checkout and, when the tip moved, exports
-# the tree — no dotfiles, no README — into the directory Caddy serves (mirror/nanomuse.cn.caddy).
+# Keeps the project site current. Fetches nano-muse/nano-muse.github.io (the homepage at
+# https://nanomuse.cn; GitHub Pages publishes the same tree at nano-muse.github.io) into a
+# shallow checkout and, when the tip moved, exports the tree — no dotfiles, no README — into
+# the directory Caddy serves (mirror/nanomuse.cn.caddy).
 # The systemd timer runs it every minute; a run with nothing new is one small request to GitHub
 # and no output. Idempotent: the first run clones, later runs fetch.
 #

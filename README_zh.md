@@ -10,7 +10,7 @@
   <p>
     <a href="https://github.com/nano-muse/nanoMuse/blob/main/README.md">English</a> |
     <a href="https://github.com/nano-muse/nanoMuse/blob/main/README_zh.md">简体中文</a> |
-    <a href="https://nano-muse.github.io/">网站</a> |
+    <a href="https://nanomuse.cn/">网站</a> |
     <a href="https://github.com/nano-muse/nanoMuse/releases/latest">下载</a>
   </p>
   <p>

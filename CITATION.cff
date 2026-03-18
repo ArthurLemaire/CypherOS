@@ -5,7 +5,7 @@ type: software
 authors:
   - name: "nanoMuse Contributors"
 repository-code: "https://github.com/nano-muse/nanoMuse"
-url: "https://nano-muse.github.io/"
+url: "https://nanomuse.cn/"
 license: GPL-3.0-or-later
 version: 0.1.11
 date-released: 2026-09-25
