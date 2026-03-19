@@ -17,9 +17,13 @@ root=${WWW_ROOT:-$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)/www}
 src=$root/.src/$name
 dst=$root/$name
 
+# one run at a time: a run by hand while the timer's is fetching just yields
+mkdir -p "$root/.src"
+exec 9>"$root/.src/$name.lock"
+flock -n 9 || exit 0
+
 fresh=
 if [ ! -d "$src/.git" ]; then
-	mkdir -p "$root/.src"
 	git clone -q --depth 1 --single-branch --branch "$branch" "$repo" "$src"
 	fresh=1
 fi
