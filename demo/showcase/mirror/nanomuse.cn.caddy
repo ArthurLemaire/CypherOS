@@ -1,0 +1,29 @@
+# nanomuse.cn — the project site, mirrored from github.com/nano-muse/nano-muse.github.io by
+# sync.sh (every minute, from the systemd timer). Certificates come the ordinary way, HTTP-01:
+# both names point straight at this box, nothing in front. Installed into sites.d/ by install.sh.
+
+www.nanomuse.cn {
+	redir https://nanomuse.cn{uri} permanent
+}
+
+nanomuse.cn {
+	root * /srv/www/nanomuse.cn
+	encode zstd gzip
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	# the checkout's dotfiles never reach the export, but the door stays shut anyway
+	@hidden path /.*
+	respond @hidden 404
+
+	# pages: ten minutes, like GitHub Pages; assets are replaced in place across versions, so a day
+	header Cache-Control "public, max-age=600"
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=86400"
+
+	file_server
+}

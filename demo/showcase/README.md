@@ -114,6 +114,21 @@ It is off by default on purpose: from mainland China the free plan routes throug
 edges, and the phone's 1.6 MB bundle that a Hong Kong server delivers in 2–3 s took 15–40 s
 through the proxy in our measurements. The audience this is for reaches the origin faster.
 
+### Other sites on the same Caddy
+
+The Caddyfile ends with `import /etc/caddy/sites.d/*.caddy`, and `docker-compose.yml` mounts
+`sites.d/` there and `www/` (or `WWW_ROOT`) at `/srv/www`, both read-only and both ignored by
+git. One file per site, its files under `www/<name>/`, then `docker compose up -d caddy` — a box
+that has no such sites is unchanged.
+
+The project site is served this way at [nanomuse.cn](https://nanomuse.cn): `mirror/` holds the
+site block and `sync.sh`, which a systemd timer runs every minute to pull
+[nano-muse.github.io](https://github.com/nano-muse/nano-muse.github.io) into `www/nanomuse.cn/`
+— a push to that repository is on the mirror within the minute, with no key or webhook anywhere.
+`sudo mirror/install.sh` sets up all of it and is safe to run again after `git pull`. What is not
+in the repository: two A records at the registrar (`nanomuse.cn`, `www.nanomuse.cn` → this box).
+A server outside mainland China needs no ICP filing for a `.cn` name; one inside does.
+
 ### Running it on your machine
 
 The gateway runs anywhere Docker does; Caddy is only for TLS and names. Browsers resolve
