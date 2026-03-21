@@ -33,7 +33,7 @@ Coming back to the app always lands in its own home again.
 
 ## [0.1.13] - 2026-09-25 · Reach
 
-The phone drives your computer, as a working demo. A small companion on the PC — one Python file, standard library only — is paired with the app by a six-digit code on the same network; from then on a sentence on the phone runs there: a command in its shell, a file fetched or dropped, a page opened in its browser, a look at its screen. The results come back to the phone, and so do the approvals: a command for the computer is judged by the same `ShellGuard` as the phone's own shell and waits for the same card before it is sent. One way — the phone drives the computer, never the other way round.
+The phone drives your computer. A small companion on the PC — one Python file, standard library only — is paired with the app by a six-digit code on the same network; from then on a sentence on the phone runs there: a command in its shell, a file fetched or dropped, a page opened in its browser, a look at its screen. The results come back to the phone, and so do the approvals: a command for the computer is judged by the same `ShellGuard` as the phone's own shell and waits for the same card before it is sent. One way — the phone drives the computer, never the other way round.
 
 ### Added
 
@@ -58,7 +58,7 @@ The phone drives your computer, as a working demo. A small companion on the PC �
 
 ## [0.1.12] - 2026-09-25 · Hands
 
-The phone's screen as a hand, as a working demo. For the apps that have no API — 12306, 微信, 支付宝, 美团 — the agent can now use the phone the way you do: it looks at a screenshot, decides one action, taps, types or swipes, and looks again. Perception is the screenshot alone; no accessibility tree is read. The accessibility service is only the hand — it takes the screenshot, performs the gesture and types into the field that has the cursor. A capsule at the top of the screen shows each step with *Stop*; logins, passwords and codes are handed to you; a tap that pays, sends, posts or deletes waits for the same approval card as the shell and the browser. Off by default, under *Settings → Hands*.
+The phone's screen as a hand. For the apps that have no API — 12306, 微信, 支付宝, 美团 — the agent can now use the phone the way you do: it looks at a screenshot, decides one action, taps, types or swipes, and looks again. Perception is the screenshot alone; no accessibility tree is read. The accessibility service is only the hand — it takes the screenshot, performs the gesture and types into the field that has the cursor. A capsule at the top of the screen shows each step with *Stop*; logins, passwords and codes are handed to you; a tap that pays, sends, posts or deletes waits for the same approval card as the shell and the browser. Off by default, under *Settings → Hands*.
 
 ### Added
 
@@ -81,7 +81,7 @@ The phone's screen as a hand, as a working demo. For the apps that have no API �
 
 ### Known issues
 
-- A working demo: it needs Android 11 or newer (screenshots through the accessibility service), a vision model, and the two permissions. Apps that set `FLAG_SECURE` are black to it and handed to you. Typing goes through `ACTION_SET_TEXT` on the focused field, which some custom keyboards and web views ignore — the model is told to tap the field first and try again. The x86 emulator cannot run the arm64 APK; the flow was built and unit-tested, not driven on a device before release.
+- It needs Android 11 or newer (screenshots through the accessibility service), a vision model, and the two permissions. Apps that set `FLAG_SECURE` are black to it and handed to you. Typing goes through `ACTION_SET_TEXT` on the focused field, which some custom keyboards and web views ignore — the model is told to tap the field first and try again. The x86 emulator cannot run the arm64 APK; the flow was built and unit-tested before release and driven on a phone after it.
 
 ## [0.1.11] - 2026-09-25 · Hatch
 
