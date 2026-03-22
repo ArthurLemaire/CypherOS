@@ -48,7 +48,11 @@ jobs:
   test:
     name: ${{ matrix.os }} · py${{ matrix.python-version }}
     needs: changes
-    if: needs.changes.outputs.python == 'true' || github.ref_type == 'tag'
+    # No `if:` on this job. A matrix job skipped as a whole reports one check named with the raw
+    # template, never `ubuntu-latest · py3.12`, and a required check that never appears blocks
+    # the merge of every docs-only change. The job runs; its steps skip together instead.
+    env:
+      RUN: ${{ needs.changes.outputs.python == 'true' || github.ref_type == 'tag' }}
     runs-on: ${{ matrix.os }}
     # Windows is not a supported platform yet (the shell tool assumes a POSIX shell); it runs
     # so we can see how far off it is, but cannot fail the build.
@@ -66,19 +70,22 @@ jobs:
             experimental: true
     steps:
       - uses: actions/checkout@v7
+        if: env.RUN == 'true'
 
       - uses: astral-sh/setup-uv@v7
+        if: env.RUN == 'true'
         with:
           enable-cache: true
 
       - name: Install
+        if: env.RUN == 'true'
         shell: bash
         run: |
           uv venv --python ${{ matrix.python-version }}
           uv pip install -e ".[dev]"
 
       - name: Install bubblewrap (the sandbox tests run for real on Linux)
-        if: runner.os == 'Linux'
+        if: env.RUN == 'true' && (runner.os == 'Linux')
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq bubblewrap
           bwrap --version
@@ -100,19 +107,23 @@ jobs:
           bwrap --unshare-all --ro-bind / / -- /bin/true && echo "bubblewrap works here" || echo "bubblewrap cannot create a namespace here; the boxed tests will skip"
 
       - name: Ruff lint
+        if: env.RUN == 'true'
         run: uv run ruff check nanomuse host tests scripts
 
       - name: Ruff format
+        if: env.RUN == 'true'
         run: uv run ruff format --check nanomuse host tests scripts
 
       - name: Mypy
+        if: env.RUN == 'true'
         run: uv run mypy
 
       - name: Tests (no live LLM calls)
+        if: env.RUN == 'true'
         run: uv run python -m pytest -q -m "not live"
 
       - name: Package builds and installs
-        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        if: env.RUN == 'true' && (matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12')
         shell: bash
         run: |
           uv build
