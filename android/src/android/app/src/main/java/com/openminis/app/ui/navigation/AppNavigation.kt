@@ -241,6 +241,34 @@ fun AppNavigation(
         (context.applicationContext as com.openminis.app.MinisApp).mountedFoldersStore
     }
 
+    // nanoMuse: whether SESSION_LIST renders the home shell (compact windows) — decided here,
+    // ahead of the deep-link effects, and published for the non-composable entry points
+    // (MainActivity's warm deep links). Written during composition on purpose so the effects
+    // below already see it. Wide windows keep the upstream list/detail behaviour.
+    val nmHomeActive = !shouldUseTwoPane()
+    io.github.nanomuse.ui.home.HomeShell.active = nmHomeActive
+
+    // App-icon quick action (New chat / Voice / Camera): the draft's id, decided once per
+    // launch, with the voice / camera action seeded so ChatScreen consumes it on its first
+    // LaunchedEffect tick. Upstream mounted the NavHost straight into chat/<draft>; in compact
+    // windows the home shell opens the draft itself (see the deep-link effect and the
+    // startDestination block below). nanoMuse: remembered, so a recomposition does not mint a
+    // new id and re-seed the action.
+    val quickActionSession: String? = remember(initialDeepLink) {
+        when (initialDeepLink) {
+            is DeepLinkAction.NewVoiceChat -> {
+                DeepLinkCoordinator.setPendingChatAction(DeepLinkCoordinator.ChatAction.START_VOICE)
+                "__new__${java.util.UUID.randomUUID()}"
+            }
+            is DeepLinkAction.NewCameraChat -> {
+                DeepLinkCoordinator.setPendingChatAction(DeepLinkCoordinator.ChatAction.OPEN_CAMERA)
+                "__new__${java.util.UUID.randomUUID()}"
+            }
+            is DeepLinkAction.NewChat -> "__new__${java.util.UUID.randomUUID()}"
+            else -> null
+        }
+    }
+
     // Handle initial deep link after composition
     LaunchedEffect(initialDeepLink) {
         when (initialDeepLink) {
@@ -301,6 +329,10 @@ fun AppNavigation(
                 // Navigation handled by startDestination = chat/<__new__…>
                 // when the launch intent carries one of these actions.
                 // Nothing to do here — see startDestination block below.
+                // nanoMuse: except in compact windows, where the home shell opens the draft.
+                if (nmHomeActive && quickActionSession != null) {
+                    io.github.nanomuse.ui.home.HomeShell.openSession(navController, quickActionSession)
+                }
             }
             else -> {}
         }
@@ -319,11 +351,8 @@ fun AppNavigation(
     // nanoMuse: in compact windows SESSION_LIST renders the home shell
     // (io.github.nanomuse.ui.home), which opens on the main chat by itself —
     // the launch-session resolver and the warm-share fallback below step
-    // aside for it. Wide windows keep the upstream list/detail behaviour.
-    val nmHomeActive = !shouldUseTwoPane()
-    // nanoMuse: published for the non-composable entry points (MainActivity's warm deep links);
-    // written during composition on purpose so the deep-link effects above already see it.
-    io.github.nanomuse.ui.home.HomeShell.active = nmHomeActive
+    // aside for it (`nmHomeActive`, decided above). Wide windows keep the
+    // upstream list/detail behaviour.
     LaunchedEffect(Unit) {
         val hasDeepLink = initialDeepLink != null && initialDeepLink !is DeepLinkAction.Unknown
         if (hasDeepLink) return@LaunchedEffect
@@ -471,22 +500,9 @@ fun AppNavigation(
     // draft chat, seeding the pending action so ChatScreen consumes it on
     // its first LaunchedEffect tick. Mirrors the htmlShortcut path —
     // avoids a sessions-list flash and a duplicate back-stack entry.
-    val quickActionStart: String? = when (initialDeepLink) {
-        is DeepLinkAction.NewVoiceChat -> {
-            DeepLinkCoordinator.setPendingChatAction(
-                DeepLinkCoordinator.ChatAction.START_VOICE,
-            )
-            Routes.chat("__new__${java.util.UUID.randomUUID()}")
-        }
-        is DeepLinkAction.NewCameraChat -> {
-            DeepLinkCoordinator.setPendingChatAction(
-                DeepLinkCoordinator.ChatAction.OPEN_CAMERA,
-            )
-            Routes.chat("__new__${java.util.UUID.randomUUID()}")
-        }
-        is DeepLinkAction.NewChat -> Routes.chat("__new__${java.util.UUID.randomUUID()}")
-        else -> null
-    }
+    // nanoMuse: the draft id is minted (and the action seeded) in `quickActionSession` above;
+    // in compact windows the home shell opens it, so the NavHost starts on SESSION_LIST.
+    val quickActionStart: String? = quickActionSession?.takeIf { !nmHomeActive }?.let { Routes.chat(it) }
     val startDestination = when {
         htmlShortcut != null -> {
             // Seed coordinator before NavHost composition so ChatScreen sees

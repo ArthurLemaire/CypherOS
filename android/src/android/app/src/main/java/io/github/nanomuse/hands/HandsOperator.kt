@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.graphics.Path
 import android.os.Build
 import android.view.accessibility.AccessibilityNodeInfo
+import com.openminis.app.R
 import com.openminis.app.accessibility.MinisAccessibilityService
 import com.openminis.app.data.model.AgentContentPart
 import com.openminis.app.data.model.LLMMessage
@@ -222,18 +223,26 @@ class HandsOperator(private val context: Context) {
                             is HandsAction.LongPress -> action.at.toPixels(screenW, screenH)
                             else -> 0 to 0
                         }
-                        val ok = when (action) {
-                            is HandsAction.LongPress -> tap(svc, px, py, 900)
-                            is HandsAction.DoubleTap -> tap(svc, px, py, 50).also { Thread.sleep(90) } && tap(svc, px, py, 50)
-                            else -> tap(svc, px, py, 60)
+                        // The ring first, where the finger is about to land; the capsule steps
+                        // aside when it is in the way and lets the touch through while it lands.
+                        capsule.dodge(px, py)
+                        capsule.stage.aim(px, py, fxLabel(action))
+                        Thread.sleep(AIM_MS)
+                        val ok = capsule.passThrough {
+                            when (action) {
+                                is HandsAction.LongPress -> { capsule.stage.hold(LONG_PRESS_MS); tap(svc, px, py, LONG_PRESS_MS) }
+                                is HandsAction.DoubleTap -> tap(svc, px, py, 50).also { capsule.stage.ripple(px, py); Thread.sleep(90) } && tap(svc, px, py, 50)
+                                else -> tap(svc, px, py, 60)
+                            }
                         }
+                        capsule.stage.ripple(px, py)
                         lastResult = if (ok) "${action.describe()} at ($px, $py) was performed." else "the gesture at ($px, $py) was rejected by the system; try again or another way."
                         Thread.sleep(TAP_SETTLE_MS)
                     }
                     is HandsAction.Swipe -> {
                         val (x1, y1) = action.from.toPixels(screenW, screenH)
                         val (x2, y2) = action.to.toPixels(screenW, screenH)
-                        val ok = swipe(svc, x1, y1, x2, y2, 350)
+                        val ok = sweep(svc, x1, y1, x2, y2, SWIPE_MS, fxLabel(action))
                         lastResult = if (ok) "swiped from ($x1, $y1) to ($x2, $y2)." else "the swipe was rejected by the system."
                         Thread.sleep(SWIPE_SETTLE_MS)
                     }
@@ -242,16 +251,18 @@ class HandsOperator(private val context: Context) {
                         val cy = screenH / 2
                         val dx = screenW * 35 / 100
                         val dy = screenH * 30 / 100
-                        val ok = when (action.direction) {
-                            "down" -> swipe(svc, cx, cy + dy / 2 + dy / 4, cx, cy - dy / 2 - dy / 4, 400)
-                            "up" -> swipe(svc, cx, cy - dy / 2 - dy / 4, cx, cy + dy / 2 + dy / 4, 400)
-                            "left" -> swipe(svc, cx + dx, cy, cx - dx, cy, 400)
-                            else -> swipe(svc, cx - dx, cy, cx + dx, cy, 400)
+                        val (from, to) = when (action.direction) {
+                            "down" -> (cx to cy + dy / 2 + dy / 4) to (cx to cy - dy / 2 - dy / 4)
+                            "up" -> (cx to cy - dy / 2 - dy / 4) to (cx to cy + dy / 2 + dy / 4)
+                            "left" -> (cx + dx to cy) to (cx - dx to cy)
+                            else -> (cx - dx to cy) to (cx + dx to cy)
                         }
+                        val ok = sweep(svc, from.first, from.second, to.first, to.second, SCROLL_MS, fxLabel(action))
                         lastResult = if (ok) "scrolled ${action.direction}." else "the scroll was rejected by the system."
                         Thread.sleep(SWIPE_SETTLE_MS)
                     }
                     is HandsAction.InputText -> {
+                        if (!TapWords.looksSecret(action.field)) capsule.stage.say(fxLabel(action))
                         lastResult = typeText(svc, action)
                         if (lastResult == HANDOFF) {
                             val cont = waitForUser(context.getString(com.openminis.app.R.string.nm_hands_secret_field))
@@ -261,28 +272,33 @@ class HandsOperator(private val context: Context) {
                         Thread.sleep(TAP_SETTLE_MS)
                     }
                     HandsAction.KeyboardEnter -> {
+                        capsule.stage.say(fxLabel(action))
                         lastResult = pressEnter(svc)
                         Thread.sleep(TAP_SETTLE_MS)
                     }
                     is HandsAction.OpenApp -> {
                         val app = HandsApps.resolve(context, action.appName)
                         lastResult = if (app != null && HandsApps.open(context, app)) {
+                            capsule.stage.say(context.getString(com.openminis.app.R.string.nm_hands_fx_open, app.label))
                             Thread.sleep(OPEN_APP_SETTLE_MS); "opened ${app.label}."
                         } else {
                             "no installed app matches “${action.appName}”. Installed: " + apps.take(40).joinToString(", ") { it.label } + ". Open it from the home screen if you must."
                         }
                     }
                     HandsAction.Back -> {
+                        capsule.stage.say(fxLabel(action))
                         svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
                         lastResult = "pressed Back."
                         Thread.sleep(TAP_SETTLE_MS)
                     }
                     HandsAction.Home -> {
+                        capsule.stage.say(fxLabel(action))
                         svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
                         lastResult = "went to the home screen."
                         Thread.sleep(TAP_SETTLE_MS)
                     }
                     is HandsAction.Wait -> {
+                        capsule.stage.say(fxLabel(action))
                         Thread.sleep(action.seconds * 1000L)
                         lastResult = "waited ${action.seconds}s."
                     }
@@ -359,6 +375,41 @@ class HandsOperator(private val context: Context) {
     private fun swipe(svc: MinisAccessibilityService, x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Long): Boolean {
         val path = Path().apply { moveTo(x1.toFloat(), y1.toFloat()); lineTo(x2.toFloat(), y2.toFloat()) }
         return svc.dispatchSimpleGesture(path, 0L, durationMs)
+    }
+
+    /** A swipe with its picture: the ring waits [AIM_MS] at the start, then travels with the finger. */
+    private fun sweep(svc: MinisAccessibilityService, x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Long, label: String): Boolean {
+        capsule.dodge(x1, y1)
+        capsule.stage.sweep(x1, y1, x2, y2, AIM_MS, durationMs, label)
+        Thread.sleep(AIM_MS)
+        return capsule.passThrough { swipe(svc, x1, y1, x2, y2, durationMs) }
+    }
+
+    /** The action's name for the ring's label, in the user's language. */
+    private fun fxLabel(action: HandsAction): String {
+        fun target(plain: Int, withTarget: Int, t: String) =
+            if (t.isBlank()) context.getString(plain) else context.getString(withTarget, t.take(24))
+        return when (action) {
+            is HandsAction.Click -> target(R.string.nm_hands_fx_tap, R.string.nm_hands_fx_tap_target, action.target)
+            is HandsAction.DoubleTap -> target(R.string.nm_hands_fx_double_tap, R.string.nm_hands_fx_double_tap_target, action.target)
+            is HandsAction.LongPress -> target(R.string.nm_hands_fx_hold, R.string.nm_hands_fx_hold_target, action.target)
+            is HandsAction.Swipe -> context.getString(R.string.nm_hands_fx_swipe)
+            is HandsAction.Scroll -> context.getString(
+                when (action.direction) {
+                    "up" -> R.string.nm_hands_fx_scroll_up
+                    "left" -> R.string.nm_hands_fx_scroll_left
+                    "right" -> R.string.nm_hands_fx_scroll_right
+                    else -> R.string.nm_hands_fx_scroll_down
+                },
+            )
+            is HandsAction.InputText -> context.getString(R.string.nm_hands_fx_type, action.text.take(24))
+            HandsAction.KeyboardEnter -> context.getString(R.string.nm_hands_fx_enter)
+            HandsAction.Back -> context.getString(R.string.nm_hands_fx_back)
+            HandsAction.Home -> context.getString(R.string.nm_hands_fx_home)
+            is HandsAction.OpenApp -> context.getString(R.string.nm_hands_fx_open, action.appName)
+            is HandsAction.Wait -> context.getString(R.string.nm_hands_fx_wait, action.seconds)
+            else -> ""
+        }
     }
 
     private fun focusedField(svc: MinisAccessibilityService): AccessibilityNodeInfo? =
@@ -493,6 +544,11 @@ class HandsOperator(private val context: Context) {
         private const val TAP_SETTLE_MS = 900L
         private const val SWIPE_SETTLE_MS = 1100L
         private const val OPEN_APP_SETTLE_MS = 1800L
+        /** The ring shows this long before the finger lands, so the eye gets there first. */
+        private const val AIM_MS = 260L
+        private const val LONG_PRESS_MS = 900L
+        private const val SWIPE_MS = 350L
+        private const val SCROLL_MS = 400L
         private const val HANDOFF = "\u0000handoff"
     }
 }

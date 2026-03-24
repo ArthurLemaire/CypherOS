@@ -769,7 +769,11 @@ class MainActivity : ComponentActivity() {
                         .setPendingChatAction(DeepLinkCoordinator.ChatAction.OPEN_CAMERA)
                     else -> {}
                 }
-                val newRoute = Routes.chat("__new__${java.util.UUID.randomUUID()}")
+                val newId = "__new__${java.util.UUID.randomUUID()}"
+                // nanoMuse: in compact windows the draft opens inside the home shell, whose
+                // ChatScreen consumes the pending voice / camera action the same way.
+                if (io.github.nanomuse.ui.home.HomeShell.openSession(nav, newId)) return
+                val newRoute = Routes.chat(newId)
                 nav.navigate(newRoute) {
                     popUpTo(Routes.SESSION_LIST) { inclusive = false }
                     launchSingleTop = true

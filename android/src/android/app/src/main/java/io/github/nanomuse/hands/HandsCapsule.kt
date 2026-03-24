@@ -35,16 +35,27 @@ import java.util.concurrent.TimeUnit
  * outside any Activity; every call is safe from any thread.
  *
  * The capsule hides itself for the instant a screenshot is taken ([hideForCapture]), so the
- * screen model never sees it and cannot tap its own Stop button.
+ * screen model never sees it and cannot tap its own Stop button. The model still cannot see
+ * what is under it, so a gesture it asks for may land where the capsule is: for the length of
+ * every injected gesture the window lets touches through ([passThrough]), and when the target
+ * is under the capsule it first moves to the other end of the screen ([dodge]) so the ring
+ * drawn there ([stage]) can be seen.
+ *
+ * The [stage] — the glow along the edges and the ring at the point about to be tapped — is a
+ * second, full-screen window that never takes a touch, added first so the capsule stays on top.
  */
 class HandsCapsule(private val context: Context) {
     private val main = Handler(Looper.getMainLooper())
     private val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private var root: LinearLayout? = null
+    private var params: WindowManager.LayoutParams? = null
     private var titleView: TextView? = null
     private var detailView: TextView? = null
     private var continueBtn: TextView? = null
     private var openBtn: TextView? = null
+
+    /** What the hands draw on the screen while they work. */
+    val stage = HandsStage(context)
 
     var onStop: (() -> Unit)? = null
     var onContinue: (() -> Unit)? = null
@@ -55,6 +66,7 @@ class HandsCapsule(private val context: Context) {
     /** Shows (or updates) the working state. */
     fun working(step: Int, detail: String) = onMain {
         ensure()
+        stage.mood(HandsStage.Mood.WORKING)
         titleView?.text = context.getString(R.string.nm_hands_step, step)
         detailView?.text = detail
         continueBtn?.visibility = View.GONE
@@ -64,6 +76,8 @@ class HandsCapsule(private val context: Context) {
     /** The hands wait for the user to do something on the phone. */
     fun takeOver(reason: String) = onMain {
         ensure()
+        stage.mood(HandsStage.Mood.WAITING)
+        stage.clear()
         titleView?.text = context.getString(R.string.nm_hands_your_turn)
         detailView?.text = reason.ifBlank { context.getString(R.string.nm_hands_your_turn_detail) }
         continueBtn?.visibility = View.VISIBLE
@@ -73,6 +87,7 @@ class HandsCapsule(private val context: Context) {
     /** A tap waits for the approval card in the chat. */
     fun approval(what: String) = onMain {
         ensure()
+        stage.mood(HandsStage.Mood.WAITING)
         titleView?.text = context.getString(R.string.nm_hands_approval_title)
         detailView?.text = what
         continueBtn?.visibility = View.GONE
@@ -81,19 +96,97 @@ class HandsCapsule(private val context: Context) {
 
     fun hide() = onMain {
         root?.let { v -> runCatching { wm.removeView(v) } }
-        root = null; titleView = null; detailView = null; continueBtn = null; openBtn = null
+        root = null; params = null; titleView = null; detailView = null; continueBtn = null; openBtn = null
+        stage.hide()
     }
 
-    /** Hides the capsule for a screenshot and waits until the frame is gone; [restore] brings it back. */
+    /** Hides the capsule and the stage for a screenshot and waits until the frame is gone; [restore] brings them back. */
     fun hideForCapture() {
         val latch = CountDownLatch(1)
-        main.post { root?.visibility = View.INVISIBLE; latch.countDown() }
+        main.post {
+            root?.visibility = View.INVISIBLE
+            stage.setVisible(false)
+            latch.countDown()
+        }
         latch.await(300, TimeUnit.MILLISECONDS)
         // One more frame so the compositor has dropped it.
         Thread.sleep(80)
     }
 
-    fun restore() = onMain { root?.visibility = View.VISIBLE }
+    fun restore() = onMain {
+        root?.visibility = View.VISIBLE
+        stage.setVisible(true)
+    }
+
+    /**
+     * Runs [gesture] with the capsule letting touches through, so an injected tap or swipe that
+     * crosses it reaches the app underneath instead of Stop. Waits for the window manager to
+     * apply the flag before the gesture and puts it back after.
+     */
+    fun <T> passThrough(gesture: () -> T): T {
+        setPassThrough(true)
+        try {
+            return gesture()
+        } finally {
+            setPassThrough(false)
+        }
+    }
+
+    private fun setPassThrough(on: Boolean) {
+        val latch = CountDownLatch(1)
+        main.post {
+            try {
+                val v = root ?: return@post
+                val p = params ?: return@post
+                val flags = if (on) p.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                else p.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+                if (flags != p.flags) {
+                    p.flags = flags
+                    wm.updateViewLayout(v, p)
+                }
+            } catch (t: Throwable) {
+                AppLogger.warning(TAG, "pass-through: ${t.message}")
+            } finally {
+                latch.countDown()
+            }
+        }
+        latch.await(300, TimeUnit.MILLISECONDS)
+        // The touchable region follows the next relayout.
+        if (on) Thread.sleep(60)
+    }
+
+    /**
+     * When ([x], [y]) is under the capsule, moves it to the other end of the screen and waits
+     * for the move, so the ring drawn at the target is not hidden behind it. The touch itself
+     * would pass through anyway ([passThrough]).
+     */
+    fun dodge(x: Int, y: Int) {
+        val latch = CountDownLatch(1)
+        var moved = false
+        main.post {
+            try {
+                val v = root ?: return@post
+                val p = params ?: return@post
+                val loc = IntArray(2)
+                v.getLocationOnScreen(loc)
+                val margin = dp(8)
+                val inside = x >= loc[0] - margin && x <= loc[0] + v.width + margin &&
+                    y >= loc[1] - margin && y <= loc[1] + v.height + margin
+                if (!inside) return@post
+                val atTop = p.gravity and Gravity.BOTTOM != Gravity.BOTTOM
+                p.gravity = (if (atTop) Gravity.BOTTOM else Gravity.TOP) or Gravity.CENTER_HORIZONTAL
+                p.y = (if (atTop) navigationBarHeight() else statusBarHeight()) + dp(6)
+                wm.updateViewLayout(v, p)
+                moved = true
+            } catch (t: Throwable) {
+                AppLogger.warning(TAG, "dodge: ${t.message}")
+            } finally {
+                latch.countDown()
+            }
+        }
+        latch.await(300, TimeUnit.MILLISECONDS)
+        if (moved) Thread.sleep(120)
+    }
 
     // ── building ───────────────────────────────────────────────────────────
 
@@ -104,6 +197,7 @@ class HandsCapsule(private val context: Context) {
 
     private fun ensure() {
         if (root != null) return
+        stage.show() // first, so the capsule's window sits above it
         val pill = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -172,7 +266,12 @@ class HandsCapsule(private val context: Context) {
             AppLogger.warning(TAG, "addView failed: ${t.message}")
             return
         }
-        root = pill; titleView = title; detailView = detail; continueBtn = cont; openBtn = open
+        root = pill; this.params = params; titleView = title; detailView = detail; continueBtn = cont; openBtn = open
+    }
+
+    private fun navigationBarHeight(): Int {
+        val id = context.resources.getIdentifier("navigation_bar_height", "dimen", "android")
+        return if (id > 0) context.resources.getDimensionPixelSize(id) else dp(48)
     }
 
     private fun button(text: String, color: Int, onClick: () -> Unit): TextView = TextView(context).apply {

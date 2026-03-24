@@ -483,6 +483,24 @@
     <string name="nm_hands_secret_field">A password or code field — please fill it in yourself, then tap Continue.</string>
     <string name="nm_hands_approval_title">Waiting for your approval</string>
     <string name="nm_hands_approval_detail">Tap “%1$s” — answer in nanoMuse or in the notification.</string>
+    <!-- the ring's label (0.1.15) -->
+    <string name="nm_hands_fx_tap">Tap</string>
+    <string name="nm_hands_fx_tap_target">Tap “%1$s”</string>
+    <string name="nm_hands_fx_double_tap">Double-tap</string>
+    <string name="nm_hands_fx_double_tap_target">Double-tap “%1$s”</string>
+    <string name="nm_hands_fx_hold">Hold</string>
+    <string name="nm_hands_fx_hold_target">Hold “%1$s”</string>
+    <string name="nm_hands_fx_swipe">Swipe</string>
+    <string name="nm_hands_fx_scroll_up">Scroll up</string>
+    <string name="nm_hands_fx_scroll_down">Scroll down</string>
+    <string name="nm_hands_fx_scroll_left">Scroll left</string>
+    <string name="nm_hands_fx_scroll_right">Scroll right</string>
+    <string name="nm_hands_fx_type">Type “%1$s”</string>
+    <string name="nm_hands_fx_enter">Enter</string>
+    <string name="nm_hands_fx_back">Back</string>
+    <string name="nm_hands_fx_home">Home</string>
+    <string name="nm_hands_fx_open">Open %1$s</string>
+    <string name="nm_hands_fx_wait">Wait %1$d s</string>
     <!-- the approval card -->
     <string name="nm_risk_desc_screen">%1$s wants to tap “%2$s” in %3$s.</string>
     <string name="nm_risk_preview_screen">On the screen</string>
