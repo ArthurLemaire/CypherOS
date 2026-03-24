@@ -255,7 +255,9 @@ class HandsStage(private val context: Context) {
             drawRipples(canvas, now)
             chip?.let { drawChip(canvas, it, now) }
             canvas.restore()
-            if (visibility == VISIBLE) postInvalidateOnAnimation() // the glow breathes for as long as we are shown
+            // The glow breathes for as long as we are shown; 30 frames a second is plenty for
+            // it and easy on the battery over a long run.
+            if (visibility == VISIBLE) postInvalidateDelayed(FRAME_MS)
         }
 
         // ── the glow ──
@@ -432,6 +434,7 @@ class HandsStage(private val context: Context) {
             private const val RING = 0xFFFF3B30.toInt()
             private const val RING_DP = 16f
             private const val CHIP_BG = 0xFF202124.toInt()
+            private const val FRAME_MS = 33L
             private const val LOCK_ON_MS = 220L
             private const val RIPPLE_MS = 450L
             private const val SWEEP_FADE_MS = 320L
