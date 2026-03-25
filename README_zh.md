@@ -105,6 +105,7 @@ App 是修改过的 [OpenMinis](https://github.com/OpenMinis/OpenMinis) 1.13：�
 | [0.1.11](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.11) | Hatch | 内置小龙——静态图和循环短片都在 APK 里；第一次对话由对话模型来读：你说了别的它先答、稍后再问名字，给自己提的名字跟着你的语言；一把百炼 key 跑三个模型，或者每个模型各接一个平台 |
 | [0.1.12](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.12) | Hands | 手机屏幕当手，先出一个能用的 demo：它只看截图、不读无障碍树，在没有 API 的 App 里点、打字、滑动；技能、CLI、MCP 服务或浏览器能做的先用它们；一个带「停止」的悬浮胶囊；登录和验证码由你接管；付款、发送、删除前的审批一样不少；默认关着 |
 | [0.1.13](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.13) | Reach | 手机操作你的电脑，先出一个能用的 demo：在电脑上跑一个 Python 文件、在 App 里用配对码配对，手机上的一句话就在那边执行——shell、文件、浏览器、看一眼屏幕——结果和审批回到手机上；暂时是单向的，手机到电脑 |
+| [0.1.14](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.14) | Home | 修复：从通知、悬浮胶囊或「动手」跑完之后回到 App，落回它自己的主页，而不是 OpenMinis 的聊天页 |
 | 0.2.0 | Beta | 头几周使用后的打磨；第一个 beta |
 
 **再之后**，依次：一个桌面 App，既是独立的智能体，也是手机上那个的客户端；iOS；部署在你自己机器上——一台 VM、一台家里的服务器——的网页版，任何浏览器都能打开；眼镜。每加一台设备，同一个智能体就多一双手、多一个入口。项目起步时的 Python 线——智能体和它的 Sentinel、网页 App、模拟手机——冻结在 tag [`pre-openminis`](https://github.com/nano-muse/nanoMuse/releases/tag/pre-openminis)，文档在 [docs/](docs/)，是桌面和网页这两个入口的底座。

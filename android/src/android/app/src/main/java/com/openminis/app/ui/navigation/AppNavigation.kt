@@ -248,6 +248,10 @@ fun AppNavigation(
                 navController.safeNavigate(Routes.terminal(initialDeepLink.initCommand))
             }
             is DeepLinkAction.OpenSession -> {
+                // nanoMuse: in compact windows the home shell shows the chat itself.
+                if (io.github.nanomuse.ui.home.HomeShell.openSession(navController, initialDeepLink.sessionId)) {
+                    return@LaunchedEffect
+                }
                 // T-double-chat-fix: on process-death recreation NavController
                 // auto-restores [SESSION_LIST, chat/<id>] AND MainActivity
                 // synthesizes an OpenSession deep-link from saved state. A
@@ -317,6 +321,9 @@ fun AppNavigation(
     // the launch-session resolver and the warm-share fallback below step
     // aside for it. Wide windows keep the upstream list/detail behaviour.
     val nmHomeActive = !shouldUseTwoPane()
+    // nanoMuse: published for the non-composable entry points (MainActivity's warm deep links);
+    // written during composition on purpose so the deep-link effects above already see it.
+    io.github.nanomuse.ui.home.HomeShell.active = nmHomeActive
     LaunchedEffect(Unit) {
         val hasDeepLink = initialDeepLink != null && initialDeepLink !is DeepLinkAction.Unknown
         if (hasDeepLink) return@LaunchedEffect
