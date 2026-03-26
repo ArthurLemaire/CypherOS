@@ -15,7 +15,7 @@ import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -62,9 +62,10 @@ fun HandsScreen(onBack: () -> Unit, onOpenProviders: () -> Unit) {
 
     // Permissions are granted in other apps; re-read when the user comes back.
     val owner = LocalLifecycleOwner.current
-    LaunchedEffect(owner) {
+    DisposableEffect(owner) {
         val obs = LifecycleEventObserver { _, e -> if (e == Lifecycle.Event.ON_RESUME) tick++ }
         owner.lifecycle.addObserver(obs)
+        onDispose { owner.lifecycle.removeObserver(obs) }
     }
     val readiness = remember(tick, config, chosen) { Hands.readiness(context) }
     val visionEntries = remember(config) { Hands.visionEntries(context) }
