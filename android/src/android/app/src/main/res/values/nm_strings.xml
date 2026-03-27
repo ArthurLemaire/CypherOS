@@ -486,4 +486,36 @@
     <!-- the approval card -->
     <string name="nm_risk_desc_screen">%1$s wants to tap “%2$s” in %3$s.</string>
     <string name="nm_risk_preview_screen">On the screen</string>
+
+    <!-- Reach (0.1.13): the phone drives your computer -->
+    <string name="nm_pc_title">Computers</string>
+    <string name="nm_pc_none_short">None</string>
+    <string name="nm_pc_intro">Pair a computer once, and a sentence on this phone can run there: a command in its shell, a file fetched or dropped, a page opened in its browser, a look at its screen. One way — the phone drives the computer, never the other way round — and every approval is decided here before anything is sent.</string>
+    <string name="nm_pc_section_paired">Paired computers</string>
+    <string name="nm_pc_none">No computer yet</string>
+    <string name="nm_pc_none_footer">Until one is paired, the agent will say so when a task belongs on your computer.</string>
+    <string name="nm_pc_paired_footer">Tap a computer to check that it answers. Forget drops this phone\'s key for it; the host keeps only a hash of that key.</string>
+    <string name="nm_pc_last_seen">seen %1$s</string>
+    <string name="nm_pc_checking">Checking…</string>
+    <string name="nm_pc_answering">Answering at %1$s</string>
+    <string name="nm_pc_not_answering">Not answering at %1$s — is the host running, on the same network?</string>
+    <string name="nm_pc_forget">Forget</string>
+    <string name="nm_pc_section_pair">Pair a computer</string>
+    <string name="nm_pc_step1">1. On the computer, download host/nanomuse_host.py from the nanoMuse repository (one file, Python 3, nothing to install) and run:</string>
+    <string name="nm_pc_step2">2. It prints an address and a six-digit code. Enter both here within ten minutes.</string>
+    <string name="nm_pc_address">Address</string>
+    <string name="nm_pc_code">Code</string>
+    <string name="nm_pc_pair">Pair</string>
+    <string name="nm_pc_pairing">Pairing…</string>
+    <string name="nm_pc_paired_with">Paired with %1$s.</string>
+    <string name="nm_pc_bad_address">Enter the address as it is printed, like 192.168.1.23:7333.</string>
+    <string name="nm_pc_pair_footer">The phone and the computer must be on the same network. The code is good for one phone; run the host again for another.</string>
+    <string name="nm_pc_section_how">How it works</string>
+    <string name="nm_pc_how_1">Commands are judged like the phone\'s own shell: deleting, sending or paying waits for your approval here.</string>
+    <string name="nm_pc_how_2">The computer runs them as you — the same account, the same files.</string>
+    <string name="nm_pc_how_3">Traffic stays on your local network; there is no cloud in between, and no encryption yet — use a network you trust.</string>
+    <string name="nm_pc_how_4">The computer never reaches into the phone.</string>
+    <!-- the approval card -->
+    <string name="nm_risk_desc_on_computer">On the computer “%1$s”, not on this phone.</string>
+    <string name="nm_risk_preview_computer">Command on the computer</string>
 </resources>

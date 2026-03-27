@@ -32,6 +32,7 @@ jobs:
           filters: |
             python:
               - "nanomuse/**"
+              - "host/**"
               - "tests/**"
               - "scripts/**"
               - "pyproject.toml"
@@ -99,10 +100,10 @@ jobs:
           bwrap --unshare-all --ro-bind / / -- /bin/true && echo "bubblewrap works here" || echo "bubblewrap cannot create a namespace here; the boxed tests will skip"
 
       - name: Ruff lint
-        run: uv run ruff check nanomuse tests scripts
+        run: uv run ruff check nanomuse host tests scripts
 
       - name: Ruff format
-        run: uv run ruff format --check nanomuse tests scripts
+        run: uv run ruff format --check nanomuse host tests scripts
 
       - name: Mypy
         run: uv run mypy
