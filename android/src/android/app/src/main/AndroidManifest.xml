@@ -107,6 +107,12 @@
         <intent>
             <action android:name="android.speech.RecognitionService" />
         </intent>
+        <!-- nanoMuse: the hands (0.1.12) list the apps with a launcher icon, so the
+             screen model can open one by name. Android 11+ package visibility. -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
         <!-- T234: needed for androidx.browser CustomTabsClient.bindCustomTabsService
              to discover the user's Chrome (or any Custom Tabs provider) under
              Android 11+ package-visibility rules. Without this the bind silently

@@ -10569,6 +10569,8 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
             append("\n\n").append(io.github.nanomuse.guard.RiskPolicy.promptParagraph())
             // nanoMuse: the three models (chat / image / video) and what is not set.
             append("\n\n").append(io.github.nanomuse.media.MediaModels.promptParagraph(context))
+            // nanoMuse: the ladder for apps without an API, and the screen as the last rung.
+            append("\n\n").append(io.github.nanomuse.hands.Hands.promptParagraph(context))
             // nanoMuse: turn-limited addenda for this session (goal creation).
             io.github.nanomuse.chat.SessionAddenda.forPrompt(realSessionId.ifEmpty { sessionId })
                 ?.let { append("\n\n").append(it) }

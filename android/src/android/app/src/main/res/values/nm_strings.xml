@@ -434,4 +434,56 @@
     <string name="nm_media_clips_running">Drawing…</string>
     <string name="nm_avatar_status_animating">Animating %1$d/%2$d…</string>
     <string name="nm_avatar_clips_coming">I\'ll also make four short clips so I can move — a few minutes in the background, through your video model.</string>
+
+    <!-- Hands (0.1.12): the phone's screen as a hand -->
+    <string name="nm_hands_title">Hands</string>
+    <string name="nm_hands_on">On</string>
+    <string name="nm_hands_off">Off</string>
+    <string name="nm_hands_this_phone">this phone</string>
+    <string name="nm_hands_intro">For the apps that have no API, the agent can use the phone the way you do: it looks at a screenshot, then taps, types and swipes. A skill, a command or the browser is tried first; the screen is the last resort. Off until you switch it on.</string>
+    <string name="nm_hands_switch">Let the agent use the screen</string>
+    <string name="nm_hands_switch_footer">While it works, a capsule at the top of the screen shows each step and a Stop button. Logins, passwords and codes are always left to you.</string>
+    <string name="nm_hands_status_off">Off — the agent will say so when a task needs the screen</string>
+    <string name="nm_hands_status_ready">Ready</string>
+    <string name="nm_hands_status_missing">On, but something below is still missing</string>
+    <string name="nm_hands_status_working">Working on the screen now</string>
+    <string name="nm_hands_stop_run">Stop what it is doing</string>
+    <string name="nm_hands_section_needs">What it needs</string>
+    <string name="nm_hands_needs_footer">The accessibility service takes the screenshot and performs the gestures; it does not read the screen\'s contents. Drawing over other apps is for the capsule.</string>
+    <string name="nm_hands_need_a11y">Accessibility service</string>
+    <string name="nm_hands_need_a11y_fix">Turn on nanoMuse under Installed apps in the accessibility settings</string>
+    <string name="nm_hands_need_overlay">Display over other apps</string>
+    <string name="nm_hands_need_overlay_fix">Allow it, so the capsule with Stop can be shown</string>
+    <string name="nm_hands_need_model">A model that sees pictures</string>
+    <string name="nm_hands_need_model_fix">Add a provider with a vision model, such as qwen-vl or gpt-4o</string>
+    <string name="nm_hands_need_android">Android 11 or newer</string>
+    <string name="nm_hands_need_android_sub">This phone is older; screenshots are not available to the service.</string>
+    <string name="nm_hands_need_on">On</string>
+    <string name="nm_hands_need_granted">Allowed</string>
+    <string name="nm_hands_need_ok">Ready</string>
+    <string name="nm_hands_need_set_up">Set up</string>
+    <string name="nm_hands_section_model">The screen model</string>
+    <string name="nm_hands_model_auto">Automatic — the chat model when it can see, else the Vision Group</string>
+    <string name="nm_hands_model_footer">Every step sends one screenshot to this model. Smaller vision models are fine here and cost less.</string>
+    <string name="nm_hands_section_rules">How it behaves</string>
+    <string name="nm_hands_rule_ladder">The screen comes last: a skill, a command or the browser first.</string>
+    <string name="nm_hands_rule_secrets">Never types passwords, codes or card numbers — it hands the phone to you.</string>
+    <string name="nm_hands_rule_approvals">Paying, sending, posting or deleting waits for your approval, as in the shell and the browser.</string>
+    <string name="nm_hands_rule_stop">Stop is always on the screen; nothing continues after it.</string>
+    <string name="nm_hands_rule_screenshots">Each step\'s screenshot is kept with the conversation and sent only to your own model.</string>
+    <!-- the capsule -->
+    <string name="nm_hands_step">Step %1$d</string>
+    <string name="nm_hands_looking">Looking at the screen…</string>
+    <string name="nm_hands_stop">Stop</string>
+    <string name="nm_hands_continue">Continue</string>
+    <string name="nm_hands_open">Open</string>
+    <string name="nm_hands_your_turn">Your turn</string>
+    <string name="nm_hands_your_turn_detail">Do this part yourself, then tap Continue.</string>
+    <string name="nm_hands_protected_screen">This screen is protected and cannot be read. Finish this part yourself, then tap Continue.</string>
+    <string name="nm_hands_secret_field">A password or code field — please fill it in yourself, then tap Continue.</string>
+    <string name="nm_hands_approval_title">Waiting for your approval</string>
+    <string name="nm_hands_approval_detail">Tap “%1$s” — answer in nanoMuse or in the notification.</string>
+    <!-- the approval card -->
+    <string name="nm_risk_desc_screen">%1$s wants to tap “%2$s” in %3$s.</string>
+    <string name="nm_risk_preview_screen">On the screen</string>
 </resources>

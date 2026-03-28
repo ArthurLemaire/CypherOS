@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.TouchApp // nanoMuse: Hands row
 import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.BatteryFull
 import androidx.compose.material.icons.outlined.BugReport
@@ -95,6 +96,7 @@ fun SettingsScreen(
     onSystemFilesClick: () -> Unit = {}, // nanoMuse
     onAvatarClick: () -> Unit = {}, // nanoMuse
     onMediaModelsClick: () -> Unit = {}, // nanoMuse: Settings → Image & video models
+    onHandsClick: () -> Unit = {}, // nanoMuse: Settings → Hands (the screen as a hand)
     onPermissionsClick: () -> Unit = {},
     onUsageClick: () -> Unit = {},
     onAppearanceClick: () -> Unit = {},
@@ -217,6 +219,14 @@ fun SettingsScreen(
                 io.github.nanomuse.ui.muse.MuseRow(title = stringResource(R.string.settings_skills), icon = Icons.Outlined.Extension, onClick = onSkillsClick)
                 io.github.nanomuse.ui.muse.MuseRowDivider()
                 io.github.nanomuse.ui.muse.MuseRow(title = stringResource(R.string.settings_mcp), icon = Icons.Outlined.Dashboard, onClick = onMcpClick)
+                io.github.nanomuse.ui.muse.MuseRowDivider()
+                // nanoMuse: the phone's screen as a hand — off by default.
+                io.github.nanomuse.ui.muse.MuseRow(
+                    title = stringResource(R.string.nm_hands_title),
+                    icon = Icons.Outlined.TouchApp,
+                    value = stringResource(if (io.github.nanomuse.hands.Hands.enabled(context)) R.string.nm_hands_on else R.string.nm_hands_off),
+                    onClick = onHandsClick,
+                )
                 io.github.nanomuse.ui.muse.MuseRowDivider()
                 io.github.nanomuse.ui.muse.MuseRow(title = stringResource(R.string.settings_env_vars), icon = Icons.Outlined.Terminal, onClick = onEnvVarsClick)
             }

@@ -427,4 +427,56 @@
     <string name="nm_media_clips_running">產生中…</string>
     <string name="nm_avatar_status_animating">正在產生動態 %1$d/%2$d…</string>
     <string name="nm_avatar_clips_coming">我還會做四段短片讓自己動起來——在背景用你的影片模型，要幾分鐘。</string>
+
+    <!-- Hands (0.1.12): the phone's screen as a hand -->
+    <string name="nm_hands_title">動手操作螢幕</string>
+    <string name="nm_hands_on">已開啟</string>
+    <string name="nm_hands_off">已關閉</string>
+    <string name="nm_hands_this_phone">這台手機</string>
+    <string name="nm_hands_intro">對於沒有介面的 App，它可以像你一樣用手機：看一眼截圖，然後點、輸、滑。技能、命令列、瀏覽器能辦的會先用，螢幕是最後一步。預設關閉，需要你親自打開。</string>
+    <string name="nm_hands_switch">允許操作螢幕</string>
+    <string name="nm_hands_switch_footer">操作時螢幕頂部會有一個膠囊，顯示每一步和「停止」按鈕。登入、密碼、驗證碼永遠留給你自己輸。</string>
+    <string name="nm_hands_status_off">已關閉——任務需要用到螢幕時它會告訴你</string>
+    <string name="nm_hands_status_ready">就緒</string>
+    <string name="nm_hands_status_missing">已開啟，但下面還有沒準備好的</string>
+    <string name="nm_hands_status_working">正在操作螢幕</string>
+    <string name="nm_hands_stop_run">停止目前操作</string>
+    <string name="nm_hands_section_needs">需要什麼</string>
+    <string name="nm_hands_needs_footer">無障礙服務只負責截圖和手勢，不讀取螢幕內容。懸浮視窗權限用來顯示膠囊。</string>
+    <string name="nm_hands_need_a11y">無障礙服務</string>
+    <string name="nm_hands_need_a11y_fix">到無障礙設定裡「已安裝的應用程式」中打開 nanoMuse</string>
+    <string name="nm_hands_need_overlay">顯示在其他應用程式上層</string>
+    <string name="nm_hands_need_overlay_fix">允許後才能顯示帶「停止」按鈕的膠囊</string>
+    <string name="nm_hands_need_model">能看圖的模型</string>
+    <string name="nm_hands_need_model_fix">新增一個帶視覺模型的服務商，例如 qwen-vl 或 gpt-4o</string>
+    <string name="nm_hands_need_android">Android 11 或更新</string>
+    <string name="nm_hands_need_android_sub">這台手機系統太舊，無障礙服務拿不到截圖。</string>
+    <string name="nm_hands_need_on">已開啟</string>
+    <string name="nm_hands_need_granted">已允許</string>
+    <string name="nm_hands_need_ok">就緒</string>
+    <string name="nm_hands_need_set_up">去設定</string>
+    <string name="nm_hands_section_model">看螢幕的模型</string>
+    <string name="nm_hands_model_auto">自動——對話模型能看圖就用它，否則用視覺模型群組</string>
+    <string name="nm_hands_model_footer">每一步都會把一張截圖傳給這個模型。小一點的視覺模型就夠用，也更省錢。</string>
+    <string name="nm_hands_section_rules">它會怎麼做</string>
+    <string name="nm_hands_rule_ladder">螢幕排最後：先試技能、命令列、瀏覽器。</string>
+    <string name="nm_hands_rule_secrets">從不代輸密碼、驗證碼、卡號——遇到就把手機交還給你。</string>
+    <string name="nm_hands_rule_approvals">付款、傳送、發布、刪除之前先問你，和命令列、瀏覽器一樣。</string>
+    <string name="nm_hands_rule_stop">「停止」一直在螢幕上，點了就不會再動。</string>
+    <string name="nm_hands_rule_screenshots">每一步的截圖隨對話保存，只傳給你自己的模型。</string>
+    <!-- the capsule -->
+    <string name="nm_hands_step">第 %1$d 步</string>
+    <string name="nm_hands_looking">正在看螢幕…</string>
+    <string name="nm_hands_stop">停止</string>
+    <string name="nm_hands_continue">繼續</string>
+    <string name="nm_hands_open">打開</string>
+    <string name="nm_hands_your_turn">輪到你了</string>
+    <string name="nm_hands_your_turn_detail">這一步請你自己完成，然後點「繼續」。</string>
+    <string name="nm_hands_protected_screen">這個頁面受保護，讀不到內容。請你自己完成這一步，然後點「繼續」。</string>
+    <string name="nm_hands_secret_field">這是密碼或驗證碼輸入框，請你自己填好，然後點「繼續」。</string>
+    <string name="nm_hands_approval_title">等你確認</string>
+    <string name="nm_hands_approval_detail">要點「%1$s」——請在 nanoMuse 裡或通知中回答。</string>
+    <!-- the approval card -->
+    <string name="nm_risk_desc_screen">%1$s 想在%3$s裡點「%2$s」。</string>
+    <string name="nm_risk_preview_screen">螢幕上</string>
 </resources>

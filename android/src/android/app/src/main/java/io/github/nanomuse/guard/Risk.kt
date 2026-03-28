@@ -18,7 +18,12 @@ enum class RiskClass {
 }
 
 /** Where a request came from; the card words itself differently for each. */
-enum class GuardKind { SHELL, BROWSER }
+enum class GuardKind {
+    SHELL,
+    BROWSER,
+    /** A tap on the phone's own screen, by the hands (0.1.12). [RiskRequest.pageUrl] carries the app. */
+    SCREEN,
+}
 
 /**
  * The verdict on one call. [target] is the object a standing grant would be bound to — a

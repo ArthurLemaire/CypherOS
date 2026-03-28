@@ -175,7 +175,13 @@ private fun Preview(request: RiskRequest) {
             .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
         Text(
-            stringResource(if (request.kind == GuardKind.SHELL) R.string.nm_risk_preview_shell else R.string.nm_risk_preview_browser),
+            stringResource(
+                when (request.kind) {
+                    GuardKind.SHELL -> R.string.nm_risk_preview_shell
+                    GuardKind.BROWSER -> R.string.nm_risk_preview_browser
+                    GuardKind.SCREEN -> R.string.nm_risk_preview_screen
+                },
+            ),
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium,
             color = ChatColors.secondaryText,
