@@ -498,7 +498,8 @@ def test_skills_off(settings: Settings):
 def test_skills_cli(settings: Settings, tmp_path: Path):
     cfg = tmp_path / "config.toml"
     cfg.write_text(
-        f'data_dir = "{settings.data_dir}"\n[agent]\nworkspace = "{settings.agent.workspace}"\n'
+        f'data_dir = "{settings.data_dir.as_posix()}"\n'
+        f'[agent]\nworkspace = "{settings.agent.workspace.as_posix()}"\n'
         '[llm]\napi_key = "test"\n'
     )
     runner = CliRunner()

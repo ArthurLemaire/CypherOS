@@ -262,7 +262,7 @@ async def test_calendar_tool(tmp_path: Path):
         notes="bring the card",
     )
     assert result.ok and "calendar/2026-10-03-dentist.ics" in result.output
-    [ev] = parse_ics((ws / "calendar" / "2026-10-03-dentist.ics").read_text(), TZ)
+    [ev] = parse_ics((ws / "calendar" / "2026-10-03-dentist.ics").read_text(encoding="utf-8"), TZ)
     assert (
         ev.summary == "Dentist"
         and ev.duration == timedelta(minutes=45)
@@ -271,7 +271,7 @@ async def test_calendar_tool(tmp_path: Path):
 
     result = await tool.execute(action="draft", title="Trip", start="2026-10-01", end="2026-10-03")
     assert result.ok
-    [ev] = parse_ics((ws / "calendar" / "2026-10-01-trip.ics").read_text(), TZ)
+    [ev] = parse_ics((ws / "calendar" / "2026-10-01-trip.ics").read_text(encoding="utf-8"), TZ)
     assert ev.all_day and ev.duration == timedelta(days=3), "an all-day range is inclusive"
 
     # a model that HTML-escapes its arguments does not put "&amp;" on the calendar
@@ -279,7 +279,9 @@ async def test_calendar_tool(tmp_path: Path):
         action="draft", title="1:1 — Alex &amp; Alice", start="2026-10-04 14:00", location="3&#39;F"
     )
     assert result.ok and "Alex & Alice" in result.output
-    [ev] = parse_ics((ws / "calendar" / "2026-10-04-1-1-alex-alice.ics").read_text(), TZ)
+    [ev] = parse_ics(
+        (ws / "calendar" / "2026-10-04-1-1-alex-alice.ics").read_text(encoding="utf-8"), TZ
+    )
     assert ev.summary == "1:1 — Alex & Alice" and ev.location == "3'F"
 
     assert (await tool.execute(action="draft", title="", start="2026-10-01")).error

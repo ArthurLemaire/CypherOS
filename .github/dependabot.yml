@@ -1,11 +1,11 @@
-# Dependency updates, batched so they do not flood the PR list: one PR per ecosystem.
+# Dependency updates, batched so they do not flood the PR list: one PR per ecosystem, once a
+# month, merged when the checks are green (CONTRIBUTING.md, "Commits and pull requests").
 version: 2
 updates:
   - package-ecosystem: pip
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
     groups:
       python:
         patterns: ["*"]
@@ -14,8 +14,7 @@ updates:
   - package-ecosystem: npm
     directory: /web
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
     groups:
       web:
         patterns: ["*"]

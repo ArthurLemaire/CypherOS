@@ -69,6 +69,10 @@ Guidelines that still apply there: everything that acts goes through the Sentine
 - [Conventional Commits](https://www.conventionalcommits.org) prefixes are welcome but not required; the first line says what changed and why in plain words.
 - One pull request, one topic. Screenshots for anything visible in the app.
 - Say which device and Android version you tested on. Phone-side features are tested on real hardware; the emulator is x86_64 and cannot run the arm64 APK.
+- `main` is protected. Code lands through a pull request, and the merge waits for four checks: the Python line on Ubuntu / Python 3.12, the web app build, the Android debug APK, and the DCO sign-off. Each workflow first works out which tree the change touched and skips the jobs that do not apply, so a docs-only pull request is not held up by a build it never needed. The rest of the matrix (other Python versions, macOS, Windows) runs and shows up, but does not gate the merge; Windows is not a supported platform yet and cannot fail the build.
+- Merges are **rebase** or **merge commit**, never squash: the `Signed-off-by` on each commit is the record, and squashing would drop it. A merge commit is also what `git subtree pull` needs for the `android/` tree.
+- Maintainers work the same way: one branch and one pull request per version (`0.1.12`, `0.1.13`, …), merged when green, tagged and released from `main`. Documentation and copy — READMEs, `docs/`, release notes — may go straight to `main`.
+- Dependabot opens its pull requests once a month, grouped; they are merged when the checks are green, and a bump that changes the committed web bundle gets its rebuild right after.
 
 ## Releasing (maintainers)
 

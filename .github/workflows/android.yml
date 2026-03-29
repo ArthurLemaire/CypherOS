@@ -7,19 +7,7 @@ name: Android
 on:
   push:
     branches: [main]
-    paths:
-      - "android/**"
-      - "scripts/android/**"
-      - "scripts/rebrand.py"
-      - "scripts/gen-android-icons.py"
-      - ".github/workflows/android.yml"
   pull_request:
-    paths:
-      - "android/**"
-      - "scripts/android/**"
-      - "scripts/rebrand.py"
-      - "scripts/gen-android-icons.py"
-      - ".github/workflows/android.yml"
   workflow_dispatch:
 
 concurrency:
@@ -28,13 +16,37 @@ concurrency:
 
 permissions:
   contents: read
+  pull-requests: read
 
 env:
   NDK_VERSION: 27.2.12479018
 
 jobs:
+  # The path filter is a job, not `on.push.paths`, so the build is reported as skipped rather
+  # than absent when the Android tree is untouched: branch protection requires this check,
+  # and a check that never reports would block every docs-only pull request.
+  changes:
+    name: what changed
+    runs-on: ubuntu-latest
+    outputs:
+      android: ${{ steps.filter.outputs.android }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            android:
+              - "android/**"
+              - "scripts/android/**"
+              - "scripts/rebrand.py"
+              - "scripts/gen-android-icons.py"
+              - ".github/workflows/android.yml"
+
   debug-apk:
     name: debug APK · arm64-v8a
+    needs: changes
+    if: needs.changes.outputs.android == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     steps:
