@@ -289,7 +289,7 @@
     <string name="settings_feedback_telegram">意見回饋（Telegram）</string>
     <string name="settings_feedback_email">意見回饋（電子郵件）</string>
     <string name="about_title">關於</string>
-    <string name="about_minis_tagline">一個完全開源、Muse 形狀的個人智慧體，面向你的所有裝置。今天在這支手機上：一切都在本機執行，模型由你自己帶。</string>
+    <string name="about_minis_tagline">一個完全開源、Muse 風格的個人智慧體，面向你的所有裝置。目前在這支手機上：一切都在本機執行，模型由你自己帶。</string>
     <string name="about_links">連結</string>
     <string name="about_github_repository">GitHub 儲存庫</string>
     <string name="about_version_format">版本 %1$s（%2$s）</string>
