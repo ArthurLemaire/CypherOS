@@ -4,8 +4,8 @@ Use nanoMuse for a real task, report what broke, then pick something focused. Is
 
 ## Two trees
 
-- **`android/`** — the app. A modified copy of [OpenMinis](https://github.com/OpenMinis/OpenMinis) 1.13 imported with `git subtree` (GPL-3.0). This is where the work happens now; see [docs/roadmap.md](docs/roadmap.md) for the six versions of Phase 1.
-- **`nanomuse/`, `web/`, `demo/`, `site/`** — the Python line (agent, Sentinel, web app, showcase). Frozen at tag `pre-openminis`; kept as the base of the web and desktop phases. Fixes are welcome, features wait.
+- **`android/`** — the app. A modified copy of [OpenMinis](https://github.com/OpenMinis/OpenMinis) 1.13 imported with `git subtree` (GPL-3.0). This is where the work happens now; see [docs/roadmap.md](docs/roadmap.md) for what defines the project and which version brings what.
+- **`nanomuse/`, `web/`, `demo/`, `site/`** — the Python line (agent, Sentinel, web app, showcase). Frozen at tag `pre-openminis`; kept as the base of the desktop and web front doors and as the design record for the screen as a hand. Fixes are welcome, features wait.
 
 ## Licence and sign-off
 

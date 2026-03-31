@@ -328,7 +328,7 @@
     <string name="settings_feedback_telegram">Feedback (Telegram)</string>
     <string name="settings_feedback_email">Feedback (Email)</string>
     <string name="about_title">About</string>
-    <string name="about_minis_tagline">nanoMuse is Your Fully Local, Fully Private On-Device Agent.</string>
+    <string name="about_minis_tagline">A fully open-source personal agent in the shape of Meta Muse, for every device you own. On this phone today; everything runs here, with your own model.</string>
     <string name="about_links">Links</string>
     <string name="about_github_repository">GitHub Repository</string>
     <string name="about_version_format">Version %1$s (%2$s)</string>
