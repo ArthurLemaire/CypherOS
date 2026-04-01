@@ -133,7 +133,7 @@ fun MediaModelsScreen(
                 ModelField(
                     value = imageModel,
                     quick = (quick + listOfNotNull(inst?.let { ImageGen.suggestedModel(context, it) }.takeIf { !it.isNullOrBlank() })).distinct(),
-                    placeholder = "qwen-image-3.0 · gpt-image-1 · …",
+                    placeholder = "qwen-image-3.0-pro · gpt-image-1 · …",
                     onChange = { imageModel = it; imageInstance?.let { id -> ImageGen.save(context, id, it) } },
                 )
             }

@@ -19,10 +19,13 @@ import io.github.nanomuse.avatar.ImageGen
  *  - the **video model** — the animated avatar and short clips the user asks for ([VideoGen];
  *    Model Studio's asynchronous video API, MiniMax-H3 by default).
  *
- * The image model is picked automatically from the first eligible provider so an avatar change
- * works out of the box; the video model is opt-in, since a clip costs real money and takes
- * minutes. [promptParagraph] tells the agent what is and is not set, so it can explain and point
- * at the setting instead of pretending.
+ * The recommended setup is one Model Studio key for all three — chat, qwen-image-3.0-pro,
+ * MiniMax-H3 — but each model is chosen on its own, so any part can come from a different
+ * provider. The image model is picked automatically from the first eligible provider so an
+ * avatar change works out of the box; the video model follows the image provider when that one
+ * is Model Studio, and can be switched off or moved to another Model Studio provider.
+ * [promptParagraph] tells the agent what is and is not set, so it can explain and point at the
+ * setting instead of pretending.
  */
 object MediaModels {
     private const val PREFS = "nanomuse"
@@ -50,23 +53,37 @@ object MediaModels {
         }
     }
 
-    /** The chosen video model, or null when none is set (the avatar then stays still). */
+    /** Stored instance id meaning "the user switched the video model off". */
+    private const val VIDEO_OFF = ""
+
+    /**
+     * The video model, or null when there is none. Unset, it follows the image model's provider
+     * when that provider is Model Studio (one key covers all three), so a Model Studio user gets
+     * a moving avatar without a visit here; the user can still choose another Model Studio
+     * provider or switch it off.
+     */
     fun videoEndpoint(context: Context): VideoGen.Endpoint? {
         val app = context.applicationContext as? MinisApp ?: return null
         val repo = app.providerRepositoryOrNull ?: return null
         val p = prefs(context)
-        val id = p.getString(KEY_VIDEO_INSTANCE, null) ?: return null
-        val inst = eligibleVideoInstances(context).firstOrNull { it.id == id } ?: return null
+        val eligible = eligibleVideoInstances(context)
+        val saved = p.getString(KEY_VIDEO_INSTANCE, null)
+        val inst = when (saved) {
+            VIDEO_OFF -> return null
+            null -> ImageGen.endpoint(context)?.instanceId?.let { id -> eligible.firstOrNull { it.id == id } }
+            else -> eligible.firstOrNull { it.id == saved }
+        } ?: return null
         val model = p.getString(KEY_VIDEO_MODEL, null)?.takeIf { it.isNotBlank() } ?: DEFAULT_VIDEO_MODEL
         val key = repo.usableApiKey(inst) ?: return null
         return VideoGen.Endpoint(inst, key, model)
     }
 
+    /** [instanceId] null switches the video model off; it is remembered, unlike "never chosen". */
     fun saveVideo(context: Context, instanceId: String?, model: String) {
-        prefs(context).edit().apply {
-            if (instanceId == null) remove(KEY_VIDEO_INSTANCE) else putString(KEY_VIDEO_INSTANCE, instanceId)
-            putString(KEY_VIDEO_MODEL, model.trim())
-        }.apply()
+        prefs(context).edit()
+            .putString(KEY_VIDEO_INSTANCE, instanceId ?: VIDEO_OFF)
+            .putString(KEY_VIDEO_MODEL, model.trim())
+            .apply()
     }
 
     /** Whether a new face is animated after its poses (four short clips through the video model). */
@@ -100,7 +117,7 @@ object MediaModels {
             append("- Avatar changes are handled by the app itself when the user writes \"change your avatar to ...\"; you only need to explain when it cannot work.\n")
             if (image == null) {
                 append("- No image model is set: if the user asks to change your avatar or for a picture, say plainly that this needs an image model on one of their providers ")
-                append("(Alibaba Cloud Model Studio: qwen-image-3.0; any OpenAI-compatible provider with an images endpoint), and give the link [Image & video models](")
+                append("(Alibaba Cloud Model Studio: qwen-image-3.0-pro; any OpenAI-compatible provider with an images endpoint), and give the link [Image & video models](")
                 append(DEEP_LINK).append(") — it opens the setting. Never pretend to have drawn something.\n")
             }
             if (video == null) {
@@ -114,7 +131,7 @@ object MediaModels {
     fun missingImageAddendum(): String =
         "The user just asked you to change your avatar, but no image model is configured, so the app could not start the change. " +
             "Answer in the user's language: say that changing your look needs an image model on one of their providers " +
-            "(for example qwen-image-3.0 on Alibaba Cloud Model Studio, or any OpenAI-compatible provider with an images endpoint), " +
+            "(for example qwen-image-3.0-pro on Alibaba Cloud Model Studio, or any OpenAI-compatible provider with an images endpoint), " +
             "that unlike Muse this is something they set up themselves, and give the link [Image & video models]($DEEP_LINK) to open the setting. " +
             "Keep it to a few sentences and do not describe or invent a new look."
 }

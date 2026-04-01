@@ -2,6 +2,27 @@
 
 All notable changes to nanoMuse. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/). Unreleased changes are on `main`.
 
+## [0.1.11] - 2026-09-25 · Hatch
+
+A face of its own, and a first conversation the model runs. The bundled default avatar is now a small pale-yellow dragon — drawn with qwen-image-3.0-pro, posed for the five states with the same model, and shipped with four looping clips from MiniMax-H3, so a fresh install moves the way a custom face does. The first conversation no longer reads the user's reply with regular expressions: the chat model decides what "what should I call you?" was answered with, keeps the thread when the answer is something else, and proposes the agent's own names in the user's language. The image-and-video settings recommend one Alibaba Cloud Model Studio key for all three models while keeping a different provider per model possible.
+
+### Added
+
+- **The built-in dragon** (`res/drawable-nodpi/nm_avatar_{idle,working,waiting,happy,error}.webp`, 1024², ~170 KB together; `res/raw/nm_motion_{idle,working,waiting,happy}.mp4`, 768², 4 s, ~1 MB together). `AgentMood` carries the still and the clip for each state; the header, the studio preview and the notification icon use them, and the built-in face fills the disc like a custom one. The vector red panda is gone. `docs/avatar-moods.png` and the screenshots in `docs/screenshots/` are redrawn with the dragon.
+- **Model-driven naming** (`io.github.nanomuse.onboarding.FirstConversation`, `nanomuse-naming`). While the first conversation waits for the form of address, the system prompt asks the model to decide what the user meant: an address → confirm it, ask what to call the agent and end with a `nanomuse-naming` block (`user_address`, two `suggest`ions); "nothing in particular" → the same with `null`; anything else → help with it first and bring the question back, no block. While the chooser is up, a name typed, "call you 豆丁" or "the first one" is reported as `agent_name` in the same block; other messages are answered and the chooser stays. The block is parsed in `nmAfterTurn` and rendered as nothing; the address goes to MEMORY, the name to SOUL.md; the phase is kept across restarts. Suggestions come from the model — two-character Chinese names in the spirit of 豆丁 or 小满 when the user writes Chinese, short English names like Pip or Wren otherwise — and never an existing assistant's name (Siri, Alexa, Cortana, Jarvis, Muse, Gemini, Copilot, 小爱, 小度, 小艺, 天猫精灵, 豆包, 文心, 通义, 阿福); the built-in fallback pools follow the same rule (豆丁, 小满, 团团, 叮叮, …; Pip, Wren, Juno, Remy, …). `FirstConversationTest` (6 tests).
+- **One key for three models.** The *Image & video models* intro and the welcome screen's provider step say it plainly: one Model Studio key covers the chat model, `qwen-image-3.0-pro` and `MiniMax/MiniMax-H3`; each model is still chosen on its own, so any of them can come from another provider on another key. The video model follows the image model's provider when that provider is on Model Studio and nothing else was chosen; *No video model* is remembered as a choice. The image footer explains that qwen-image-3.0-pro both draws and poses. The avatar announcement mentions the clips being made when a video model is set.
+
+### Changed
+
+- `ImageGen.suggestedModel` for Model Studio is `qwen-image-3.0-pro`; `editDashScope` calls the 3.x models with their own parameters (`size`, `prompt_extend`, `watermark`) and keeps `qwen-image-edit-max` for older ones.
+- `MediaModels.imageEndpoint` only reports an endpoint with a model name, so the model-driven explanation runs instead of the fixed fallback when the name is blank.
+- The media page's status rows read `model · provider`; *Back to the built-in face* replaces *Back to the red panda*; the default description in the studio describes the dragon.
+- versionCode 12; installs over 0.1.10 without losing data.
+
+### Removed
+
+- `FirstConversation.extractAddress`, `extractAgentName`, `interceptWhileChoosing`, `onUserNameReply`, `ChatViewModel.nmBeforeSend` — the heuristics the block replaces.
+
 ## [0.1.10] - 2026-09-25 · Motion
 
 The face moves, and the three models are named. Muse has its image and video models built in; nanoMuse runs on three of your own — the chat model, an image model, a video model — and now says so in one place, in the settings and in the conversation. With a video model set, the avatar gets a short looping clip for each state: a head shake at rest, a crystal ball while it waits for you, a star when pleased, a laptop while it works. The agent can also make pictures and short clips on request through the same two models, and when one is missing it explains what to set up instead of pretending.

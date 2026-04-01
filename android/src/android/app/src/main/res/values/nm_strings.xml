@@ -28,14 +28,14 @@
     <string name="nm_naming_custom">Something else…</string>
     <string name="nm_naming_placeholder">Write a name here</string>
     <string-array name="nm_name_suggestions">
-        <item>Hana</item>
-        <item>Spark</item>
-        <item>Nova</item>
-        <item>Milo</item>
         <item>Pip</item>
-        <item>Sage</item>
+        <item>Wren</item>
         <item>Juno</item>
         <item>Remy</item>
+        <item>Tilly</item>
+        <item>Milo</item>
+        <item>Sol</item>
+        <item>Fig</item>
     </string-array>
 
     <!-- Home: the four tabs (Muse's shape) -->
@@ -287,7 +287,7 @@
     <string name="nm_avatar_menu_soul">Name and style</string>
     <string name="nm_avatar_menu_model">Image model</string>
     <string name="nm_avatar_menu_regenerate_moods">Redraw the moods</string>
-    <string name="nm_avatar_menu_reset">Back to the red panda</string>
+    <string name="nm_avatar_menu_reset">Back to the built-in face</string>
     <string name="nm_avatar_mood_idle">At rest</string>
     <string name="nm_avatar_mood_working">Working</string>
     <string name="nm_avatar_mood_waiting">Waiting for you</string>
@@ -299,7 +299,7 @@
     <string name="nm_avatar_retry">Retry</string>
     <string name="nm_avatar_describe_title">Describe a new face</string>
     <string name="nm_avatar_describe_body">One sentence is enough: what it is, what it wears, what it feels like. Pick a style, and your image model draws four to choose from.</string>
-    <string name="nm_avatar_default_description">A round, friendly red panda with a small scarf</string>
+    <string name="nm_avatar_default_description">A chubby pale-yellow baby dragon with tiny orange horns and small folded wings</string>
     <string name="nm_avatar_style_flat">Flat</string>
     <string name="nm_avatar_style_clay">3D clay</string>
     <string name="nm_avatar_style_watercolor">Watercolour</string>
@@ -325,7 +325,7 @@
     <string name="nm_setup_title">Welcome to nanoMuse</string>
     <string name="nm_setup_subtitle">Bring your own model. Three steps, and it lives on your phone.</string>
     <string name="nm_setup_step_provider">Add a model provider</string>
-    <string name="nm_setup_step_provider_sub">An API key, or sign in with an account</string>
+    <string name="nm_setup_step_provider_sub">An API key, or sign in with an account. One Alibaba Cloud Model Studio key also covers the avatar\'s pictures and video</string>
     <string name="nm_setup_step_models">Choose models</string>
     <string name="nm_setup_step_models_sub">The models your provider serves are listed for you; pick up to three</string>
     <string name="nm_setup_step_models_locked">After step 1</string>
@@ -409,17 +409,17 @@
     <string name="nm_avatar_share_tagline">Your personal AI agent, open source · github.com/nano-muse/nanoMuse</string>
     <!-- 0.1.10 · Motion -->
     <string name="nm_media_title">Image &amp; video models</string>
-    <string name="nm_media_intro">Muse has its image and video models built in. nanoMuse runs on three models you set up yourself: the chat model you talk to, an image model that draws the avatar and pictures you ask for, and a video model that makes the avatar move and short clips. Each is one of your own providers, on your own key.</string>
+    <string name="nm_media_intro">Muse has its image and video models built in. nanoMuse runs on three models you set up yourself: the chat model you talk to, an image model that draws the avatar and pictures you ask for, and a video model that makes the avatar move and short clips. Simplest: one Alibaba Cloud Model Studio key covers all three — a Qwen chat model, qwen-image-3.0-pro and MiniMax-H3. Each model is chosen on its own, so any of them can come from a different provider, on its own key.</string>
     <string name="nm_media_section_chat">Chat model</string>
     <string name="nm_media_chat_footer">The default model group. Every conversation, the feed and the daily routines run on it.</string>
     <string name="nm_media_section_image">Image model</string>
-    <string name="nm_media_image_footer">Avatar changes, the four candidates and the poses, and any picture you ask for in the chat. Alibaba Cloud Model Studio: qwen-image-3.0 (edits via qwen-image-edit-max). OpenAI: gpt-image-1. Any provider with the OpenAI images endpoint works.</string>
+    <string name="nm_media_image_footer">Avatar changes, the four candidates and the poses, and any picture you ask for in the chat. Alibaba Cloud Model Studio: qwen-image-3.0-pro (draws and poses). OpenAI: gpt-image-1. Any provider with the OpenAI images endpoint works.</string>
     <string name="nm_media_image_none">None of your providers can draw. Add an OpenAI-compatible provider (Alibaba Cloud Model Studio, OpenAI, xAI, OpenRouter or a custom base URL) with an API key; the avatar is drawn with your own key.</string>
     <string name="nm_media_image_off">Until one is set, the avatar cannot be changed and no pictures can be drawn. The agent will say so if you ask.</string>
     <string name="nm_media_need_model">Type a model name below</string>
     <string name="nm_media_section_video">Video model</string>
     <string name="nm_media_video_footer">Makes the avatar move — a short looping clip for each state — and any clip you ask for. Alibaba Cloud Model Studio: MiniMax/MiniMax-H3, which you activate once on the model\'s card in the Model Studio console. Billed per second of video; an avatar takes four clips of a few seconds.</string>
-    <string name="nm_media_video_none">No provider on Alibaba Cloud Model Studio yet — that is the video API nanoMuse speaks. The avatar stays as still pictures until one is added.</string>
+    <string name="nm_media_video_none">No provider on Alibaba Cloud Model Studio yet — that is the video API nanoMuse speaks. Add one (it can be the same key as the image model) and the avatar starts moving; until then it stays as still pictures.</string>
     <string name="nm_media_video_off">Optional. Without one, the avatar stays still and no clips can be made.</string>
     <string name="nm_media_video_off_option">No video model</string>
     <string name="nm_media_not_set">Not set</string>
@@ -433,4 +433,5 @@
     <string name="nm_media_clips_redo">Redo</string>
     <string name="nm_media_clips_running">Drawing…</string>
     <string name="nm_avatar_status_animating">Animating %1$d/%2$d…</string>
+    <string name="nm_avatar_clips_coming">I\'ll also make four short clips so I can move — a few minutes in the background, through your video model.</string>
 </resources>

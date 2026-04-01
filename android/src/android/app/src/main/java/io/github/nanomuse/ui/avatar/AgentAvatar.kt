@@ -1,6 +1,7 @@
 package io.github.nanomuse.ui.avatar
 
 import androidx.annotation.DrawableRes
+import androidx.annotation.RawRes
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -41,13 +42,18 @@ import com.openminis.app.service.ToolOutcome
 import io.github.nanomuse.avatar.AvatarStore
 import kotlinx.coroutines.delay
 
-/** What the face is doing. One built-in drawable per mood (scripts/gen-avatar.py); a custom face has a picture per mood when the image model could pose it. */
-enum class AgentMood(@DrawableRes val drawable: Int) {
-    IDLE(R.drawable.nm_avatar_idle),
-    WORKING(R.drawable.nm_avatar_working),
-    WAITING(R.drawable.nm_avatar_waiting),
-    HAPPY(R.drawable.nm_avatar_happy),
-    ERROR(R.drawable.nm_avatar_error),
+/**
+ * What the face is doing. The built-in character — a small pale-yellow dragon, drawn and posed
+ * with qwen-image-3.0-pro and animated with MiniMax-H3, the same way a user's own face is —
+ * has a still per mood and a 4-second looping clip for the four moods that last long enough
+ * to move; a custom face has a picture per mood when the image model could pose it.
+ */
+enum class AgentMood(@DrawableRes val drawable: Int, @RawRes val motion: Int?) {
+    IDLE(R.drawable.nm_avatar_idle, R.raw.nm_motion_idle),
+    WORKING(R.drawable.nm_avatar_working, R.raw.nm_motion_working),
+    WAITING(R.drawable.nm_avatar_waiting, R.raw.nm_motion_waiting),
+    HAPPY(R.drawable.nm_avatar_happy, R.raw.nm_motion_happy),
+    ERROR(R.drawable.nm_avatar_error, null),
 }
 
 private const val HAPPY_AFTERGLOW_MS = 3_000L
@@ -112,7 +118,7 @@ fun rememberAgentMood(isStreaming: Boolean, error: String?): AgentMood {
 }
 
 /**
- * The face at [size]: the built-in red panda, or the user's own picture set from Settings →
+ * The face at [size]: the built-in dragon, or the user's own picture set from Settings →
  * Appearance. It cross-fades between moods and moves the way Muse's does — a slow breath at
  * rest, a busy bob while working, a curious tilt while waiting, a pop when it is pleased and a
  * quick shake when something failed. Tapping it opens the appearance page.
@@ -211,22 +217,33 @@ fun AgentAvatar(
             val clip = clips[current]
             if (clip != null) {
                 androidx.compose.runtime.key(clip.path) {
-                    LoopingClip(file = clip, modifier = Modifier.size(size))
+                    LoopingClip(key = clip.path, modifier = Modifier.size(size)) { it.setDataSource(clip.path) }
                 }
             }
         } else {
             Image(
                 painter = painterResource(current.drawable),
                 contentDescription = contentDescription,
+                contentScale = ContentScale.Crop,
                 modifier = Modifier.size(size),
             )
+            // The built-in character ships with its clips, so it moves without a video model.
+            val res = current.motion
+            if (res != null) {
+                val context = androidx.compose.ui.platform.LocalContext.current
+                androidx.compose.runtime.key(res) {
+                    LoopingClip(key = "raw:$res", modifier = Modifier.size(size)) { player ->
+                        context.resources.openRawResourceFd(res).use { fd -> player.setDataSource(fd.fileDescriptor, fd.startOffset, fd.length) }
+                    }
+                }
+            }
         }
     }
 }
 
 /**
- * The face on its pale disc, the way both headers show it. The built-in red panda sits inside
- * the disc with a margin; a generated picture brings its own background and fills it.
+ * The face on its pale disc, the way both headers show it. Every face — the built-in dragon
+ * too — brings its own white background and fills the disc.
  */
 @Composable
 fun AgentAvatarDisc(
@@ -236,7 +253,6 @@ fun AgentAvatarDisc(
     contentDescription: String? = null,
     onClick: (() -> Unit)? = null,
 ) {
-    val custom by AvatarStore.current.collectAsState()
     androidx.compose.foundation.layout.Box(
         modifier = modifier
             .size(discSize)
@@ -246,7 +262,7 @@ fun AgentAvatarDisc(
     ) {
         AgentAvatar(
             mood = mood,
-            size = if (custom != null) discSize else discSize * 0.86f,
+            size = discSize,
             contentDescription = contentDescription,
             onClick = onClick,
         )
@@ -259,11 +275,11 @@ fun AgentAvatarDisc(
  * frame renders, paused while the app is in the background, released with the surface.
  */
 @Composable
-private fun LoopingClip(file: java.io.File, modifier: Modifier = Modifier) {
-    var ready by remember(file.path) { mutableStateOf(false) }
-    val player = remember(file.path) { android.media.MediaPlayer() }
+private fun LoopingClip(key: String, modifier: Modifier = Modifier, open: (android.media.MediaPlayer) -> Unit) {
+    var ready by remember(key) { mutableStateOf(false) }
+    val player = remember(key) { android.media.MediaPlayer() }
     val lifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current.lifecycle
-    androidx.compose.runtime.DisposableEffect(file.path) {
+    androidx.compose.runtime.DisposableEffect(key) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             runCatching {
                 when (event) {
@@ -287,7 +303,7 @@ private fun LoopingClip(file: java.io.File, modifier: Modifier = Modifier) {
                     override fun onSurfaceTextureAvailable(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {
                         runCatching {
                             player.reset()
-                            player.setDataSource(file.path)
+                            open(player)
                             player.setSurface(android.view.Surface(surface))
                             player.isLooping = true
                             player.setVolume(0f, 0f)

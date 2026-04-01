@@ -31,7 +31,7 @@ import java.util.concurrent.TimeUnit
  * model entries OpenMinis' `model-use` CLI drives. Generation and OpenAI-style edits go through
  * [OpenAIProvider.generateImage] / [OpenAIProvider.editImage] (Azure paths, header overrides and
  * the `response_format` retry included). Alibaba Model Studio has no `images/edits`; there the
- * moods are posed through DashScope's native multimodal endpoint with a `qwen-image-edit-*`
+ * moods are posed through DashScope's native multimodal endpoint with the same qwen-image-3.x (or a `qwen-image-edit-*`)
  * model on the same host and key.
  */
 object ImageGen {
@@ -87,7 +87,7 @@ object ImageGen {
         imageEntries(context, instance).firstOrNull()?.let { return it.model.id }
         val base = baseUrlOf(instance)
         return when {
-            base.contains("aliyuncs.com") || base.contains("dashscope") -> "qwen-image-3.0"
+            base.contains("aliyuncs.com") || base.contains("dashscope") -> "qwen-image-3.0-pro"
             base.contains("api.openai.com") -> "gpt-image-1"
             base.contains("api.x.ai") -> "grok-2-image"
             base.contains("openrouter.ai") -> "google/gemini-2.5-flash-image"
@@ -170,14 +170,19 @@ object ImageGen {
     /** DashScope image editing: same host and key, native path, data-URI input. */
     private fun editDashScope(ep: Endpoint, image: Bitmap, instruction: String): Bitmap {
         val host = ep.baseUrl.substringBefore("/compatible-mode").substringBefore("/api/v1").trimEnd('/')
-        val model = if (ep.model.contains("edit")) ep.model else "qwen-image-edit-max"
+        // qwen-image-3.x and the qwen-image-edit-* models take a picture themselves; an older
+        // text-only qwen-image is posed by qwen-image-edit-max on the same key.
+        val threeX = ep.model.startsWith("qwen-image-3")
+        val model = if (threeX || ep.model.contains("edit")) ep.model else "qwen-image-edit-max"
+        val parameters = if (threeX) JSONObject().put("size", "1024*1024").put("prompt_extend", false).put("watermark", false)
+        else JSONObject().put("n", 1).put("watermark", false)
         val content = JSONArray()
             .put(JSONObject().put("image", "data:image/png;base64," + Base64.encodeToString(pngBytes(image), Base64.NO_WRAP)))
             .put(JSONObject().put("text", instruction))
         val body = JSONObject()
             .put("model", model)
             .put("input", JSONObject().put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", content))))
-            .put("parameters", JSONObject().put("n", 1).put("watermark", false))
+            .put("parameters", parameters)
         val req = Request.Builder()
             .url("$host/api/v1/services/aigc/multimodal-generation/generation")
             .header("Authorization", "Bearer ${ep.apiKey}")

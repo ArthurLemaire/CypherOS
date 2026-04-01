@@ -17,7 +17,7 @@ import java.io.FileOutputStream
  * The user's own face for the agent: one chosen picture plus, when the image model could make
  * them, one picture per mood. Everything lives under `minis-global/nanomuse/avatar/` as PNGs so
  * it survives updates and can be backed up like the rest of the app's files. Null means the
- * built-in red panda.
+ * built-in dragon.
  */
 data class AvatarSet(
     val base: ImageBitmap,
@@ -83,7 +83,7 @@ object AvatarStore {
         reload()
     }
 
-    /** Back to the red panda. Candidates are kept so the user can pick again without paying. */
+    /** Back to the built-in dragon. Candidates are kept so the user can pick again without paying. */
     fun reset() {
         AvatarMotion.clear()
         baseFile().delete()
