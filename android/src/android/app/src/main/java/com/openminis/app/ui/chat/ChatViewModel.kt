@@ -6369,6 +6369,12 @@ class ChatViewModel(
             }
         }
         val desc = flow.parseRequest(text) ?: return false
+        // Without an image model the request goes to the chat model as usual, with a one-turn
+        // note so the agent itself explains what is missing and links the setting.
+        if (io.github.nanomuse.media.MediaModels.imageEndpoint(context) == null) {
+            io.github.nanomuse.chat.SessionAddenda.add(sid, "nm-media-missing", io.github.nanomuse.media.MediaModels.missingImageAddendum(), turns = 1)
+            return false
+        }
         val referenceUri = _attachments.value.firstOrNull { it.isImage }?.uri
         _attachments.value = emptyList()
         // The first conversation's "what should I call you?" is not answered by this.
@@ -10566,6 +10572,8 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
             }
             // nanoMuse: how approvals work here.
             append("\n\n").append(io.github.nanomuse.guard.RiskPolicy.promptParagraph())
+            // nanoMuse: the three models (chat / image / video) and what is not set.
+            append("\n\n").append(io.github.nanomuse.media.MediaModels.promptParagraph(context))
             // nanoMuse: turn-limited addenda for this session (goal creation).
             io.github.nanomuse.chat.SessionAddenda.forPrompt(realSessionId.ifEmpty { sessionId })
                 ?.let { append("\n\n").append(it) }

@@ -44,12 +44,16 @@ fun rememberNanoMuseStatusLine(isStreaming: Boolean, mood: AgentMood): String? {
         is io.github.nanomuse.avatar.AvatarFlow.Stage.Finalizing -> stringResource(R.string.nm_avatar_status_finalizing)
         io.github.nanomuse.avatar.AvatarFlow.Stage.Idle -> null
     }
+    // The clips, after the poses: "Animating 2/4" until the video model is through.
+    val motion by io.github.nanomuse.avatar.AvatarMotion.progress.collectAsState()
+    val motionStatus = motion?.takeIf { it.running }?.let { stringResource(R.string.nm_avatar_status_animating, it.done + 1, it.total) }
     return when {
         mood == AgentMood.WAITING && pendingRisk != null -> stringResource(R.string.nm_risk_needs_approval)
         mood == AgentMood.WAITING -> stringResource(R.string.nm_status_waiting)
         avatarStatus != null -> avatarStatus
         isStreaming && toolRunning && !toolTitle.isNullOrBlank() -> toolTitle
         isStreaming -> stringResource(R.string.nm_status_thinking)
+        motionStatus != null -> motionStatus
         else -> null
     }
 }

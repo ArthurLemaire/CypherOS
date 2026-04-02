@@ -545,6 +545,8 @@ class MinisApp : Application(), ImageLoaderFactory {
         // T323: UI-layer automation backed by MinisAccessibilityService.
         NativeOffloadServer.register("android-a11y-cli", AccessibilityOffloadHandler(this))
         NativeOffloadServer.register("minis-model-use", ModelUseOffloadHandler(this, providerRepository))
+        // nanoMuse: nanomuse-media — pictures and clips through the user's image / video models.
+        NativeOffloadServer.register("nanomuse-media", io.github.nanomuse.media.MediaOffloadHandler(this))
         // T-config: minis-config — agent-facing settings management
         // (read/write registered ConfigFields with audit + revert).
         // Mirrors iOS `config_offload_register()` in ISHKernel.m.
