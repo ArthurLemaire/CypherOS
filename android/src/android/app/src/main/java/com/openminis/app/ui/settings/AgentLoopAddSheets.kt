@@ -86,7 +86,7 @@ fun AddAgentLoopModelsScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            io.github.nanomuse.ui.muse.MuseTopAppBar( // nanoMuse: Muse's bar (drop-in for TopAppBar)
                 title = {
                     Text(
                         stringResource(R.string.agent_loop_section_add_models_title),
@@ -175,7 +175,7 @@ fun AddAgentLoopGroupsScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            io.github.nanomuse.ui.muse.MuseTopAppBar( // nanoMuse: Muse's bar (drop-in for TopAppBar)
                 title = {
                     Text(
                         stringResource(R.string.agent_loop_section_add_groups_title),

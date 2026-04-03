@@ -27,6 +27,7 @@ The alpha versions and a beta. Each is a GitHub release with an APK, titled `nan
 | 0.1.5 | Memory | The feed written for you, the system files (SOUL, USER, MEMORY, HEARTBEAT) you can read and edit, a memory import, two-level status, the screen kept awake while it works, "continue?" instead of a premature wrap-up. |
 | 0.1.6 | Avatar | A face you choose — described in a sentence, drawn four ways by your own image model, posed for every state by the same model, animated by what the agent is doing; pages cross-fade, cards settle in, the heart pops. |
 | 0.1.7 | Welcome | The first run, in Muse's shape: a welcome screen with the three steps — add a provider, pick from the models it serves, meet the agent — in front of a chat that could not answer without them. |
+| 0.1.8 | Polish | The shell brought level with Muse's: Muse's type scale on the system face, the one-row composer pill, only the name under the face (the model rows are a setting), grey reply bubbles, and Muse's settings pages — bar, cards, glyphs, radios — on every screen. |
 | 0.2.0 | Beta | Polish from the first weeks of use; the first beta. |
 
 There is no "Chinese services" version any more: the shell, MCP and skills OpenMinis ships already reach 飞书, 高德, 快递100 and the rest from a sentence in the chat, so those stay a matter of skills and docs ([services.md](services.md)), not of a release.

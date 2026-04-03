@@ -339,4 +339,16 @@
     <string name="nm_setup_fine_print">Your key stays on this phone and is sent only to the provider you chose.</string>
     <string name="nm_setup_learn_more">Learn more</string>
     <string name="nm_setup_settings">Settings</string>
+
+    <!-- 0.1.8 Polish: Muse's settings page, header and composer -->
+    <string name="nm_settings_no_model">No model yet</string>
+    <string name="nm_settings_no_model_sub">Add a provider and pick its models</string>
+    <string name="nm_settings_change_model">Change</string>
+    <string name="nm_settings_version">nanoMuse %1$s (%2$d)</string>
+    <string name="nm_appearance_section_home">Home</string>
+    <string name="nm_appearance_header_model_title">Show the model under the name</string>
+    <string name="nm_appearance_header_model_footer">Muse shows only the name. Turn this on to see the model group and provider · model under it; tap them to switch. Off, the model is under ••• → Model and in Settings.</string>
+    <string name="nm_chat_menu_model">Model</string>
+    <string name="nm_attach_commands">Commands</string>
+    <string name="nm_composer_placeholder">Message</string>
 </resources>

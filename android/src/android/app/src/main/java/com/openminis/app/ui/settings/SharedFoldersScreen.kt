@@ -55,7 +55,7 @@ fun SharedFoldersScreen(
 ) {
     Scaffold(
         topBar = {
-            TopAppBar(
+            io.github.nanomuse.ui.muse.MuseTopAppBar( // nanoMuse: Muse's bar (drop-in for TopAppBar)
                 title = { Text(stringResource(R.string.shared_folders_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {

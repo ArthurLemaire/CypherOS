@@ -144,6 +144,12 @@ fun showChatTitleEnabled(context: Context): Boolean =
 fun autoExpandThinkingEnabled(context: Context): Boolean =
     getAppearancePrefs(context).getBoolean(KEY_AUTO_EXPAND_THINKING, true)
 
+// nanoMuse: Muse's header shows only the agent's name; the model group and
+// provider · model under it are off by default and a Setting turns them on.
+const val KEY_NM_HEADER_MODEL = "nm.header_model"  // Boolean, default false
+fun headerModelEnabled(context: Context): Boolean =
+    getAppearancePrefs(context).getBoolean(KEY_NM_HEADER_MODEL, false)
+
 /** Font scale levels matching iOS: XS(-2) Small(-1) Default(0) Medium(1) Large(2) XL(3) */
 /**
  * [T-android-app-icon-tile-max-width] Upper bound for one app-icon preview tile.
@@ -267,6 +273,7 @@ fun AppearanceScreen(
     var appBaseLevel by remember { mutableIntStateOf(prefs.getInt(KEY_FONT_APP_BASE, 0)) }
     var selectedLanguage by remember { mutableStateOf(prefs.getString(KEY_LANGUAGE, "") ?: "") }
     var selectedAppIcon by remember { mutableStateOf(AppIconRepository.current(context)) }
+    var headerModel by remember { mutableStateOf(prefs.getBoolean(KEY_NM_HEADER_MODEL, false)) } // nanoMuse
 
     val fontsModified = chatInputLevel != 0 || messageLevel != 0 || appBaseLevel != 0
 
@@ -277,6 +284,24 @@ fun AppearanceScreen(
     val tileTeal = Color(0xFF5AC8FA)
 
     SettingsScaffold(title = stringResource(R.string.appearance_title), onBack = onBack) {
+
+        // nanoMuse: -- Home header -- the model under the name, off by default as on Muse.
+        SettingsSection(
+            header = stringResource(R.string.nm_appearance_section_home),
+            footer = stringResource(R.string.nm_appearance_header_model_footer),
+        ) {
+            SettingsSwitchRow(
+                icon = Icons.Outlined.Visibility,
+                iconColor = tileBlue,
+                title = stringResource(R.string.nm_appearance_header_model_title),
+                checked = headerModel,
+                onCheckedChange = {
+                    headerModel = it
+                    prefs.edit().putBoolean(KEY_NM_HEADER_MODEL, it).apply()
+                },
+                showDivider = false,
+            )
+        }
 
         // -- Theme --
         // Each row carries its own leading icon + tile colour, mirroring the

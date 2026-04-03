@@ -120,7 +120,7 @@ fun MuseNamePill(name: String, onClick: (() -> Unit)? = null, modifier: Modifier
     )
 }
 
-/** Muse's corner buttons: a white disc with a hairline, one glyph. */
+/** Muse's corner buttons: a white disc, one glyph. */
 @Composable
 fun MuseRoundButton(
     icon: ImageVector,
@@ -130,12 +130,13 @@ fun MuseRoundButton(
     badge: Boolean = false,
 ) {
     Box(modifier = modifier) {
+        // Muse's disc has no rule around it — a soft shadow lifts it off the page.
         Surface(
             onClick = onClick,
             shape = CircleShape,
             color = MuseTones.surface,
-            border = BorderStroke(1.dp, MuseTones.hairline),
-            shadowElevation = 1.dp,
+            border = if (MuseTones.isDark) BorderStroke(1.dp, MuseTones.hairline) else null,
+            shadowElevation = 2.dp,
             modifier = Modifier.size(44.dp),
         ) {
             Box(contentAlignment = Alignment.Center) {

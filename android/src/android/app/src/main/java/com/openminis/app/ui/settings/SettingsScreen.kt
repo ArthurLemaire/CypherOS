@@ -53,6 +53,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState // nanoMuse
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -113,9 +114,22 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     var showFeedbackSheet by remember { mutableStateOf(false) }
+    // nanoMuse: Muse's settings page — the round back glyph, the title centred,
+    // white cards of outlined-glyph rows on the grey canvas, no section headers
+    // or subtitles. Every OpenMinis entry is kept; they are regrouped the way
+    // Muse groups its own (the agent, the data on the phone, the app, about).
+    // The card at the top stands where Muse's plan card stands and shows the
+    // model the agent talks to, now that the home header no longer does.
+    val providerRepo = (context.applicationContext as? com.openminis.app.MinisApp)?.providerRepositoryOrNull
+    val providerConfig = providerRepo?.config?.collectAsState()?.value
+    val defaultGroup = providerConfig?.let { cfg -> cfg.modelGroups.firstOrNull { it.id == cfg.defaultPrimaryGroupId } ?: cfg.modelGroups.firstOrNull() }
+    val firstEntry = providerConfig?.let { cfg -> defaultGroup?.memberEntryIds?.firstNotNullOfOrNull { id -> cfg.modelEntries.firstOrNull { it.id == id } } }
+    val firstInstance = providerConfig?.instances?.firstOrNull { it.id == firstEntry?.providerInstanceId }
+    val modelLine = listOfNotNull(firstInstance?.label, firstEntry?.model?.displayName).joinToString(" · ")
     Scaffold(
+        containerColor = io.github.nanomuse.ui.home.MuseTones.canvas,
         topBar = {
-            TopAppBar(
+            io.github.nanomuse.ui.muse.MuseTopAppBar(
                 title = { Text(stringResource(R.string.settings_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -134,207 +148,116 @@ fun SettingsScreen(
                 .padding(padding)
                 .verticalScroll(rememberScrollState()),
         ) {
-            // -- LLM Providers --
-            SettingsSection(
-                title = stringResource(R.string.settings_section_llm_providers),
-                footer = stringResource(R.string.settings_section_llm_providers_footer),
-            ) {
-                SettingsItem(
-                    icon = Icons.Outlined.Lock,
-                    iconColor = Color(0xFF015CFB),
+            Spacer(Modifier.height(8.dp))
+
+            // -- The model (Muse: the plan card) --
+            io.github.nanomuse.ui.muse.MuseCard {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onModelGroupsClick)
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            text = defaultGroup?.name ?: stringResource(R.string.nm_settings_no_model),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            text = if (defaultGroup == null) stringResource(R.string.nm_settings_no_model_sub)
+                                else modelLine.ifEmpty { stringResource(R.string.settings_model_groups) },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                    }
+                    Text(
+                        text = stringResource(R.string.nm_settings_change_model),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = io.github.nanomuse.ui.home.MuseTones.action,
+                    )
+                }
+                io.github.nanomuse.ui.muse.MuseRowDivider(inset = 16.dp)
+                io.github.nanomuse.ui.muse.MuseRow(
                     title = stringResource(R.string.settings_manage_providers),
-                    subtitle = stringResource(R.string.settings_manage_providers_subtitle),
+                    icon = Icons.Outlined.Lock,
                     onClick = onProvidersClick,
                 )
-                SettingsItem(
-                    icon = Icons.Outlined.Settings,
-                    iconColor = Color(0xFF015CFB),
-                    title = stringResource(R.string.settings_model_groups),
-                    subtitle = stringResource(R.string.settings_model_groups_subtitle),
-                    onClick = onModelGroupsClick,
-                )
-                SettingsItem(
-                    icon = Icons.Outlined.BarChart,
-                    iconColor = Color(0xFF015CFB),
+                io.github.nanomuse.ui.muse.MuseRowDivider()
+                io.github.nanomuse.ui.muse.MuseRow(
                     title = stringResource(R.string.settings_token_usage),
-                    subtitle = stringResource(R.string.settings_token_usage_subtitle),
+                    icon = Icons.Outlined.BarChart,
                     onClick = onUsageClick,
-                    showDivider = false,
                 )
             }
+            io.github.nanomuse.ui.muse.MuseGap()
 
-            // -- Appearance --
-            SettingsSection(title = stringResource(R.string.settings_section_appearance)) {
-                SettingsItem(
-                    icon = Icons.Outlined.Palette,
-                    iconColor = Color(0xFF5856D6),
-                    title = stringResource(R.string.settings_section_appearance),
-                    subtitle = stringResource(R.string.settings_appearance_subtitle),
-                    onClick = onAppearanceClick,
-                    showDivider = false,
-                )
+            // -- The agent --
+            io.github.nanomuse.ui.muse.MuseCard {
+                io.github.nanomuse.ui.muse.MuseRow(title = stringResource(R.string.settings_soul), icon = Icons.Outlined.AutoAwesome, onClick = onSoulClick)
+                io.github.nanomuse.ui.muse.MuseRowDivider()
+                io.github.nanomuse.ui.muse.MuseRow(title = stringResource(R.string.nm_avatar_title), icon = Icons.Outlined.Face, onClick = onAvatarClick)
+                io.github.nanomuse.ui.muse.MuseRowDivider()
+                io.github.nanomuse.ui.muse.MuseRow(title = stringResource(R.string.settings_memory), icon = Icons.Outlined.Psychology, onClick = onMemoryClick)
+                io.github.nanomuse.ui.muse.MuseRowDivider()
+                io.github.nanomuse.ui.muse.MuseRow(title = stringResource(R.string.nm_sysfiles_title), icon = Icons.Outlined.Description, onClick = onSystemFilesClick)
+                io.github.nanomuse.ui.muse.MuseRowDivider()
+                io.github.nanomuse.ui.muse.MuseRow(title = stringResource(R.string.settings_skills), icon = Icons.Outlined.Extension, onClick = onSkillsClick)
+                io.github.nanomuse.ui.muse.MuseRowDivider()
+                io.github.nanomuse.ui.muse.MuseRow(title = stringResource(R.string.settings_mcp), icon = Icons.Outlined.Dashboard, onClick = onMcpClick)
+                io.github.nanomuse.ui.muse.MuseRowDivider()
+                io.github.nanomuse.ui.muse.MuseRow(title = stringResource(R.string.settings_env_vars), icon = Icons.Outlined.Terminal, onClick = onEnvVarsClick)
             }
+            io.github.nanomuse.ui.muse.MuseGap()
 
-            // -- Agent Runtime --
-            SettingsSection(title = stringResource(R.string.settings_section_agent_runtime)) {
-                SettingsItem(
-                    icon = Icons.Outlined.Extension,
-                    iconColor = Color(0xFF015CFB),
-                    title = stringResource(R.string.settings_skills),
-                    subtitle = stringResource(R.string.settings_skills_subtitle),
-                    onClick = onSkillsClick,
-                )
-                // [T-soul-md] insertion between Skills and Memory per spec.
-                SettingsItem(
-                    icon = Icons.Outlined.AutoAwesome,
-                    iconColor = Color(0xFFFF9500),
-                    title = stringResource(R.string.settings_soul),
-                    subtitle = stringResource(R.string.settings_soul_subtitle),
-                    onClick = onSoulClick,
-                )
-                SettingsItem( // nanoMuse: the face
-                    icon = Icons.Outlined.Face,
-                    iconColor = Color(0xFFE0245E),
-                    title = stringResource(R.string.nm_avatar_title),
-                    subtitle = stringResource(R.string.nm_avatar_settings_subtitle),
-                    onClick = onAvatarClick,
-                )
-                SettingsItem(
-                    icon = Icons.Outlined.Psychology,
-                    iconColor = Color(0xFF5856D6),
-                    title = stringResource(R.string.settings_memory),
-                    subtitle = stringResource(R.string.settings_memory_subtitle),
-                    onClick = onMemoryClick,
-                )
-                // nanoMuse: Muse's "System files" — SOUL / USER / MEMORY / feed / HEARTBEAT in one list.
-                SettingsItem(
-                    icon = Icons.Outlined.Description,
-                    iconColor = Color(0xFF0A66E4),
-                    title = stringResource(R.string.nm_sysfiles_title),
-                    subtitle = stringResource(R.string.nm_sysfiles_subtitle),
-                    onClick = onSystemFilesClick,
-                )
-                // [T-mcp-integration-android] MCP Integrations — directly below Memory.
-                // [T-android-mcp-icon-distinct] Dashboard (2x2 block grid) instead of
-                // Extension so MCP no longer shares the Skills row's puzzle-piece icon —
-                // the grid reads as "multiple composed blocks/servers". teal unchanged.
-                SettingsItem(
-                    icon = Icons.Outlined.Dashboard,
-                    iconColor = Color(0xFF30B0C7),
-                    title = stringResource(R.string.settings_mcp),
-                    subtitle = stringResource(R.string.settings_mcp_subtitle),
-                    onClick = onMcpClick,
-                )
-                SettingsItem(
-                    icon = Icons.Outlined.Terminal,
-                    iconColor = Color(0xFF34C759),
-                    title = stringResource(R.string.settings_env_vars),
-                    subtitle = stringResource(R.string.settings_env_vars_subtitle),
-                    onClick = onEnvVarsClick,
-                    showDivider = false,
-                )
+            // -- The phone: what the agent may touch, where its files live --
+            io.github.nanomuse.ui.muse.MuseCard {
+                io.github.nanomuse.ui.muse.MuseRow(title = stringResource(R.string.settings_section_permissions), icon = Icons.Outlined.Shield, onClick = onPermissionsClick)
+                io.github.nanomuse.ui.muse.MuseRowDivider()
+                io.github.nanomuse.ui.muse.MuseRow(title = stringResource(R.string.bg_section_header), icon = Icons.Outlined.BatteryFull, onClick = onBackgroundClick)
+                io.github.nanomuse.ui.muse.MuseRowDivider()
+                io.github.nanomuse.ui.muse.MuseRow(title = stringResource(R.string.settings_section_storage), icon = Icons.Outlined.Inventory2, onClick = onRootfsClick)
+                io.github.nanomuse.ui.muse.MuseRowDivider()
+                io.github.nanomuse.ui.muse.MuseRow(title = stringResource(R.string.settings_shared_folders), icon = Icons.Outlined.Folder, onClick = onSharedFoldersClick)
+                io.github.nanomuse.ui.muse.MuseRowDivider()
+                io.github.nanomuse.ui.muse.MuseRow(title = stringResource(R.string.settings_mount_external_folders), icon = Icons.Outlined.FolderShared, onClick = onMountedFoldersClick)
+                io.github.nanomuse.ui.muse.MuseRowDivider()
+                io.github.nanomuse.ui.muse.MuseRow(title = stringResource(R.string.settings_backup_restore), icon = Icons.Outlined.Backup, onClick = onBackupClick)
             }
+            io.github.nanomuse.ui.muse.MuseGap()
 
-            // -- Storage --
-            SettingsSection(title = stringResource(R.string.settings_section_storage)) {
-                SettingsItem(
-                    icon = Icons.Outlined.Inventory2,
-                    iconColor = Color(0xFF015CFB),
-                    title = stringResource(R.string.settings_section_storage),
-                    subtitle = stringResource(R.string.settings_storage_subtitle),
-                    onClick = onRootfsClick,
-                )
-                SettingsItem(
-                    icon = Icons.Outlined.Folder,
-                    iconColor = Color(0xFF34C759),
-                    title = stringResource(R.string.settings_shared_folders),
-                    subtitle = stringResource(R.string.settings_shared_folders_subtitle),
-                    onClick = onSharedFoldersClick,
-                )
-                SettingsItem(
-                    icon = Icons.Outlined.FolderShared,
-                    iconColor = Color(0xFFFF9500),
-                    title = stringResource(R.string.settings_mount_external_folders),
-                    subtitle = stringResource(R.string.settings_mount_external_folders_subtitle),
-                    onClick = onMountedFoldersClick,
-                )
-                SettingsItem(
-                    icon = Icons.Outlined.Backup,
-                    iconColor = Color(0xFF34C759),
-                    title = stringResource(R.string.settings_backup_restore),
-                    subtitle = stringResource(R.string.settings_backup_restore_subtitle),
-                    onClick = onBackupClick,
-                    showDivider = false,
-                )
+            // -- The app --
+            io.github.nanomuse.ui.muse.MuseCard {
+                io.github.nanomuse.ui.muse.MuseRow(title = stringResource(R.string.settings_section_appearance), icon = Icons.Outlined.Palette, onClick = onAppearanceClick)
+                io.github.nanomuse.ui.muse.MuseRowDivider()
+                io.github.nanomuse.ui.muse.MuseRow(title = stringResource(R.string.settings_section_logs), icon = Icons.Outlined.Description, onClick = onLogsClick)
             }
-
-            // -- Permissions --
-            SettingsSection(title = stringResource(R.string.settings_section_permissions)) {
-                SettingsItem(
-                    icon = Icons.Outlined.Shield,
-                    iconColor = Color(0xFF015CFB),
-                    title = stringResource(R.string.settings_section_permissions),
-                    subtitle = stringResource(R.string.settings_permissions_subtitle),
-                    onClick = onPermissionsClick,
-                    showDivider = false,
-                )
-            }
-
-            // -- Background & Notifications (T50) --
-            SettingsSection(
-                title = stringResource(R.string.bg_section_header),
-                footer = stringResource(R.string.bg_section_footer),
-            ) {
-                SettingsItem(
-                    icon = Icons.Outlined.BatteryFull,
-                    iconColor = Color(0xFFFF9500),
-                    title = stringResource(R.string.bg_section_header),
-                    subtitle = stringResource(R.string.bg_section_subtitle),
-                    onClick = onBackgroundClick,
-                    showDivider = false,
-                )
-            }
-
-            // -- Logs --
-            SettingsSection(title = stringResource(R.string.settings_section_logs)) {
-                SettingsItem(
-                    icon = Icons.Outlined.Description,
-                    iconColor = Color(0xFF015CFB),
-                    title = stringResource(R.string.settings_section_logs),
-                    subtitle = stringResource(R.string.settings_logs_subtitle),
-                    onClick = onLogsClick,
-                    showDivider = false,
-                )
-            }
+            io.github.nanomuse.ui.muse.MuseGap()
 
             // -- About --
-            SettingsSection(title = stringResource(R.string.settings_section_about)) {
-                SettingsItem(
-                    icon = Icons.Outlined.Info,
-                    iconColor = Color(0xFF015CFB),
-                    title = stringResource(R.string.settings_about_minis),
-                    subtitle = stringResource(R.string.settings_about_subtitle),
-                    onClick = onAboutClick,
-                )
-                SettingsItem(
-                    icon = Icons.Outlined.FrontHand,
-                    iconColor = Color(0xFF015CFB),
+            io.github.nanomuse.ui.muse.MuseCard {
+                io.github.nanomuse.ui.muse.MuseRow(title = stringResource(R.string.settings_about_minis), icon = Icons.Outlined.Info, onClick = onAboutClick)
+                io.github.nanomuse.ui.muse.MuseRowDivider()
+                io.github.nanomuse.ui.muse.MuseRow(
                     title = stringResource(R.string.settings_privacy_policy),
-                    subtitle = null,
+                    icon = Icons.Outlined.FrontHand,
                     // iOS canonical URL — ContentView.swift / AddProviderView.swift
                     onClick = { openExternalUrl(context, "https://github.com/nano-muse/nanoMuse/blob/main/docs/privacy.md") },
                 )
-                SettingsItem(
-                    icon = Icons.Outlined.Feedback,
-                    iconColor = Color(0xFF015CFB),
+                io.github.nanomuse.ui.muse.MuseRowDivider()
+                io.github.nanomuse.ui.muse.MuseRow(
                     title = stringResource(R.string.settings_feedback),
-                    subtitle = null,
+                    icon = Icons.Outlined.Feedback,
                     // nanoMuse: GitHub Issues is the one feedback channel (no
                     // Telegram group, no mailbox), so skip the chooser sheet.
                     onClick = { openExternalUrl(context, buildBugReportUrl()) },
-                    showDivider = false,
                 )
             }
+            io.github.nanomuse.ui.muse.MuseCaption(
+                text = stringResource(R.string.nm_settings_version, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE),
+            )
 
             Spacer(Modifier.height(24.dp))
         }
