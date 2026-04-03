@@ -13,11 +13,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -32,9 +34,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openminis.app.ui.theme.ChatColors
-import io.github.nanomuse.ui.avatar.AgentAvatar
 import io.github.nanomuse.ui.avatar.AgentAvatarDisc
 import io.github.nanomuse.ui.avatar.AgentMood
+import io.github.nanomuse.ui.avatar.rememberAvatarSize
 
 /** The soft disc the face sits on — Muse draws its character on a pale circle. */
 @Composable
@@ -42,8 +44,9 @@ fun avatarDiscColor(): Color = MuseTones.disc
 
 /**
  * Muse's page header, shared by the Ideas / Goals / Library tabs and, in a taller form, by the
- * main chat: the face centred on a disc, the name in a white pill hanging off its chin, and an
- * optional status line beneath; a round button in each top corner.
+ * main chat: the face centred on a disc (its size is the Appearance setting), the name in a
+ * white pill hanging off its chin with the status as the pill's second line; a round button in
+ * each top corner. With the face hidden, only the pill remains.
  */
 @Composable
 fun MuseHeader(
@@ -51,13 +54,13 @@ fun MuseHeader(
     name: String,
     statusLine: String? = null,
     statusColor: Color = ChatColors.secondaryText,
-    avatarSize: Dp = 92.dp,
     onAvatarClick: (() -> Unit)? = null,
     onNameClick: (() -> Unit)? = null,
     leading: (@Composable () -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    val size by rememberAvatarSize()
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -68,26 +71,26 @@ fun MuseHeader(
             modifier = Modifier.align(Alignment.TopCenter),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Box(contentAlignment = Alignment.BottomCenter) {
+            val disc = size.disc
+            if (disc != null) {
                 AgentAvatarDisc(
                     mood = mood,
-                    discSize = avatarSize,
-                    modifier = Modifier.padding(bottom = 12.dp),
+                    discSize = disc,
                     onClick = onAvatarClick,
                 )
-                MuseNamePill(name = name, onClick = onNameClick ?: onAvatarClick)
+            } else {
+                Spacer(Modifier.height(10.dp))
             }
-            if (statusLine != null) {
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = statusLine,
-                    fontSize = 12.sp,
-                    lineHeight = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = statusColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+            // Two lines are always reserved so the bar does not jump when a status appears.
+            Box(
+                modifier = Modifier.height(PILL_AREA_HEIGHT).then(pullUp(if (disc != null) PILL_OVERLAP else 0.dp)),
+                contentAlignment = Alignment.TopCenter,
+            ) {
+                MuseNamePill(
+                    name = name,
+                    statusLine = statusLine,
+                    statusColor = statusColor,
+                    onClick = onNameClick ?: onAvatarClick,
                 )
             }
         }
@@ -100,24 +103,59 @@ fun MuseHeader(
     }
 }
 
+/** How far the name pill rides up over the chin of the face. */
+val PILL_OVERLAP: Dp = 10.dp
+
+/** Height reserved under the face for the pill (name + status line). */
+val PILL_AREA_HEIGHT: Dp = 44.dp
+
+/**
+ * Muse's name tag: a small white tag, the name in regular weight (Muse's is 14sp on a 22dp tag,
+ * not bold), a faint shadow. What the agent is doing right now ("Generating options",
+ * "正在等待批准") is a second, smaller grey line inside the same tag.
+ */
 @Composable
-fun MuseNamePill(name: String, onClick: (() -> Unit)? = null, modifier: Modifier = Modifier) {
+fun MuseNamePill(
+    name: String,
+    statusLine: String? = null,
+    statusColor: Color = ChatColors.secondaryText,
+    onClick: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(14.dp)
     val base = modifier
-        .shadow(3.dp, CircleShape, clip = false, ambientColor = Color.Black.copy(alpha = 0.18f))
-        .clip(CircleShape)
+        .shadow(2.dp, shape, clip = false, ambientColor = Color.Black.copy(alpha = 0.16f), spotColor = Color.Black.copy(alpha = 0.16f))
+        .clip(shape)
         .background(MuseTones.surface)
-    Text(
-        text = name,
-        fontSize = 15.sp,
-        lineHeight = 18.sp,
-        fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.onSurface,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
         modifier = (if (onClick != null) base.clickable(onClick = onClick) else base)
-            .padding(horizontal = 14.dp, vertical = 7.dp),
-    )
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+    ) {
+        Text(
+            text = name,
+            fontSize = 14.sp,
+            lineHeight = 18.sp,
+            fontWeight = FontWeight.Normal,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+        )
+        if (statusLine != null) {
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = statusLine,
+                fontSize = 11.5.sp,
+                lineHeight = 14.sp,
+                fontWeight = FontWeight.Normal,
+                color = statusColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+            )
+        }
+    }
 }
 
 /** Muse's corner buttons: a white disc, one glyph. */

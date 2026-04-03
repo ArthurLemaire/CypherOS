@@ -35,9 +35,19 @@ fun rememberNanoMuseStatusLine(isStreaming: Boolean, mood: AgentMood): String? {
     val toolTitle by SessionActivityTracker.currentToolTitle.collectAsState()
     val toolRunning by SessionActivityTracker.isToolRunning.collectAsState()
     val pendingRisk by io.github.nanomuse.guard.RiskGate.pending.collectAsState()
+    // The avatar flow's own statuses ("Generating options", "Finalizing avatar"), as on Muse.
+    val avatarStage by io.github.nanomuse.avatar.AvatarFlow.stage.collectAsState()
+    val avatarSlots by io.github.nanomuse.avatar.AvatarStudio.slots.collectAsState()
+    val avatarStatus = when (avatarStage) {
+        is io.github.nanomuse.avatar.AvatarFlow.Stage.Choosing ->
+            if (avatarSlots.any { it is io.github.nanomuse.avatar.AvatarStudio.Slot.Loading }) stringResource(R.string.nm_avatar_status_options) else null
+        is io.github.nanomuse.avatar.AvatarFlow.Stage.Finalizing -> stringResource(R.string.nm_avatar_status_finalizing)
+        io.github.nanomuse.avatar.AvatarFlow.Stage.Idle -> null
+    }
     return when {
         mood == AgentMood.WAITING && pendingRisk != null -> stringResource(R.string.nm_risk_needs_approval)
         mood == AgentMood.WAITING -> stringResource(R.string.nm_status_waiting)
+        avatarStatus != null -> avatarStatus
         isStreaming && toolRunning && !toolTitle.isNullOrBlank() -> toolTitle
         isStreaming -> stringResource(R.string.nm_status_thinking)
         else -> null
@@ -75,7 +85,16 @@ fun openSoulSettings(context: Context) {
     runCatching { context.startActivity(intent) }
 }
 
-/** Opens the appearance page (the face, its moods, the image model). Tapping the face is the shortcut, as in Muse. */
+/** Opens the agent's profile page (today's activity, approvals, daily, soul & memory). Tapping the face is the shortcut, as in Muse. */
+fun openAgentProfile(context: Context) {
+    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("minis://settings/profile")).apply {
+        setPackage(context.packageName)
+        addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+    }
+    runCatching { context.startActivity(intent) }
+}
+
+/** Opens the avatar studio (the face, its moods, the image model) — the advanced entry behind the profile page. */
 fun openAvatarStudio(context: Context) {
     val intent = Intent(Intent.ACTION_VIEW, Uri.parse("minis://settings/avatar")).apply {
         setPackage(context.packageName)

@@ -49,6 +49,7 @@ fun NanoMuseBlock(language: String, code: String) {
         language == GoalFlow.BLOCK_GOAL && json != null -> GoalCreatedCard(json)
         language == GoalFlow.BLOCK_UPDATE && json != null -> GoalUpdateCard(json)
         language == io.github.nanomuse.feed.FeedFlow.BLOCK && json != null -> FeedPostedCard(json)
+        language == io.github.nanomuse.avatar.AvatarFlow.BLOCK_OPTIONS && json != null -> io.github.nanomuse.ui.avatar.AvatarOptionsFenceCard(json)
         else -> Text(code, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

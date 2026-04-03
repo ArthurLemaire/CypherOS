@@ -46,6 +46,8 @@ import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.ScreenLockPortrait
 import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.Face // nanoMuse
+import androidx.compose.material.icons.outlined.VisibilityOff // nanoMuse
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -274,6 +276,7 @@ fun AppearanceScreen(
     var selectedLanguage by remember { mutableStateOf(prefs.getString(KEY_LANGUAGE, "") ?: "") }
     var selectedAppIcon by remember { mutableStateOf(AppIconRepository.current(context)) }
     var headerModel by remember { mutableStateOf(prefs.getBoolean(KEY_NM_HEADER_MODEL, false)) } // nanoMuse
+    var avatarSize by remember { mutableStateOf(io.github.nanomuse.ui.avatar.AvatarSize.current(context)) } // nanoMuse
 
     val fontsModified = chatInputLevel != 0 || messageLevel != 0 || appBaseLevel != 0
 
@@ -301,6 +304,32 @@ fun AppearanceScreen(
                 },
                 showDivider = false,
             )
+        }
+
+        // nanoMuse: -- Avatar size -- Muse's five steps for the face on the home header.
+        SettingsSection(
+            header = stringResource(R.string.nm_appearance_section_avatar_size),
+            footer = stringResource(R.string.nm_appearance_avatar_size_footer),
+        ) {
+            val sizes = io.github.nanomuse.ui.avatar.AvatarSize.entries
+            sizes.forEachIndexed { idx, size ->
+                SettingsChoiceRow(
+                    title = stringResource(size.label),
+                    selected = avatarSize == size,
+                    onSelect = {
+                        avatarSize = size
+                        io.github.nanomuse.ui.avatar.AvatarSize.save(context, size)
+                    },
+                    leading = {
+                        androidx.compose.material3.Icon(
+                            if (size.shown) Icons.Outlined.Face else Icons.Outlined.VisibilityOff,
+                            contentDescription = null,
+                            tint = if (size.shown) tileBlue else tilePurple,
+                        )
+                    },
+                    showDivider = idx < sizes.size - 1,
+                )
+            }
         }
 
         // -- Theme --

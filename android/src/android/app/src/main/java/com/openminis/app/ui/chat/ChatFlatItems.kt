@@ -450,6 +450,18 @@ internal sealed class FlatChatItem {
         override val contentType = "nm_naming"
     }
 
+    // nanoMuse: the "change your avatar" options card (live state in AvatarFlow / AvatarStudio)
+    // and the share card once the new face is done.
+    data class NanoMuseAvatarOptions(val messageId: String) : FlatChatItem() {
+        override val key = "nm_avatar_options:$messageId"
+        override val contentType = "nm_avatar_options"
+    }
+
+    data class NanoMuseAvatarShare(val messageId: String, val description: String) : FlatChatItem() {
+        override val key = "nm_avatar_share:$messageId"
+        override val contentType = "nm_avatar_share"
+    }
+
     data class AssistantTyping(val messageId: String) : FlatChatItem() {
         override val key = "typing:$messageId"
         override val contentType = "typing"
@@ -562,6 +574,8 @@ internal fun buildFlatChatItems(
             is FlatChatItem.AssistantToolUse -> item.copy(messageId = "${item.messageId}#$n")
             is FlatChatItem.AssistantInfo -> item.copy(messageId = "${item.messageId}#$n")
             is FlatChatItem.NanoMuseNaming -> item.copy(messageId = "${item.messageId}#$n") // nanoMuse
+            is FlatChatItem.NanoMuseAvatarOptions -> item.copy(messageId = "${item.messageId}#$n") // nanoMuse
+            is FlatChatItem.NanoMuseAvatarShare -> item.copy(messageId = "${item.messageId}#$n") // nanoMuse
             is FlatChatItem.AssistantTyping -> item.copy(messageId = "${item.messageId}#$n")
             is FlatChatItem.AssistantError -> item.copy(messageId = "${item.messageId}#$n")
             is FlatChatItem.AssistantLegacyContent -> FlatChatItem.AssistantLegacyContent(
@@ -734,6 +748,8 @@ internal fun buildFlatChatItems(
                     block = block,
                 )))
                 "nm_naming" -> out.add(dedupe(FlatChatItem.NanoMuseNaming(message.id))) // nanoMuse
+                "nm_avatar_options" -> out.add(dedupe(FlatChatItem.NanoMuseAvatarOptions(message.id))) // nanoMuse
+                "nm_avatar_share" -> out.add(dedupe(FlatChatItem.NanoMuseAvatarShare(message.id, block.content))) // nanoMuse
                 else -> out.add(dedupe(FlatChatItem.AssistantToolUse(
                     messageId = message.id,
                     block = block,

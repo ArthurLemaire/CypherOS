@@ -12,17 +12,27 @@ class AvatarStudioTest {
         val prompts = (0 until 4).map { AvatarStudio.buildPrompt("A round red panda", AvatarStudio.Style.FLAT, it) }
         assertEquals(4, prompts.toSet().size)
         prompts.forEach {
-            assertTrue(it.startsWith("A round red panda. "))
+            assertTrue(it.contains("A round red panda. "))
             assertTrue(it.contains(AvatarStudio.Style.FLAT.phrase))
             assertTrue(it.contains("No text"))
+            // Muse's house rules: whole figure, facing you, white ground, square.
+            assertTrue(it.contains("Full body"))
+            assertTrue(it.contains("pure white background"))
+            assertTrue(it.contains("Square composition"))
         }
         // The fifth candidate wraps around instead of crashing.
         assertEquals(prompts[0], AvatarStudio.buildPrompt("A round red panda", AvatarStudio.Style.FLAT, 4))
     }
 
+    @Test fun `the default style is the 3D toy look`() {
+        assertEquals(AvatarStudio.Style.MUSE, AvatarStudio.Style.byId(null))
+        assertEquals(AvatarStudio.Style.MUSE, AvatarStudio.Style.byId("nonsense"))
+        assertTrue(AvatarStudio.Style.MUSE.phrase.contains("3D"))
+    }
+
     @Test fun `a trailing full stop in the description is not doubled`() {
         val p = AvatarStudio.buildPrompt("  一只圆滚滚的小熊猫。 ", AvatarStudio.Style.CLAY, 0)
-        assertTrue(p.startsWith("一只圆滚滚的小熊猫. "))
+        assertTrue(p.contains("一只圆滚滚的小熊猫. "))
         assertFalse(p.contains(".."))
         assertFalse(p.contains("。."))
     }
@@ -34,6 +44,7 @@ class AvatarStudioTest {
             assertTrue(mood.name, i.length > 80)
         }
         assertTrue(AvatarStudio.moodInstruction(AgentMood.WORKING).contains("headphones"))
+        assertTrue(AvatarStudio.moodInstruction(AgentMood.WAITING).contains("crystal ball"))
         assertTrue(AvatarStudio.moodInstruction(AgentMood.HAPPY).contains("star"))
     }
 

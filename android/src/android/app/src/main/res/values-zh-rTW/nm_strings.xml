@@ -344,4 +344,60 @@
     <string name="nm_chat_menu_model">模型</string>
     <string name="nm_attach_commands">指令</string>
     <string name="nm_composer_placeholder">訊息</string>
+
+    <!-- 0.1.9 · Portrait -->
+    <string name="nm_appearance_section_avatar_size">虛擬形象大小</string>
+    <string name="nm_appearance_avatar_size_footer">首頁頂部形象的大小。選擇「已隱藏」時只顯示名字。</string>
+    <string name="nm_avatar_size_small">小</string>
+    <string name="nm_avatar_size_medium">中</string>
+    <string name="nm_avatar_size_large">大</string>
+    <string name="nm_avatar_size_extra_large">超大型</string>
+    <string name="nm_avatar_size_hidden">已隱藏</string>
+    <string name="nm_avatar_style_muse">3D 玩偶（Muse）</string>
+    <!-- 智慧體主頁 -->
+    <string name="nm_profile_online">online</string>
+    <string name="nm_profile_edit">編輯</string>
+    <string name="nm_profile_change_avatar">更換虛擬形象</string>
+    <string name="nm_profile_edit_name">編輯名稱</string>
+    <string name="nm_profile_avatar_studio">形象工坊…</string>
+    <string name="nm_profile_change_avatar_prefill">把虛擬形象改成</string>
+    <string name="nm_profile_pane_activity">動態</string>
+    <string name="nm_profile_pane_approvals">批准記錄</string>
+    <string name="nm_profile_pane_daily">每日</string>
+    <string name="nm_profile_pane_soul">SOUL 與記憶</string>
+    <string name="nm_profile_today">今天</string>
+    <string name="nm_profile_yesterday">昨天</string>
+    <string name="nm_profile_activity_empty">今天還沒有動態。你提的要求和它做的事會顯示在這裡。</string>
+    <string name="nm_profile_approvals_empty">還沒有長期批准。對有風險的操作選擇「始終允許」後，會列在這裡，隨時可以撤回。</string>
+    <string name="nm_profile_approvals_always">已始終允許</string>
+    <string name="nm_profile_always_allowed">已始終允許 · %1$s</string>
+    <string name="nm_profile_manage_permissions">管理權限</string>
+    <string name="nm_profile_daily_empty">還沒有每日任務。跟它說「每天早上……」，就會出現在這裡。</string>
+    <string name="nm_profile_manage_routines">管理每日任務</string>
+    <string name="nm_profile_card_soul">SOUL</string>
+    <string name="nm_profile_card_memory">記憶</string>
+    <string name="nm_profile_handle_with_care">請謹慎存取</string>
+    <!-- 在對話裡更換形象 -->
+    <string name="nm_avatar_status_options">正在生成選項</string>
+    <string name="nm_avatar_status_finalizing">正在完成形象</string>
+    <string name="nm_avatar_options_drawing">正在畫四個「%1$s」的樣子…</string>
+    <string name="nm_avatar_options_pick_hint">點一個你喜歡的，或者直接告訴我「第二個」。</string>
+    <string name="nm_avatar_options_failed">圖片沒有生成出來。到 ••• → 形象工坊檢查一下圖像模型，再試一次。</string>
+    <string name="nm_avatar_options_again">再來一組</string>
+    <string name="nm_avatar_options_keep">先不換了</string>
+    <string name="nm_avatar_option_n">第 %1$d 個</string>
+    <string name="nm_avatar_option_retry">重試</string>
+    <string name="nm_avatar_options_ready">好啦，幾個「%1$s」的形象已經準備好了，選一個你最喜歡的吧！</string>
+    <string name="nm_avatar_adopted">好啦，我的新形象已經換上了，現在是%1$s！</string>
+    <string name="nm_avatar_pick_line">第 %1$d 個</string>
+    <string name="nm_avatar_cannot_start">現在還畫不了新形象：%1$s</string>
+    <string name="nm_avatar_memory_line">- %1$s：使用者把我的虛擬形象換成了「%2$s」。</string>
+    <string name="nm_avatar_share_text">我的新形象出爐啦！%1$s，分享給朋友們看看吧！</string>
+    <string name="nm_avatar_share_button">分享形象</string>
+    <string name="nm_avatar_share_later">以後再說</string>
+    <string name="nm_avatar_share_title">分享我的虛擬形象</string>
+    <string name="nm_avatar_share_subtitle">選一張卡片，透過系統分享送出。</string>
+    <string name="nm_avatar_share_system">分享</string>
+    <string name="nm_avatar_share_bubble">你好，我是你的個人 AI 智慧體%1$s。nanoMuse——開源、在手機上本地執行。</string>
+    <string name="nm_avatar_share_tagline">你的個人 AI 智慧體，開源 · github.com/nano-muse/nanoMuse</string>
 </resources>

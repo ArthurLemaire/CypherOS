@@ -130,11 +130,16 @@ fun NanoMuseHome(
     }
 
     // Requests from cards inside messages, idea sheets, etc.
+    var pendingPrefill by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
         HomeBus.requests.collect { req ->
             when (req) {
                 is HomeBus.Request.ShowTab -> tab = req.tab
                 is HomeBus.Request.ShowSession -> showSession(req.sessionId)
+                is HomeBus.Request.PrefillComposer -> {
+                    showMain()
+                    pendingPrefill = req.text
+                }
             }
             HomeBus.handled()
         }
@@ -155,6 +160,15 @@ fun NanoMuseHome(
         FirstRunSetup.needed(hasProviders, sessions!!.isNotEmpty(), setupDone) -> HomePhase.SETUP
         else -> HomePhase.HOME
     }
+    // Once the chat has been shown the setup is over for good: an empty main chat is a draft
+    // with no session row, so without this a trip to the profile page and back could bring
+    // the welcome screen up again.
+    LaunchedEffect(phase) {
+        if (phase == HomePhase.HOME && !setupDone) {
+            FirstRunSetup.markDone(context)
+            setupDone = true
+        }
+    }
 
     // The main chat's ViewModel: the same instance ChatScreen uses (process-level store), so the
     // tab headers can show its mood/status and the tabs can send into it. Not created before the
@@ -173,6 +187,14 @@ fun NanoMuseHome(
                 mcpRepository = mcpRepository,
             ),
         )
+    }
+    // The profile page's "Change avatar": the request pre-typed, keyboard up, once the main
+    // chat's ViewModel is there to take it.
+    LaunchedEffect(pendingPrefill, mainVm) {
+        val text = pendingPrefill ?: return@LaunchedEffect
+        val vm = mainVm ?: return@LaunchedEffect
+        pendingPrefill = null
+        vm.nmPrefillComposer(text)
     }
     val streaming by (mainVm?.isStreaming ?: remember { kotlinx.coroutines.flow.MutableStateFlow(false) }).collectAsState()
     val error by (mainVm?.error ?: remember { kotlinx.coroutines.flow.MutableStateFlow<String?>(null) }).collectAsState()
@@ -368,8 +390,8 @@ fun NanoMuseHome(
                                     mood = mood,
                                     name = agentName,
                                     statusLine = statusLine,
-                                    onAvatarClick = { navController.safeNavigate(io.github.nanomuse.ui.avatar.ROUTE_AVATAR_STUDIO) },
-                                    onNameClick = { openSoulSettings(context) },
+                                    onAvatarClick = { navController.safeNavigate(io.github.nanomuse.ui.profile.ROUTE_AGENT_PROFILE) },
+                                    onNameClick = { navController.safeNavigate(io.github.nanomuse.ui.profile.ROUTE_AGENT_PROFILE) },
                                     onOpenDrawer = { openDrawer() },
                                     navController = navController,
                                     mainSessionId = mainSessionId,
