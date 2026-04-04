@@ -84,6 +84,7 @@ One small version per stage, each a GitHub release with an APK. The plan and its
 | [0.1.4](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.4) | Guardrails | Approvals with scope before deleting, sending, paying; passwords always yours |
 | [0.1.5](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.5) | Memory | The feed; SOUL / USER / MEMORY / HEARTBEAT readable and editable; memory import; the screen stays on; "continue?" |
 | [0.1.6](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.6) | Avatar | A face you describe, your image model draws, you choose, posed for every state and animated; pages cross-fade, cards settle, hearts pop |
+| [0.1.7](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.7) | Welcome | The first run: a welcome screen with the three steps — provider, the models it serves, meet the agent |
 | 0.2.0 | Beta | Polish from the first weeks of use; the first beta |
 
 **Next:** a hosted nanoMuse on a VM of your own, reachable from any browser, with the phone app as its client; then a desktop app, local or attached to that VM. The Python line this project started with — the agent and its Sentinel, the web app, the simulated phone — is frozen at tag [`pre-openminis`](https://github.com/nano-muse/nanoMuse/releases/tag/pre-openminis) with its docs under [docs/](docs/), and is the base of those phases.

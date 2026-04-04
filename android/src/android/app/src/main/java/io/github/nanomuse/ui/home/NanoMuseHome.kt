@@ -79,6 +79,8 @@ import io.github.nanomuse.ui.header.openSoulSettings
 import io.github.nanomuse.ui.header.rememberNanoMuseStatusLine
 import io.github.nanomuse.ui.ideas.IdeasTab
 import io.github.nanomuse.ui.library.LibraryTab
+import io.github.nanomuse.ui.onboarding.FirstRunSetup
+import io.github.nanomuse.ui.onboarding.FirstRunSetupScreen
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -138,9 +140,27 @@ fun NanoMuseHome(
         }
     }
 
+    // First run. Until the app has a model to talk to, the home is Muse's welcome screen with
+    // the three steps (provider → its models → the first conversation), not a chat that cannot
+    // answer. Gated on the provider config and the session list having loaded, so a returning
+    // user never sees the setup flash past before their providers are read.
+    val providerConfig by providerRepository.config.collectAsState()
+    val configLoaded by providerRepository.configLoaded.collectAsState()
+    val sessions by chatRepository.observeSessions().collectAsState(initial = null)
+    var setupDone by remember { mutableStateOf(FirstRunSetup.isDone(context)) }
+    val hasProviders = providerConfig.instances.isNotEmpty()
+    val hasGroups = providerConfig.modelGroups.isNotEmpty()
+    val phase = when {
+        !configLoaded || sessions == null -> HomePhase.LOADING
+        FirstRunSetup.needed(hasProviders, sessions!!.isNotEmpty(), setupDone) -> HomePhase.SETUP
+        else -> HomePhase.HOME
+    }
+
     // The main chat's ViewModel: the same instance ChatScreen uses (process-level store), so the
-    // tab headers can show its mood/status and the tabs can send into it.
-    val mainVm: ChatViewModel? = mainSessionId?.let { id ->
+    // tab headers can show its mood/status and the tabs can send into it. Not created before the
+    // setup is over: a ViewModel resolves its model when it is built, and one built while the
+    // default group did not exist yet would keep talking to whatever entry it found first.
+    val mainVm: ChatViewModel? = if (phase != HomePhase.HOME) null else mainSessionId?.let { id ->
         viewModel(
             viewModelStoreOwner = ChatViewModelStore.ownerFor(id),
             factory = ChatViewModel.factory(
@@ -221,10 +241,14 @@ fun NanoMuseHome(
     fun closeDrawer() = scope.launch { drawerState.close() }
 
     // Back: close the drawer → leave a non-chat tab → leave a side chat → (system) leave the app.
-    BackHandler(enabled = drawerState.isOpen) { closeDrawer() }
-    BackHandler(enabled = !drawerState.isOpen && tab != HomeTab.CHAT) { tab = HomeTab.CHAT }
-    BackHandler(enabled = !drawerState.isOpen && tab == HomeTab.CHAT && !isMainChat && mainSessionId != null) { showMain() }
+    val homeShown = phase == HomePhase.HOME
+    BackHandler(enabled = homeShown && drawerState.isOpen) { closeDrawer() }
+    BackHandler(enabled = homeShown && !drawerState.isOpen && tab != HomeTab.CHAT) { tab = HomeTab.CHAT }
+    BackHandler(enabled = homeShown && !drawerState.isOpen && tab == HomeTab.CHAT && !isMainChat && mainSessionId != null) { showMain() }
 
+    // The drawer + tab shell, as a local composable so it can share every piece of state above
+    // and still be one branch of the phase switch below.
+    val homeShell: @Composable () -> Unit = {
     ModalNavigationDrawer(
         drawerState = drawerState,
         gesturesEnabled = drawerState.isOpen || tab == HomeTab.CHAT,
@@ -389,7 +413,31 @@ fun NanoMuseHome(
             }
         }
     }
+    } // homeShell
+
+    AnimatedContent(
+        targetState = phase,
+        transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(160)) },
+        label = "nmHomePhase",
+    ) { current ->
+        when (current) {
+            HomePhase.LOADING -> Surface(color = MuseTones.surface, modifier = Modifier.fillMaxSize()) {}
+            HomePhase.SETUP -> FirstRunSetupScreen(
+                agentName = agentName,
+                hasProviders = hasProviders,
+                hasGroups = hasGroups,
+                onAddProvider = { navController.safeNavigate(Routes.ADD_PROVIDER) },
+                onSelectModels = { navController.safeNavigate(Routes.ONBOARDING_MODELS) },
+                onStart = { FirstRunSetup.markDone(context); setupDone = true },
+                onSkipModels = { FirstRunSetup.markDone(context); setupDone = true },
+                onSettings = { navController.safeNavigate(Routes.SETTINGS) },
+            )
+            HomePhase.HOME -> homeShell()
+        }
+    }
 }
+
+private enum class HomePhase { LOADING, SETUP, HOME }
 
 /** The big-face header on the four pages, with Muse's round hamburger and "•••" (sliders on the feed). */
 @Composable

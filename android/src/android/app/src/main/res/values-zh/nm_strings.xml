@@ -318,4 +318,23 @@
     <string name="nm_avatar_model_body">任何支持 OpenAI images 接口的提供方都行。阿里云百炼：qwen-image-3.0（状态图用 qwen-image-edit-max）。OpenAI：gpt-image-1。</string>
     <string name="nm_avatar_model_label">模型</string>
     <string name="nm_avatar_footer">图片存在这台手机的 minis-global/nanomuse/avatar 下。每换一张脸会向你的提供方要五张图：你选的那张加四个状态。</string>
+
+    <!-- 首次运行 -->
+    <string name="nm_setup_title">欢迎使用 nanoMuse</string>
+    <string name="nm_setup_subtitle">带上你自己的模型，三步之后它就住在你的手机里。</string>
+    <string name="nm_setup_step_provider">添加模型服务商</string>
+    <string name="nm_setup_step_provider_sub">填一个 API key，或用账号登录</string>
+    <string name="nm_setup_step_models">选择模型</string>
+    <string name="nm_setup_step_models_sub">自动列出服务商提供的模型，最多选三个</string>
+    <string name="nm_setup_step_models_locked">先完成第 1 步</string>
+    <string name="nm_setup_step_start">认识 %1$s</string>
+    <string name="nm_setup_step_start_sub">第一次对话：它问怎么称呼你，也给自己取个名字</string>
+    <string name="nm_setup_step_start_locked">先完成第 2 步</string>
+    <string name="nm_setup_done">已完成</string>
+    <string name="nm_setup_continue">继续</string>
+    <string name="nm_setup_start">开始</string>
+    <string name="nm_setup_skip_models">先跳过</string>
+    <string name="nm_setup_fine_print">你的 key 只保存在这台手机上，只会发给你选择的服务商。</string>
+    <string name="nm_setup_learn_more">了解更多</string>
+    <string name="nm_setup_settings">设置</string>
 </resources>
