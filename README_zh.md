@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/cover.png" width="140" alt="nanoMuse">
+  <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/app-icon.png" width="128" alt="nanoMuse app icon">
 </p>
 
 <h1 align="center">nanoMuse</h1>
@@ -74,17 +74,17 @@ App 是修改过的 [OpenMinis](https://github.com/OpenMinis/OpenMinis) 1.13：�
 
 ## 版本
 
-按小版本逐个发布，每个都是 GitHub 预发布加一个 APK。计划和理由见 [docs/roadmap.md](docs/roadmap.md)。
+按小版本逐个发布，每个都是一个 GitHub release 加一个 APK。计划和理由见 [docs/roadmap.md](docs/roadmap.md)。
 
-| 版本 | | 加了什么 |
+| 版本 | 代号 | 加了什么 |
 |---|---|---|
-| [0.1.1](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.1) | 换皮 | OpenMinis 变成 nanoMuse：图标、名字、品牌色、关于 / 反馈 / 更新源、GPL 声明、一把签名 |
-| [0.1.2](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.2) | 有名字有脸 | 小熊猫和 Muse 样式的页头；第一次对话里给它起名；每条通知都带名字和脸 |
-| [0.1.3](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.3) | Muse 的形状 | 打开就是对话而不是列表；旁聊在抽屉里；点子、目标、资料库；目标在对话里定、按时检查 |
-| [0.1.4](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.4) | 关键处先问你 | 删除、发送、付款前带范围的审批；密码永远由你输 |
-| [0.1.5](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.5) | 记得你 | 动态；SOUL / USER / MEMORY / HEARTBEAT 可看可改；记忆导入；屏幕常亮；「继续？」 |
-| [0.1.6](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.6) | 形象与动效 | 你描述、你的图像模型画、你挑的脸，摆好每种状态并动起来；页面淡入淡出、卡片落进来、红心会跳 |
-| 0.2.0 | beta | 头几周使用后的打磨；第一个 beta |
+| [0.1.1](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.1) | Foundation | OpenMinis 变成 nanoMuse：图标、名字、品牌色、关于 / 反馈 / 更新源、GPL 声明、一把签名 |
+| [0.1.2](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.2) | Identity | 小熊猫和 Muse 样式的页头；第一次对话里给它起名；每条通知都带名字和脸 |
+| [0.1.3](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.3) | Home | 打开就是对话而不是列表；旁聊在抽屉里；点子、目标、资料库；目标在对话里定、按时检查 |
+| [0.1.4](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.4) | Guardrails | 删除、发送、付款前带范围的审批；密码永远由你输 |
+| [0.1.5](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.5) | Memory | 动态；SOUL / USER / MEMORY / HEARTBEAT 可看可改；记忆导入；屏幕常亮；「继续？」 |
+| [0.1.6](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.6) | Avatar | 你描述、你的图像模型画、你挑的脸，摆好每种状态并动起来；页面淡入淡出、卡片落进来、红心会跳 |
+| 0.2.0 | Beta | 头几周使用后的打磨；第一个 beta |
 
 **之后：**托管在你自己一台云端 VM 上的 nanoMuse，任何浏览器都能打开，手机 App 是它的客户端；再之后是桌面 App，本地跑或者连到那台 VM。项目起步时的 Python 线——智能体和它的 Sentinel、网页 App、模拟手机——冻结在 tag [`pre-openminis`](https://github.com/nano-muse/nanoMuse/releases/tag/pre-openminis)，文档在 [docs/](docs/)，是后面这几步的底座。
 

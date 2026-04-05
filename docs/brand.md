@@ -19,6 +19,9 @@ it is a gesture first and a letter second.
 - `assets/brand/nanomuse-icon-on-blue.svg` — the icon on the brand-blue backdrop, for
   store listings, README hero, splash.
 - `assets/brand/nanomuse-mark-rgba-688.png` — the stroke with alpha, 688 px, raster fallback.
+- `docs/app-icon.png` — the source render with rounded corners (22 % radius, transparent), 512 px:
+  the icon as it sits on a home screen. This is the README hero and the picture to use wherever
+  the app is shown as an app.
 
 The icon is **not** the mascot. The red panda (`web/src/components/redPandaShapes.ts`) is the
 default chat avatar only, and users will be able to replace it. Never put the red panda on the

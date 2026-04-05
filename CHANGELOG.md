@@ -2,7 +2,7 @@
 
 All notable changes to nanoMuse. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/). Unreleased changes are on `main`.
 
-## [0.1.6] - 2026-09-25 · alpha · 形象与动效
+## [0.1.6] - 2026-09-25 · Avatar
 
 The agent gets a face of your choosing. Describe it in a sentence, your own image model draws four, you pick one, and the app poses it for every state the agent can be in — then the face on the disc breathes, bobs, tilts, pops and shakes with what the agent is doing, the way Muse's does. Around it, the small motions that make an app feel finished: pages that cross-fade, feed cards that settle in, a heart that pops.
 
@@ -24,7 +24,7 @@ The agent gets a face of your choosing. Describe it in a sentence, your own imag
 
 - The built-in red panda is still the default and one tap away; the launcher icon is untouched. Provider instances, keys and OAuth are OpenMinis' own — the avatar page only reads what you configured there.
 
-## [0.1.5] - 2026-09-25 · alpha · 记得你
+## [0.1.5] - 2026-09-25 · Memory
 
 The agent starts to keep things: a feed it writes for you every morning, the files that make it what it is — who it is, what it knows about you, what it remembers, when it wakes — readable and editable in one place, and a way to bring over what another assistant already knew. Long tasks keep the screen on and ask "continue?" instead of wrapping up early.
 
@@ -49,7 +49,7 @@ The agent starts to keep things: a feed it writes for you every morning, the fil
 
 - OpenMinis' memory pages (`GLOBAL.md` + diary) and the soul editor are unchanged; the system files pages open them for the parts they cover. The feed routine is an ordinary scheduled task — pause, edit or delete it like any other.
 
-## [0.1.4] - 2026-09-25 · alpha · 关键处先问你
+## [0.1.4] - 2026-09-25 · Guardrails
 
 Before it deletes your files, sends something out or pays, the agent stops and asks — in the shell and in the browser. What you approve can be remembered per chat, or for good per recipient / host / folder. Passwords and verification codes are never typed by the agent; the browser is handed to you instead.
 
@@ -72,7 +72,7 @@ Before it deletes your files, sends something out or pays, the agent stops and a
 
 - OpenMinis' own confirmation for `minis-config` settings changes (`ConfigConfirmationGate`) and its per-category tool permissions are untouched; nanoMuse's grants sit above them on the Permissions page.
 
-## [0.1.3] - 2026-09-25 · alpha · Muse 的形状
+## [0.1.3] - 2026-09-25 · Home
 
 The app opens on a conversation, not a list. One main chat with the face at the top, side chats in a drawer, and a bottom bar with Ideas, Goals and Library — the shape of Muse on a phone. Everything OpenMinis had is still there; it is reached from these pages instead of the old session list.
 
@@ -97,7 +97,7 @@ The app opens on a conversation, not a list. One main chat with the face at the 
 
 - Session list, scheduled tasks and their editor, shared folders, file browser and preview, terminal, model groups and every settings page are unchanged and reachable from the new pages.
 
-## [0.1.2] - 2026-09-25 · alpha · 有名字有脸
+## [0.1.2] - 2026-09-25 · Identity
 
 The agent gets a face and a name, and the first conversation is where you meet it — the shape of Muse's first run, on top of OpenMinis's setup cards, which are unchanged.
 
@@ -120,7 +120,7 @@ The agent gets a face and a name, and the first conversation is where you meet i
 
 - The provider list and its OAuth sign-ins (Claude, Codex, Kimi, OpenRouter) and the three setup cards stay as in OpenMinis 1.13; there are no vendor presets yet.
 
-## [0.1.1] - 2026-09-25 · alpha · 换皮
+## [0.1.1] - 2026-09-25 · Foundation
 
 The first version of the Android line: [OpenMinis](https://github.com/OpenMinis/OpenMinis) 1.13 as nanoMuse, functionally identical to upstream. Pre-release; arm64 APK signed with the project key that every later version will use.
 

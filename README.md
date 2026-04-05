@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/cover.png" width="140" alt="nanoMuse">
+  <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/app-icon.png" width="128" alt="nanoMuse app icon">
 </p>
 
 <h1 align="center">nanoMuse</h1>
@@ -74,17 +74,17 @@ Edits to upstream files are marked `// nanoMuse:`; `scripts/rebrand.py` re-appli
 
 ## Versions
 
-One small version per stage, each a GitHub pre-release with an APK. The plan and its reasoning: [docs/roadmap.md](docs/roadmap.md).
+One small version per stage, each a GitHub release with an APK. The plan and its reasoning: [docs/roadmap.md](docs/roadmap.md).
 
-| Version | | What it added |
+| Version | Codename | What it added |
 |---|---|---|
-| [0.1.1](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.1) | 换皮 | OpenMinis as nanoMuse: icon, name, brand colours, About / feedback / update source, GPL notices, one signing key |
-| [0.1.2](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.2) | 有名字有脸 | The red panda and a Muse-style header; a first conversation that names the agent; the name and face on every notification |
-| [0.1.3](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.3) | Muse 的形状 | Opens on a chat, not a list; side chats in a drawer; Ideas, Goals and Library; goals shaped in the chat and checked on a schedule |
-| [0.1.4](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.4) | 关键处先问你 | Approvals with scope before deleting, sending, paying; passwords always yours |
-| [0.1.5](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.5) | 记得你 | The feed; SOUL / USER / MEMORY / HEARTBEAT readable and editable; memory import; the screen stays on; "continue?" |
-| [0.1.6](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.6) | 形象与动效 | A face you describe, your image model draws, you choose, posed for every state and animated; pages cross-fade, cards settle, hearts pop |
-| 0.2.0 | beta | Polish from the first weeks of use; the first beta |
+| [0.1.1](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.1) | Foundation | OpenMinis as nanoMuse: icon, name, brand colours, About / feedback / update source, GPL notices, one signing key |
+| [0.1.2](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.2) | Identity | The red panda and a Muse-style header; a first conversation that names the agent; the name and face on every notification |
+| [0.1.3](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.3) | Home | Opens on a chat, not a list; side chats in a drawer; Ideas, Goals and Library; goals shaped in the chat and checked on a schedule |
+| [0.1.4](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.4) | Guardrails | Approvals with scope before deleting, sending, paying; passwords always yours |
+| [0.1.5](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.5) | Memory | The feed; SOUL / USER / MEMORY / HEARTBEAT readable and editable; memory import; the screen stays on; "continue?" |
+| [0.1.6](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.6) | Avatar | A face you describe, your image model draws, you choose, posed for every state and animated; pages cross-fade, cards settle, hearts pop |
+| 0.2.0 | Beta | Polish from the first weeks of use; the first beta |
 
 **Next:** a hosted nanoMuse on a VM of your own, reachable from any browser, with the phone app as its client; then a desktop app, local or attached to that VM. The Python line this project started with — the agent and its Sentinel, the web app, the simulated phone — is frozen at tag [`pre-openminis`](https://github.com/nano-muse/nanoMuse/releases/tag/pre-openminis) with its docs under [docs/](docs/), and is the base of those phases.
 
