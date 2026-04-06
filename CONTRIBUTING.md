@@ -72,7 +72,7 @@ Guidelines that still apply there: everything that acts goes through the Sentine
 
 ## Releasing (maintainers)
 
-Every stage of Phase 1 is a version — `0.1.1`, `0.1.2`, … `0.1.5`, then `0.2.0`. Version names stay plain numbers (the in-app update check compares them). `scripts/release-apk.sh <version>` builds the release APK, verifies the signature, writes the sha256 and creates the GitHub pre-release; `docs/release-notes-template.md` is the shape of the notes. The signing key is one key for every version so an update installs over the previous one; it is not in the repository and not in CI.
+Every stage of Phase 1 is a version — `0.1.1`, `0.1.2`, … `0.1.6`, then `0.2.0`. Version names stay plain numbers (the in-app update check compares them). `scripts/release-apk.sh <version>` builds the release APK, verifies the signature, writes the sha256 and creates the GitHub pre-release; `docs/release-notes-template.md` is the shape of the notes. The signing key is one key for every version so an update installs over the previous one; it is not in the repository and not in CI.
 
 ## Security issues
 

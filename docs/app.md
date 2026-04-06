@@ -9,10 +9,10 @@ nanomuse serve --port 9000 --no-qr
 ```
 
 <p align="center">
-  <img src="screenshots/chat-approval.png" width="24%" alt="Chat: an approval card">
-  <img src="screenshots/feed.png" width="24%" alt="Feed: posts written for you">
-  <img src="screenshots/goals.png" width="24%" alt="Goals: tracking and one-off">
-  <img src="screenshots/library.png" width="24%" alt="Library: pages with live previews">
+  <img src="screenshots/web/chat-approval.png" width="24%" alt="Chat: an approval card">
+  <img src="screenshots/web/feed.png" width="24%" alt="Feed: posts written for you">
+  <img src="screenshots/web/goals.png" width="24%" alt="Goals: tracking and one-off">
+  <img src="screenshots/web/library.png" width="24%" alt="Library: pages with live previews">
 </p>
 
 The look follows Meta Muse: near-white and near-black surfaces, one blue accent, grey bubbles for the agent and light blue for you, a red panda at the top of the chat that changes pose with what the agent is doing, and a floating bar with five icons. The font is [Figtree](https://github.com/erikdkennedy/figtree) (OFL), bundled. The study behind these choices is in [design.md](design.md).
@@ -28,7 +28,7 @@ The token is generated once and stored in `<data_dir>/server_token`; set `server
 ## First run
 
 <p align="center">
-  <img src="screenshots/onboarding.png" width="24%" alt="First run: meet your nanoMuse">
+  <img src="screenshots/web/onboarding.png" width="24%" alt="First run: meet your nanoMuse">
 </p>
 
 On a fresh data directory the app opens with setup instead of the chat. First three points about what it is — it does things for you; it keeps working when the app is closed; it asks you first where it matters — then a checklist of three items, ticked as they are done:
