@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openminis.app.ui.theme.ChatColors
 import io.github.nanomuse.ui.avatar.AgentAvatar
+import io.github.nanomuse.ui.avatar.AgentAvatarDisc
 import io.github.nanomuse.ui.avatar.AgentMood
 
 /** The soft disc the face sits on — Muse draws its character on a pale circle. */
@@ -52,6 +53,7 @@ fun MuseHeader(
     statusColor: Color = ChatColors.secondaryText,
     avatarSize: Dp = 92.dp,
     onAvatarClick: (() -> Unit)? = null,
+    onNameClick: (() -> Unit)? = null,
     leading: (@Composable () -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -67,21 +69,13 @@ fun MuseHeader(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Box(contentAlignment = Alignment.BottomCenter) {
-                Box(
-                    modifier = Modifier
-                        .padding(bottom = 12.dp)
-                        .size(avatarSize)
-                        .clip(CircleShape)
-                        .background(avatarDiscColor()),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    AgentAvatar(
-                        mood = mood,
-                        size = avatarSize * 0.86f,
-                        onClick = onAvatarClick,
-                    )
-                }
-                MuseNamePill(name = name, onClick = onAvatarClick)
+                AgentAvatarDisc(
+                    mood = mood,
+                    discSize = avatarSize,
+                    modifier = Modifier.padding(bottom = 12.dp),
+                    onClick = onAvatarClick,
+                )
+                MuseNamePill(name = name, onClick = onNameClick ?: onAvatarClick)
             }
             if (statusLine != null) {
                 Spacer(Modifier.height(4.dp))

@@ -16,7 +16,7 @@ nanoMuse keeps the shape and changes two things. The agent is open and runs wher
 
 ## Phase 1 — the phone, no cloud VM (now)
 
-Six versions. Each is a GitHub pre-release with an APK; `versionName` is a plain number so the in-app update check works.
+Six alpha versions and a beta. Each is a GitHub pre-release with an APK; `versionName` is a plain number so the in-app update check works.
 
 | Version | Name | What it adds |
 |---|---|---|
@@ -25,7 +25,8 @@ Six versions. Each is a GitHub pre-release with an APK; `versionName` is a plain
 | 0.1.3 | Muse 的形状 | The app opens on a conversation, not a list: one main chat, side chats in a drawer, and a bottom bar with Ideas, Goals and Library. Goals are shaped in the chat and checked on a schedule in their own conversation; routines are the scheduled tasks OpenMinis already had, shown Muse's way; the library lists what the agent wrote. |
 | 0.1.4 | 关键处先问你 | Approvals with scope — a stop before deleting, sending, paying and anything you could not undo, remembered per recipient / domain / folder if you say so; passwords and codes are always yours to type. |
 | 0.1.5 | 记得你 | The feed written for you, the system files (SOUL, USER, MEMORY, HEARTBEAT) you can read and edit, a memory import, two-level status, the screen kept awake while it works, "continue?" instead of a premature wrap-up. |
-| 0.1.6 → 0.2.0 | 形象与动效 | A face you choose — generated from a description with your own image model, animated by what the agent is doing; motion and polish everywhere; 0.2.0 is the first beta. |
+| 0.1.6 | 形象与动效 | A face you choose — described in a sentence, drawn four ways by your own image model, posed for every state by the same model, animated by what the agent is doing; pages cross-fade, cards settle in, the heart pops. |
+| 0.2.0 | beta | Polish from the first weeks of use; the first beta. |
 
 There is no "Chinese services" version any more: the shell, MCP and skills OpenMinis ships already reach 飞书, 高德, 快递100 and the rest from a sentence in the chat, so those stay a matter of skills and docs ([services.md](services.md)), not of a release.
 

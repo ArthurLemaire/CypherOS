@@ -74,3 +74,12 @@ fun openSoulSettings(context: Context) {
     }
     runCatching { context.startActivity(intent) }
 }
+
+/** Opens the appearance page (the face, its moods, the image model). Tapping the face is the shortcut, as in Muse. */
+fun openAvatarStudio(context: Context) {
+    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("minis://settings/avatar")).apply {
+        setPackage(context.packageName)
+        addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+    }
+    runCatching { context.startActivity(intent) }
+}

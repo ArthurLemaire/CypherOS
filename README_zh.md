@@ -295,7 +295,8 @@ flowchart LR
 - [x] [0.1.3 Muse 的形状](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.3)——打开是聊天不是列表；旁聊在抽屉里；点子、目标、资源库三个页签；目标在聊天里定、按节奏自动检查
 - [x] [0.1.4 关键处先问你](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.4)——删、发、付之前先停下来问；按对象 / 域名 / 目录记住；密码验证码永远你自己输
 - [x] [0.1.5 记得你](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.5)——每天早上写给你的动态；SOUL / USER / MEMORY / HEARTBEAT 可看可改；记忆导入；干活时屏幕常亮，长任务到上限问「继续？」
-- [ ] 0.1.6 → 0.2.0 形象与动效——用你的模型生成并挑选形象，随工作状态动起来；打磨；第一个 beta
+- [x] [0.1.6 形象与动效](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.6)——一句话描述、你的图像模型画四张、你挑一张，App 给它摆出每种状态；它随工作状态呼吸、点头、歪头、跳一下、抖一下；页面淡入淡出、卡片落进来、红心会跳
+- [ ] 0.2.0 beta——打磨；第一个 beta
 
 国内服务（飞书、高德、快递100……）不再单出一个版本：沙盒里的 shell、MCP、技能已经能从聊天里的一句话够到它们（[docs/services.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/services.md)）。
 

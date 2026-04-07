@@ -610,6 +610,13 @@ fun AppNavigation(
         composable(io.github.nanomuse.ui.sysfiles.ROUTE_MEMORY_IMPORT) {
             io.github.nanomuse.ui.sysfiles.MemoryImportScreen(onBack = { navController.safePopBackStack() })
         }
+        // nanoMuse: the face — generate, pick, pose.
+        composable(io.github.nanomuse.ui.avatar.ROUTE_AVATAR_STUDIO) {
+            io.github.nanomuse.ui.avatar.AvatarStudioScreen(
+                onBack = { navController.safePopBackStack() },
+                onOpenSoul = { navController.safeNavigate(Routes.SOUL) },
+            )
+        }
 
         // nanoMuse: the full OpenMinis session list (folders, search, bulk
         // actions), one tap behind the drawer's archive glyph. Picking a chat
@@ -665,6 +672,7 @@ fun AppNavigation(
                 onMcpClick = { navController.safeNavigate(Routes.MCP) },
                 onSoulClick = { navController.safeNavigate(Routes.SOUL) },
                 onSystemFilesClick = { navController.safeNavigate(io.github.nanomuse.ui.sysfiles.ROUTE_SYSTEM_FILES) }, // nanoMuse
+                onAvatarClick = { navController.safeNavigate(io.github.nanomuse.ui.avatar.ROUTE_AVATAR_STUDIO) }, // nanoMuse
                 onPermissionsClick = { navController.safeNavigate(Routes.PERMISSIONS) },
                 onUsageClick = { navController.safeNavigate(Routes.USAGE_STATS) },
                 onAppearanceClick = { navController.safeNavigate(Routes.APPEARANCE) },

@@ -27,6 +27,7 @@ import androidx.compose.material.icons.outlined.BatteryFull
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Face
 import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.material.icons.outlined.Feedback
@@ -90,6 +91,7 @@ fun SettingsScreen(
     // the route yet.
     onSoulClick: () -> Unit = {},
     onSystemFilesClick: () -> Unit = {}, // nanoMuse
+    onAvatarClick: () -> Unit = {}, // nanoMuse
     onPermissionsClick: () -> Unit = {},
     onUsageClick: () -> Unit = {},
     onAppearanceClick: () -> Unit = {},
@@ -189,6 +191,13 @@ fun SettingsScreen(
                     title = stringResource(R.string.settings_soul),
                     subtitle = stringResource(R.string.settings_soul_subtitle),
                     onClick = onSoulClick,
+                )
+                SettingsItem( // nanoMuse: the face
+                    icon = Icons.Outlined.Face,
+                    iconColor = Color(0xFFE0245E),
+                    title = stringResource(R.string.nm_avatar_title),
+                    subtitle = stringResource(R.string.nm_avatar_settings_subtitle),
+                    onClick = onAvatarClick,
                 )
                 SettingsItem(
                     icon = Icons.Outlined.Psychology,

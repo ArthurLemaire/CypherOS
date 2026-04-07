@@ -2,6 +2,14 @@ package io.github.nanomuse.ui.home
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.consumeWindowInsets
@@ -264,11 +272,18 @@ fun NanoMuseHome(
             ) {
                 // Chat tab — always composed, hidden while another tab is on top.
                 val chatVisible = tab == HomeTab.CHAT
+                // Fades a touch slower than the page above it fades in, so the switch reads as
+                // one cross-fade rather than a cut to the canvas.
+                val chatAlpha by animateFloatAsState(
+                    targetValue = if (chatVisible) 1f else 0f,
+                    animationSpec = tween(if (chatVisible) 120 else 220),
+                    label = "chatAlpha",
+                )
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .zIndex(0f)
-                        .graphicsLayer { alpha = if (chatVisible) 1f else 0f },
+                        .graphicsLayer { alpha = chatAlpha },
                 ) {
                     val sid = chatSessionId
                     if (sid != null) {
@@ -298,25 +313,45 @@ fun NanoMuseHome(
                 }
 
                 val holder = rememberSaveableStateHolder()
-                if (!chatVisible) {
+                // The page that is (or was last) on top of the chat. Keeping it while the
+                // sheet fades back to the chat means the content does not blink to empty.
+                var pageTab by remember { mutableStateOf(if (tab == HomeTab.CHAT) HomeTab.FEED else tab) }
+                if (tab != HomeTab.CHAT) pageTab = tab
+                AnimatedVisibility(
+                    visible = !chatVisible,
+                    enter = fadeIn(tween(160)),
+                    exit = fadeOut(tween(120)),
+                    modifier = Modifier.fillMaxSize().zIndex(1f),
+                ) {
                     Surface(
                         color = ChatColors.background,
-                        modifier = Modifier.fillMaxSize().zIndex(1f),
+                        modifier = Modifier.fillMaxSize(),
                     ) {
-                        holder.SaveableStateProvider(tab.name) {
+                        // Pages cross-fade; the header sits at the same spot on every page,
+                        // so only the content below it appears to change.
+                        AnimatedContent(
+                            targetState = pageTab,
+                            transitionSpec = {
+                                (fadeIn(tween(160)) togetherWith fadeOut(tween(120)))
+                                    .using(SizeTransform(clip = false))
+                            },
+                            label = "nmTab",
+                        ) { page ->
+                        holder.SaveableStateProvider(page.name) {
                             val header: @Composable () -> Unit = {
                                 TabHeader(
-                                    tab = tab,
+                                    tab = page,
                                     mood = mood,
                                     name = agentName,
                                     statusLine = statusLine,
-                                    onAvatarClick = { openSoulSettings(context) },
+                                    onAvatarClick = { navController.safeNavigate(io.github.nanomuse.ui.avatar.ROUTE_AVATAR_STUDIO) },
+                                    onNameClick = { openSoulSettings(context) },
                                     onOpenDrawer = { openDrawer() },
                                     navController = navController,
                                     mainSessionId = mainSessionId,
                                 )
                             }
-                            when (tab) {
+                            when (page) {
                                 HomeTab.FEED -> FeedTab(
                                     header = header,
                                     onDiscuss = { discussPost(it) },
@@ -348,6 +383,7 @@ fun NanoMuseHome(
                                 HomeTab.CHAT -> Unit
                             }
                         }
+                        }
                     }
                 }
             }
@@ -363,6 +399,7 @@ private fun TabHeader(
     name: String,
     statusLine: String?,
     onAvatarClick: () -> Unit,
+    onNameClick: () -> Unit,
     onOpenDrawer: () -> Unit,
     navController: NavHostController,
     mainSessionId: String?,
@@ -373,6 +410,7 @@ private fun TabHeader(
         name = name,
         statusLine = statusLine,
         onAvatarClick = onAvatarClick,
+        onNameClick = onNameClick,
         leading = {
             MuseRoundButton(
                 icon = Icons.Filled.Menu,

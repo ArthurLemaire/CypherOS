@@ -298,7 +298,8 @@ Three phases, one per platform; the full plan with the reasoning is in [docs/roa
 - [x] [0.1.3 Muse 的形状](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.3) — opens on a chat, not a list; side chats in a drawer; Ideas, Goals and Library tabs; goals shaped in the chat and checked on a schedule
 - [x] [0.1.4 关键处先问你](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.4) — a stop before deleting, sending, paying; remembered per recipient / domain / folder; passwords always yours
 - [x] [0.1.5 记得你](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.5) — a feed written for you each morning; SOUL / USER / MEMORY / HEARTBEAT readable and editable; memory import; the screen stays on and long tasks ask "continue?"
-- [ ] 0.1.6 → 0.2.0 形象与动效 — a face you generate and choose, animated by what the agent is doing; polish; first beta
+- [x] [0.1.6 形象与动效](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.6) — a face you describe, your image model draws, you choose, and the app poses for every state; it breathes, bobs, tilts, pops and shakes with what the agent is doing; pages cross-fade, cards settle, hearts pop
+- [ ] 0.2.0 beta — polish and the first beta
 
 Chinese services (飞书, 高德, 快递100 …) are no longer a version of their own: the sandbox shell, MCP and skills reach them from a sentence in the chat already ([docs/services.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/services.md)).
 
