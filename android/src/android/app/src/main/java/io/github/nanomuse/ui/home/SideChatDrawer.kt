@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Archive
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Home
@@ -77,6 +78,7 @@ fun SideChatDrawer(
     onAllChats: () -> Unit,
     onSettings: () -> Unit,
     onSetMain: (String) -> Unit,
+    onSystemFiles: (() -> Unit)? = null,
 ) {
     val sessions by chatRepository.observeSessions().collectAsState(initial = emptyList())
     var query by remember { mutableStateOf("") }
@@ -194,6 +196,11 @@ fun SideChatDrawer(
         ) {
             IconButton(onClick = onSettings) {
                 Icon(Icons.Outlined.Settings, contentDescription = stringResource(R.string.nm_drawer_settings), tint = MaterialTheme.colorScheme.onSurface)
+            }
+            if (onSystemFiles != null) {
+                IconButton(onClick = onSystemFiles) {
+                    Icon(Icons.Outlined.Description, contentDescription = stringResource(R.string.nm_sysfiles_title), tint = MaterialTheme.colorScheme.onSurface)
+                }
             }
             Row(
                 verticalAlignment = Alignment.CenterVertically,

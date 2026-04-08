@@ -583,6 +583,34 @@ fun AppNavigation(
             )
         }
 
+        // nanoMuse: the agent's system files (SOUL / USER / MEMORY / feed
+        // preferences / HEARTBEAT), one file page, and the memory import.
+        composable(io.github.nanomuse.ui.sysfiles.ROUTE_SYSTEM_FILES) {
+            io.github.nanomuse.ui.sysfiles.SystemFilesScreen(
+                onBack = { navController.safePopBackStack() },
+                onOpen = { kind -> navController.safeNavigate(io.github.nanomuse.ui.sysfiles.systemFileRoute(kind)) },
+                onImport = { navController.safeNavigate(io.github.nanomuse.ui.sysfiles.ROUTE_MEMORY_IMPORT) },
+                onOpenMemory = { navController.safeNavigate(Routes.MEMORY) },
+            )
+        }
+        composable(
+            route = io.github.nanomuse.ui.sysfiles.ROUTE_SYSTEM_FILE,
+            arguments = listOf(navArgument("key") { type = NavType.StringType }),
+        ) { entry ->
+            val kind = entry.arguments?.getString("key")
+                ?.let { k -> io.github.nanomuse.sysfiles.SystemFiles.entries.firstOrNull { it.name == k } }
+                ?: return@composable
+            io.github.nanomuse.ui.sysfiles.SystemFileScreen(
+                kind = kind,
+                onBack = { navController.safePopBackStack() },
+                onOpenMemory = { navController.safeNavigate(Routes.MEMORY) },
+                onOpenRoutines = { navController.safeNavigate(Routes.SCHEDULED_TASKS) },
+            )
+        }
+        composable(io.github.nanomuse.ui.sysfiles.ROUTE_MEMORY_IMPORT) {
+            io.github.nanomuse.ui.sysfiles.MemoryImportScreen(onBack = { navController.safePopBackStack() })
+        }
+
         // nanoMuse: the full OpenMinis session list (folders, search, bulk
         // actions), one tap behind the drawer's archive glyph. Picking a chat
         // hands it to the home shell underneath.
@@ -636,6 +664,7 @@ fun AppNavigation(
                 onMemoryClick = { navController.safeNavigate(Routes.MEMORY) },
                 onMcpClick = { navController.safeNavigate(Routes.MCP) },
                 onSoulClick = { navController.safeNavigate(Routes.SOUL) },
+                onSystemFilesClick = { navController.safeNavigate(io.github.nanomuse.ui.sysfiles.ROUTE_SYSTEM_FILES) }, // nanoMuse
                 onPermissionsClick = { navController.safeNavigate(Routes.PERMISSIONS) },
                 onUsageClick = { navController.safeNavigate(Routes.USAGE_STATS) },
                 onAppearanceClick = { navController.safeNavigate(Routes.APPEARANCE) },

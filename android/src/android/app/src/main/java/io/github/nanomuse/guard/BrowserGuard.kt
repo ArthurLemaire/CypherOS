@@ -11,7 +11,7 @@ import org.json.JSONObject
  * delete goes through the approval card first, bound to the page's host.
  */
 object BrowserGuard {
-    private const val TAG = "nanoMuse.BrowserGuard"
+    private const val TAG = "BrowserGuard"
 
     /** Prefix on a refusal so the chat layer knows to bring the browser sheet forward. */
     const val HANDOFF_PREFIX = "[nanoMuse handoff]"

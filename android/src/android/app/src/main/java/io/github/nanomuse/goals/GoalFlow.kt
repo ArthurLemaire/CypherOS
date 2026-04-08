@@ -26,7 +26,7 @@ import java.util.Date
  * text; the markdown renderer draws them as cards.
  */
 object GoalFlow {
-    private const val TAG = "nanoMuse.Goals"
+    private const val TAG = "Goals"
     const val ADDENDUM_TAG = "nanomuse-goal-create"
     const val BLOCK_GOAL = "nanomuse-goal"
     const val BLOCK_UPDATE = "nanomuse-goal-update"

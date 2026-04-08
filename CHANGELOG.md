@@ -2,6 +2,31 @@
 
 All notable changes to nanoMuse. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/). Unreleased changes are on `main`.
 
+## [0.1.5] - 2026-09-25 · alpha · 记得你
+
+The agent starts to keep things: a feed it writes for you every morning, the files that make it what it is — who it is, what it knows about you, what it remembers, when it wakes — readable and editable in one place, and a way to bring over what another assistant already knew. Long tasks keep the screen on and ask "continue?" instead of wrapping up early.
+
+### Added
+
+- **Feed tab** (`io.github.nanomuse.feed`, `ui/feed`). A fifth glyph in the bottom bar. A built-in routine — *Write the feed*, daily at 08:00, visible under Goals → Routines with its switch, editor and run records like any other — asks the agent to read GLOBAL.md, the last seven days of diary, USER.md and the goals, and write three to six short posts. Each post is a fenced ` ```nanomuse-feed ` JSON block in the feed's own side chat ("Feed"); the app turns every block into `minis-global/nanomuse/feed/YYYY-MM-DD/NN.md` (front matter: title, type, emoji, source, created, liked) and the tab renders them as Muse's cards on a grey canvas — weekday + part of day as the section title, a 44 dp emoji tile, title, Markdown body, heart · *Discuss* · ⓘ. *Discuss* opens a side chat titled after the post with its text as the opener; ⓘ shows type, time, sources, the file path, and a delete. The first visit shows Muse's *About the feed* card with the steering sentence and *Edit* / *Got it*; the round sliders button at the top right opens the sheet — the sentence (`feed-preferences.md`, quoted in the feed's system prompt), the daily switch, "Daily at 08:00 · tap to change" (opens the routine editor), *Write it now*. Twelve posts a day at most; thirty days are kept.
+- **System files** (Settings → System files; also in the ⋯ menu of every tab and the drawer). Muse's list: an `MD` badge, the file name, "MD · 358 B · 03:13", sort by name or by last modified, ⋮ to copy or share. Opening a file gives Muse's page: round back button, the name, a pill with the pencil and ⋯, an italic *About this file* quote, and the file rendered as Markdown. Five files: `SOUL.md` (the persona — saving refreshes the cached soul), `USER.md` (new — what the agent knows about you), `GLOBAL.md` (the memory; ⋯ jumps to OpenMinis' memory pages for the diary), `feed-preferences.md`, and `HEARTBEAT.md` — a read-only view of every routine and goal check with schedule and last run, with a ♥ badge. Edits use a monospace editor with a hint, Cancel and a blue Save.
+- **USER.md in the system prompt.** When the file has content it is appended after the memory fragments, with one paragraph telling the model to keep it current from its shell (`/var/minis/memory/USER.md`) and never to put secrets in it. The file lives next to `GLOBAL.md` and `SOUL.md` in `minis-global/memory/` so the agent can reach it — the outline had it one level up.
+- **Import memory** (System files → ⋯ → Import memory). One page: the prompt to give your other assistant ("gather everything you remember about me into bullet points…") with a copy button, a *From* field, a paste box, and *Add to memory*, which appends `### <date> · <from>` and the text under a `## 导入` / `## Imported` section at the end of `GLOBAL.md` (created if missing, recognised in either language).
+- **Finished browser steps** keep their picture: the last live frame of the in-app browser is remembered per tool block (`BrowserFrames`) and shown when the step saved no screenshot of its own, and the floating status bar reads "Open test page · Done" for a completed `browser_use` step. The two levels of status stay as they were: the running tool's title under the face, the action chips on the cards.
+- **Screen stays on** while the agent drives the in-app browser or another app through the accessibility service (`KeepAwake`, hooked in `ChatScreen` next to `isStreaming`; the a11y CLI handler stamps every command). Ordinary chat and shell work let it time out as usual.
+- **"Still going after 200 steps".** When the agent loop reaches `MAX_AGENT_TURNS` it no longer writes an error into the chat; a card above the composer asks whether to keep going — *Continue* resumes from where it stopped, *Stop here* leaves OpenMinis' Resume banner in place. The card is cleared when you send, retry, clear the chat or switch sessions.
+- `nanomuse-feed` blocks render as a small "Added to the feed" card with an *Open* button in the conversation where they were written.
+
+### Changed
+
+- `nmAfterTurn` also hands every completed turn to the feed parser; `buildSystemPrompt` appends the USER.md paragraph and, in the feed's session only, the feed protocol and a digest of the memory files and goals (≤ 7 000 characters).
+- nanoMuse log categories no longer double the `nanoMuse.` prefix.
+- versionCode 6.
+
+### Kept, on purpose
+
+- OpenMinis' memory pages (`GLOBAL.md` + diary) and the soul editor are unchanged; the system files pages open them for the parts they cover. The feed routine is an ordinary scheduled task — pause, edit or delete it like any other.
+
 ## [0.1.4] - 2026-09-25 · alpha · 关键处先问你
 
 Before it deletes your files, sends something out or pays, the agent stops and asks — in the shell and in the browser. What you approve can be remembered per chat, or for good per recipient / host / folder. Passwords and verification codes are never typed by the agent; the browser is handed to you instead.

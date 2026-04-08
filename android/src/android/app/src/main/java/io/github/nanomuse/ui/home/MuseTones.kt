@@ -30,6 +30,10 @@ object MuseTones {
     val hairline: Color
         @Composable @ReadOnlyComposable get() = if (dark) Color(0xFF3A3A3C) else Color(0xFFE5E5EA)
 
+    /** The grey canvas a page of white cards sits on (the feed). */
+    val canvas: Color
+        @Composable @ReadOnlyComposable get() = if (dark) Color(0xFF000000) else Color(0xFFF3F3F5)
+
     /** Muse's action blue (the "Let's go" button). */
     val action: Color = Color(0xFF0A66E4)
 

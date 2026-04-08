@@ -55,7 +55,7 @@ sealed class GateOutcome {
  * rather than doing the thing on a stale "yes".
  */
 object RiskGate {
-    private const val TAG = "nanoMuse.RiskGate"
+    private const val TAG = "RiskGate"
     const val TIMEOUT_MS: Long = 180_000
 
     private val _pending = MutableStateFlow<RiskRequest?>(null)
