@@ -652,6 +652,7 @@ class BrowserUseManager(
 
     suspend fun execute(input: BrowserActionInput): BrowserActionResult {
         val prevUrl = withContext(Dispatchers.Main) { webView.url }
+        nmGuard(input)?.let { return it } // nanoMuse: secret fields refused, pay/send/delete taps approved first
         var result: BrowserActionResult = when (input.action) {
             BrowserAction.NAVIGATE -> navigate(input.url)
             BrowserAction.SCREENSHOT -> return screenshot(fullPage = input.fullPage)
@@ -984,6 +985,38 @@ class BrowserUseManager(
         }
         return file
     }
+
+    // nanoMuse: what a click or type is about to touch, judged before it happens.
+    private suspend fun nmGuard(input: BrowserActionInput): BrowserActionResult? {
+        if (input.action != BrowserAction.CLICK && input.action != BrowserAction.TYPE) return null
+        val guard = io.github.nanomuse.guard.BrowserGuard
+        val described = runCatching {
+            evaluateJavascript(guard.describeJs(input.selector, input.coordinateX, input.coordinateY))
+        }.getOrNull() ?: return null
+        val target = io.github.nanomuse.guard.BrowserGuard.Target.parse(described) ?: return null
+        val verdict = if (input.action == BrowserAction.TYPE) guard.judgeType(target) else guard.judgeClick(target)
+        return when (verdict) {
+            is io.github.nanomuse.guard.BrowserGuard.Verdict.Proceed -> null
+            is io.github.nanomuse.guard.BrowserGuard.Verdict.Refuse ->
+                BrowserActionResult.error(verdict.text).copy(pageURL = target.url.ifBlank { prevUrlOrNull() })
+            is io.github.nanomuse.guard.BrowserGuard.Verdict.Ask -> {
+                val outcome = io.github.nanomuse.guard.RiskGate.check(
+                    sessionId = sessionIdProvider() ?: "",
+                    kind = io.github.nanomuse.guard.GuardKind.BROWSER,
+                    assessment = verdict.assessment,
+                    preview = verdict.elementText,
+                    pageUrl = target.url.ifBlank { null },
+                    elementText = verdict.elementText,
+                )
+                when (outcome) {
+                    is io.github.nanomuse.guard.GateOutcome.Allowed -> null
+                    is io.github.nanomuse.guard.GateOutcome.Denied -> BrowserActionResult.error(outcome.message)
+                }
+            }
+        }
+    }
+
+    private suspend fun prevUrlOrNull(): String? = withContext(Dispatchers.Main) { webView.url }
 
     // -- Click --
 

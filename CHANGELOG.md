@@ -2,6 +2,29 @@
 
 All notable changes to nanoMuse. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/). Unreleased changes are on `main`.
 
+## [0.1.4] - 2026-09-25 · alpha · 关键处先问你
+
+Before it deletes your files, sends something out or pays, the agent stops and asks — in the shell and in the browser. What you approve can be remembered per chat, or for good per recipient / host / folder. Passwords and verification codes are never typed by the agent; the browser is handed to you instead.
+
+### Added
+
+- **Shell guard** (`io.github.nanomuse.guard.ShellGuard`). Every `shell_execute` command is classified before it runs: *destructive* (`rm` outside scratch dirs, `find -delete`, `shred`, `truncate`, `git reset --hard` / `clean -f` / `checkout --` / `branch -D`, `gh repo delete`…), *outbound* (`git push`, `curl`/`wget` with a body or a writing method, `ssh`/`scp`/`rsync`/`nc`, mail clients, `lark-cli` write verbs, `gh` writes, cloud CLIs, package publishing, anything named like a sender), *money* (an outbound command that mentions paying, ordering, transferring…), *install* (`apk`/`apt`/`pip`/`npm i`/`cargo install`…) and *safe*. Pipelines, `&&`/`;` chains, `sudo`/`env`/`nohup` wrappers, heredocs and inline `sh -c` / `python -c` scripts are judged part by part; deleting under `/tmp`, `/var/tmp`, `/dev/shm` is free. Each classification carries an *object*: the folder (`/var/minis/workspace`, `/var/minis/shared`, or the first two path components), the host, the remote, the chat id, the recipient.
+- **Approval card** (`RiskApprovalHost`, `RiskApprovalCard`). Destructive, outbound and money commands suspend the tool call and slide a card in above the composer, Muse's way: icon, "Allow Spark to delete in the workspace?", one line of what it means, the command in a grey preview box, and the buttons *Allow once* · *Allow for this chat* · *Always allow for the workspace* · *Deny*. The chat behind it dims; the header status reads *Needs approval*. Alarming shapes — wiping a whole tree, `dd`/`mkfs`, `curl | sh`, `chmod 777`, force push, fork bombs — get a warning card with only *Allow once* and *Deny*. Payments are asked about every time; there are no remembered approvals for money. Three minutes without an answer count as a denial.
+- **Remembered approvals** (`Grants`, `minis-global/nanomuse/grants.json`). *Allow for this chat* covers the same class for the rest of that conversation and is dropped when the chat is cleared or deleted; *Always allow* is persisted per class + object. Settings → Permissions gets a *nanoMuse remembered approvals* section listing each standing grant with its date; tapping one revokes it.
+- **Browser guard** (`BrowserGuard`). Before `browser_use` clicks or types, the target element is described in-page. A tap whose text or label reads like paying, ordering, sending, deleting, publishing or confirming a purchase asks first — the card shows the button text and the page URL, and *Always allow* binds to the host. Typing into a password field, a one-time-code field (`autocomplete`, name, id, placeholder, label, a numeric 4–8 digit code box, CVV) is refused outright: the tool result tells the model the field is the user's to fill, and the in-app browser is brought to the front on that page.
+- **Background approvals.** If the app is in the background when a card is pending, a high-priority notification carries the same title and description with *Allow once* and *Deny* actions; tapping it opens that chat. The notification is cancelled when the card is answered from anywhere.
+- **Policy paragraph in the system prompt** (`RiskPolicy`): what the app stops for, that the model should not ask twice, that a denial must not be retried or routed around, that passwords and codes are never typed, and that installs run with a one-line mention afterwards.
+- 23 unit tests for the shell and browser classifiers (`app/src/test/java/io/github/nanomuse/guard`).
+
+### Changed
+
+- `executeShellCommand` runs the gate first; a denied command returns the denial to the model as the tool result and marks the tool card failed. Installs run without asking and append a one-line notice to the result.
+- versionCode 5.
+
+### Kept, on purpose
+
+- OpenMinis' own confirmation for `minis-config` settings changes (`ConfigConfirmationGate`) and its per-category tool permissions are untouched; nanoMuse's grants sit above them on the Permissions page.
+
 ## [0.1.3] - 2026-09-25 · alpha · Muse 的形状
 
 The app opens on a conversation, not a list. One main chat with the face at the top, side chats in a drawer, and a bottom bar with Ideas, Goals and Library — the shape of Muse on a phone. Everything OpenMinis had is still there; it is reached from these pages instead of the old session list.

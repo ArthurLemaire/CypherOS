@@ -34,7 +34,9 @@ import io.github.nanomuse.ui.avatar.AgentMood
 fun rememberNanoMuseStatusLine(isStreaming: Boolean, mood: AgentMood): String? {
     val toolTitle by SessionActivityTracker.currentToolTitle.collectAsState()
     val toolRunning by SessionActivityTracker.isToolRunning.collectAsState()
+    val pendingRisk by io.github.nanomuse.guard.RiskGate.pending.collectAsState()
     return when {
+        mood == AgentMood.WAITING && pendingRisk != null -> stringResource(R.string.nm_risk_needs_approval)
         mood == AgentMood.WAITING -> stringResource(R.string.nm_status_waiting)
         isStreaming && toolRunning && !toolTitle.isNullOrBlank() -> toolTitle
         isStreaming -> stringResource(R.string.nm_status_thinking)

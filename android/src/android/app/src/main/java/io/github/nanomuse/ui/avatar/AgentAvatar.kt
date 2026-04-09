@@ -55,8 +55,9 @@ fun rememberAgentMood(isStreaming: Boolean, error: String?): AgentMood {
     val pendingAndroidPermission by OffloadPermissionManager.pendingAndroidPermission.collectAsState()
     val pendingSettingsGate by OffloadPermissionManager.pendingSettingsGate.collectAsState()
     val pendingConfig by ConfigConfirmationGate.pending.collectAsState()
+    val pendingRisk by io.github.nanomuse.guard.RiskGate.pending.collectAsState()
     val waiting = pendingPermission != null || pendingAndroidPermission != null ||
-        pendingSettingsGate != null || pendingConfig != null
+        pendingSettingsGate != null || pendingConfig != null || pendingRisk != null
 
     var afterglow by remember { mutableStateOf<AgentMood?>(null) }
     var previousStreaming by remember { mutableStateOf(isStreaming) }

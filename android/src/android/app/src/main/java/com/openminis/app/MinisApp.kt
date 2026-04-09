@@ -644,6 +644,11 @@ class MinisApp : Application(), ImageLoaderFactory {
         com.openminis.app.config.confirm.ConfigConfirmationGate.cancelNotification = {
             configConfirmNotifier.cancel(it)
         }
+        // nanoMuse: remembered approvals + the approval gate's background notification.
+        io.github.nanomuse.guard.Grants.init(this)
+        val nmRiskNotifier = io.github.nanomuse.guard.RiskApprovalNotifier(this, ::isAppForeground)
+        io.github.nanomuse.guard.RiskGate.backgroundNotifier = { nmRiskNotifier.notifyIfBackgrounded(it) }
+        io.github.nanomuse.guard.RiskGate.cancelNotification = { nmRiskNotifier.cancel(it) }
 
         // Track foreground state via ActivityLifecycleCallbacks. Counting
         // started/stopped balances out around configuration changes (the
@@ -709,6 +714,7 @@ class MinisApp : Application(), ImageLoaderFactory {
                     // while a config-confirm dialog may still be showing — nudge
                     // them so they can come back before the 120s timeout.
                     com.openminis.app.config.confirm.ConfigConfirmationGate.notifyPending()
+                    io.github.nanomuse.guard.RiskGate.notifyPending() // nanoMuse
                 }
             }
             override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
