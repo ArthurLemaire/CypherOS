@@ -133,6 +133,14 @@ data class ScheduledTask(
     // "Run records" menu opens a screen backed by this. Capped at
     // MAX_RUN_HISTORY by the manager when appending.
     val runHistory: List<ScheduledRun> = emptyList(),
+    // nanoMuse: a goal's periodic check is one of these, owned by the Goals
+    // tab — hidden from the routines list, tagged with its goal, and fired
+    // every [intervalMinutes] (first run a minute after creation) instead of
+    // at a time of day. All three are additive in the JSON; old rows read
+    // back unchanged.
+    val hidden: Boolean = false,
+    val goalId: String? = null,
+    val intervalMinutes: Int? = null,
 ) {
 
     /**
@@ -147,6 +155,14 @@ data class ScheduledTask(
      */
     fun nextTriggerMs(now: Long = System.currentTimeMillis()): Long? {
         if (!enabled) return null
+
+        // nanoMuse: interval tasks ignore the time of day. The receiver re-arms
+        // BEFORE the run marks lastFiredAt, so "first run soon" is keyed on the
+        // task's age, not on lastFiredAt.
+        intervalMinutes?.takeIf { it > 0 }?.let { minutes ->
+            val firstRun = lastFiredAt == null && now - createdAt < 30_000L
+            return if (firstRun) now + 60_000L else now + minutes * 60_000L
+        }
 
         // Earliest instant we may fire: max(now, start-of-startDate). This lets
         // a task created today with a future startDate wait until that day.
@@ -224,6 +240,10 @@ data class ScheduledTask(
         if (runHistory.isNotEmpty()) {
             put("runHistory", JSONArray().apply { runHistory.forEach { put(it.toJson()) } })
         }
+        // nanoMuse
+        if (hidden) put("hidden", true)
+        if (goalId != null) put("goalId", goalId)
+        if (intervalMinutes != null) put("intervalMinutes", intervalMinutes)
     }
 
     companion object {
@@ -260,6 +280,10 @@ data class ScheduledTask(
                     }
                 }
             } ?: emptyList(),
+            // nanoMuse
+            hidden = o.optBoolean("hidden", false),
+            goalId = if (o.has("goalId")) o.optString("goalId", null) else null,
+            intervalMinutes = if (o.has("intervalMinutes")) o.optInt("intervalMinutes") else null,
         )
     }
 }

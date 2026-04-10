@@ -1,0 +1,241 @@
+{
+  "sections": [
+    {
+      "id": "travel",
+      "title": "Travel",
+      "ideas": [
+        {
+          "id": "train-watch",
+          "emoji": "🚄",
+          "title": "Tell me where you're going and when — I'll watch for seats and lower fares.",
+          "body": "I set up the lookup tools inside the phone's Linux sandbox, check trains, classes and availability as often as you like, and tell you the moment something opens up. Booking and paying stay in your hands.",
+          "kind": "GOAL",
+          "category": "other",
+          "prompt": "I want to watch a train route: ask me for the origin, destination, date and acceptable departure window, then set up a goal that checks availability regularly."
+        },
+        {
+          "id": "trip-plan",
+          "emoji": "🗺️",
+          "title": "Name a city and a number of days — I'll plan an itinerary you can follow as is.",
+          "body": "Weather, opening hours and travel time between stops go into a day-by-day plan saved to your Library. Change one sentence and I'll rearrange the rest.",
+          "kind": "CHAT",
+          "prompt": "Help me plan a trip. Ask me where, how many days, with whom, a rough budget and the style I like, then give me a day-by-day itinerary as a file."
+        },
+        {
+          "id": "commute-brief",
+          "emoji": "🚦",
+          "title": "Before you leave each morning, I'll tell you the traffic, the weather and the first thing on your plate.",
+          "body": "A morning routine: I check the weather where you are, the traffic on your commute, glance at your calendar and boil the morning down to three sentences.",
+          "kind": "ROUTINE",
+          "time": "07:30",
+          "prompt": "Morning brief: check today's weather and commute traffic, read my calendar for today, and tell me in at most five sentences the three things that matter most and what to bring."
+        },
+        {
+          "id": "parcel-track",
+          "emoji": "📦",
+          "title": "Send me a tracking number — I'll tell you where the parcel is and when it lands.",
+          "body": "I follow the shipment through the carrier's tracking, tell you about every new scan, and remind you to keep the phone nearby on delivery day.",
+          "kind": "CHAT",
+          "prompt": "Help me track a parcel. Ask me for the tracking number and carrier, check the current status once, then set a routine that checks every morning and reminds me the day before delivery."
+        }
+      ]
+    },
+    {
+      "id": "work",
+      "title": "Work",
+      "ideas": [
+        {
+          "id": "meeting-prep",
+          "emoji": "📝",
+          "title": "Ten minutes before a meeting, I'll have the background and the questions ready.",
+          "body": "I read the meeting's title and attendees from your calendar, look through what we've discussed and what you've put in the Library, and hand you one page: purpose, talking points, three questions worth asking.",
+          "kind": "ROUTINE",
+          "time": "08:50",
+          "prompt": "Look at the meetings on my calendar today and prepare a one-page brief for each: the purpose, the points I should make, and three questions worth asking."
+        },
+        {
+          "id": "weekly-review",
+          "emoji": "📊",
+          "title": "Every Friday afternoon, I'll review what you did this week and what next week needs.",
+          "body": "From our conversations, your calendar and the notes I keep, I list what got done, what didn't, and three priorities for next week — as a draft you can send.",
+          "kind": "ROUTINE",
+          "time": "17:00",
+          "prompt": "Write my weekly review: from this week's conversations, my calendar and what you remember, list what was completed, what is still open, and three priorities for next week. Save it as a Markdown file."
+        },
+        {
+          "id": "inbox-triage",
+          "emoji": "📬",
+          "title": "Dump a pile of messages or emails on me — I'll sort them and draft the replies.",
+          "body": "Paste text or screenshots. I sort them into 'reply today', 'this week' and 'just so you know', and draft each reply so you only need to edit and send.",
+          "kind": "CHAT",
+          "prompt": "I'm handing you a batch of messages to triage: sort them into 'reply today / this week / just so you know' and draft a reply for each one that needs it. Ask me to paste the content first."
+        },
+        {
+          "id": "doc-digest",
+          "emoji": "📄",
+          "title": "Long documents, PDFs, web pages — I'll read them and give you the three-minute version.",
+          "body": "Drop the file in a shared folder or send me the link. You get the conclusions, the key numbers and the decisions you need to make; ask follow-ups any time.",
+          "kind": "CHAT",
+          "prompt": "I have something long for you to read and summarise: ask me for the file or link, then give me conclusions, key numbers and decisions I need to make — at most five bullets each."
+        }
+      ]
+    },
+    {
+      "id": "life",
+      "title": "Everyday",
+      "ideas": [
+        {
+          "id": "price-watch",
+          "emoji": "🏷️",
+          "title": "Tell me what you want to buy — the moment it hits your price, you'll know.",
+          "body": "I check the product page on a schedule, keep the price history, and notify you at your target. Ordering and paying are yours; I don't touch them.",
+          "kind": "GOAL",
+          "category": "finance",
+          "prompt": "I want to watch the price of a product: ask me for the link or name, my target price and how often to check, then create a goal that alerts me when it drops."
+        },
+        {
+          "id": "photo-sort",
+          "emoji": "🖼️",
+          "title": "Mount your photos and I'll sort screenshots and pictures by what's in them.",
+          "body": "Once your gallery is mounted as a shared folder I look at each image — receipts, chat screenshots, landscapes, documents — file it into the right folder and note anything important.",
+          "kind": "CHAT",
+          "prompt": "Help me sort my photos: ask me to mount the gallery in Shared Folders first, then sort by content (receipts, screenshots, scenery, documents, other) and list what you did."
+        },
+        {
+          "id": "meal-log",
+          "emoji": "🥗",
+          "title": "Photograph what you eat — I'll estimate the calories and keep the log.",
+          "body": "A photo or a sentence is enough: I estimate nutrition and calories, log it in the day's memory, and give you a summary each evening with one small suggestion for tomorrow.",
+          "kind": "CHAT",
+          "prompt": "From now on, log my meals: whenever I send a photo or a description, estimate calories and nutrition and write it into today's memory. Tell me first how best to send them."
+        },
+        {
+          "id": "subscriptions",
+          "emoji": "🔁",
+          "title": "Let's list every subscription that charges you each month and see which to stop.",
+          "body": "Give me bill screenshots or statements. I list every recurring charge, its next date and the yearly total; you decide what to cancel and I walk you through each cancellation.",
+          "kind": "CHAT",
+          "prompt": "Audit my subscriptions: ask me for bill screenshots or statements, then list every recurring charge, its next billing date and the yearly total, and flag the ones I may not need."
+        }
+      ]
+    },
+    {
+      "id": "learn",
+      "title": "Learning",
+      "ideas": [
+        {
+          "id": "daily-words",
+          "emoji": "🔤",
+          "title": "Five new words every morning, a quick quiz every night.",
+          "body": "You pick the language and level; I pick words by theme with examples and a memory hook, quiz you in the evening, and bring back the ones you missed.",
+          "kind": "ROUTINE",
+          "time": "08:00",
+          "prompt": "Daily vocabulary: pick five new words for me (ask which language, level and topics first), each with a definition, one example sentence and a memory hook, plus a review quiz on yesterday's words."
+        },
+        {
+          "id": "study-plan",
+          "emoji": "🎯",
+          "title": "Something you want to learn? I'll break it into weekly chunks and keep you honest.",
+          "body": "Tell me the goal and the hours you can spare; I lay out four to eight weeks, check progress weekly, and adjust the pace so you actually finish.",
+          "kind": "GOAL",
+          "category": "interests",
+          "prompt": "I want to learn something new and stick with it: ask me what, my current level, hours per week and the timeframe, then create a goal with a weekly progress check."
+        },
+        {
+          "id": "explain",
+          "emoji": "💡",
+          "title": "Send me a concept you don't get — I'll explain it with things you already know.",
+          "body": "I ask what you already understand and start from there, then check with two quick questions and leave you a flashcard if you want one.",
+          "kind": "CHAT",
+          "prompt": "There's a concept I don't understand: ask me what it is and what related things I already know, explain it with analogies, then check with two short questions."
+        },
+        {
+          "id": "reading-notes",
+          "emoji": "📚",
+          "title": "Finished a book? I'll turn it into notes you'll actually reread.",
+          "body": "Tell me the highlights, or send the passages you marked. I write structured notes into your Library and remember what stayed with you.",
+          "kind": "CHAT",
+          "prompt": "Help me write notes on a book: ask me the title, the three things that struck me most and the quotes I want to keep, then save structured Markdown notes."
+        }
+      ]
+    },
+    {
+      "id": "family",
+      "title": "Family & friends",
+      "ideas": [
+        {
+          "id": "birthdays",
+          "emoji": "🎂",
+          "title": "Birthdays and anniversaries — I remind you a week ahead, gift ideas included.",
+          "body": "Give me names and dates and I keep them. A week before each one I remind you, with a few gift directions based on what you've told me about them.",
+          "kind": "CHAT",
+          "prompt": "Remember the birthdays and anniversaries of the people who matter to me: ask for the list and dates, store them in long-term memory, and set a routine that reminds me a week before each."
+        },
+        {
+          "id": "keep-in-touch",
+          "emoji": "💬",
+          "title": "Lost touch with old friends? Once a week I'll suggest who to reach out to — and how to start.",
+          "body": "Give me a list of people you want to stay close to. I rotate through them and write a natural opening line based on what you last talked about.",
+          "kind": "ROUTINE",
+          "time": "19:00",
+          "prompt": "Weekly keep-in-touch: from my list of people I want to stay close to, pick the one I've gone longest without contacting, remind me, and write a natural opening line based on what I noted about our last conversation."
+        },
+        {
+          "id": "family-calendar",
+          "emoji": "📅",
+          "title": "Tell me the family's plans and I'll put them on the calendar and catch clashes.",
+          "body": "Kids' lessons, a parent's appointment, a weekend get-together — one sentence and it's in the calendar; if two things collide, I say so first.",
+          "kind": "CHAT",
+          "prompt": "Help me run the family calendar: I'll tell you plans as they come up; write them into the calendar, confirm each before creating it, and warn me about conflicts."
+        },
+        {
+          "id": "gift-ideas",
+          "emoji": "🎁",
+          "title": "Describe the person and I'll give you gift ideas that aren't the obvious ones.",
+          "body": "Budget, relationship, what they're into lately — three questions, then five directions with one line each on why it fits.",
+          "kind": "CHAT",
+          "prompt": "Help me think of a gift: ask who it's for, my budget, their interests and what's going on in their life, then give me five directions with one line of reasoning each."
+        }
+      ]
+    },
+    {
+      "id": "more",
+      "title": "More ideas",
+      "ideas": [
+        {
+          "id": "id-renewal",
+          "emoji": "🪪",
+          "title": "Tell me when your documents expire — I'll book the renewal and prep the paperwork list.",
+          "body": "Passport, licence, visa: I note the dates, remind you three months ahead, list the documents and the office, and look up appointment slots where I can.",
+          "kind": "CHAT",
+          "prompt": "Help me track document expiry: ask which documents I have and when they expire, store them in memory, and set a reminder three months ahead of each with the renewal checklist."
+        },
+        {
+          "id": "personality-quiz",
+          "emoji": "❓",
+          "title": "Two small questions a day — after a week I'll tell you what I've noticed about you.",
+          "body": "Light questions, quick answers. I keep them and, once a week, write a short observation about your preferences and rhythm so I understand you better.",
+          "kind": "ROUTINE",
+          "time": "21:00",
+          "prompt": "Two questions a day: ask me two small questions about preferences, habits or how things are going (never repeat one), store the answers in memory; every Sunday add a short observation about my week."
+        },
+        {
+          "id": "event-plan",
+          "emoji": "🎉",
+          "title": "Name the occasion — I'll plan the run of show and draft the invitation.",
+          "body": "Birthday, team outing, family dinner: give me the headcount, budget and date, and you get a timeline, a shopping list and an invitation you can send as is.",
+          "kind": "CHAT",
+          "prompt": "Help me plan an event: ask me the occasion, date, headcount and budget, then give me a timeline, a to-do list and an invitation text I can send."
+        },
+        {
+          "id": "phone-cleanup",
+          "emoji": "🧹",
+          "title": "Let me look through the sandbox and shared folders — I'll clear the junk and organise the rest.",
+          "body": "I list the big files and duplicates, show you the list first and only act when you say so; anything worth keeping goes into the Library.",
+          "kind": "CHAT",
+          "prompt": "Help me tidy the workspace and shared folders: list large files, duplicates and files untouched for a long time, and give me the list. Do not delete anything before I confirm."
+        }
+      ]
+    }
+  ]
+}

@@ -312,9 +312,15 @@ fun AppNavigation(
     // regardless of mode 1 / 2 / 0. Wait for the start destination to
     // settle into RESUMED before navigating; for mode 3 (Home) we don't
     // need to navigate at all so we can skip the wait entirely.
+    // nanoMuse: in compact windows SESSION_LIST renders the home shell
+    // (io.github.nanomuse.ui.home), which opens on the main chat by itself —
+    // the launch-session resolver and the warm-share fallback below step
+    // aside for it. Wide windows keep the upstream list/detail behaviour.
+    val nmHomeActive = !shouldUseTwoPane()
     LaunchedEffect(Unit) {
         val hasDeepLink = initialDeepLink != null && initialDeepLink !is DeepLinkAction.Unknown
         if (hasDeepLink) return@LaunchedEffect
+        if (nmHomeActive) return@LaunchedEffect // nanoMuse
         val hasPendingShare =
             com.openminis.app.share.ShareCoordinator.bufferVersion.value > 0
         val rawMode = getAppearancePrefs(context).getInt(KEY_LAUNCH_SESSION, 0)
@@ -439,7 +445,8 @@ fun AppNavigation(
     LaunchedEffect(shareBufferVersion) {
         if (shareBufferVersion == 0) return@LaunchedEffect
         val current = navController.currentDestination?.route ?: return@LaunchedEffect
-        if (current == Routes.SESSION_LIST) {
+        // nanoMuse: the home shell has a ChatScreen mounted that drains the buffer itself.
+        if (current == Routes.SESSION_LIST && !nmHomeActive) {
             navController.safeNavigate(Routes.chat("__new__${java.util.UUID.randomUUID()}")) {
                 popUpTo(Routes.SESSION_LIST) { inclusive = false }
             }
@@ -553,6 +560,18 @@ fun AppNavigation(
         // them keeps working unchanged. On a phone the scaffold resolves to a
         // single pane, so those pushes look and behave exactly as before.
         composable(Routes.SESSION_LIST) {
+            // nanoMuse: compact windows open on the home shell (main chat +
+            // bottom tabs); the upstream split keeps wide windows.
+            if (!shouldUseTwoPane()) {
+                io.github.nanomuse.ui.home.NanoMuseHome(
+                    navController = navController,
+                    chatRepository = chatRepository,
+                    providerRepository = providerRepository,
+                    memoryRepository = memoryRepository,
+                    skillRepository = skillRepository,
+                    mcpRepository = mcpRepository,
+                )
+            } else
             ChatSplitScaffoldRoute(
                 initialSessionId = null,
                 navController = navController,
@@ -561,6 +580,30 @@ fun AppNavigation(
                 memoryRepository = memoryRepository,
                 skillRepository = skillRepository,
                 mcpRepository = mcpRepository,
+            )
+        }
+
+        // nanoMuse: the full OpenMinis session list (folders, search, bulk
+        // actions), one tap behind the drawer's archive glyph. Picking a chat
+        // hands it to the home shell underneath.
+        composable(io.github.nanomuse.ui.home.ROUTE_ALL_CHATS) {
+            com.openminis.app.ui.sessions.SessionListScreen(
+                chatRepository = chatRepository,
+                providerRepository = providerRepository,
+                onSessionClick = { id ->
+                    io.github.nanomuse.ui.home.HomeBus.showSession(id)
+                    navController.safePopBackStack()
+                },
+                onNewChat = { id ->
+                    io.github.nanomuse.ui.home.HomeBus.showSession(id)
+                    navController.safePopBackStack()
+                },
+                onSettingsClick = { navController.safeNavigate(Routes.SETTINGS) },
+                onAddProviderClick = { navController.safeNavigate(Routes.ADD_PROVIDER) },
+                onSelectModelsClick = { navController.safeNavigate(Routes.ONBOARDING_MODELS) },
+                onTerminalClick = { navController.safeNavigate(Routes.terminal()) },
+                onRootfsClick = { navController.safeNavigate(Routes.ROOTFS_MANAGEMENT) },
+                onScheduledTasksClick = { navController.safeNavigate(Routes.SCHEDULED_TASKS) },
             )
         }
 

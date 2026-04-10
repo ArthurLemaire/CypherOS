@@ -36,4 +36,99 @@
         <item>小竹</item>
         <item>阿岳</item>
     </string-array>
+
+    <!-- 首页：四个页签（Muse 的形状） -->
+    <string name="nm_tab_chat">聊天</string>
+    <string name="nm_tab_ideas">点子</string>
+    <string name="nm_tab_goals">目标</string>
+    <string name="nm_tab_library">资源库</string>
+    <string name="nm_more">更多</string>
+    <string name="nm_open_drawer">对话</string>
+
+    <!-- 首页：对话抽屉 -->
+    <string name="nm_drawer_main_chat">主要聊天</string>
+    <string name="nm_drawer_side_chats">旁聊</string>
+    <string name="nm_drawer_all_chats">全部对话</string>
+    <string name="nm_drawer_empty_title">发起旁聊</string>
+    <string name="nm_drawer_empty_body">旁聊是按主题整理对话的可选方式。</string>
+    <string name="nm_drawer_search">搜索</string>
+    <string name="nm_drawer_new_chat">新建旁聊</string>
+    <string name="nm_drawer_settings">设置</string>
+    <string name="nm_drawer_untitled">新对话</string>
+    <string name="nm_drawer_set_main">设为主要聊天</string>
+
+    <!-- 目标 -->
+    <string name="nm_goals_title">目标</string>
+    <string name="nm_goals_tracking">追踪</string>
+    <string name="nm_goals_tracking_empty">尚未追踪任何内容</string>
+    <string name="nm_goals_routines">例程</string>
+    <string name="nm_goals_routines_empty">还没有例程。例程是我在固定时间替你做的事——每天，或你选的那几天。</string>
+    <string name="nm_goals_create">创建目标</string>
+    <string name="nm_goals_create_body">选择一个类别，告诉我你想要的目标，我将为你量身定制一个计划，并随着你的成长不断改进。</string>
+    <string name="nm_goal_cat_health">健康</string>
+    <string name="nm_goal_cat_relationships">人际关系</string>
+    <string name="nm_goal_cat_finance">金融</string>
+    <string name="nm_goal_cat_career">事业</string>
+    <string name="nm_goal_cat_interests">兴趣</string>
+    <string name="nm_goal_cat_productivity">效率</string>
+    <string name="nm_goal_cat_other">其他</string>
+    <string name="nm_goal_sheet_title">创建%1$s目标</string>
+    <string name="nm_goal_sheet_body1">首先，我们将在聊天中一起完善目标。我会问几个问题，准确了解你的目标。</string>
+    <string name="nm_goal_sheet_body2">目标设置后，我会在这里追踪你的进度。</string>
+    <string name="nm_goal_sheet_go">开始吧</string>
+    <string name="nm_goal_create_message">我想创建一个%1$s目标。</string>
+    <string name="nm_goal_check_task_label">目标检查：%1$s</string>
+    <plurals name="nm_goal_every_hours">
+        <item quantity="other">每 %d 小时检查一次</item>
+    </plurals>
+    <string name="nm_goal_daily_at">每天 %1$s 检查</string>
+    <string name="nm_goal_cadence_next">%1$s · 下次 %2$s</string>
+    <string name="nm_goal_no_check_yet">首次检查约一分钟后开始</string>
+    <string name="nm_goal_open_chat">打开对话</string>
+    <string name="nm_goal_check_now">立即检查</string>
+    <string name="nm_goal_pause">暂停检查</string>
+    <string name="nm_goal_resume">恢复检查</string>
+    <string name="nm_goal_delete">删除目标</string>
+    <string name="nm_goal_delete_confirm">删除这个目标？它的对话会留在对话列表里。</string>
+    <string name="nm_goal_status_paused">已暂停</string>
+    <string name="nm_goal_status_done">已完成</string>
+    <string name="nm_goal_card_created">目标已创建</string>
+    <string name="nm_goal_card_open">在「目标」中查看</string>
+    <string name="nm_goal_update_card_title">目标进展</string>
+    <string name="nm_goal_update_on_track">进展顺利</string>
+    <string name="nm_goal_update_attention">需要留意</string>
+
+    <!-- 目标页里的例程（定时任务） -->
+    <string name="nm_routine_new">新建例程</string>
+    <string name="nm_routine_all">全部例程</string>
+    <string name="nm_routine_edit">编辑</string>
+    <string name="nm_routine_runs">运行记录</string>
+    <string name="nm_routine_run_now">立即运行</string>
+    <string name="nm_routine_delete">删除</string>
+    <string name="nm_routine_paused">已关闭</string>
+
+    <!-- 点子 -->
+    <string name="nm_ideas_title">点子</string>
+    <string name="nm_idea_kind_chat">会开始一段对话</string>
+    <string name="nm_idea_kind_routine">会创建一条例程</string>
+    <string name="nm_idea_kind_goal">会创建一个目标</string>
+    <string name="nm_idea_action_chat">发到聊天</string>
+    <string name="nm_idea_action_routine">创建例程</string>
+    <string name="nm_idea_action_goal">开始这个目标</string>
+    <string name="nm_idea_routine_created">例程已创建，去设定时间和细节。</string>
+
+    <!-- 资源库 -->
+    <string name="nm_library_title">资源库</string>
+    <string name="nm_library_artifacts">构件</string>
+    <string name="nm_library_media">影音内容</string>
+    <string name="nm_library_empty_artifacts_title">还没有创建任何内容</string>
+    <string name="nm_library_empty_artifacts_body">我为你写的文档、表格和页面会显示在这里。</string>
+    <string name="nm_library_empty_media_title">还没有影音内容</string>
+    <string name="nm_library_empty_media_body">我生成的图片、截图和录音会显示在这里。</string>
+    <string name="nm_library_from_shared">共享文件夹</string>
+    <string name="nm_library_share">分享</string>
+    <string name="nm_library_open_chat">打开对话</string>
+    <string name="nm_library_menu_shared_folders">共享文件夹</string>
+    <string name="nm_goal_check_prompt">到点了，看看这个目标：%1$s</string>
+    <string name="nm_goal_first_check">第一次先：%1$s</string>
 </resources>
