@@ -76,9 +76,10 @@ else
   [ -f "$out" ] && [ -f "$out.sha256" ] || { echo "publish-only needs $out and its .sha256 — build first" >&2; exit 1; }
   echo "== dist/$(basename "$out")"
   ( cd "$NM_ROOT/dist" && sha256sum -c "$(basename "$out").sha256" )
-  "$build_tools/aapt" dump badging "$out" | grep -q "versionName='$version'" || {
+  badging="$("$build_tools/aapt" dump badging "$out")"   # a variable, not a pipe: grep -q + pipefail would SIGPIPE aapt
+  echo "$badging" | grep -q "versionName='$version'" || {
     echo "$out is not versionName $version:" >&2
-    "$build_tools/aapt" dump badging "$out" | grep -E "^package:" >&2
+    echo "$badging" | grep -E "^package:" >&2
     exit 1
   }
   inspect_apk "$out"
