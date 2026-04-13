@@ -2556,26 +2556,31 @@ fun ChatScreen(
                                 // the longest title.
                                 .padding(horizontal = 32.dp, vertical = 2.dp),
                         ) {
-                            // Nav title: current session title when one
-                            // exists and the toggle is on, else fall back to
-                            // the Soul name (matches the input placeholder
-                            // "Message <SoulName>"), then to app_name
-                            // ("nanoMuse") as the terminal fallback.
-                            // Tap opens the same SessionEditSheet used from
-                            // the session list — drafts return null from
-                            // loadSessionEntity so the sheet stays closed.
+                            // nanoMuse: the face above the name, as in Muse's
+                            // header. Its mood follows this session's streaming
+                            // state and the app-wide "needs you" gates; tapping
+                            // it opens Settings → Soul (name / icon / style).
+                            val nmMood = io.github.nanomuse.ui.avatar.rememberAgentMood(isStreaming, error)
+                            io.github.nanomuse.ui.avatar.AgentAvatar(
+                                mood = nmMood,
+                                size = 36.dp,
+                                contentDescription = stringResource(R.string.nm_avatar_content_description),
+                                onClick = { io.github.nanomuse.ui.header.openSoulSettings(context) },
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            // nanoMuse: the pill is the agent's name (Muse's
+                            // header), never the session title — that one
+                            // stays in the session list and in the chat
+                            // menu's "Rename chat" (showChatTitlePill is
+                            // therefore unused here; the pref is kept for
+                            // minis-config compatibility).
                             // SoulStore.cachedMetadata is the same source the
-                            // input placeholder uses (see ~line 3581), so
-                            // soul renames in Soul Settings reflect here live.
+                            // input placeholder uses, so a rename in the first
+                            // conversation or in Settings → Soul shows here live.
+                            // Tap: Settings → Soul, same as the face above.
                             val topBarSoul by com.openminis.app.agent.SoulStore
                                 .cachedMetadata.collectAsState()
-                            val displayTitle = when {
-                                showChatTitlePill
-                                    && sessionTitle.isNotBlank()
-                                    && sessionTitle != "New Chat" -> sessionTitle
-                                topBarSoul.name.isNotBlank() -> topBarSoul.name
-                                else -> stringResource(R.string.app_name)
-                            }
+                            val displayTitle = topBarSoul.name.trim().ifEmpty { stringResource(R.string.app_name) }
                             Text(
                                 text = displayTitle,
                                 fontSize = 16.sp,
@@ -2586,14 +2591,17 @@ fun ChatScreen(
                                 overflow = TextOverflow.Ellipsis,
                                 style = noFontPad,
                                 modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .clickable {
-                                        coroutineScope.launch {
-                                            editingSession = viewModel.loadSessionEntity()
-                                        }
-                                    }
-                                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                                    // nanoMuse: the name sits in a capsule under the face (Muse's name pill).
+                                    .clip(CircleShape)
+                                    .background(ChatColors.userBubble)
+                                    .clickable { io.github.nanomuse.ui.header.openSoulSettings(context) }
+                                    .padding(horizontal = 12.dp, vertical = 3.dp),
                             )
+                            // nanoMuse: while the agent works or waits, this
+                            // slot shows what it is doing (Muse's status line)
+                            // instead of the model rows; idle shows the rows.
+                            val nmStatusLine = io.github.nanomuse.ui.header.rememberNanoMuseStatusLine(isStreaming, nmMood)
+                            if (nmStatusLine != null) io.github.nanomuse.ui.header.NanoMuseStatusLine(nmStatusLine, nmMood) else
                             // Model picker subtitle: green dot + group +
                             // provider/model. Tap opens the model picker —
                             // separated from the title above so tapping the
@@ -2899,6 +2907,21 @@ fun ChatScreen(
                                     Icon(Icons.Outlined.Forum, contentDescription = null)
                                 },
                             )
+                            // nanoMuse: the top-bar pill now carries the agent's
+                            // name, so the session edit sheet (title / emoji)
+                            // moved here from the title tap.
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.nm_chat_menu_rename)) },
+                                onClick = {
+                                    showChatMenu = false
+                                    coroutineScope.launch {
+                                        editingSession = viewModel.loadSessionEntity()
+                                    }
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Edit, contentDescription = null)
+                                },
+                            )
                             MinisMenuDivider()
                             // Clear Chat (iOS parity, red)
                             DropdownMenuItem(
@@ -3135,7 +3158,9 @@ fun ChatScreen(
                 // user-configured font scale on xhdpi/xxhdpi without
                 // re-clipping (T-topbar-model-row-clip regression check).
                 // Font sizes + lineHeights stay untouched per spec.
-                expandedHeight = 68.dp,
+                // nanoMuse: 68dp held the 3-row title; the face (36dp) and the
+                // capsule padding sit on top of that.
+                expandedHeight = 108.dp,
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -3623,6 +3648,7 @@ fun ChatScreen(
                     is FlatChatItem.AssistantThinking -> grayedMap[originalMessageId(messageId)] == true
                     is FlatChatItem.AssistantToolUse -> grayedMap[originalMessageId(messageId)] == true
                     is FlatChatItem.AssistantInfo -> false  // system rows never grayed
+                    is FlatChatItem.NanoMuseNaming -> false // nanoMuse
                     is FlatChatItem.AssistantTyping -> false
                     is FlatChatItem.AssistantError -> grayedMap[originalMessageId(messageId)] == true
                     is FlatChatItem.AssistantLegacyContent -> grayedMap[originalMessageId(messageId)] == true
@@ -4219,6 +4245,23 @@ fun ChatScreen(
                                     { viewModel.revertCompact() }
                                 } else null,
                             )
+                            // nanoMuse: the first-conversation name chooser.
+                            // A chip names the agent (and sends the name as the
+                            // user's message, as Muse does); the dashed row
+                            // hands over to the composer.
+                            is FlatChatItem.NanoMuseNaming -> {
+                                val nmCard by viewModel.nmNamingCard.collectAsState()
+                                nmCard?.let { card ->
+                                    io.github.nanomuse.ui.onboarding.NamingCard(
+                                        state = card,
+                                        onPick = { name -> viewModel.nmPickName(name) },
+                                        onCustom = {
+                                            try { inputFocusRequester.requestFocus() } catch (_: IllegalStateException) {}
+                                            keyboardController?.show()
+                                        },
+                                    )
+                                }
+                            }
                             is FlatChatItem.AssistantTyping -> TypingIndicator()
                             is FlatChatItem.AssistantError -> InlineErrorBanner(
                                 error = item.error,
@@ -5983,13 +6026,19 @@ fun ChatScreen(
                                         // swaps instantly — matching the iOS
                                         // Reduce Motion branch.
                                         val fadeMs = if (animationsDisabled(context)) 0 else 220
+                                        // nanoMuse: while the name chooser is
+                                        // up, the composer asks for a name
+                                        // (Muse: "Write a name here").
+                                        val nmNamingCard by viewModel.nmNamingCard.collectAsState()
+                                        val nmChoosingName = nmNamingCard != null && nmNamingCard?.chosen == null
                                         Crossfade(
                                             targetState = placeholderIndex,
                                             animationSpec = tween(durationMillis = fadeMs),
                                             label = "composerPlaceholder",
                                         ) { idx ->
                                             Text(
-                                                composerPlaceholderText(idx, soulName.name),
+                                                if (nmChoosingName) stringResource(R.string.nm_naming_placeholder)
+                                                else composerPlaceholderText(idx, soulName.name),
                                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
                                                 fontSize = 16.5.sp * chatInputFontScale,
                                                 maxLines = 1,

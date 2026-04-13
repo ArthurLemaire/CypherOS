@@ -686,6 +686,7 @@ class AgentForegroundService : Service() {
             )
             val notif = NotificationCompat.Builder(this, OVERLAY_NUDGE_CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setLargeIcon(io.github.nanomuse.identity.NanoMuseIdentity.face(this)) // nanoMuse: the agent is the sender
                 .setContentTitle(getString(R.string.bg_overlay_nudge_title))
                 .setContentText(getString(R.string.bg_overlay_nudge_body))
                 .setStyle(
@@ -772,7 +773,8 @@ class AgentForegroundService : Service() {
         val titleText = when {
             isCompleted -> getString(R.string.bg_service_notification_title_completed)
             toolName != null -> toolDisplayLabel(toolName)
-            else -> getString(R.string.bg_service_notification_title)
+            // nanoMuse: "<name> is working", the way Muse phrases it.
+            else -> getString(R.string.nm_notif_working, io.github.nanomuse.identity.NanoMuseIdentity.name(this))
         }
         val collapsedText = if (isCompleted) {
             getString(R.string.bg_service_notification_text_completed, sessionLabel, timeString)
@@ -828,6 +830,7 @@ class AgentForegroundService : Service() {
 
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(smallIconRes(toolName, isCompleted))
+            .setLargeIcon(io.github.nanomuse.identity.NanoMuseIdentity.face(this)) // nanoMuse: the agent is the sender
             .setContentTitle(titleText)
             .setContentText(collapsedText)
             .setStyle(NotificationCompat.BigTextStyle().bigText(collapsedText))
@@ -909,6 +912,7 @@ class AgentForegroundService : Service() {
 
         val builder = Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(smallIcon)
+            .setLargeIcon(io.github.nanomuse.identity.NanoMuseIdentity.face(this)) // nanoMuse: the agent is the sender
             .setContentTitle(titleText)
             .setContentText(collapsedText)
             .setStyle(progressStyle)

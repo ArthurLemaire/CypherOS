@@ -507,7 +507,7 @@
     <string name="browser_nav_forward">Avançar</string>
     <string name="browser_stop">Parar</string>
     <string name="browser_reload">Recarregar</string>
-    <string name="browser_minis_browsing">O nanoMuse está navegando</string>
+    <string name="browser_minis_browsing">O %1$s está navegando</string>
     <string name="chat_typing_indicator">%1$s está pensando</string>
     <string name="read_aloud_unavailable">Falha na leitura em voz alta: nenhum mecanismo de voz utilizável. Verifique as configurações de saída de voz ou instale um mecanismo de fala do sistema.</string>
     <string name="chat_error_stream_dropped_partial">A conexão caiu — esta resposta pode estar incompleta. Toque em Tentar de novo para continuar.</string>

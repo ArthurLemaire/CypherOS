@@ -443,6 +443,13 @@ internal sealed class FlatChatItem {
         override val contentType = "info"
     }
 
+    // nanoMuse: the first-conversation name chooser; rendered by
+    // io.github.nanomuse.ui.onboarding.NamingCard from the view model's state.
+    data class NanoMuseNaming(val messageId: String) : FlatChatItem() {
+        override val key = "nm_naming:$messageId"
+        override val contentType = "nm_naming"
+    }
+
     data class AssistantTyping(val messageId: String) : FlatChatItem() {
         override val key = "typing:$messageId"
         override val contentType = "typing"
@@ -554,6 +561,7 @@ internal fun buildFlatChatItems(
             is FlatChatItem.AssistantThinking -> item.copy(messageId = "${item.messageId}#$n")
             is FlatChatItem.AssistantToolUse -> item.copy(messageId = "${item.messageId}#$n")
             is FlatChatItem.AssistantInfo -> item.copy(messageId = "${item.messageId}#$n")
+            is FlatChatItem.NanoMuseNaming -> item.copy(messageId = "${item.messageId}#$n") // nanoMuse
             is FlatChatItem.AssistantTyping -> item.copy(messageId = "${item.messageId}#$n")
             is FlatChatItem.AssistantError -> item.copy(messageId = "${item.messageId}#$n")
             is FlatChatItem.AssistantLegacyContent -> FlatChatItem.AssistantLegacyContent(
@@ -725,6 +733,7 @@ internal fun buildFlatChatItems(
                     messageId = message.id,
                     block = block,
                 )))
+                "nm_naming" -> out.add(dedupe(FlatChatItem.NanoMuseNaming(message.id))) // nanoMuse
                 else -> out.add(dedupe(FlatChatItem.AssistantToolUse(
                     messageId = message.id,
                     block = block,

@@ -11,7 +11,12 @@ What it changes, and only this:
 - The Soul defaults (agent name and header emoji).
 - Links: update source, GitHub repository, issues, privacy policy.
 - Colours: the iOS blues and the teal Material scheme -> the brand palette (docs/brand.md).
-- Notification small icons: the launcher icon -> the flat status-bar mark.
+- Notification small icons: the launcher icon -> the flat status-bar mark; every
+  notification also carries the agent's face as its large icon (Muse: the agent
+  is the sender).
+- "<name> is browsing": the browser banner string takes the Soul name (%1$s).
+- A handful of first-run / notification strings reworded in nanoMuse's voice
+  (COPY below, en + zh + zh-rTW; the other locales keep the upstream text).
 
 Anything else is a hand edit marked `// nanoMuse:` in the file.
 """
@@ -32,13 +37,15 @@ RES = MAIN / "res"
 
 APP_ID = "io.github.nanomuse.app"
 NAME = "nanoMuse"
-VERSION_NAME = "0.1.1"
-VERSION_CODE = 2
+VERSION_NAME = "0.1.2"
+VERSION_CODE = 3
 REPO = "nano-muse/nanoMuse"
 REPO_URL = f"https://github.com/{REPO}"
 PRIVACY_URL = f"{REPO_URL}/blob/main/docs/privacy.md"
 
-WORD = re.compile(r"(?<!X-)\bMinis\b(?!Skills)")  # X-Minis-Token is a protocol header
+# X-Minis-Token is a protocol header; MinisSkills is a path. The tail is an ASCII
+# lookahead rather than \b so that "Minis가" (Korean particle) is still caught.
+WORD = re.compile(r"(?<!X-)\bMinis(?!Skills)(?![A-Za-z0-9_])")
 changed: list[str] = []
 
 
@@ -211,6 +218,70 @@ def notification_icons() -> None:
         )
 
 
+FACE = re.compile(
+    r"(Notification(?:Compat)?\.Builder\((\w+), [^\n]*\)\n(\s*)\.setSmallIcon\([^\n]*\n)"
+    r"(?!\s*\.setLargeIcon)"
+)
+
+
+def notification_faces() -> None:
+    """Every notification the agent sends shows its face as the large icon."""
+
+    def add(m: re.Match[str]) -> str:
+        ctx, indent = m.group(2), m.group(3)
+        return (
+            f"{m.group(1)}{indent}.setLargeIcon(io.github.nanomuse.identity.NanoMuseIdentity"
+            f".face({ctx})) // nanoMuse: the agent is the sender\n"
+        )
+
+    for path in sorted(JAVA.rglob("*.kt")):
+        text = path.read_text(encoding="utf-8")
+        new = FACE.sub(add, text)
+        if new != text:
+            path.write_text(new, encoding="utf-8")
+            changed.append(str(path.relative_to(ROOT)))
+
+
+# Reworded in nanoMuse's voice. Locale dir -> string name -> text.
+COPY: dict[str, dict[str, str]] = {
+    "values": {
+        "sessionlist_welcome_subtitle": "Three steps, and you have an assistant that lives on your phone.",
+        "onboarding_welcome_subtitle": "An AI assistant with its own terminal and browser, running on this phone.",
+        "bg_service_notification_title": "nanoMuse is working",
+    },
+    "values-zh": {
+        "sessionlist_welcome_subtitle": "三步之后，你就有一个住在手机里的助理。",
+        "onboarding_welcome_subtitle": "有自己的终端和浏览器、能用这台手机的 AI 助理。",
+        "bg_service_notification_title": "nanoMuse 正在工作",
+    },
+    "values-zh-rTW": {
+        "sessionlist_welcome_subtitle": "三步之後，你就有一個住在手機裡的助理。",
+        "onboarding_welcome_subtitle": "有自己的終端機和瀏覽器、能用這支手機的 AI 助理。",
+        "bg_service_notification_title": "nanoMuse 正在工作",
+    },
+}
+
+
+def reword() -> None:
+    for folder, strings in COPY.items():
+        subs = [
+            (rf'(<string name="{name}">)[^<]*(</string>)', rf"\g<1>{text}\g<2>")
+            for name, text in strings.items()
+        ]
+        edit(RES / folder / "strings.xml", subs)
+    # "<name> is browsing": the product name becomes a placeholder in every locale.
+    for path in sorted(RES.glob("values*/strings.xml")):
+        edit(
+            path,
+            [
+                (
+                    rf'(<string name="browser_minis_browsing">[^<]*?){NAME}([^<]*</string>)',
+                    r"\g<1>%1$s\g<2>",
+                )
+            ],
+        )
+
+
 def check() -> int:
     problems = 0
     for path in sorted(RES.glob("values*/strings.xml")):
@@ -238,6 +309,8 @@ def main() -> int:
     links()
     colours()
     notification_icons()
+    notification_faces()
+    reword()
     for path in sorted(set(changed)):
         print(f"  edited {path}")
     print(f"{len(set(changed))} files changed")

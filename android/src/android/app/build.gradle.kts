@@ -57,8 +57,8 @@ android {
         applicationId = "io.github.nanomuse.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.1.1"
+        versionCode = 3
+        versionName = "0.1.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -71,7 +71,9 @@ android {
         )
 
         ndk {
-            abiFilters += listOf("arm64-v8a")
+            // nanoMuse: `-Pnm.abi=x86_64` builds a chat-only test APK for the x86_64 emulator
+            // (the proot / rclone / VAD payloads are arm64-only, so the sandbox stays off there).
+            abiFilters += listOf((project.findProperty("nm.abi") as String?) ?: "arm64-v8a")
         }
 
         externalNativeBuild {

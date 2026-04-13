@@ -1,0 +1,84 @@
+name: Android
+
+# A debug APK (arm64-v8a) for every push and pull request that touches the
+# Android tree. Debug-signed only: no keystore and no secrets are involved;
+# release builds happen on a developer machine with scripts/release-apk.sh.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "android/**"
+      - "scripts/android/**"
+      - "scripts/rebrand.py"
+      - "scripts/gen-android-icons.py"
+      - ".github/workflows/android.yml"
+  pull_request:
+    paths:
+      - "android/**"
+      - "scripts/android/**"
+      - "scripts/rebrand.py"
+      - "scripts/gen-android-icons.py"
+      - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NDK_VERSION: 27.2.12479018
+
+jobs:
+  debug-apk:
+    name: debug APK · arm64-v8a
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive # android/deps/proot (our fork)
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache-dependency-path: android/deps/rclone-mobile/go.sum
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platforms;android-36 build-tools;35.0.0 cmake;3.22.1 ndk;${{ env.NDK_VERSION }}
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Native artifacts (proot, Alpine rootfs, rclone.aar)
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/$NDK_VERSION"
+          export GOROOT="$(go env GOROOT)" GOPATH="$(go env GOPATH)"
+          export PATH="$GOPATH/bin:$PATH" # gomobile / gobind land there
+          bash scripts/android/build-natives.sh
+
+      - name: assembleDebug
+        working-directory: android/src/android
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/$NDK_VERSION"
+          ./gradlew :app:assembleDebug --console=plain --no-daemon
+
+      - name: Badging
+        run: |
+          bt="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
+          "$bt/aapt" dump badging android/src/android/app/build/outputs/apk/debug/app-debug.apk | grep -E "^package:|application-label:|native-code"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nanoMuse-debug-apk
+          path: android/src/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14
+          if-no-files-found: error

@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.core.app.NotificationCompat
 import com.openminis.app.MinisApp
+import com.openminis.app.R // nanoMuse
 import com.openminis.app.debug.HeadlessChatRunner
 import com.openminis.app.logging.AppLogger
 import com.openminis.app.service.AgentForegroundService
@@ -308,9 +309,11 @@ object ScheduledAgentRunner {
             openIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val title = "nanoMuse: ${task.label.ifBlank { "Scheduled task" }}"
+        // nanoMuse: the agent's own name, as on every other notification it sends.
+        val title = "${io.github.nanomuse.identity.NanoMuseIdentity.name(context)}: ${task.label.ifBlank { "Scheduled task" }}"
         val notification = NotificationCompat.Builder(context, ScheduledTaskManager.CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_menu_recent_history)
+            .setSmallIcon(R.drawable.ic_stat_nanomuse) // nanoMuse: flat status-bar mark
+            .setLargeIcon(io.github.nanomuse.identity.NanoMuseIdentity.face(context)) // nanoMuse: the agent is the sender
             .setContentTitle(title)
             .setContentText(preview)
             .setStyle(NotificationCompat.BigTextStyle().bigText(preview))
