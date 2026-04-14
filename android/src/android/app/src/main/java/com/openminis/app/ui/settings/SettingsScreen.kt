@@ -138,21 +138,21 @@ fun SettingsScreen(
             ) {
                 SettingsItem(
                     icon = Icons.Outlined.Lock,
-                    iconColor = Color(0xFF007AFF),
+                    iconColor = Color(0xFF015CFB),
                     title = stringResource(R.string.settings_manage_providers),
                     subtitle = stringResource(R.string.settings_manage_providers_subtitle),
                     onClick = onProvidersClick,
                 )
                 SettingsItem(
                     icon = Icons.Outlined.Settings,
-                    iconColor = Color(0xFF007AFF),
+                    iconColor = Color(0xFF015CFB),
                     title = stringResource(R.string.settings_model_groups),
                     subtitle = stringResource(R.string.settings_model_groups_subtitle),
                     onClick = onModelGroupsClick,
                 )
                 SettingsItem(
                     icon = Icons.Outlined.BarChart,
-                    iconColor = Color(0xFF007AFF),
+                    iconColor = Color(0xFF015CFB),
                     title = stringResource(R.string.settings_token_usage),
                     subtitle = stringResource(R.string.settings_token_usage_subtitle),
                     onClick = onUsageClick,
@@ -176,7 +176,7 @@ fun SettingsScreen(
             SettingsSection(title = stringResource(R.string.settings_section_agent_runtime)) {
                 SettingsItem(
                     icon = Icons.Outlined.Extension,
-                    iconColor = Color(0xFF007AFF),
+                    iconColor = Color(0xFF015CFB),
                     title = stringResource(R.string.settings_skills),
                     subtitle = stringResource(R.string.settings_skills_subtitle),
                     onClick = onSkillsClick,
@@ -221,7 +221,7 @@ fun SettingsScreen(
             SettingsSection(title = stringResource(R.string.settings_section_storage)) {
                 SettingsItem(
                     icon = Icons.Outlined.Inventory2,
-                    iconColor = Color(0xFF007AFF),
+                    iconColor = Color(0xFF015CFB),
                     title = stringResource(R.string.settings_section_storage),
                     subtitle = stringResource(R.string.settings_storage_subtitle),
                     onClick = onRootfsClick,
@@ -254,7 +254,7 @@ fun SettingsScreen(
             SettingsSection(title = stringResource(R.string.settings_section_permissions)) {
                 SettingsItem(
                     icon = Icons.Outlined.Shield,
-                    iconColor = Color(0xFF007AFF),
+                    iconColor = Color(0xFF015CFB),
                     title = stringResource(R.string.settings_section_permissions),
                     subtitle = stringResource(R.string.settings_permissions_subtitle),
                     onClick = onPermissionsClick,
@@ -281,7 +281,7 @@ fun SettingsScreen(
             SettingsSection(title = stringResource(R.string.settings_section_logs)) {
                 SettingsItem(
                     icon = Icons.Outlined.Description,
-                    iconColor = Color(0xFF007AFF),
+                    iconColor = Color(0xFF015CFB),
                     title = stringResource(R.string.settings_section_logs),
                     subtitle = stringResource(R.string.settings_logs_subtitle),
                     onClick = onLogsClick,
@@ -293,25 +293,27 @@ fun SettingsScreen(
             SettingsSection(title = stringResource(R.string.settings_section_about)) {
                 SettingsItem(
                     icon = Icons.Outlined.Info,
-                    iconColor = Color(0xFF007AFF),
+                    iconColor = Color(0xFF015CFB),
                     title = stringResource(R.string.settings_about_minis),
                     subtitle = stringResource(R.string.settings_about_subtitle),
                     onClick = onAboutClick,
                 )
                 SettingsItem(
                     icon = Icons.Outlined.FrontHand,
-                    iconColor = Color(0xFF007AFF),
+                    iconColor = Color(0xFF015CFB),
                     title = stringResource(R.string.settings_privacy_policy),
                     subtitle = null,
                     // iOS canonical URL — ContentView.swift / AddProviderView.swift
-                    onClick = { openExternalUrl(context, "https://openminis.github.io/privacy-policy.html") },
+                    onClick = { openExternalUrl(context, "https://github.com/nano-muse/nanoMuse/blob/main/docs/privacy.md") },
                 )
                 SettingsItem(
                     icon = Icons.Outlined.Feedback,
-                    iconColor = Color(0xFF007AFF),
+                    iconColor = Color(0xFF015CFB),
                     title = stringResource(R.string.settings_feedback),
                     subtitle = null,
-                    onClick = { showFeedbackSheet = true },
+                    // nanoMuse: GitHub Issues is the one feedback channel (no
+                    // Telegram group, no mailbox), so skip the chooser sheet.
+                    onClick = { openExternalUrl(context, buildBugReportUrl()) },
                     showDivider = false,
                 )
             }
@@ -421,7 +423,7 @@ private fun buildBugReportUrl(): String {
         |-------|-------|
         | Platform | Android |
         | OS Version | Android $osVersion (API $sdkInt) |
-        | Minis Version | $versionName (build $versionCode) |
+        | nanoMuse Version | $versionName (build $versionCode) |
         | Device Model | $manufacturer $model |
 
         ## 🔁 Steps to Reproduce
@@ -450,9 +452,15 @@ private fun buildBugReportUrl(): String {
     // since URLEncoder turns spaces into '+' which GitHub also accepts but
     // the spec calls for the literal "[Bug] " form.
     val title = java.net.URLEncoder.encode("[Bug] ", "UTF-8")
-    return "https://github.com/OpenMinis/OpenMinis/issues/new" +
-        "?template=bug_report.md" +
+    // nanoMuse: the repository uses an issue form (app_bug_report.yml), which
+    // takes its fields as query parameters; `body` is ignored by forms.
+    val version = java.net.URLEncoder.encode("$versionName ($versionCode)", "UTF-8")
+    val device = java.net.URLEncoder.encode("Android $osVersion (API $sdkInt), $manufacturer $model", "UTF-8")
+    return "https://github.com/nano-muse/nanoMuse/issues/new" +
+        "?template=app_bug_report.yml" +
         "&title=$title" +
+        "&version=$version" +
+        "&device=$device" +
         "&body=$encodedBody"
 }
 
@@ -473,7 +481,7 @@ private fun buildFeedbackMailto(): String {
 
         Screenshot (optional): Please attach a screenshot if relevant.
     """.trimIndent()
-    val subject = java.net.URLEncoder.encode("Minis Feedback", "UTF-8")
+    val subject = java.net.URLEncoder.encode("nanoMuse Feedback", "UTF-8")
     val encodedBody = java.net.URLEncoder.encode(body, "UTF-8")
     return "mailto:dev@openminis.app?subject=$subject&body=$encodedBody"
 }

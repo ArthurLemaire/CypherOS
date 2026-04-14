@@ -868,7 +868,7 @@ internal fun ThinkingBlock(block: AssistantBlock, isStreaming: Boolean, isLast: 
         // if the user hasn't taken control of its state yet.
         if (!isStreaming && !userTouched) expanded = false
     }
-    val thinkingBlue = Color(0xFF007AFF)
+    val thinkingBlue = Color(0xFF015CFB)
     val charCount = block.content.length
     val charLabel = when {
         charCount >= 1000 -> "${charCount / 1000}K"
@@ -1098,7 +1098,7 @@ private fun ThinkingFullContentDialog(content: String, onDismiss: () -> Unit) {
                         text = "Deep Thinking",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF007AFF),
+                        color = Color(0xFF015CFB),
                     )
                     Spacer(modifier = Modifier.weight(1f))
                     MinisTextButton(onClick = onDismiss) {

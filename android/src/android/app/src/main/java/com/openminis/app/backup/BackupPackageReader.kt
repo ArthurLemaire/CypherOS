@@ -49,7 +49,7 @@ class BackupPackageReader(private val root: File) {
             "/" + manifest.format.substringAfter('/', "").substringBefore('.')
         if (major != BackupFormat.CURRENT) {
             throw BackupException(
-                "This backup was created by a newer version of Minis (${manifest.format}). Please update the app."
+                "This backup was created by a newer version of nanoMuse (${manifest.format}). Please update the app."
             )
         }
         return manifest

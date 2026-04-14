@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Questions and ideas
-    url: https://github.com/nanoMuseAgent/nanoMuse/discussions
+    url: https://github.com/nano-muse/nanoMuse/discussions
     about: Setup help, "how do I…", and half-formed ideas go to Discussions.
   - name: Security issue
-    url: https://github.com/nanoMuseAgent/nanoMuse/blob/main/SECURITY.md
+    url: https://github.com/nano-muse/nanoMuse/blob/main/SECURITY.md
     about: A way past the Sentinel, a leaked secret, an SSRF — report privately, see SECURITY.md.

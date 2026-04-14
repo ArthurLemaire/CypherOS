@@ -42,7 +42,7 @@ import com.openminis.app.offload.ShizukuManager
  *                        suits them; Sui is the rooted-user option.
  *   NOT_RUNNING       → "Open Manager App and press Start" — launches the
  *                        installed manager.
- *   NEED_PERMISSION   → "Authorize Minis" CTA → triggers system dialog.
+ *   NEED_PERMISSION   → "Authorize nanoMuse" CTA → triggers system dialog.
  *   READY             → green status row with version + uid.
  *
  * [T-android-sui-support] (GH#110 / GH#97) Sui is a Magisk/KernelSU module

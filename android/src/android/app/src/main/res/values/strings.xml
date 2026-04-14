@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Minis</string>
+    <string name="app_name">nanoMuse</string>
     <string name="new_chat">New Chat</string>
     <string name="settings">Settings</string>
     <string name="providers">Providers</string>
@@ -90,7 +90,7 @@
 
     <!-- T67: Voice permission settings-gate dialog (shown when RECORD_AUDIO is permanently denied) -->
     <string name="mic_permission_title">Microphone permission needed</string>
-    <string name="mic_permission_message">Voice input needs microphone permission. Tap Open Settings to allow it for Minis.</string>
+    <string name="mic_permission_message">Voice input needs microphone permission. Tap Open Settings to allow it for nanoMuse.</string>
     <string name="mic_permission_open_settings">Open Settings</string>
     <string name="mic_permission_cancel">Cancel</string>
 
@@ -104,7 +104,7 @@
     <string name="bg_overlay_nudge_channel_name">Background Overlay Permission</string>
     <string name="bg_overlay_nudge_channel_description">Reminds you to grant the system overlay permission so the background task overlay can appear.</string>
     <string name="bg_overlay_nudge_title">Enable background overlay</string>
-    <string name="bg_overlay_nudge_body">Grant "Display over other apps" to let Minis show the current tool while you switch to another app. Tap to open the permission screen.</string>
+    <string name="bg_overlay_nudge_body">Grant "Display over other apps" to let nanoMuse show the current tool while you switch to another app. Tap to open the permission screen.</string>
     <!-- T-android-overlay-reply-status-34599 — manual-dismiss button on the floating overlay -->
     <string name="overlay_dismiss">Dismiss</string>
     <!-- T-android-overlay-finalize item 3 — completion fallback labels -->
@@ -115,8 +115,8 @@
     <!-- [T-android-a11y-force-stop-recovery] Accessibility grant repair. Shown
          when a force-stop has stripped the service out of Settings.Secure. -->
     <string name="a11y_repair_dialog_title">Accessibility turned off</string>
-    <string name="a11y_repair_dialog_message_shizuku">Minis lost its accessibility permission — this happens after the app is force-stopped. Shizuku is available, so it can be restored right now without opening Settings.</string>
-    <string name="a11y_repair_dialog_message_manual">Minis lost its accessibility permission — this happens after the app is force-stopped. Re-enable Minis under Settings → Accessibility to continue.</string>
+    <string name="a11y_repair_dialog_message_shizuku">nanoMuse lost its accessibility permission — this happens after the app is force-stopped. Shizuku is available, so it can be restored right now without opening Settings.</string>
+    <string name="a11y_repair_dialog_message_manual">nanoMuse lost its accessibility permission — this happens after the app is force-stopped. Re-enable nanoMuse under Settings → Accessibility to continue.</string>
     <string name="a11y_repair_action_repair">Repair now</string>
     <string name="a11y_repair_action_open_settings">Open Settings</string>
     <string name="a11y_repair_cancel">Not now</string>
@@ -128,7 +128,7 @@
     <string name="a11y_repair_failed">Repair failed — try enabling it in Settings</string>
     <string name="a11y_repair_footer_shizuku">Android removes the accessibility grant whenever an app is force-stopped, and does not restore it automatically. Shizuku can write it back directly.</string>
     <string name="a11y_repair_footer_manual">Android removes the accessibility grant whenever an app is force-stopped, and does not restore it automatically. Install and authorize Shizuku to repair this in one tap in future.</string>
-    <string name="bg_service_notification_title">Minis Agent Active</string>
+    <string name="bg_service_notification_title">nanoMuse Agent Active</string>
     <string name="bg_service_notification_text">%1$s | %2$s | %3$s</string>
     <!-- Shown on the ongoing notification / Live Update chip once the agent
          task has finished but the service is still alive because the user is
@@ -144,11 +144,11 @@
     <string name="battery_opt_section_footer">When exempted, Android won\'t put the app to sleep mid-task. Re-checked on each return to this screen.</string>
     <string name="battery_opt_row_title">Allow background work</string>
     <string name="battery_opt_already_exempt">Already allowed</string>
-    <string name="battery_opt_request_subtitle">Tap to allow Minis to run uninterrupted</string>
+    <string name="battery_opt_request_subtitle">Tap to allow nanoMuse to run uninterrupted</string>
     <string name="rom_autostart_section_title">Autostart permission</string>
-    <string name="rom_autostart_section_footer">Some Android skins (%1$s) require an extra autostart permission on top of the standard system settings. Without it, Minis can be killed within minutes of going to background.</string>
+    <string name="rom_autostart_section_footer">Some Android skins (%1$s) require an extra autostart permission on top of the standard system settings. Without it, nanoMuse can be killed within minutes of going to background.</string>
     <string name="rom_autostart_row_title">Open autostart settings</string>
-    <string name="rom_autostart_row_subtitle">Enable Minis on %1$s</string>
+    <string name="rom_autostart_row_subtitle">Enable nanoMuse on %1$s</string>
 
     <!-- T68: Browser settings — UA list "Not set" placeholder for empty Custom UA -->
     <string name="browser_settings_ua_not_set">Not set</string>
@@ -167,7 +167,7 @@
     <string name="settings_appearance_subtitle">Theme, font size, and display</string>
     <string name="settings_section_agent_runtime">Agent Runtime</string>
     <string name="settings_skills">Skills</string>
-    <string name="settings_skills_subtitle">Manage Minis Agent skills and instructions</string>
+    <string name="settings_skills_subtitle">Manage nanoMuse Agent skills and instructions</string>
     <string name="settings_memory">Memory</string>
     <string name="settings_memory_subtitle">Persistent knowledge across sessions</string>
     <!-- [T-mcp-integration-android] MCP Integrations settings entry + management screen -->
@@ -320,7 +320,7 @@
     <string name="settings_section_logs">Logs</string>
     <string name="settings_logs_subtitle">View and export app logs</string>
     <string name="settings_section_about">About</string>
-    <string name="settings_about_minis">About Minis</string>
+    <string name="settings_about_minis">About nanoMuse</string>
     <string name="settings_about_subtitle">Version and project info</string>
     <string name="settings_privacy_policy">Privacy Policy</string>
     <string name="settings_feedback">Feedback</string>
@@ -328,7 +328,7 @@
     <string name="settings_feedback_telegram">Feedback (Telegram)</string>
     <string name="settings_feedback_email">Feedback (Email)</string>
     <string name="about_title">About</string>
-    <string name="about_minis_tagline">Minis is Your Fully Local, Fully Private On-Device Agent.</string>
+    <string name="about_minis_tagline">nanoMuse is Your Fully Local, Fully Private On-Device Agent.</string>
     <string name="about_links">Links</string>
     <string name="about_github_repository">GitHub Repository</string>
     <string name="about_version_format">Version %1$s (%2$s)</string>
@@ -345,7 +345,7 @@
     <string name="time_yesterday">Yesterday</string>
     <string name="time_today">Today</string>
     <string name="offload_perm_dialog_title">Permission Request</string>
-    <string name="offload_perm_dialog_intro">The Minis Agent wants to use:</string>
+    <string name="offload_perm_dialog_intro">The nanoMuse Agent wants to use:</string>
     <string name="offload_perm_dialog_tool_label">Tool: %1$s</string>
     <!-- T338: session-scoped tri-action labels for the ASK_ONCE dialog.
          None of these persist a PermissionLevel — the user goes to
@@ -398,8 +398,8 @@
     <string name="common_close">Close</string>
     <string name="common_skip">Skip</string>
     <string name="common_next">Next</string>
-    <string name="onboarding_welcome_title">Welcome to Minis</string>
-    <string name="onboarding_welcome_subtitle">Your Minis Agent with terminal, browser, and native device access.</string>
+    <string name="onboarding_welcome_title">Welcome to nanoMuse</string>
+    <string name="onboarding_welcome_subtitle">Your nanoMuse Agent with terminal, browser, and native device access.</string>
     <string name="onboarding_get_started">Get Started</string>
     <string name="onboarding_provider_title">Add a Provider</string>
     <string name="onboarding_provider_subtitle">Enter an API key for at least one provider to get started.</string>
@@ -568,12 +568,12 @@
     <string name="browser_nav_forward">Forward</string>
     <string name="browser_stop">Stop</string>
     <string name="browser_reload">Reload</string>
-    <string name="browser_minis_browsing">Minis is browsing</string>
-    <!-- Streaming indicator shown while the assistant is composing a reply. %1$s is the Soul-customized assistant name (default "Minis"). -->
+    <string name="browser_minis_browsing">nanoMuse is browsing</string>
+    <!-- Streaming indicator shown while the assistant is composing a reply. %1$s is the Soul-customized assistant name (default "nanoMuse"). -->
     <string name="chat_typing_indicator">%1$s is thinking</string>
     <string name="read_aloud_unavailable">Read aloud failed: no usable voice engine. Check Voice Output settings or install a system speech engine.</string>
     <string name="chat_error_stream_dropped_partial">The connection dropped — this reply may be incomplete. Tap Retry to continue.</string>
-    <!-- Composer placeholder. %1$s is the Soul-customized assistant name (default "Minis"). The parenthetical is an inline hint reminding the user that typing '@' opens the file-mention picker. T-android-placeholder-single-line collapses the prior two-row (title + hint) layout into a single line, matching iOS 19e1d61f. -->
+    <!-- Composer placeholder. %1$s is the Soul-customized assistant name (default "nanoMuse"). The parenthetical is an inline hint reminding the user that typing '@' opens the file-mention picker. T-android-placeholder-single-line collapses the prior two-row (title + hint) layout into a single line, matching iOS 19e1d61f. -->
     <string name="chat_input_placeholder">Message %1$s (@ to mention files)</string>
     <string name="chat_input_placeholder_hint_1">Try @ to mention files for %1$s to read</string>
     <string name="chat_input_placeholder_hint_2">Type / for SKILLs and quick commands</string>
@@ -609,7 +609,7 @@
     <string name="browser_history_results">Results</string>
     <string name="browser_history_clear_dialog_title">Clear Browsing History?</string>
     <string name="browser_history_clear_dialog_message">This will remove all browsing history. This cannot be undone.</string>
-    <string name="terminal_title">Minis Shell</string>
+    <string name="terminal_title">nanoMuse Shell</string>
     <string name="terminal_clear">Clear</string>
     <string name="terminal_show_keyboard">Show</string>
     <string name="terminal_hide_keyboard">Hide</string>
@@ -626,7 +626,7 @@
     <!-- [T-android-thinking-rules-phase2] Provider-detail Thinking Rules section -->
     <string name="thinking_rules_section">Thinking Rules</string>
     <string name="thinking_rules_footer">Rules are evaluated top to bottom. The first rule matching the model decides which thinking parameters are sent. Default rules are built in and cannot be deleted — add a rule above them to override one.</string>
-    <string name="thinking_rules_official_protocol_notice">This provider uses an official protocol, so its thinking parameters are maintained by Minis. Custom rules apply to OpenAI-compatible providers on the Chat Completions API.</string>
+    <string name="thinking_rules_official_protocol_notice">This provider uses an official protocol, so its thinking parameters are maintained by nanoMuse. Custom rules apply to OpenAI-compatible providers on the Chat Completions API.</string>
     <string name="thinking_rules_default_rules_count">Default rules (%1$d)</string>
     <string name="thinking_rules_add_rule">Add Rule</string>
     <string name="thinking_rules_move_up">Move up</string>
@@ -812,7 +812,7 @@
     <string name="shizuku_title">Shizuku</string>
     <string name="shizuku_settings_subtitle">Privileged Android control via Shizuku or AXManager</string>
     <string name="shizuku_status_header">Status</string>
-    <string name="shizuku_status_footer">Shizuku exposes privileged system APIs to user apps without root, by running a small service started via wireless ADB or root. Three compatible providers are supported — Shizuku (RikkaApps), AXManager (Axeron), and Sui (a Magisk/KernelSU module for rooted devices); install any one. Once authorized, Minis can use the android-shizuku-cli CLI for package, permission, settings, input, and activity management.</string>
+    <string name="shizuku_status_footer">Shizuku exposes privileged system APIs to user apps without root, by running a small service started via wireless ADB or root. Three compatible providers are supported — Shizuku (RikkaApps), AXManager (Axeron), and Sui (a Magisk/KernelSU module for rooted devices); install any one. Once authorized, nanoMuse can use the android-shizuku-cli CLI for package, permission, settings, input, and activity management.</string>
     <string name="shizuku_actions_header">Next Step</string>
     <string name="shizuku_capabilities_header">Capabilities</string>
     <string name="shizuku_capabilities_footer">Run `android-shizuku-cli --help` in a shell for full usage. Available whether the binder comes from Shizuku, AXManager, or Sui — the command surface is identical.</string>
@@ -841,16 +841,16 @@
     <string name="shizuku_cap_service">service</string>
     <string name="shizuku_cap_service_desc">Call and inspect system services</string>
     <string name="shizuku_install_footer">Install any one of Shizuku (RikkaApps), AXManager (Axeron), or Sui (RikkaApps) — all three implement the same protocol and are fully interchangeable. Shizuku and AXManager are regular apps activated via wireless ADB. Sui is for already-rooted devices: it installs as a Magisk/KernelSU module, needs no app, and stays active across reboots. On KernelSU or APatch, Sui also requires a Zygisk implementation (Zygisk Next / ReZygisk / NeoZygisk) — without it Sui will not load. Install one, then return here.</string>
-    <string name="shizuku_start_footer">Open the manager app and start the service via wireless ADB (no PC) or root. After it shows running, return here.\n\nUsing AXManager? Also enable Settings → "AX-Permission Intercept" inside AXManager — only that switch makes AXManager push its Shizuku-compatible binder to Minis.</string>
-    <string name="shizuku_grant_footer">The service is running. Tap Authorize Minis to grant access. A system dialog from the manager app will ask you to confirm.</string>
-    <string name="shizuku_grant_footer_sui">Sui is running. Tap Authorize Minis to grant access — Sui will show the confirmation dialog itself. There is no separate manager app to open.</string>
+    <string name="shizuku_start_footer">Open the manager app and start the service via wireless ADB (no PC) or root. After it shows running, return here.\n\nUsing AXManager? Also enable Settings → "AX-Permission Intercept" inside AXManager — only that switch makes AXManager push its Shizuku-compatible binder to nanoMuse.</string>
+    <string name="shizuku_grant_footer">The service is running. Tap Authorize nanoMuse to grant access. A system dialog from the manager app will ask you to confirm.</string>
+    <string name="shizuku_grant_footer_sui">Sui is running. Tap Authorize nanoMuse to grant access — Sui will show the confirmation dialog itself. There is no separate manager app to open.</string>
 
     <string name="shizuku_state_not_installed">Manager Not Installed</string>
     <string name="shizuku_state_not_installed_subtitle">Install Shizuku, AXManager, or Sui — any one works.</string>
     <string name="shizuku_state_not_running">Service Not Running</string>
     <string name="shizuku_state_not_running_subtitle">Open the manager app and press Start.</string>
     <string name="shizuku_state_need_permission">Authorization Required</string>
-    <string name="shizuku_state_need_permission_subtitle">The service is running but Minis is not authorized.</string>
+    <string name="shizuku_state_need_permission_subtitle">The service is running but nanoMuse is not authorized.</string>
     <string name="shizuku_state_ready">Ready</string>
     <string name="shizuku_ready_subtitle">version=%1$d, uid=%2$d</string>
     <string name="shizuku_ready_subtitle_sui">Sui (root) · version=%1$d, uid=%2$d</string>
@@ -870,7 +870,7 @@
     <string name="shizuku_open_btn_subtitle">Launch the installed manager to start or manage the service</string>
     <string name="shizuku_recheck_btn">Recheck</string>
     <string name="shizuku_recheck_subtitle">Re-poll state after starting the service</string>
-    <string name="shizuku_grant_btn">Authorize Minis</string>
+    <string name="shizuku_grant_btn">Authorize nanoMuse</string>
     <string name="shizuku_grant_subtitle">Show the permission dialog</string>
 
     <!-- [T-android-privileged-backend] Privileged backend (Shizuku / AXManager) -->
@@ -880,11 +880,11 @@
     <string name="skill_title">Skills</string>
     <string name="skill_add">Add Skill</string>
     <string name="skill_section_installed">Installed</string>
-    <string name="skill_section_footer">Skills extend the Minis Agent with specialized instructions and workflows. They are loaded into the system prompt when enabled.</string>
+    <string name="skill_section_footer">Skills extend the nanoMuse Agent with specialized instructions and workflows. They are loaded into the system prompt when enabled.</string>
     <string name="skill_empty_title">No Skills Installed</string>
-    <string name="skill_empty_action">Tap + to import a SKILL.md, .zip, or .skill file, or browse Minis Skills.</string>
+    <string name="skill_empty_action">Tap + to import a SKILL.md, .zip, or .skill file, or browse nanoMuse Skills.</string>
     <string name="skill_import_modal_title">Import Skill</string>
-    <string name="skill_minis_skills_modal">Minis Skills</string>
+    <string name="skill_minis_skills_modal">nanoMuse Skills</string>
     <string name="skill_delete_confirm_title">Delete %1$s?</string>
     <string name="skill_delete_confirm_text">This will permanently remove the skill and its files.</string>
     <string name="skill_import_sheet_title">Import Skill</string>
@@ -932,7 +932,7 @@
     <string name="skill_detail_source_file">File import</string>
     <string name="skill_detail_source_bundled">Built-in</string>
     <string name="skill_detail_source_session">Session created</string>
-    <string name="skills_browser_title">Minis Skills</string>
+    <string name="skills_browser_title">nanoMuse Skills</string>
     <string name="skills_browser_import_button">Import This</string>
     <string name="skills_browser_hud_importing">Importing…</string>
     <string name="skills_browser_error_not_folder">Select a skill folder first</string>
@@ -948,7 +948,7 @@
     <string name="storage_overview_sessions">Session Files</string>
     <string name="storage_section_sessions">Sessions</string>
     <string name="storage_no_sessions">No sessions</string>
-    <string name="storage_section_minis_files">Minis Files</string>
+    <string name="storage_section_minis_files">nanoMuse Files</string>
     <string name="storage_no_minis_files">No minis files</string>
     <string name="storage_section_media">Media Files</string>
     <string name="storage_no_media_files">No media files</string>
@@ -968,7 +968,7 @@
     <string name="usage_label_cache_hit_rate">Cache Hit Rate</string>
     <string name="usage_detail_input">Input</string>
     <string name="newer_db_title">Your data is from a newer version</string>
-    <string name="newer_db_body">This copy of Minis is older than the one that created your data, so it can\'t open it safely.\n\nNothing has been deleted — your conversations are intact on this device. Reinstall the newer version of Minis and everything will be there.</string>
+    <string name="newer_db_body">This copy of nanoMuse is older than the one that created your data, so it can\'t open it safely.\n\nNothing has been deleted — your conversations are intact on this device. Reinstall the newer version of nanoMuse and everything will be there.</string>
     <string name="newer_db_versions">This version supports data format %1$d</string>
     <string name="newer_db_exit">Close</string>
     <string name="usage_attr_unknown_session">Model unknown — the session record was deleted</string>
@@ -1027,7 +1027,7 @@
     <string name="provider_list_no_providers_configured">No providers configured</string>
     <string name="provider_list_add_a_provider_to_get_started">Add a provider to get started.</string>
     <string name="provider_list_import_provider">Import Provider</string>
-    <!-- [T-android-json-open-provider-import-prompt] Shown when a JSON opened/shared into Minis looks like a Provider export. -->
+    <!-- [T-android-json-open-provider-import-prompt] Shown when a JSON opened/shared into nanoMuse looks like a Provider export. -->
     <string name="share_provider_json_title">Provider configuration detected</string>
     <string name="share_expired_toast">Shared content expired. Please share again.</string>
     <string name="share_provider_json_message">This JSON file looks like an exported provider. What would you like to do?</string>
@@ -1035,7 +1035,7 @@
     <string name="share_provider_json_attach">Add as chat attachment</string>
     <string name="share_provider_json_imported">Imported provider \"%1$s\"</string>
     <string name="share_provider_json_import_failed">Invalid provider configuration file</string>
-    <string name="share_open_app_failed">Content saved. Couldn\'t open Minis automatically — please open the app to continue.</string>
+    <string name="share_open_app_failed">Content saved. Couldn\'t open nanoMuse automatically — please open the app to continue.</string>
     <string name="provider_list_api_key">API Key</string>
     <string name="provider_list_disabled">Disabled</string>
     <string name="provider_detail_export">Export</string>
@@ -1236,8 +1236,8 @@
     <string name="notif_config_confirm_channel_name">Config Approvals</string>
     <string name="notif_config_confirm_channel_description">Notifies when a configuration change is waiting for your approval while the app is backgrounded.</string>
     <string name="notif_config_confirm_title">⚙️ Config change awaiting approval</string>
-    <string name="notif_config_confirm_body_single">A change needs your review — open Minis to approve or reject.</string>
-    <string name="notif_config_confirm_body_multi">%d changes need your review — open Minis to approve or reject.</string>
+    <string name="notif_config_confirm_body_single">A change needs your review — open nanoMuse to approve or reject.</string>
+    <string name="notif_config_confirm_body_multi">%d changes need your review — open nanoMuse to approve or reject.</string>
     <string name="notif_task_failed_body">Task ended with an error. Tap to open the chat.</string>
 
     <!-- T-selection-add-to-input — long-press text selection menu action -->
@@ -1271,7 +1271,7 @@
 
     <!-- T-bg-overlay phase 2 — floating tool-status overlay toggle. -->
     <string name="settings_bg_overlay">Background Task Overlay</string>
-    <string name="settings_bg_overlay_footer">Show a small floating capsule with the current tool while Minis is in the background. Requires permission to display over other apps. Tap the capsule to bring Minis to the foreground; drag to move it.</string>
+    <string name="settings_bg_overlay_footer">Show a small floating capsule with the current tool while nanoMuse is in the background. Requires permission to display over other apps. Tap the capsule to bring nanoMuse to the foreground; drag to move it.</string>
     <string name="settings_bg_overlay_permission_needed">Allow drawing over other apps to enable</string>
     <!-- [T-android-dynamic-island] Android 16 Live Updates / dynamic-island toggle. -->
     <string name="settings_dynamic_island">Dynamic Island (Live Updates)</string>
@@ -1279,8 +1279,8 @@
     <string name="settings_dynamic_island_unsupported">Your current system version doesn\'t support Live Updates yet (requires Android 16+ with the feature enabled).</string>
 
     <!-- T182 agent loop section i18n -->
-    <string name="agent_loop_section_title">Models Minis Can Call at Runtime</string>
-    <string name="agent_loop_section_footer">During a Minis task, the agent calls these models for sub-tasks such as generating an image or summarizing text — work its own model can\'t do. Also callable from the terminal via minis-model-use. Only these are visible to the Agent.</string>
+    <string name="agent_loop_section_title">Models nanoMuse Can Call at Runtime</string>
+    <string name="agent_loop_section_footer">During a nanoMuse task, the agent calls these models for sub-tasks such as generating an image or summarizing text — work its own model can\'t do. Also callable from the terminal via minis-model-use. Only these are visible to the Agent.</string>
     <string name="agent_loop_section_empty_hint">No models or groups added</string>
     <string name="agent_loop_section_add_models">Add Models</string>
     <string name="agent_loop_section_add_groups">Add Groups</string>
@@ -1341,7 +1341,7 @@
     <string name="settings_shared_folders">Shared Folders</string>
     <string name="settings_shared_folders_subtitle">Browse /var/minis shared, skills, and memory</string>
     <string name="shared_folders_title">Shared Folders</string>
-    <string name="shared_folders_info_banner">These directories are visible inside the Linux sandbox. Skills and Memory are maintained by Minis Agent tools — do not edit manually.</string>
+    <string name="shared_folders_info_banner">These directories are visible inside the Linux sandbox. Skills and Memory are maintained by nanoMuse Agent tools — do not edit manually.</string>
     <string name="shared_folder_name_shared">Shared</string>
     <string name="shared_folder_name_skills">Skills</string>
     <string name="shared_folder_name_memory">Memory</string>
@@ -1622,9 +1622,9 @@
     <!-- [T-android-voice-panel] Inline voice input panel (mirrors iOS InlineVoiceInputView) -->
     <string name="voice_panel_collapse">Collapse voice panel</string>
     <string name="voice_panel_no_engine_title">No speech recognition available</string>
-    <string name="voice_panel_no_engine_body">Voice input needs a recognition engine. Enable your device\'s speech service, or configure a transcription provider in Minis.</string>
+    <string name="voice_panel_no_engine_body">Voice input needs a recognition engine. Enable your device\'s speech service, or configure a transcription provider in nanoMuse.</string>
     <string name="voice_panel_no_engine_open_system">Device settings</string>
-    <string name="voice_panel_no_engine_open_providers">Minis providers</string>
+    <string name="voice_panel_no_engine_open_providers">nanoMuse providers</string>
     <string name="voice_panel_expand">Expand voice panel</string>
     <string name="voice_panel_language">Recognition language</string>
     <string name="voice_panel_tap_to_speak">Tap to speak</string>
@@ -1693,31 +1693,31 @@
     <string name="system_permissions_title">System Permissions</string>
     <string name="system_permissions_subtitle">OS-level permissions granted from system Settings</string>
     <string name="system_permissions_section_a11y">Accessibility</string>
-    <string name="system_permissions_a11y_row">Minis Accessibility Service</string>
+    <string name="system_permissions_a11y_row">nanoMuse Accessibility Service</string>
     <string name="system_permissions_a11y_enabled">Enabled — android-a11y-cli is ready</string>
     <string name="system_permissions_a11y_disabled">Disabled — tap to enable in system Settings</string>
-    <string name="system_permissions_a11y_footer">Required by android-a11y-cli for UI-tree reads, gesture injection, and event monitoring. Without this, Agents cannot drive other apps. Toggle the switch under Minis on the next screen.</string>
+    <string name="system_permissions_a11y_footer">Required by android-a11y-cli for UI-tree reads, gesture injection, and event monitoring. Without this, Agents cannot drive other apps. Toggle the switch under nanoMuse on the next screen.</string>
     <string name="system_permissions_a11y_oem_header">Service keeps getting killed?</string>
     <string name="system_permissions_a11y_oem_footer">%1$s may show \"this service has failed\" and stop the accessibility service in the background. Whitelist autostart and remove the battery restriction so it stays connected.</string>
     <string name="system_permissions_a11y_oem_autostart">Add to autostart whitelist</string>
-    <string name="system_permissions_a11y_oem_autostart_sub">Open the autostart manager and enable Minis</string>
+    <string name="system_permissions_a11y_oem_autostart_sub">Open the autostart manager and enable nanoMuse</string>
     <string name="system_permissions_a11y_oem_battery">Remove background / battery restriction</string>
     <string name="system_permissions_a11y_oem_battery_sub">Set battery usage to \"No restrictions\"</string>
     <string name="system_permissions_a11y_restricted_header">Toggle greyed out? (\"Restricted setting\")</string>
-    <string name="system_permissions_a11y_restricted_footer">Android blocks the accessibility toggle for apps installed from a downloaded APK file. This is an OS security policy, not a Minis bug — nothing is wrong with your install. Allowing restricted settings only re-enables the toggle; it grants nothing on its own, and you still choose whether to turn the service on.</string>
+    <string name="system_permissions_a11y_restricted_footer">Android blocks the accessibility toggle for apps installed from a downloaded APK file. This is an OS security policy, not a nanoMuse bug — nothing is wrong with your install. Allowing restricted settings only re-enables the toggle; it grants nothing on its own, and you still choose whether to turn the service on.</string>
     <string name="system_permissions_a11y_restricted_manual">Allow restricted settings</string>
     <string name="system_permissions_a11y_restricted_manual_sub">App info → ⋮ menu (top right) → Allow restricted settings</string>
     <string name="system_permissions_a11y_restricted_shizuku">Allow restricted settings via Shizuku</string>
-    <string name="system_permissions_a11y_restricted_shizuku_sub">One tap — clears the flag without leaving Minis</string>
+    <string name="system_permissions_a11y_restricted_shizuku_sub">One tap — clears the flag without leaving nanoMuse</string>
     <string name="system_permissions_a11y_restricted_working">Allowing…</string>
     <string name="system_permissions_a11y_restricted_failed">Failed — use the manual steps below</string>
-    <string name="a11y_service_label">Minis Accessibility</string>
-    <string name="a11y_service_description">Lets Minis read on-screen UI structure, perform taps and gestures, and receive system events on behalf of Agents invoking android-a11y-cli.</string>
-    <string name="a11y_service_summary">UI-layer automation backend for Minis</string>
+    <string name="a11y_service_label">nanoMuse Accessibility</string>
+    <string name="a11y_service_description">Lets nanoMuse read on-screen UI structure, perform taps and gestures, and receive system events on behalf of Agents invoking android-a11y-cli.</string>
+    <string name="a11y_service_summary">UI-layer automation backend for nanoMuse</string>
     <string name="back">Back</string>
 
     <!-- Welcome / onboarding (T332) -->
-    <string name="sessionlist_welcome_title">Welcome to Minis</string>
+    <string name="sessionlist_welcome_title">Welcome to nanoMuse</string>
     <string name="sessionlist_welcome_subtitle">Your first On-Device Agent is almost ready.</string>
     <string name="sessionlist_welcome_step1_title">Add a Provider</string>
     <string name="sessionlist_welcome_step1_subtitle">Configure an API key or sign in with OAuth</string>
@@ -1730,7 +1730,7 @@
     <string name="sessionlist_welcome_step_done">Done</string>
 
     <!-- T-pwa-1: WebApp shortcut foundation (renamed from PWA) -->
-    <string name="webapp_activity_label">Minis WebApp</string>
+    <string name="webapp_activity_label">nanoMuse WebApp</string>
     <string name="webapp_source_missing">Source file no longer exists.</string>
     <string name="webapp_external_nav_blocked">External navigation blocked.</string>
     <string name="webapp_pin_unsupported">Pin shortcut not supported on this launcher.</string>
@@ -1745,7 +1745,7 @@
     <string name="webapp_pin_success">Added to home screen</string>
     <string name="webapp_source_missing_title">Source file no longer exists</string>
     <string name="webapp_source_missing_body">The file backing this shortcut was moved or deleted.</string>
-    <string name="webapp_open_in_minis">Open in Minis</string>
+    <string name="webapp_open_in_minis">Open in nanoMuse</string>
     <!-- T-pwa-preview-polish: floating toolbar -->
     <string name="webapp_action_close">Close</string>
     <string name="webapp_action_fullscreen">Enter fullscreen</string>
@@ -1782,12 +1782,12 @@
     <string name="update_error_open_releases">Open GitHub Releases</string>
     <!-- T-android-crash-freq-share -->
     <string name="crash_freq_dialog_title">Multiple crashes detected</string>
-    <string name="crash_freq_dialog_message">Minis has crashed several times in the last hour. Share crash logs to help fix the issue?</string>
+    <string name="crash_freq_dialog_message">nanoMuse has crashed several times in the last hour. Share crash logs to help fix the issue?</string>
     <string name="crash_freq_dialog_share">Share logs</string>
     <string name="crash_freq_dialog_dismiss">Not now</string>
-    <string name="crash_safe_mode_restart_needed">Minis needs to restart to finish recovering. Please tap the app icon again.</string>
-    <string name="crash_freq_email_subject">Minis Crash Report %1$s</string>
-    <string name="crash_freq_email_body">Crash log zip is attached. Device model, Minis version, and timestamp are included inside.</string>
+    <string name="crash_safe_mode_restart_needed">nanoMuse needs to restart to finish recovering. Please tap the app icon again.</string>
+    <string name="crash_freq_email_subject">nanoMuse Crash Report %1$s</string>
+    <string name="crash_freq_email_body">Crash log zip is attached. Device model, nanoMuse version, and timestamp are included inside.</string>
     <string name="crash_freq_share_chooser">Send crash logs</string>
     <string name="crash_freq_pick_files_title">Multiple recent crashes detected — share the logs below with the developer?</string>
     <string name="crash_freq_pick_continue">Continue</string>
@@ -1900,7 +1900,7 @@
     <string name="voice_bare_link">link</string>
     <!-- [T-android-voice-correction] Consent + correction UI -->
     <string name="voice_correction_consent_title">Improve voice corrections?</string>
-    <string name="voice_correction_consent_body">Minis can store your transcript fixes (original → corrected pairs) and accepted AI corrections in a local on-device database to make future voice corrections smarter. Nothing is uploaded. You can change this or clear the data anytime in Settings.</string>
+    <string name="voice_correction_consent_body">nanoMuse can store your transcript fixes (original → corrected pairs) and accepted AI corrections in a local on-device database to make future voice corrections smarter. Nothing is uploaded. You can change this or clear the data anytime in Settings.</string>
     <string name="voice_correction_consent_enable">Enable</string>
     <string name="voice_correction_consent_not_now">Not Now</string>
     <string name="voice_correction_button_a11y">Correct transcript with AI</string>
@@ -1915,7 +1915,7 @@
     <string name="voice_provider_system">System</string>
     <string name="add_provider_subtitle_kimi">Kimi Coding Plan — sign in with your Kimi account</string>
     <string name="kimi_login_title">Sign in with Kimi Code</string>
-    <string name="kimi_login_instructions">Open the verification page and enter this code to authorize Minis:</string>
+    <string name="kimi_login_instructions">Open the verification page and enter this code to authorize nanoMuse:</string>
     <string name="kimi_login_copy_code">Copy code</string>
     <string name="kimi_login_open_verification">Open verification page</string>
     <string name="kimi_login_waiting">Waiting for authorization…</string>
@@ -1934,7 +1934,7 @@
     <string name="selection_copy_as_markdown">Copy as Markdown</string>
     <string name="selection_copy_as_rich_text">Copy as Rich Text</string>
     <string name="selection_copy_as_plain_text">Copy as Plain Text</string>
-    <string name="chat_input_placeholder_hint_5">Minis can make the Return key send or insert a newline</string>
+    <string name="chat_input_placeholder_hint_5">nanoMuse can make the Return key send or insert a newline</string>
     <!-- [T-android-compact-progress] Live status while a compaction runs. -->
     <string name="compact_progress">Compacting… %1$d s elapsed</string>
     <string name="compact_progress_split">Compacting… %1$d s · summarizing in segments (%2$d/%3$d)</string>

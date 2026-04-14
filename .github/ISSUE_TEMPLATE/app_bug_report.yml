@@ -1,0 +1,53 @@
+name: App bug report (Android)
+description: Something in the nanoMuse Android app does not work. Settings → Feedback opens this form pre-filled.
+labels: ["bug", "android"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks. A report we can reproduce on a phone is usually fixed in the next version.
+        **Security issues** go to the address in [SECURITY.md](../blob/main/SECURITY.md), not here.
+        Do not paste API keys or private conversations.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what happened instead. A screenshot helps.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open a new chat
+        2. Ask "…"
+        3. Approve the shell command
+        4. See …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: nanoMuse version
+      description: Settings → About, e.g. 0.1.1 (2)
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device and Android version
+      description: e.g. Android 15 (API 35), Xiaomi 23049RAD8C — HyperOS 2
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model and provider
+      description: e.g. qwen3-max via 阿里云百炼, or deepseek-chat via api.deepseek.com
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log
+      description: "Settings → Export logs, or `adb logcat -s nanoMuse.*`. Remove anything private."
+      render: text

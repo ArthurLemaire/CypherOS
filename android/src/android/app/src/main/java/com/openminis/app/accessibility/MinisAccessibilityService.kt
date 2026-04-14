@@ -1,5 +1,6 @@
 package com.openminis.app.accessibility
 
+import com.openminis.app.BuildConfig
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.graphics.Bitmap
@@ -29,7 +30,7 @@ class MinisAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val TAG = "MinisA11y"
-        const val SERVICE_ID = "com.openminis.app/.accessibility.MinisAccessibilityService"
+        val SERVICE_ID = "${BuildConfig.APPLICATION_ID}/com.openminis.app.accessibility.MinisAccessibilityService" // nanoMuse: the applicationId is not the package
         private const val EVENT_RING_CAP = 1024
 
         @Volatile

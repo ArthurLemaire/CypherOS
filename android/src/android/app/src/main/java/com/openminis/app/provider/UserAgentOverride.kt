@@ -64,6 +64,6 @@ object MinisUserAgent {
     val DEFAULT: String by lazy {
         val release = android.os.Build.VERSION.RELEASE ?: "unknown"
         val model = (android.os.Build.MODEL ?: "unknown").trim().ifEmpty { "unknown" }
-        "Minis/${BuildConfig.VERSION_NAME} (Android $release; $model)"
+        "nanoMuse/${BuildConfig.VERSION_NAME} (Android $release; $model)"
     }
 }

@@ -282,7 +282,7 @@ class TerminalNativeView @JvmOverloads constructor(
                             val text = em.getSelectedText(sel[0], sel[1], sel[2], sel[3])
                             if (text.isNotEmpty()) {
                                 val cb = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                cb.setPrimaryClip(ClipData.newPlainText("Minis Shell", text))
+                                cb.setPrimaryClip(ClipData.newPlainText("nanoMuse Shell", text))
                             }
                         }
                         mode.finish()

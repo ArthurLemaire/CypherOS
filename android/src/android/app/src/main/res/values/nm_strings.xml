@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- nanoMuse: strings added on top of upstream; kept in their own file so an
+     upstream pull never touches them. Other locales fall back to these. -->
+<resources>
+    <string name="nm_about_build">This build</string>
+    <string name="nm_about_license">License</string>
+    <string name="nm_about_upstream">Based on OpenMinis 1.13</string>
+    <string name="nm_about_upstream_detail">GPL-3.0 · modified since 2026-09-24 · source on GitHub</string>
+    <string name="nm_about_trademark">Not affiliated with Meta</string>
+    <string name="nm_about_trademark_detail">Muse is a trademark of Meta Platforms, Inc. nanoMuse is an independent free-software project.</string>
+</resources>

@@ -821,7 +821,7 @@ private fun RestoreTab(
             // folder support is untouched — only this duplicate entry is gone.
             RestoreSourceRow(
                 icon = Icons.Outlined.Description,
-                iconColor = Color(0xFF007AFF),
+                iconColor = Color(0xFF015CFB),
                 label = if (running) status ?: stringResource(R.string.backup_reading)
                 else stringResource(R.string.backup_choose_file),
                 enabled = !running,
@@ -1181,7 +1181,7 @@ private fun DestinationRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                modifier = Modifier.size(30.dp).background(Color(0xFF007AFF), CircleShape),
+                modifier = Modifier.size(30.dp).background(Color(0xFF015CFB), CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(17.dp))
@@ -1536,7 +1536,7 @@ private fun categoryIcon(cat: BackupCategory): ImageVector = when (cat) {
 
 /** Tint per category, mirroring iOS BackupCategoryIcon.tint(for:). */
 private fun categoryTint(cat: BackupCategory): Color = when (cat) {
-    BackupCategory.CHATS -> Color(0xFF007AFF)                 // blue
+    BackupCategory.CHATS -> Color(0xFF015CFB)                 // blue
     BackupCategory.SHARED_FILES -> Color(0xFF5856D6)         // indigo
     BackupCategory.SKILLS -> Color(0xFFFF9500)              // orange
     BackupCategory.MEMORY -> Color(0xFFFF2D55)             // pink

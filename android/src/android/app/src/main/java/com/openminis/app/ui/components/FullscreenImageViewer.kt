@@ -489,7 +489,7 @@ internal suspend fun saveToGallery(context: Context, bitmap: Bitmap): Boolean =
                 val values = ContentValues().apply {
                     put(MediaStore.Images.Media.DISPLAY_NAME, filename)
                     put(MediaStore.Images.Media.MIME_TYPE, "image/png")
-                    put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/Minis")
+                    put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/nanoMuse")
                     put(MediaStore.Images.Media.IS_PENDING, 1)
                 }
                 val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
@@ -502,7 +502,7 @@ internal suspend fun saveToGallery(context: Context, bitmap: Bitmap): Boolean =
             } else {
                 @Suppress("DEPRECATION")
                 val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-                val minisDir = File(dir, "Minis").also { it.mkdirs() }
+                val minisDir = File(dir, "nanoMuse").also { it.mkdirs() }
                 val file = File(minisDir, filename)
                 stream = file.outputStream()
                 stream.use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }

@@ -303,7 +303,7 @@ internal fun ToolDetailSheet(
                 .fillMaxHeight(0.85f)
                 .background(ChatColors.secondaryBg),
         ) {
-            // ── Top Nav Bar (iOS: X button + "Minis Computer" + action button) ──
+            // ── Top Nav Bar (iOS: X button + "nanoMuse Computer" + action button) ──
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -337,7 +337,7 @@ internal fun ToolDetailSheet(
                 // the elapsed-duration text) so it sits next to where the
                 // user is already scanning timing info.
                 Text(
-                    text = "Minis Computer",
+                    text = "nanoMuse Computer",
                     fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = ChatColors.primaryText,
@@ -896,7 +896,7 @@ internal fun ToolDetailSheet(
                                             fontWeight = FontWeight.SemiBold,
                                             color = Color.White,
                                             modifier = Modifier
-                                                .background(Color(0xFF007AFF), CircleShape)
+                                                .background(Color(0xFF015CFB), CircleShape)
                                                 .padding(horizontal = 10.dp, vertical = 2.dp),
                                         )
                                     }

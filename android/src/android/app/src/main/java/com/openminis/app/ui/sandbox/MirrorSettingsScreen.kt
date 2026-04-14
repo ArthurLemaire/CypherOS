@@ -97,7 +97,7 @@ enum class MirrorCategory(
 
     val iconColor: Color
         get() = when (this) {
-            ALPINE -> Color(0xFF007AFF)
+            ALPINE -> Color(0xFF015CFB)
             PIP -> Color(0xFF34C759)
             NPM -> Color(0xFFFF3B30)
         }

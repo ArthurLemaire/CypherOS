@@ -57,7 +57,7 @@ class AlarmOffloadHandler(private val context: Context) : NativeOffloadHandler {
         } catch (e: SecurityException) {
             AppLogger.warning(TAG, "SecurityException: ${e.message}")
             val body = JSONObject().put("error", "exact_alarm_denied")
-                .put("message", "Exact alarms are blocked. On Android 14+ the user must grant 'Alarms & reminders' in Settings; on Xiaomi/Huawei/Oppo/OnePlus/Vivo, also enable autostart and disable battery optimization for Minis. Underlying: ${e.message}")
+                .put("message", "Exact alarms are blocked. On Android 14+ the user must grant 'Alarms & reminders' in Settings; on Xiaomi/Huawei/Oppo/OnePlus/Vivo, also enable autostart and disable battery optimization for nanoMuse. Underlying: ${e.message}")
                 .toString()
             NativeOffloadResult(77, OffloadOutput.formatBody(body, args) + "\n")
         } catch (e: Throwable) {
@@ -254,7 +254,7 @@ class AlarmOffloadHandler(private val context: Context) : NativeOffloadHandler {
             AppLogger.info(TAG, "open: launched system Clock SHOW_ALARMS")
             val data = JSONObject()
                 .put("opened", true)
-                .put("hint", "System Clock launched. Tell the user to view, edit, or cancel alarms in the Clock app's Alarms tab (or Timers tab for timers). Minis cannot enumerate or cancel alarms programmatically — Android's Clock API is fire-and-forget.")
+                .put("hint", "System Clock launched. Tell the user to view, edit, or cancel alarms in the Clock app's Alarms tab (or Timers tab for timers). nanoMuse cannot enumerate or cancel alarms programmatically — Android's Clock API is fire-and-forget.")
             emitEnvelope("open", data, args)
         } catch (e: ActivityNotFoundException) {
             val body = JSONObject().put("error", "no_clock_app")
@@ -357,7 +357,7 @@ class AlarmOffloadHandler(private val context: Context) : NativeOffloadHandler {
             put("minute", minute)
             put("repeat", mode.name)
             put("view_url", VIEW_URL)
-            put("hint", "Alarm saved to the system Clock app. Open the Clock app, or $VIEW_URL inside Minis, to view or cancel.")
+            put("hint", "Alarm saved to the system Clock app. Open the Clock app, or $VIEW_URL inside nanoMuse, to view or cancel.")
         }
     }
 
@@ -371,7 +371,7 @@ class AlarmOffloadHandler(private val context: Context) : NativeOffloadHandler {
             put("duration_seconds", durationSec)
             put("fires_at", formatIso(firesAt))
             put("view_url", VIEW_URL)
-            put("hint", "Timer started in the system Clock app. Open the Clock app's Timer tab, or $VIEW_URL inside Minis, to view or stop.")
+            put("hint", "Timer started in the system Clock app. Open the Clock app's Timer tab, or $VIEW_URL inside nanoMuse, to view or stop.")
         }
     }
 
@@ -389,7 +389,7 @@ class AlarmOffloadHandler(private val context: Context) : NativeOffloadHandler {
         if (needsHint && (action == "set" || action == "timer")) {
             data.put(
                 "oem_hint",
-                "${OsCompat.oemLabel()} aggressively kills background alarms. Please enable Autostart and disable battery optimization for Minis in system settings to keep this alarm reliable.",
+                "${OsCompat.oemLabel()} aggressively kills background alarms. Please enable Autostart and disable battery optimization for nanoMuse in system settings to keep this alarm reliable.",
             )
         }
         val envelope = JSONObject()
