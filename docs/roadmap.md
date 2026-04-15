@@ -1,51 +1,50 @@
 # Roadmap
 
-nanoMuse is an open-source personal AI agent inspired by Meta's Muse. This page is the plan: what the shape is, which platform comes when, and what is a feature of one phase rather than the definition of the project.
+nanoMuse is an open-source personal AI agent inspired by Meta's Muse. This page is the plan: what the shape is, which platform comes when, and how the code got to where it is.
 
 ## The shape
 
-Muse, as Meta shipped it in September 2026, is one agent per person with several front doors: iOS and Android apps, the web at muse.ai, WhatsApp, and a Mac app. All of them are thin clients. The agent itself — the model loop, its browser, its files, the tasks it runs while you are away — lives in a cloud VM that belongs to that one user ("Muse Secure VM", with a confidential-computing variant announced for later). A Sentinel model sits between the agent and anything with consequences; approvals come to whichever client you have open.
+Muse, as Meta shipped it in September 2026, is one agent per person with several front doors: iOS and Android apps, the web at muse.ai, WhatsApp, and a Mac app. All of them are thin clients. The agent itself — the model loop, its browser, its files, the tasks it runs while you are away — lives in a cloud VM that belongs to that one user ("Muse Secure VM"). A Sentinel model sits between the agent and anything with consequences; approvals come to whichever client you have open.
 
-nanoMuse keeps the shape and changes two things. The agent is open and runs where you say; and the *hands* are wider than APIs, because a Chinese day runs through apps that never had one. What stays the same is the centre: one agent, a name and a face, memory, goals worked on in the background, a feed, a Sentinel, approvals you scope.
+nanoMuse keeps the shape and changes two things. The agent is open and runs where you say — on the phone itself first; and the *hands* are wider than APIs, because a Chinese day runs through apps that never had one. What stays the same is the centre: one agent, a name and a face, memory, goals worked on in the background, a feed, approvals you scope.
 
-## Three phases
+## Two lines of code
 
-The order follows where the VM is needed least.
+**The Python line** (`nanomuse/`, `web/`, `demo/`, `site/`, tag `pre-openminis`) was the first attempt: a Python agent served from your own computer, a web app, a Kotlin host on the phone, a Sentinel, skills, MCP, a simulated phone for the showcase. It works, and it is frozen — it is the base of Phases 2 and 3, not of the phone.
 
-### Phase 1 — the phone, no cloud VM (now)
+**The Android line** (`android/`) is where the project now happens. Since 2026-09-24 the app is a modified copy of [OpenMinis](https://github.com/OpenMinis/OpenMinis) 1.13 (GPL-3.0), imported with `git subtree`: a complete agent that runs on the phone with no server — a Linux root file system under proot, a shell, a browser, MCP, skills, scheduled tasks, an accessibility executor, any OpenAI-compatible model. Phase 1 is that app, one small version at a time, each one an APK you can install, with the Muse shape added layer by layer. The whole repository is GPL-3.0-or-later as a consequence ([NOTICE](../NOTICE)).
 
-The agent runs on a machine you own — a laptop, a home server, Docker — and the phone is the client: an Android app (a native shell around the web app, with notifications) and the web app itself, installable from any browser. Nothing runs in a cloud you do not control; the sandbox on Linux gives each command a namespace of its own, which is the small-scale answer to the VM.
+## Phase 1 — the phone, no cloud VM (now)
 
-Shipped: the agent, the Sentinel, the vault and the sandbox; the web and Android apps; skills (Agent Skills format) and MCP; 飞书 through lark-cli and 高德 through MCP without a screen; the phone operator on the simulated phone, with traces; the hosted showcase.
+Six versions. Each is a GitHub pre-release with an APK; `versionName` is a plain number so the in-app update check works.
 
-Still to do in this phase:
+| Version | Name | What it adds |
+|---|---|---|
+| 0.1.1 | 换皮 | OpenMinis 1.13 as nanoMuse: the icon and name, the brand blue instead of iOS blue, About / feedback / update source pointing here, GPL notices, one signing key for every version. Functionally identical to upstream. |
+| 0.1.2 | 有名字有脸 | A name and a face: the red panda as the default chat avatar, an onboarding that asks who the agent is to you, BYOK only (no subscription logins). |
+| 0.1.3 | 国内的日常 | The Chinese day without a screen: 飞书, 腾讯会议, 高德, 快递100, 12306 through CLIs and MCP servers inside the phone's root file system; the screen only when nothing else will do. |
+| 0.1.4 | 关键处先问你 | Approvals with scope — a Sentinel before shell, payments, messages and anything you could not undo; the four-rung ladder (skill / MCP / CLI → logged-in fetch → in-app browser → the phone's screen, last and off by default). |
+| 0.1.5 | Muse 的形状 | The Muse tabs: chat, feed, goals, library. |
+| 0.1.6 → 0.2.0 | 记得你 | Memory you can read and edit, the feed written for you, files; 0.2.0 is the first beta. |
 
-- **Local build** — the brain inside the APK, so that a phone with a key needs no server at all. A model behind an API is still on the network; the *agent* is not. This is the whole agent — chat, memory, goals, feed, skills, MCP, the Sentinel — and it is complete without the phone operator; operating the screen stays a switch that is off until you turn it on.
-- **Android executor** — with that switch on, the nanoMuse app operates the real apps on the phone through an accessibility service: screenshots, gestures, the finger overlay; Shizuku as an option where it is allowed.
-- **Starter quota** — a first budget of tokens from the showcase gateway, then your own key.
-- **Muse features still missing** — durable tasks with a take-over hand-off, watches that trigger on the world, ideas with evidence, a follow-up queue.
-- **Voice** — speak a message and see it as text before it goes, through any OpenAI-compatible `/audio/transcriptions`.
+Kept from the plan's fine print: the Kotlin package stays `com.openminis.app` so upstream releases can be merged; new code lives in `io.github.nanomuse.*`; rebranding is a script that is re-run after every merge ([CONTRIBUTING](../CONTRIBUTING.md)).
 
-### Phase 2 — the web, on a cloud VM
+## Phase 2 — the web, on a cloud VM
 
-A hosted nanoMuse: sign in from any browser and get an agent that runs in a VM of your own — its browser, its files, its background tasks inside — the way Muse does. The same package and the same Sentinel; the VM is the sandbox writ large. Your own key or the starter quota. The Android and web apps become clients of your VM as well as of your own machine, so the choice is a URL, not a fork.
+A hosted nanoMuse: sign in from any browser and get an agent that runs in a VM of your own — its browser, its files, its background tasks inside — the way Muse does. The Python line and the showcase gateway (`demo/showcase/`), which already starts a private agent per visitor next to a simulated phone, are the seed. The phone app becomes a client of your VM as well as an agent of its own.
 
-The showcase gateway (`demo/showcase/`), which already starts a private nanoMuse per visitor next to the simulated phone, is the seed of this phase.
+## Phase 3 — the desktop, both ways
 
-### Phase 3 — the desktop, both ways
+A desktop app in two versions. *Local*: the agent runs on the computer you sit at, with its files and its browser, and asks you there. *Attached*: the same app as a client of your cloud VM, so a task started on the phone can be watched, taken over and finished at a desk.
 
-A desktop app in two versions. *Local*: the agent runs on the computer you sit at, with its files and its browser, and asks you there. *Attached*: the same app as a client of your cloud VM, so a task started on the phone can be watched, taken over and finished at a desk. iOS follows as the same shell as the Android app.
+## Which docs belong to which line
+
+Written for the Python line and kept for reference, not for the app in `android/`: [android.md](android.md), [app.md](app.md), [local-runtime.md](local-runtime.md), [gui.md](gui.md), [device.md](device.md), [browser.md](browser.md), [deployment.md](deployment.md), [configuration.md](configuration.md), [cli.md](cli.md), [sentinel.md](sentinel.md), [architecture.md](architecture.md), [design.md](design.md). Current for both: [brand.md](brand.md), [services.md](services.md), [showcase.md](showcase.md), this page, the [CHANGELOG](../CHANGELOG.md).
 
 ## Features, not the definition
 
-Some of what nanoMuse does today is easy to mistake for what it is. The definition is the first sentence of this page — an open-source personal AI agent inspired by Muse — and the rest is where the project happens to be in September 2026:
+- **Operating a phone through its screen.** A hand for apps without an API — 12306, 微信, 支付宝 — and the last one the agent reaches for. 飞书 has a CLI, 高德 has an MCP server; those come first. It is a switch, off by default.
+- **A local APK.** Phase 1 puts the agent on hardware you own instead of a cloud VM. That is the starting point, not a principle.
+- **Chinese services.** The built-in skills speak Chinese because that is where the project lives and where the gaps were widest. A skill for another service is a folder with a `SKILL.md`; the app ships in seventeen languages.
 
-- **Operating a phone through its screen.** A hand for apps without an API — 12306, 微信, 支付宝 — and the last one the agent reaches for. 飞书 has a CLI, 高德 has an MCP server; those come first, and the showcase is written that way. It is a switch, off by default, and every build of nanoMuse — the server, the Android app, the local build to come — is a complete agent with it off.
-- **A local APK.** Phase 1 puts the agent on hardware you own instead of a cloud VM. That is the starting point, not a principle: phase 2 is a VM per user, phase 3 a desktop in both forms.
-- **Chinese services.** The built-in skills and the showcase speak Chinese because that is where the project lives and where the gaps were widest. They are the first set of skills, not the boundary: the agent, the Sentinel, the skills format and the apps are not tied to a country, a skill for another service is a folder with a `SKILL.md`, and the app ships in English and 简体中文 with room for more.
-
-What does not change across phases: one agent rather than a framework, the Sentinel between it and anything irreversible, secrets that never reach the model, memory you can read and edit, any OpenAI-compatible model, MIT.
-
-## Where things are tracked
-
-The checklist in the [README](../README.md#roadmap) is the short form of this page; the [launch checklist](launch-checklist.md) is the long form for the first release, item by item. Issues and pull requests on [GitHub](https://github.com/nano-muse/nanoMuse) carry the detail; the [CHANGELOG](../CHANGELOG.md) records what landed.
+What does not change across phases: one agent rather than a framework, approvals between it and anything irreversible, secrets that never reach the model, memory you can read and edit, any OpenAI-compatible model, free software.

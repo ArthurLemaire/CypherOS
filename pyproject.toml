@@ -7,14 +7,14 @@ name = "nanomuse"
 version = "0.1.0"
 description = "An open-source personal AI agent inspired by Meta's Muse: it does the work, a Sentinel decides what may run, and it reaches services through APIs, MCP servers, CLIs or the phone's screen. Phone today, web and desktop next. Bring your own model."
 readme = "README.md"
-license = { text = "MIT" }
+license = { text = "GPL-3.0-or-later" }
 requires-python = ">=3.11"
 authors = [{ name = "nanoMuse Contributors" }]
 keywords = ["agent", "ai", "llm", "personal-assistant", "personal-agent", "muse", "meta-muse", "gui-agent", "mcp", "deepseek", "feishu", "amap"]
 classifiers = [
   "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",
-  "License :: OSI Approved :: MIT License",
+  "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",

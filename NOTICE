@@ -1,0 +1,35 @@
+nanoMuse
+Copyright (C) 2026 nanoMuse contributors
+
+This program is free software: you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the
+Free Software Foundation, either version 3 of the License, or (at your
+option) any later version.
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+Public License in the file LICENSE for more details.
+
+--------------------------------------------------------------------------
+
+The Android application in android/ is based on OpenMinis 1.13
+(https://github.com/OpenMinis/OpenMinis, tag 1.13, commit 4ef2900),
+Copyright (C) the OpenMinis authors, released under the GNU General
+Public License version 3. It has been modified by the nanoMuse
+contributors since 2026-09-24. The imported tree is in this repository's
+history unchanged (commit "Import OpenMinis 1.13 as android/"); every
+change since is in `git log -- android/`, and edits inside upstream files
+are marked with a `// nanoMuse:` comment.
+
+OpenMinis is a trademark of its authors; nanoMuse does not use the
+OpenMinis name or logo for its own application. The complete corresponding
+source of every nanoMuse release is the tagged commit on
+https://github.com/nano-muse/nanoMuse together with the submodule
+android/deps/proot (https://github.com/nano-muse/proot).
+
+Other components and their licences: THIRD_PARTY_NOTICES.md.
+
+nanoMuse is not affiliated with, endorsed by, or derived from Meta
+Platforms, Inc. or its Muse product. "Muse" is a trademark of Meta
+Platforms, Inc.
