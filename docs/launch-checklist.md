@@ -146,19 +146,20 @@ Decisions this list rests on (see [design.md](design.md) for the reasoning): the
 
 ## 9. Chinese services and the showcase (P0)
 
-- [ ] **`docs/services.md`** in three tiers: verified (lark-cli, the 高德 MCP server, the 腾讯会议 CLI, 12306-mcp for queries) / to be run one by one (百度地图, 腾讯位置, 和风, 快递100, 钉钉, 语雀, 百度网盘, the 携程 / 飞猪 / 饿了么 servers on the 百炼 MCP market) / grey, not recommended (小红书 MCP, anything 微信). Rule: nothing enters the showcase until it has run inside the rootfs and left a trace
-- [ ] New skills: `tencent-meeting`; `train-tickets` moved onto 12306-mcp; `kuaidi100` if it works; `config.toml` examples for 12306 / 快递100
-- [ ] **Seven cases run on a phone, with traces**:
-  1. A business trip in one sentence (12306 MCP + 高德 MCP + 飞书 CLI + calendar + a memory moment; no GUI)
-  2. The morning brief (a routine + 高德 weather + 飞书 calendar and tasks + 腾讯会议 → a notification)
-  3. Where is my 京东 order (background WebView; one take-over at the login wall; the login persists)
-  4. A budget table for 成都 over the holiday (携程 / 去哪儿 browsed in the background → a table in the Library)
-  5. Book a meeting and tell the group (腾讯会议 CLI + 飞书 CLI)
-  6. Clipboard → calendar + alarm (the device MCP)
-  7. A 美团 order that stops before payment (the only GUI case; the Sentinel closes it)
-- [ ] GUI cases documented only: 交管12123 fines, 滴滴 up to the ride request, a 12306 app order up to submit, 京东 app cart up to checkout
-- [ ] Rewrite `docs/showcase.md`: for every case the artifact screenshot, the chain of tools, a link to the trace
-- [ ] Never in public material: automating 微信, 支付宝 statements, 医保 / 个税
+- [x] **`docs/services.md`** in three tiers: verified (lark-cli, the 高德 MCP server, the 腾讯会议 CLI, 12306-mcp for queries) / to be run one by one (快递100 — server and skill ready, needs a key; 百度地图, 腾讯位置, 和风, 钉钉, 语雀, 百度网盘, the 携程 / 飞猪 / 饿了么 servers on the 百炼 MCP market) / grey, not recommended (小红书 MCP, anything 微信). Rule: nothing enters the showcase until it has run inside the rootfs and left a trace — the verification log is on the page: all five packages installed in the arm64 rootfs under QEMU (2 min), 12306-mcp answered a live query in 1.0 s, lark-cli 1.0.96 and tmeet v1.0.18 run, the 高德 and 快递100 servers list their tools (live calls need the owner's keys)
+- [x] New skills: `tencent-meeting` (tmeet, flags checked against its command reference); `train-tickets` moved onto 12306-mcp (`mixed`: search through the server, book on the phone only when told to; the screen search kept as a fallback); `kuaidi100` (written against the server's four tools, waits for a key); `config.toml` examples for 12306 / 快递100; the `feishu` skill knows lark-cli's `config init` step; `trip-plan` looks in the 12306 server first
+- [x] Found and fixed on the way: MCP calls with no arguments sent none at all and zod-based servers (12306-mcp's `get-current-date`) rejected them — now always an object; Chromium's profile files under `<workspace>/browser-profile/` showed up as artifact cards (92 in one run) — skipped now; a `wait` action for the browser (the model asked for one on a single-page app)
+- [ ] **Seven cases run on a phone, with traces** — one half-case so far, on the computer:
+  1. [~] A business trip in one sentence — the 12306 half ran in the web app with the server, [traces/case-1-train.md](traces/case-1-train.md) (every 二等座 before 13:00 sold out; the model said so and offered the nearest alternatives); the 高德 route, the calendar draft and the 飞书 message wait for a 高德 key and a 飞书 login
+  2. [ ] The morning brief — needs the 高德 key, 飞书 and 腾讯会议 logins
+  3. [ ] Where is my 京东 order — needs a 京东 login on the phone (background WebView, one take-over at the login wall)
+  4. [ ] A budget table for 成都 over the holiday — tried on the computer on 2026-09-24: 去哪儿 sends headless desktop Chromium to its homepage and renders only the footer (bot detection); 21 tool calls, stopped. To be run through the phone's WebView, which is the intended backend for it
+  5. [ ] Book a meeting and tell the group — needs the 腾讯会议 and 飞书 logins
+  6. [ ] Clipboard → calendar + alarm — needs the local build on a phone (the device server runs only there)
+  7. [ ] A 美团 order that stops before payment — needs a phone with 美团 (the x86 emulator cannot run it)
+- [x] GUI cases documented only: 交管12123 fines, 滴滴 up to the ride request, a 12306 app order up to submit, 京东 app cart up to checkout
+- [x] Rewrite `docs/showcase.md`: the seven cases, each with the chain of hands and its trace or what the trace waits for; `docs/traces/` holds the Markdown timelines
+- [x] Never in public material: automating 微信, 支付宝 statements, 医保 / 个税 — stated on the page
 
 ---
 

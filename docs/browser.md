@@ -40,6 +40,7 @@ The tool's actions, identical on both backends:
 | `key key` | press Enter, Tab, Escape … |
 | `scroll dy` | scroll by pixels, negative for up |
 | `back` | one step back in history |
+| `wait [seconds]` | a pause of up to 15 s for a page that is still drawing itself (a single-page app after `load`), then the page state |
 | `screenshot` | a fresh picture for the chat card |
 | `fetch url [method] [body]` | an HTTP request with the browser's cookies, no page rendered — an order list as JSON, an `.ics` behind a login, a form post |
 | `profile name` | present as `mobile` (412×915, a phone's user agent) or `desktop` (1280×900), or a custom user agent and size |

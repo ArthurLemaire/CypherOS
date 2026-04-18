@@ -60,7 +60,9 @@ class MCPTool(BaseTool):
         return base
 
     async def execute(self, **kwargs: Any) -> ToolResult:
-        result = await self.session.call_tool(self.original_name, kwargs or None)
+        # Always send an object, even an empty one: servers built on zod (12306-mcp's
+        # `get-current-date`, for one) reject a call with no `arguments` at all.
+        result = await self.session.call_tool(self.original_name, dict(kwargs))
         parts: list[str] = []
         for item in getattr(result, "content", None) or []:
             itype = getattr(item, "type", "")

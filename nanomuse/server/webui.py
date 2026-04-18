@@ -60,7 +60,8 @@ _READ_ONLY_TOOLS = {
     "read_emails",
     "send_email",
 }
-_SKIP_DIRS = {"node_modules", "__pycache__", ".venv", "venv", ".git"}
+# the browser's persistent profile lives in the workspace too (cookies, caches) — never an artifact
+_SKIP_DIRS = {"node_modules", "__pycache__", ".venv", "venv", ".git", "browser-profile"}
 _SCAN_CAP = 3000
 
 

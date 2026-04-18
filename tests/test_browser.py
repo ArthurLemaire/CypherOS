@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -179,6 +180,15 @@ async def test_actions_produce_the_same_summary_and_frames_on_any_backend(tmp_pa
     assert scrolls and scrolls[0][1] == -900 * 0.85
     res = await tool.execute(action="back")
     assert res.ok and ("back", None) in backend.calls
+
+    # wait pauses (capped) and returns the page state, for a page still drawing itself
+    t0 = time.monotonic()
+    res = await tool.execute(action="wait", seconds=0.6)
+    assert (
+        res.ok and 0.5 <= time.monotonic() - t0 < 5 and frames[-1].action == "Waited for the page"
+    )
+    res = await tool.execute(action="wait", seconds="not a number")
+    assert res.ok
 
     # a screenshot lands in the workspace
     res = await tool.execute(action="screenshot")

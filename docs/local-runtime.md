@@ -96,7 +96,7 @@ Nothing is due → no alarm, and the runtime idles until the WebView or a notifi
   | CLI | Does |
   | --- | --- |
   | `nanomuse-device <capability> [action] [k=v …]` | A device tool: `clipboard read`, `calendar list from=2026-09-24`, `alarm set hour=7 minute=30 message=Train`, `contacts search query=张`, `notify title=Done body=Booked`, `location`, `photo pick` — `nanomuse-device list` shows what this phone has ([device.md](device.md)) |
-  | `nanomuse-browser <action> [k=v …]` | The `browser` tool: `navigate` / `extract` / `click` / `type` / `key` / `scroll` / `back` / `screenshot` / `fetch URL [--post BODY]` (with the browser's cookies) / `profile mobile\|desktop` / `close` — [browser.md](browser.md) |
+  | `nanomuse-browser <action> [k=v …]` | The `browser` tool: `navigate` / `extract` / `click` / `type` / `key` / `scroll` / `back` / `wait` / `screenshot` / `fetch URL [--post BODY]` (with the browser's cookies) / `profile mobile\|desktop` / `close` — [browser.md](browser.md) |
   | `nanomuse-open <url>` | Opens the page in the in-app take-over sheet; the rootfs sets it as `BROWSER` |
 
   The server runs the request as a nested tool call inside the calling command's context — the same Sentinel, the same permissions, the same timeline (`tool` events carry `via: "shell"`), so a script can no more escape the rules than the model can. Off the phone (no `NANOMUSE_BRIDGE` in the environment) the CLIs exit 2 with a one-line note; on a computer these things are done from the desktop anyway.

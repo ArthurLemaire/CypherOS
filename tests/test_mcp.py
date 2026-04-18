@@ -21,7 +21,7 @@ async def test_mcp_tools_are_exposed_and_callable():
     try:
         tools = await manager.connect()
         names = sorted(t.name for t in tools)
-        assert names == ["echo__add", "echo__echo"]
+        assert names == ["echo__add", "echo__echo", "echo__today"]
         collection = ToolCollection(*tools)
         params = collection.to_params()
         assert params[0]["function"]["parameters"]["type"] == "object"
@@ -29,6 +29,9 @@ async def test_mcp_tools_are_exposed_and_callable():
         assert result.ok and "echo: hi" in result.output
         result = await collection.execute("echo__add", {"a": 2, "b": 40})
         assert "42" in result.output
+        # no arguments still sends an (empty) object — zod-based servers reject a missing one
+        result = await collection.execute("echo__today", {})
+        assert result.ok and "2026-09-24" in result.output
         assert tools[0].assess({"text": "x"}).summary.startswith("mcp:echo.")
     finally:
         await manager.close()
@@ -101,6 +104,6 @@ async def test_vault_placeholders_are_resolved_before_connecting():
     assert manager._resolved(url).url == "https://mcp.amap.com/mcp?key=k-123"
     try:
         tools = await manager.connect()  # the echo server ignores its extra argument
-        assert sorted(t.name for t in tools) == ["echo__add", "echo__echo"]
+        assert sorted(t.name for t in tools) == ["echo__add", "echo__echo", "echo__today"]
     finally:
         await manager.close()

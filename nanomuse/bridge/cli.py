@@ -147,7 +147,7 @@ def browser_main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         prog="nanomuse-browser",
         description="The agent's browser view, from a command: navigate, extract, click, type, press, "
-        "scroll, back, screenshot, fetch, close. The user sees the same page in the app and can take over.",
+        "scroll, back, wait, screenshot, fetch, close. The user sees the same page in the app and can take over.",
     )
     p.add_argument("--json", action="store_true", help="print the raw result as JSON")
     sub = p.add_subparsers(dest="action", required=True)
@@ -165,6 +165,9 @@ def browser_main(argv: list[str] | None = None) -> int:
         "direction", choices=["up", "down"]
     )
     sub.add_parser("back", help="go back one page")
+    sub.add_parser("wait", help="give a page that is still drawing itself a moment").add_argument(
+        "seconds", type=float, nargs="?", default=None
+    )
     sub.add_parser("screenshot", help="a picture of the page; prints where it was saved")
     f = sub.add_parser(
         "fetch",
@@ -191,6 +194,7 @@ def browser_main(argv: list[str] | None = None) -> int:
         "text",
         "key",
         "direction",
+        "seconds",
         "profile",
         "user_agent",
         "width",

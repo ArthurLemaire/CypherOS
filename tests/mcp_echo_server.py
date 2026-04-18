@@ -22,5 +22,11 @@ def add(a: int, b: int) -> int:
     return a + b
 
 
+@server.tool()
+def today() -> str:
+    """A tool with no arguments at all."""
+    return "2026-09-24"
+
+
 if __name__ == "__main__":
     server.run(transport="stdio")
