@@ -272,6 +272,17 @@ class Thread:
         }
 
 
+def _parse_when(value: str | None) -> datetime | None:
+    """An ISO timestamp from a store → aware datetime (naive ones are local), or None."""
+    if not value:
+        return None
+    try:
+        when = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return when.astimezone()  # a naive stamp is local time
+
+
 class MuseService:
     def __init__(self, settings: Settings, llm: BaseLLM | None = None):
         self.settings = settings
@@ -324,6 +335,10 @@ class MuseService:
         self._started = False
         self.started_at = now_iso()
         self.next_goal_pass_at: datetime | None = None
+        # the scheduler naps on this: `wake()` (POST /api/tick — the phone's alarm) ends the
+        # nap early so what is due runs now, not at the end of the nap
+        self._wake = asyncio.Event()
+        self._announced_wake: str | None = None
         self._load_threads()
 
     def phone_view(self) -> dict[str, Any]:
@@ -898,6 +913,52 @@ class MuseService:
         )
         return goal
 
+    async def _nap(self, seconds: float) -> None:
+        """Sleep, unless :meth:`wake` is called first."""
+        try:
+            await asyncio.wait_for(self._wake.wait(), timeout=seconds)
+        except TimeoutError:
+            return
+        finally:
+            self._wake.clear()
+
+    def wake(self) -> None:
+        """Run the scheduler's pass now. The Android app calls this from the exact alarm it
+        set for :meth:`next_wake_at`, so a reminder fires on time on a phone that was asleep."""
+        self._wake.set()
+
+    def next_wake_at(self) -> datetime | None:
+        """The earliest moment something scheduled is due — a reminder, a goal check-in, the
+        next background pass — or the end of the quiet hours when they hold a check-in back.
+        A host that can wake the process (the Android app) sets an alarm for it; on a machine
+        that never sleeps the scheduler's own naps are enough."""
+        times: list[datetime] = []
+        now = datetime.now().astimezone()
+        quiet_until = self.profile.quiet_hours_end()
+        for r in self.app.reminders.list("active"):
+            when = _parse_when(r.next_at)
+            if when is not None:
+                times.append(when)
+        for g in self.app.goals.list("active"):
+            when = _parse_when(g.next_check_in)
+            if when is not None:
+                # a check-in waits for the quiet window to end; wake then
+                times.append(max(when, quiet_until) if quiet_until else when)
+        if self.profile.proactive and self.next_goal_pass_at is not None:
+            times.append(self.next_goal_pass_at.astimezone())
+        if not times:
+            return None
+        return max(min(times), now)
+
+    def _announce_wake(self) -> None:
+        """Tell the clients when the next wake is, whenever that changes."""
+        when = self.next_wake_at()
+        stamp = when.isoformat(timespec="seconds") if when else None
+        if stamp == self._announced_wake:
+            return
+        self._announced_wake = stamp
+        self.bus.publish({"kind": "schedule", "next_wake_at": stamp})
+
     def _next_pass_delay(self) -> float:
         """Seconds until the next background pass: the level's interval, pushed past the
         quiet window if it would land inside one."""
@@ -1232,11 +1293,12 @@ class MuseService:
                 self._run_event_triggers()
                 await self._poll_mail()
                 self._prune_fired()
+                self._announce_wake()
                 due = self.next_goal_pass_at or datetime.now(UTC)
                 remaining = (due - datetime.now(UTC)).total_seconds()
                 if remaining > 0:
                     # short naps so a changed setting takes effect without a restart
-                    await asyncio.sleep(min(remaining, 30))
+                    await self._nap(min(remaining, 30))
                     continue
                 self.schedule_next_pass()
                 if not self.profile.proactive or self.profile.in_quiet_hours():
@@ -1755,6 +1817,9 @@ class MuseService:
                 self.next_goal_pass_at.isoformat(timespec="seconds")
                 if self.next_goal_pass_at and self.profile.proactive
                 else None
+            ),
+            "next_wake_at": (
+                wake.isoformat(timespec="seconds") if (wake := self.next_wake_at()) else None
             ),
             "queue": queue,
             "busy": any(t.busy for t in self.threads.values()),

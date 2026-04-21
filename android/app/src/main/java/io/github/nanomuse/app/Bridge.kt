@@ -90,6 +90,31 @@ class Bridge(private val activity: MainActivity) {
         }
     }
 
+    /**
+     * What stands in the way of running in the background, as JSON: `battery_unrestricted`,
+     * `overlay`, `exact_alarms` (granted · denied · n/a), `boot_start`, `vendor`,
+     * `autostart_settings` (whether this phone has a page we can open), `android`, `local`.
+     */
+    @JavascriptInterface
+    fun keepRunning(): String = KeepRunning.status(activity).toString()
+
+    /** Open the settings page for one of them: battery, overlay, alarms, autostart, app. */
+    @JavascriptInterface
+    fun openKeepRunning(what: String?) {
+        activity.runOnUiThread { KeepRunning.open(activity, what ?: "") }
+    }
+
+    @JavascriptInterface
+    fun setStartOnBoot(on: Boolean) {
+        prefs.startOnBoot = on
+    }
+
+    /** Zip the crash files, the runtime's log and the app's logcat lines; open the share sheet. */
+    @JavascriptInterface
+    fun exportLogs() {
+        activity.runOnUiThread { Thread { Diagnostics.export(activity) }.start() }
+    }
+
     companion object {
         const val NAME = "NanoMuseAndroid"
     }

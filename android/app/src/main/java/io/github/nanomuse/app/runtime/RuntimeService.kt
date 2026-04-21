@@ -59,6 +59,7 @@ class RuntimeService : Service() {
     private var link: DeviceLink? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var releaseLock: Runnable? = null
+    private var pokeRelease: Runnable? = null
     private val busy = HashMap<String, String>() // thread → what it is doing
 
     override fun onCreate() {
@@ -75,6 +76,10 @@ class RuntimeService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        if (intent?.action == ACTION_POKE) {
+            poked()
+            return START_STICKY
+        }
         if (process == null) {
             restarts = 0 // an explicit start (the user, the app opening) gets a fresh run of retries
             start()
@@ -85,6 +90,7 @@ class RuntimeService : Service() {
     override fun onDestroy() {
         stopping = true
         closeSocket()
+        WakeAlarms.cancel(this)
         releaseWake(now = true)
         process?.let { p ->
             p.destroy()
@@ -253,9 +259,78 @@ class RuntimeService : Service() {
             "hello" -> {
                 busy.clear()
                 msg.optJSONObject("state")?.optJSONObject("status")?.let { status(it) }
+                refreshSchedule()
             }
             "status" -> msg.optJSONObject("status")?.let { status(it) }
+            "schedule" -> armFor(msg.optString("next_wake_at").takeIf { it.isNotEmpty() && it != "null" })
         }
+    }
+
+    // ------------------------------------------------------------------ the alarm
+
+    /**
+     * The phone's alarm went off for the server's schedule (or the exact-alarm permission
+     * changed): stay awake a moment, have the scheduler run its pass now, and set the next one.
+     */
+    private fun poked() {
+        val port = prefs.localPort
+        val token = prefs.localToken
+        if (process == null || port == 0) return
+        holdWake()
+        pokeRelease?.let { handler.removeCallbacks(it) }
+        val r = Runnable { pokeRelease = null; if (busy.isEmpty()) releaseWake(now = false) }
+        pokeRelease = r
+        handler.postDelayed(r, POKE_HOLD_MS)
+        Thread {
+            try {
+                val req = Request.Builder()
+                    .url("http://127.0.0.1:$port/api/tick")
+                    .header("Authorization", "Bearer $token")
+                    .post(okhttp3.RequestBody.create(null, ByteArray(0)))
+                    .build()
+                http.newCall(req).execute().use { res ->
+                    val body = res.body?.string().orEmpty()
+                    val next = runCatching { JSONObject(body).optString("next_wake_at") }.getOrNull()
+                    handler.post { armFor(next?.takeIf { it.isNotEmpty() && it != "null" }) }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "tick failed: ${e.message}")
+            }
+        }.start()
+    }
+
+    /** Ask the server when it next has something to do, and set the alarm for it. */
+    private fun refreshSchedule() {
+        val port = prefs.localPort
+        val token = prefs.localToken
+        if (port == 0) return
+        Thread {
+            try {
+                val req = Request.Builder()
+                    .url("http://127.0.0.1:$port/api/upcoming")
+                    .header("Authorization", "Bearer $token")
+                    .build()
+                http.newCall(req).execute().use { res ->
+                    val body = res.body?.string().orEmpty()
+                    val next = runCatching { JSONObject(body).optString("next_wake_at") }.getOrNull()
+                    handler.post { armFor(next?.takeIf { it.isNotEmpty() && it != "null" }) }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "upcoming failed: ${e.message}")
+            }
+        }.start()
+    }
+
+    private fun armFor(iso: String?) {
+        if (stopping) return
+        val at = iso?.let { runCatching { java.time.OffsetDateTime.parse(it).toInstant().toEpochMilli() }.getOrNull() }
+        if (at == null) {
+            WakeAlarms.cancel(this)
+            nextWakeAt = 0L
+            return
+        }
+        nextWakeAt = at
+        exactWake = WakeAlarms.arm(this, at)
     }
 
     private fun status(s: JSONObject) {
@@ -331,6 +406,8 @@ class RuntimeService : Service() {
         private const val TAG = "RuntimeService"
         private const val NOTIFICATION_ID = 2
         private const val ACTION_STOP = "io.github.nanomuse.app.runtime.STOP"
+        private const val ACTION_POKE = "io.github.nanomuse.app.runtime.POKE"
+        private const val POKE_HOLD_MS = 45_000L
         private const val HEALTH_TIMEOUT_MS = 120_000L
         private const val MAX_RESTARTS = 5
         private const val WAKE_MAX_MS = 30 * 60_000L
@@ -343,6 +420,12 @@ class RuntimeService : Service() {
             private set
         @Volatile var currentDetail: String? = null
             private set
+        /** When the phone's alarm is next set for (epoch ms), 0 when nothing is scheduled. */
+        @Volatile var nextWakeAt: Long = 0L
+            private set
+        /** Whether that alarm could be exact (see [WakeAlarms]). */
+        @Volatile var exactWake: Boolean = true
+            private set
         val listeners = java.util.concurrent.CopyOnWriteArraySet<(State, String?) -> Unit>()
 
         fun start(context: Context) {
@@ -351,6 +434,16 @@ class RuntimeService : Service() {
 
         fun stop(context: Context) {
             context.stopService(Intent(context, RuntimeService::class.java))
+        }
+
+        /** The alarm went off: run the schedule now (a no-op when the runtime is not running). */
+        fun poke(context: Context) {
+            if (state == State.STOPPED) return
+            runCatching {
+                ContextCompat.startForegroundService(
+                    context, Intent(context, RuntimeService::class.java).setAction(ACTION_POKE),
+                )
+            }.onFailure { Log.w(TAG, "poke refused: ${it.message}") }
         }
 
         /** The local server's log, for the app's diagnostics screen. */

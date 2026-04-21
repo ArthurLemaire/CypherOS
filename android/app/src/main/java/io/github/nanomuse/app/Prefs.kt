@@ -27,6 +27,11 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("notify", true)
         set(v) = sp.edit().putBoolean("notify", v).apply()
 
+    /** Come back after a reboot (the runtime in local mode, the connection in remote mode). */
+    var startOnBoot: Boolean
+        get() = sp.getBoolean("boot", true)
+        set(v) = sp.edit().putBoolean("boot", v).apply()
+
     /** The agent's name, for notification titles; learnt from the server's `hello`. */
     var agentName: String
         get() = sp.getString("agent_name", "") ?: ""

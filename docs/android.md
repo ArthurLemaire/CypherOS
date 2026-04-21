@@ -40,6 +40,19 @@ The app on the phone and the server on your computer need to reach each other: s
 
 Updates arrive through the same connection, so there is nothing to configure on the server and no third party sees the content. In local mode the runtime's own notification carries the same role, and the approvals, questions and results come from the same code.
 
+## Keeping it running
+
+Android stops apps that look idle, and the vendors' Android stops them sooner. The agent already does its part: it runs as a foreground service, holds the phone awake only while a task runs, and in local mode asks Android to wake it at the moment the next reminder, goal check-in or background pass is due (an alarm set for the runtime's `next_wake_at`; see [local-runtime.md](local-runtime.md#waking-up)). *Settings → Keep it running* shows the three switches that let it keep that promise on this phone, each with an *Allow* / *Open* button that jumps to Android's own page:
+
+- **Battery** — *Unrestricted* or *Optimised*. Optimised means Android may freeze the process after a while with the screen off; routines and check-ins then wait until the phone wakes. The button raises Android's own dialog (`ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`).
+- **Display over other apps** — needed to bring the app to the front from the background (the *Open* button on a notice card) and for the status capsule while it works in other apps. Not needed for the GUI executor itself: its overlays come with the accessibility service.
+- **Alarms & reminders** (local mode only) — *Exact* or *Approximate*. Android 14 denies `SCHEDULE_EXACT_ALARM` to a fresh install; the app then falls back to an inexact alarm (`setAndAllowWhileIdle`), which fires within the system's batching window — usually a few minutes late, never early. Granting the permission makes reminders punctual.
+- **Start after a reboot** — a switch, on by default. In connect mode the notification service reconnects when the phone restarts; in local mode the runtime starts again in the background. Off, the app waits until you open it.
+
+Vendor Android needs one more step, and the section names it when it recognises the phone: 小米 / Redmi (*自启动* and *后台弹出界面*, both under the app's settings in 安全中心), 华为 / 荣耀 (*应用启动管理* → turn off automatic management, allow all three), OPPO / realme / OnePlus (*自启动* plus *允许后台运行*), vivo / iQOO (*后台高耗电* and *自启动*), 三星 (*Sleeping apps* — remove the app; *Deep sleeping apps* must not list it), 魅族 (*后台管理* → allow). *Open the auto-start settings* tries the vendor's own activity and falls back to the app's details page when the phone does not have it. The vendor page names move between releases, so the section describes what to look for rather than a fixed menu path; [dontkillmyapp.com](https://dontkillmyapp.com) keeps a current list per vendor.
+
+Crashes are written to a file on the phone (`files/crashes/`, the last five) and nowhere else — the app has no crash reporter and no analytics. *Export logs* bundles them with the app's recent logcat (its own process only), the runtime's log in local mode and a one-page summary (versions, mode, which of the switches above are on) into a zip and hands it to the share sheet, so you can look at it or send it to someone you choose. Nothing is sent unless you send it.
+
 ## Disconnect
 
 *Settings → About → Disconnect from this server* forgets the address and the token and returns to the first screen. Uninstalling does the same. The token is stored in the app's private storage and excluded from cloud backups. In local mode, *Start over* on the failure screen returns to the first screen too, and keeps the phone's data (`files/home`); uninstalling removes it.
@@ -94,6 +107,10 @@ The `versionName` in `android/app/build.gradle.kts` must match the tag, like the
 | `gui/MuseAccessibilityService.kt`, `gui/A11yExecutor.kt`, `gui/NodeTree.kt` | The screen executor: screenshot (downscaled to 720 px wide), gestures, global actions, typing with a clipboard fallback, the element tree with stable ids, an event-based wait for the UI to settle |
 | `gui/GuiOverlay.kt` | Two accessibility overlay windows: the finger marks (rings, lines, typed text, caption) and the capsule with the step and **Stop**, which grows into a notice card when the agent needs you; both hidden while a screenshot is taken |
 | `device/` | The phone's own capabilities as a loopback MCP server ([device.md](device.md)) |
-| `Prefs.kt` | Mode, server URL, token, the local port and token, the notifications switch, the agent's name |
+| `runtime/WakeAlarms.kt` | Local mode: the alarm for the runtime's `next_wake_at` — exact when allowed, inexact otherwise — and the receiver that pokes the service |
+| `KeepRunning.kt` | The state of the battery, overlay and exact-alarm permissions, the vendor guess, and the intents that open the right settings page |
+| `Diagnostics.kt` | Crash files (`files/crashes/`, local only) and *Export logs* (a zip through a `FileProvider` to the share sheet) |
+| `BootReceiver.kt` | Starts the notification service or the runtime after a reboot when *Start after a reboot* is on |
+| `Prefs.kt` | Mode, server URL, token, the local port and token, the notifications and boot switches, the agent's name |
 
 The events the service reacts to are the same ones the web app draws cards for: `approval` / `question` with `status: pending` (and their resolution), and `assistant` events with `source: background` and `final: true`. `demo/mobilegym/apps/nanoMuse/bridge.ts` does the same job for the simulator, in TypeScript.

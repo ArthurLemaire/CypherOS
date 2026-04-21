@@ -960,6 +960,26 @@ def test_feed_and_upcoming(server):
     ]
     assert up["check_ins"] == []
 
+    # the next wake: the earliest of the pass, the reminders and the check-ins — what the
+    # phone sets its alarm for; POST /api/tick is that alarm going off
+    client.put("/api/settings", json={"profile": {"proactivity": "off"}})
+    assert client.get("/api/upcoming").json()["next_wake_at"] is None
+    soon = (datetime.now().astimezone() + timedelta(hours=2)).replace(microsecond=0)
+    client.post("/api/reminders", json={"text": "call mum", "at": soon.isoformat()})
+    wake = datetime.fromisoformat(client.get("/api/upcoming").json()["next_wake_at"])
+    assert abs((wake - soon).total_seconds()) < 60
+    tick = client.post("/api/tick").json()
+    assert tick["ok"] is True and tick["next_wake_at"] == wake.isoformat(timespec="seconds")
+    # with background work on, the pass (minutes away) comes before the reminder (hours away)
+    client.put("/api/settings", json={"profile": {"proactivity": "default"}})
+    wake2 = datetime.fromisoformat(client.get("/api/upcoming").json()["next_wake_at"])
+    assert wake2 < wake
+    # the alarm ends the scheduler's nap at once
+    service.wake()
+    started = time.monotonic()
+    asyncio.run(service._nap(5))
+    assert time.monotonic() - started < 1
+
     # a pending approval is something the Feed shows, whatever thread it belongs to
     side = client.post("/api/threads", json={"title": "Side"}).json()
     llm.script.extend(

@@ -14,6 +14,7 @@ class App : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        Diagnostics.install(this) // crashes go to a file in private storage, nowhere else
         // whether any of our activities is on screen: what the phone tools may do directly
         // (read the clipboard, open the clock app) depends on it
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
