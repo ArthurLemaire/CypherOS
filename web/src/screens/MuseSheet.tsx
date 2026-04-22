@@ -910,11 +910,21 @@ function ActivityView({ open }: { open: boolean }) {
   const [data] = useActivity(open);
   const t = useT();
   const entries = (data?.audit ?? []).filter((e) => e.event === "tool_call").reverse();
+  const gui = entries.filter((e) => e.channel === "gui").length;
   return (
     <div className="pb-2">
       <p className="text-[12.5px] text-muted mb-2">
         {t("Every tool call goes through the Sentinel and is written to the audit log — including the ones it refused.")}
       </p>
+      {gui > 0 && (
+        <p className="text-[12.5px] text-muted mb-2">
+          {t("On the phone's screen: {gui} of {total} steps ({pct}%). The screen is the last resort — a skill, a fetch or the browser comes first.", {
+            gui: String(gui),
+            total: String(entries.length),
+            pct: String(Math.round((gui / entries.length) * 100)),
+          })}
+        </p>
+      )}
       {data && entries.length === 0 && <div className="py-8 text-center text-muted text-[14px]">{t("Nothing yet.")}</div>}
       <ul className="space-y-1.5">
         {entries.map((e, i) => (

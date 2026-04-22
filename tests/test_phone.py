@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 from nanomuse.config import GUISettings, Settings
 from nanomuse.llm import MockLLM
 from nanomuse.phone import PhoneLink, Screen
-from nanomuse.phone.link import DeviceError
+from nanomuse.phone.link import STOP_MARKER, DeviceError, DeviceStopped
 from nanomuse.phone.operator import (
     PhoneOperator,
     Step,
@@ -29,6 +29,7 @@ from nanomuse.phone.screen import image_size
 from nanomuse.phone.trace import list_traces, read_trace, render_html
 from nanomuse.schema import LLMResponse, RiskLevel
 from nanomuse.sentinel import AuditLog, Sentinel
+from nanomuse.sentinel.audit import channel_of
 from nanomuse.server import create_app
 from nanomuse.server.service import MuseService
 from nanomuse.tools.phone import PhoneAct, PhoneScreen, PhoneTask
@@ -126,6 +127,73 @@ class FakePhone:
         )
 
 
+LOGIN_SCREEN = {
+    "app": "com.tencent.mm",
+    "app_name": "微信",
+    "width": 1080,
+    "height": 2400,
+    "screenshot": png(36, 80),
+    "nodes": [
+        {"id": "0.1", "class": "TextView", "text": "手机号登录", "cx": 540, "cy": 300},
+        {
+            "id": "0.2.0",
+            "class": "EditText",
+            "hint": "密码",
+            "cx": 540,
+            "cy": 900,
+            "editable": True,
+            "password": True,
+        },
+        {"id": "0.3", "class": "Button", "text": "登录", "cx": 540, "cy": 1200, "clickable": True},
+        {"id": "0.4", "class": "View", "cx": 10, "cy": 10, "clickable": True},
+        {
+            "id": "0.5",
+            "class": "CheckBox",
+            "text": "记住我",
+            "cx": 100,
+            "cy": 1000,
+            "checked": False,
+        },
+        "not a node",
+    ],
+}
+
+
+class CapsulePhone(FakePhone):
+    """The Android app: shows the step capsule, and may answer an action with Stop."""
+
+    def __init__(self, link: PhoneLink, screens: list[dict[str, Any]], stop_after: int = 0):
+        super().__init__(link, screens)
+        self.tasks: list[dict[str, Any]] = []
+        self.stop_after = stop_after  # the n-th action comes back "nanomuse:stop"
+        self.device = link.attach(
+            "conn-1",
+            {"name": "Pixel", "platform": "android", "gui": True, "capsule": True},
+            self.send,
+        )
+
+    async def send(self, msg: dict[str, Any]) -> None:
+        if msg["op"] == "task":
+            self.tasks.append(msg["params"])
+            asyncio.get_running_loop().call_soon(
+                self.link.resolve, {"kind": "device_result", "id": msg["id"], "ok": True}
+            )
+            return
+        if msg["op"] == "act" and self.stop_after and len(self.acts) + 1 >= self.stop_after:
+            self.acts.append(msg["params"])
+            asyncio.get_running_loop().call_soon(
+                self.link.resolve,
+                {
+                    "kind": "device_result",
+                    "id": msg["id"],
+                    "ok": False,
+                    "error": f"the user pressed Stop on the phone ({STOP_MARKER})",
+                },
+            )
+            return
+        await super().send(msg)
+
+
 class AutoApproveUI:
     def __init__(self, approve: bool = True):
         self.approve = approve
@@ -188,6 +256,32 @@ def test_screen_is_a_picture_with_a_caption(tmp_path: Path):
     none = Screen.from_device({"app": "x", "note": "screen is locked"})
     assert not none.has_image and "(the device sent no screenshot)" in none.render()
     assert "note: screen is locked" in none.render()
+
+
+def test_screen_carries_the_node_tree_as_a_second_input(tmp_path: Path):
+    screen = Screen.from_device(LOGIN_SCREEN, shots_dir=tmp_path)
+    # the string was dropped, the rest kept with clean types; the picture is still the picture
+    assert len(screen.nodes) == 5 and screen.nodes[1]["password"] is True
+    assert screen.nodes[4]["checked"] is False and screen.nodes[0]["cx"] == 540
+    assert screen.image_size == (36, 80) and screen.width == 1080
+    text = screen.render()
+    assert "Elements the phone reports" in text
+    lines = screen.node_lines()
+    # fields first (the password rule hinges on them), then what has words, then the rest
+    assert lines[0].startswith('- "密码" · EditText [editable, password] @ 540,900')
+    assert '"手机号登录"' in lines[1] and "[unchecked]" in lines[2]
+    assert '"登录" · Button [clickable] @ 540,1200' in lines[3]
+    assert lines[4].startswith("- (no text) · View [clickable]")
+    # the operator's grid: centres scaled to 999×999
+    scaled = screen.node_lines(scale=(999 / 1080, 999 / 2400))
+    assert "@ 500,375" in scaled[0] and "@ 500,500" in scaled[3]
+    assert screen.node_lines(limit=2)[-1] == "- … and 3 more"
+    assert screen.to_dict()["nodes"] == 5
+    # a device may send a lot; the screen keeps the first 120
+    many = dict(
+        LOGIN_SCREEN, nodes=[{"id": str(i), "text": f"row {i}", "cy": i} for i in range(300)]
+    )
+    assert len(Screen.from_device(many, shots_dir=tmp_path).nodes) == 120
 
 
 def test_image_size_reads_png_and_jpeg_headers():
@@ -463,6 +557,79 @@ async def test_operator_runs_until_done_and_asks_before_paying(settings: Setting
     assert "Tap 确认付款" in page and "<circle" in page and "data:image/png;base64" in page
 
 
+async def test_operator_reads_nodes_shows_the_capsule_and_obeys_stop(settings: Settings):
+    link = PhoneLink(shots_dir=settings.agent.workspace / "screenshots")
+    phone = CapsulePhone(link, [LOGIN_SCREEN, LOGIN_SCREEN], stop_after=2)
+    assert link.device is not None and link.device.capsule
+    ui = AutoApproveUI(approve=True)
+    llm = MockLLM(
+        [
+            labelled("Tap 手机号登录", "click", coordinate=[500, 125]),
+            labelled("Tap 登录", "click", coordinate=[500, 500]),
+            labelled("Report", "answer", text="never reached"),
+        ]
+    )
+    operator, act = make_operator(settings, link, llm, ui, max_steps=6)
+    outcome = await operator.run("登录微信")
+    # the picture came with the element list, in the operator's 999 grid
+    first = llm.calls[0]["messages"][1]
+    assert first.images and "Elements the phone reports on this screen" in first.content
+    assert '"密码" · EditText [editable, password] @ 500,375' in first.content
+    assert '"登录" · Button [clickable] @ 500,500' in first.content
+    # the second action came back with Stop: the run ends there, as a question to the user
+    assert outcome.status == "stopped" and outcome.steps == 2
+    assert "pressed Stop" in outcome.message and STOP_MARKER not in outcome.message
+    assert outcome.report().startswith("The user pressed Stop on the phone.")
+    # the capsule was told about the task: begin with the goal, end when it was over
+    assert [(t["event"], t["text"]) for t in phone.tasks] == [("begin", "登录微信"), ("end", "")]
+    # a single phone_act after Stop says so too, without the marker leaking into the chat
+    phone.stop_after = 1
+    phone.acts.clear()
+    result = await act.execute(action="tap", x=1, y=1, label="Back")
+    assert result.error and "pressed Stop" in result.error and STOP_MARKER in result.error
+    records = read_trace(settings.data_dir / "phone-traces" / f"{outcome.trace_id}.jsonl")
+    assert records[-1]["status"] == "stopped"
+
+
+async def test_operator_tells_the_capsule_when_it_needs_the_user(settings: Settings):
+    link = PhoneLink(shots_dir=settings.agent.workspace / "screenshots")
+    phone = CapsulePhone(link, [PAY_SCREEN])
+    llm = MockLLM([labelled("Ask", "ask_user", text="请你自己输入支付密码")])
+    operator, _ = make_operator(settings, link, llm, AutoApproveUI(), max_steps=3)
+    outcome = await operator.run("付款")
+    assert outcome.status == "ask"
+    assert [t["event"] for t in phone.tasks] == ["begin", "notice"]
+    assert phone.tasks[1]["text"] == "请你自己输入支付密码"
+
+
+async def test_link_raises_device_stopped_on_the_marker():
+    link = PhoneLink()
+    sent: list[dict[str, Any]] = []
+
+    async def send(msg: dict[str, Any]) -> None:
+        sent.append(msg)
+
+    link.attach("c", {"name": "P", "platform": "android", "gui": True}, send)
+    task = asyncio.ensure_future(link.screen())
+    await asyncio.sleep(0)
+    link.resolve({"id": sent[0]["id"], "ok": False, "error": "stopped (nanomuse:stop)"})
+    with pytest.raises(DeviceStopped) as info:
+        await task
+    assert isinstance(info.value, DeviceError) and "pressed Stop" in str(info.value)
+    # a plain device without a capsule is not bothered with task events
+    await link.task_event("begin", "x")
+    assert len(sent) == 1
+
+
+def test_channel_of_names_the_rung():
+    assert channel_of("phone_task") == channel_of("phone_act") == "gui"
+    assert channel_of("browser") == "browser" and channel_of("web_fetch") == "web"
+    assert channel_of("shell") == channel_of("python_execute") == "cli"
+    assert channel_of("device__clipboard_read") == "device"
+    assert channel_of("amap__maps_geo") == "api" and channel_of("send_email") == "api"
+    assert channel_of("read_file") == "local"
+
+
 async def test_operator_stops_when_the_user_refuses(settings: Settings):
     link = PhoneLink(shots_dir=settings.agent.workspace / "screenshots")
     FakePhone(link, [PAY_SCREEN])
@@ -565,6 +732,27 @@ async def test_phone_task_tool_reports_the_outcome(settings: Settings):
     assert not (await task.execute()).ok
     link.detach("conn-1")
     assert "no phone is connected" in (await task.execute(goal="x")).error
+
+
+async def test_prompt_puts_the_screen_on_the_last_rung(settings: Settings):
+    from nanomuse.agent.core import MuseAgent
+    from nanomuse.tools import Terminate, ToolCollection
+
+    link = PhoneLink(shots_dir=settings.agent.workspace / "screenshots")
+    CapsulePhone(link, [HOME_SCREEN])
+    ui = AutoApproveUI()
+    operator, _ = make_operator(settings, link, MockLLM([]), ui)
+    tools = ToolCollection(Terminate(), PhoneTask(link=link, operator=operator))
+    audit = AuditLog(settings.audit_file)
+    agent = MuseAgent(settings, MockLLM([]), tools, make_sentinel(settings, ui), ui, audit)
+    system = agent.build_system_prompt("hi")
+    assert "The user's phone is connected: Pixel (android)." in system
+    assert "Four rungs, lowest first" in system and "(4) the phone's screen" in system
+    assert "Before the first step on the screen" in system and "ask_user" in system
+    assert "Stop button" in system
+    # the whole section goes when GUI operation is off (no phone tools)
+    agent.tools = ToolCollection(Terminate())
+    assert "Four rungs" not in agent.build_system_prompt("hi")
 
 
 # ----------------------------------------------------------------------------- server side

@@ -32,7 +32,7 @@ from typing import Any
 from nanomuse.config import GUISettings
 from nanomuse.llm.base import BaseLLM
 from nanomuse.logger import logger
-from nanomuse.phone.link import DeviceError, PhoneLink
+from nanomuse.phone.link import STOP_MARKER, DeviceError, DeviceStopped, PhoneLink
 from nanomuse.phone.screen import Screen
 from nanomuse.phone.trace import Trace
 from nanomuse.schema import Function, Message, ToolCall, ToolResult
@@ -178,6 +178,13 @@ The user query: {instruction}
 Task progress (You have done the following operation on the current device): {steps}
 """
 
+# a device with an accessibility tree adds this after the template — the picture stays the
+# first input, the list helps read small text and shows which field is a password field
+NODES_TEMPLATE = """
+Elements the phone reports on this screen (text · kind [flags] @ x,y on the 999×999 grid). The picture decides; use these to read small text and to aim:
+{nodes}
+"""
+
 
 @dataclass
 class Outcome:
@@ -193,6 +200,7 @@ class Outcome:
         head = {
             "done": "The phone operator finished.",
             "ask": "The phone operator stopped: it needs the user.",
+            "stopped": "The user pressed Stop on the phone.",
             "abort": "The phone operator gave up.",
             "blocked": "The phone operator was stopped by the Sentinel (an approval was refused).",
             "failed": "The phone operator could not continue.",
@@ -450,15 +458,22 @@ class PhoneOperator:
 
         steps: list[str] = []  # the "Action:" sentences, with results appended
         recent: list[str] = []  # the last tool calls, to notice loops
+        await self.link.task_event("begin", goal)
         try:
             if app:
                 await self._act({"action": "open_app", "app": app, "label": f"open {app}"}, outcome)
                 screen = self.link.last_screen or await self.link.screen()
             else:
                 screen = await self.link.screen()
+        except DeviceStopped as exc:
+            outcome.status, outcome.message = "stopped", str(exc)
+            trace.end(outcome)
+            await self.link.task_event("end")
+            return outcome
         except DeviceError as exc:
             outcome.message = str(exc)
             trace.end(outcome)
+            await self.link.task_event("end")
             return outcome
 
         refusals = 0
@@ -530,6 +545,10 @@ class PhoneOperator:
                 params=params,
                 error=result.error,
             )
+            if result.error and STOP_MARKER in result.error:
+                outcome.status = "stopped"
+                outcome.message = str(DeviceStopped())
+                break
             if result.error and "Sentinel blocked" in result.error:
                 refusals += 1
                 steps.append(f"{entry}; Result: the owner refused this step")
@@ -546,6 +565,9 @@ class PhoneOperator:
             try:
                 fresh = self.link.last_screen if not result.error else None
                 screen = fresh if fresh is not None else await self.link.screen()
+            except DeviceStopped as exc:
+                outcome.status, outcome.message = "stopped", str(exc)
+                break
             except DeviceError as exc:
                 outcome.message = str(exc)
                 break
@@ -554,6 +576,11 @@ class PhoneOperator:
             outcome.message = f"stopped after {self.settings.max_steps} steps"
 
         trace.end(outcome)
+        if outcome.status in ("ask", "blocked"):
+            # the user is looking at the operated app, not at the chat: say so there
+            await self.link.task_event("notice", outcome.message or outcome.status)
+        else:
+            await self.link.task_event("end")
         return outcome
 
     # ------------------------------------------------------------------ helpers
@@ -562,12 +589,13 @@ class PhoneOperator:
     ) -> tuple[Step | None, str, int]:
         """Ask the model for the next step; a reply that is not one is asked again."""
         progress = "".join(f"Step {i}: {s}; " for i, s in enumerate(steps, start=1))
+        text = USER_TEMPLATE.format(instruction=instruction, steps=progress)
+        if screen.nodes and screen.width and screen.height:
+            scale = (SCALE_FACTOR / screen.width, SCALE_FACTOR / screen.height)
+            text += NODES_TEMPLATE.format(nodes="\n".join(screen.node_lines(scale=scale)))
         messages = [
             Message.system(self.system_prompt()),
-            Message.user(
-                USER_TEMPLATE.format(instruction=instruction, steps=progress),
-                images=[screen.image_path] if screen.image_path else None,
-            ),
+            Message.user(text, images=[screen.image_path] if screen.image_path else None),
         ]
         raw = ""
         started = time.monotonic()
@@ -606,6 +634,7 @@ class PhoneOperator:
 
 __all__ = [
     "MOBILE_USE_TOOL",
+    "NODES_TEMPLATE",
     "SCALE_FACTOR",
     "SYSTEM_PROMPT",
     "USER_TEMPLATE",

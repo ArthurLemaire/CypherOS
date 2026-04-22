@@ -13,6 +13,7 @@ What the shell adds over the browser tab:
 - **Notifications in the background.** A foreground service keeps one WebSocket open to your server. Approvals, questions and the last word of background work arrive as Android notifications and open the right chat. A resolved approval takes its notification down again. Reconnects after a network change or a reboot.
 - **Attachments, downloads, links.** The file picker for the paperclip, downloads to the phone's Downloads folder, links opening in the real browser.
 - **The agent's browser.** While the app is connected, its own WebView is a browser the agent may use — offscreen, on a private virtual display so pages run at full speed with the app in the background — and *Take over* on a browser card slides that very page up for you to sign in or decide, then **Done**. In the local build this is the only browser there is; with a server it is used whenever the app is connected (`[browser] backend`). [browser.md](browser.md).
+- **Operating the screen.** With the *Phone* switch on (*Connections → Phone*) and the app's accessibility service enabled, the agent can look at the phone's screen and tap, type and swipe in its apps — the last rung after skills, fetches and the browser. Android 11 or newer. A capsule with the current step and a **Stop** button sits over the operated app the whole time; a `FLAG_SECURE` screen stays black to it and it refuses to type into password fields. [gui.md](gui.md).
 - **Plain HTTP on the LAN.** Works with `http://192.168.x.x:8787` as is.
 
 Everything else is the same web app, served by your `nanomuse serve`.
@@ -88,7 +89,11 @@ The `versionName` in `android/app/build.gradle.kts` must match the tag, like the
 | `NotifyService.kt` | Remote mode: foreground service with an OkHttp WebSocket to `/ws?token=…` |
 | `Notifier.kt` | Events → notifications, shared by both services |
 | `runtime/RuntimeService.kt`, `runtime/LocalRuntime.kt`, `runtime/TarUnpacker.kt` | Local mode: the runtime on the phone ([local-runtime.md](local-runtime.md)) |
-| `Bridge.kt` | `window.NanoMuseAndroid` — the web app uses it to show phone settings instead of Web Push, and to know the mode |
+| `Bridge.kt` | `window.NanoMuseAndroid` — the web app uses it to show phone settings instead of Web Push, to know the mode, and to read the accessibility service's state and open the settings that turn it on |
+| `DeviceLink.kt` | The device on the app's WebSocket: announces `gui` / `capsule` / the app list (again whenever the accessibility service comes or goes) and answers `screen`, `act`, `task` and `browser` requests |
+| `gui/MuseAccessibilityService.kt`, `gui/A11yExecutor.kt`, `gui/NodeTree.kt` | The screen executor: screenshot (downscaled to 720 px wide), gestures, global actions, typing with a clipboard fallback, the element tree with stable ids, an event-based wait for the UI to settle |
+| `gui/GuiOverlay.kt` | Two accessibility overlay windows: the finger marks (rings, lines, typed text, caption) and the capsule with the step and **Stop**, which grows into a notice card when the agent needs you; both hidden while a screenshot is taken |
+| `device/` | The phone's own capabilities as a loopback MCP server ([device.md](device.md)) |
 | `Prefs.kt` | Mode, server URL, token, the local port and token, the notifications switch, the agent's name |
 
 The events the service reacts to are the same ones the web app draws cards for: `approval` / `question` with `status: pending` (and their resolution), and `assistant` events with `source: background` and `final: true`. `demo/mobilegym/apps/nanoMuse/bridge.ts` does the same job for the simulator, in TypeScript.

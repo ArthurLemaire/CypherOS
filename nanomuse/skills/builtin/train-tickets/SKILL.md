@@ -1,6 +1,7 @@
 ---
 name: train-tickets
 description: Look up and book trains in the 12306 app on the user's phone — search a route and date, compare the options, take a booking to the order screen and stop before it is placed or paid. Use when the user asks about 火车票 / 高铁 / 12306 or a train between two cities.
+channel: gui
 metadata:
   author: nanoMuse
   version: "1"

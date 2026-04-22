@@ -1,6 +1,7 @@
 ---
 name: phone-messages
 description: Read and answer messages in the chat apps on the user's phone (微信 and the like) through the screen — catch up, draft a reply in the user's voice, send only text they confirmed. Use when the user asks what someone said on WeChat or wants a chat answered.
+channel: gui
 metadata:
   author: nanoMuse
   version: "1"

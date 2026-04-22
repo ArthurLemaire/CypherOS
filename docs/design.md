@@ -80,6 +80,7 @@ Muse opens by asking what to call it, and the name is then everywhere — the he
 ## Where nanoMuse differs on purpose
 
 - **The phone's screen is visible.** Muse never shows you a screenshot; nanoMuse's phone steps are rows in the chat (`phone_act: tap "发送" …`) and the finger overlay shows on the phone itself, because a user should be able to see what a hand on their phone is doing.
+- **A brake you can reach.** While nanoMuse operates the phone, a capsule sits over the app the whole time — the red panda, the step in progress, and one red **Stop**. One tap, no menu; it ends the step in flight and refuses the next ones, and the agent asks instead of carrying on. Muse's phone work happens in a cloud VM you cannot see into; on your own phone the hand must be stoppable by the hand's owner. The screen is also the *last* rung: a skill, a fetch or the browser goes first, and the Activity view shows how often the screen was needed.
 - **Approvals name the scope.** Muse asks yes / no; nanoMuse's card offers *once*, *this task*, *always* and lists the grants under *Permissions*, each with a revoke button.
 - **Everything has a plain-text form.** The same agent runs in a terminal (`nanomuse chat`) with the same approvals, and every screen is backed by a documented REST + WebSocket API, so another front-end can drive it.
 - **The mascot is a drawing, not a photograph.** It costs a few kilobytes, poses from state, and can be printed on a sticker.

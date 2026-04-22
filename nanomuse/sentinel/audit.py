@@ -22,6 +22,28 @@ def _truncate(value: Any, limit: int = 500) -> Any:
     return value
 
 
+def channel_of(tool: str) -> str:
+    """Which rung of the ladder a tool call is (docs/gui.md): ``gui`` for the phone's screen,
+    ``browser`` for the in-app or Playwright browser, ``web`` for plain fetches and search,
+    ``cli`` for shell and Python, ``device`` for the phone's own capabilities, ``api`` for MCP
+    servers and connectors, ``local`` for everything that stays in the workspace and memory.
+    Recorded with every ``tool_call`` so the Activity view can show how much of the work needed
+    the screen."""
+    if tool.startswith("phone_"):
+        return "gui"
+    if tool.startswith("browser"):
+        return "browser"
+    if tool in ("web_fetch", "web_search"):
+        return "web"
+    if tool in ("shell", "python_execute"):
+        return "cli"
+    if tool.startswith("device__"):
+        return "device"
+    if "__" in tool or tool in ("send_email", "read_emails", "calendar", "contacts"):
+        return "api"
+    return "local"
+
+
 class AuditLog:
     def __init__(self, path: Path, session_id: str | None = None):
         self.path = Path(path)
@@ -60,4 +82,4 @@ class AuditLog:
         return out
 
 
-__all__ = ["AuditLog"]
+__all__ = ["AuditLog", "channel_of"]

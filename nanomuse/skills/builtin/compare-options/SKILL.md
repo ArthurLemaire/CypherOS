@@ -1,6 +1,7 @@
 ---
 name: compare-options
 description: Compare two to five options — products, plans, places, tools, offers — on the criteria that matter to the user, in a table the user can re-weight, with a recommendation. Use when the user asks which to pick, for a comparison, or "X vs Y".
+channel: web
 metadata:
   author: nanoMuse
   version: "1"

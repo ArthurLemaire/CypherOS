@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import ConfigDict
 
 from nanomuse.config import GUISettings
-from nanomuse.phone.link import DeviceError, PhoneLink
+from nanomuse.phone.link import STOP_MARKER, DeviceError, DeviceStopped, PhoneLink
 from nanomuse.phone.screen import Screen
 from nanomuse.schema import RiskLevel, ToolResult
 from nanomuse.tools.base import BaseTool, CallAssessment
@@ -74,6 +74,8 @@ class PhoneScreen(BaseTool):
     async def execute(self, **kwargs: Any) -> ToolResult:
         try:
             screen = await self.link.screen()
+        except DeviceStopped as exc:
+            return ToolResult.fail(f"{exc} ({STOP_MARKER})")
         except DeviceError as exc:
             return ToolResult.fail(str(exc))
         return _screen_result(screen)
@@ -268,6 +270,8 @@ class PhoneAct(BaseTool):
             raw = await self.link.act(
                 params, timeout=self.gui.device_timeout_s + params.get("seconds", 0)
             )
+        except DeviceStopped as exc:
+            return ToolResult.fail(f"{exc} ({STOP_MARKER})")
         except DeviceError as exc:
             return ToolResult.fail(str(exc))
         note = str(raw.get("note") or "")

@@ -1,6 +1,7 @@
 ---
 name: trip-plan
 description: Plan a trip end to end — itinerary by day, a packing list to tick off, a budget, and the calendar checked for conflicts — as pages in the workspace. Use when the user is going somewhere for more than a day and wants a plan, an itinerary or a packing list.
+channel: mixed
 metadata:
   author: nanoMuse
   version: "1"

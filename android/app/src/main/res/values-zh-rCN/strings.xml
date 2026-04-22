@@ -78,4 +78,15 @@
     <string name="documents_summary">它做出的东西，以及给它的文件</string>
     <string name="documents_root">工作区</string>
     <string name="share_failed">无法分享：%1$s</string>
+
+    <!-- operating the phone (accessibility service + overlay) -->
+    <string name="a11y_label">nanoMuse · 操作手机</string>
+    <string name="a11y_summary">让你的 nanoMuse 在你吩咐时替你点、输、滑</string>
+    <string name="a11y_description">开启后，你的 nanoMuse 可以在你交给它的任务期间看屏幕、在 App 里替你操作，屏幕上始终有一个"停止"按钮。它读取屏幕来找按钮和输入框、执行点击和滑动、给你配置的模型截图；不会发到别处。它不输入密码和验证码，付款、发送、删除前会停下。默认关闭，随时可在这里关掉。</string>
+    <string name="gui_stop">停止</string>
+    <string name="gui_hide">收起</string>
+    <string name="gui_stopped">已停止</string>
+    <string name="gui_working">%1$s 正在这个屏幕上操作</string>
+    <string name="gui_needs_you">%1$s 需要你</string>
+    <string name="gui_open_app">打开 %1$s</string>
 </resources>

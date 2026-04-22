@@ -3,8 +3,9 @@
 A skill is a folder with a ``SKILL.md`` in it — the `Agent Skills
 <https://agentskills.io>`_ format, so recipes written for other agents work here and the
 ones written here work there. The file starts with a short front matter (``name``,
-``description``, optionally ``license``, ``allowed-tools``, ``metadata``) and continues
-with the instructions in Markdown; ``scripts/``, ``references/`` and ``assets/`` next to
+``description``, optionally ``license``, ``allowed-tools``, ``metadata`` and nanoMuse's
+``channel`` — how the job is done: ``api``, ``cli``, ``web``, ``browser`` or ``gui`` for one
+that needs the phone's screen) and continues with the instructions in Markdown; ``scripts/``, ``references/`` and ``assets/`` next to
 it hold what the instructions point at.
 
 The model sees only the index (name and description of each skill) in its system prompt
@@ -35,6 +36,16 @@ BUILTIN_DIR = Path(__file__).parent / "builtin"
 BUILT_IN = "built-in"
 YOURS = "yours"
 NAME_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
+# how a skill reaches the service — the rungs of the ladder in docs/gui.md, lowest cost first
+CHANNELS = ("api", "cli", "web", "browser", "gui", "mixed")
+CHANNEL_ALIASES = {
+    "mcp": "api",
+    "skill": "api",
+    "fetch": "web",
+    "app-only": "gui",
+    "app": "gui",
+    "phone": "gui",
+}
 MAX_SKILL_BYTES = 64 * 1024
 RESOURCE_DIRS = ("scripts", "references", "assets")
 SLASH = re.compile(r"^/([a-z0-9][a-z0-9-]*)(?:\s+|$)")
@@ -50,8 +61,13 @@ class Skill:
     license: str = ""
     allowed_tools: list[str] = field(default_factory=list)
     metadata: dict[str, str] = field(default_factory=dict)
+    channel: str = ""  # one of CHANNELS, or "" when the skill does not say
     enabled: bool = True
     updated_at: float = 0.0
+
+    @property
+    def needs_phone(self) -> bool:
+        return self.channel == "gui"
 
     @property
     def files(self) -> list[Path]:
@@ -77,6 +93,7 @@ class Skill:
             "files": [str(f) for f in self.files],
             "allowed_tools": self.allowed_tools,
             "metadata": self.metadata,
+            "channel": self.channel,
             "updated_at": datetime.fromtimestamp(self.updated_at)
             .astimezone()
             .isoformat(timespec="seconds")
@@ -97,6 +114,7 @@ class Skill:
             license=self.license,
             allowed_tools=self.allowed_tools,
             metadata=self.metadata,
+            channel=self.channel,
         )
 
     def instructions(self) -> str:
@@ -205,12 +223,15 @@ def render_skill(
     license: str = "",
     allowed_tools: list[str] | None = None,
     metadata: dict[str, str] | None = None,
+    channel: str = "",
 ) -> str:
     lines = ["---", f"name: {name}", f"description: {_yaml_quote(description.strip())}"]
     if license:
         lines.append(f"license: {_yaml_quote(license)}")
     if allowed_tools:
         lines.append("allowed-tools: " + " ".join(allowed_tools))
+    if channel:
+        lines.append(f"channel: {channel}")
     if metadata:
         lines.append("metadata:")
         lines += [f"  {k}: {_yaml_quote(str(v))}" for k, v in metadata.items()]
@@ -252,8 +273,18 @@ def load_skill(folder: Path, source: str = YOURS) -> Skill:
         license=str(meta.get("license") or ""),
         allowed_tools=[str(t) for t in tools],
         metadata=metadata,
+        channel=normalise_channel(meta.get("channel") or metadata.get("channel")),
         updated_at=file.stat().st_mtime,
     )
+
+
+def normalise_channel(value: Any) -> str:
+    """``channel`` as written in a SKILL.md → one of :data:`CHANNELS`, or ``""``."""
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return ""
+    raw = CHANNEL_ALIASES.get(raw, raw)
+    return raw if raw in CHANNELS else ""
 
 
 # ------------------------------------------------------------------ the library
@@ -329,7 +360,8 @@ class SkillLibrary:
         lines = []
         for s in self.enabled():
             desc = s.description.replace("\n", " ")
-            lines.append(f"- {s.name}: {desc[:280]}{'…' if len(desc) > 280 else ''}")
+            tag = " [on the phone's screen]" if s.needs_phone else ""
+            lines.append(f"- {s.name}{tag}: {desc[:280]}{'…' if len(desc) > 280 else ''}")
         return "\n".join(lines)
 
     def expand(self, text: str) -> str:
@@ -477,6 +509,7 @@ async def fetch_skill_text(url: str) -> str:
 __all__ = [
     "BUILTIN_DIR",
     "BUILT_IN",
+    "CHANNELS",
     "NAME_RE",
     "SLASH",
     "YOURS",
@@ -484,6 +517,7 @@ __all__ = [
     "SkillLibrary",
     "fetch_skill_text",
     "load_skill",
+    "normalise_channel",
     "parse_front_matter",
     "raw_skill_url",
     "render_skill",

@@ -181,7 +181,7 @@ Everything the app does goes through this API, so another front-end (a Telegram 
 | POST | `/api/connections/gui/test` | one short round trip to the operator's model: `{ok, reply, ms}` or `{ok: false, error}` |
 | GET | `/api/phone` | `{connected, device{id, name, platform, gui, apps, width, height}, gui_enabled, last_screen, screen}` — which phone is connected and the last screen it sent |
 | POST · DELETE | `/api/connections/mcp` `{name, command, args[], env{}, url, risk}` · `/api/connections/mcp/{name}` | connect a server now (502 if it does not come up) / disconnect and remove one added from the app |
-| GET | `/api/skills` | `{count, built_in, yours, dir, errors{}, skills[{name, description, source (built-in · yours), enabled, path, files[], metadata{}, updated_at}]}` |
+| GET | `/api/skills` | `{count, built_in, yours, dir, errors{}, skills[{name, description, source (built-in · yours), enabled, path, files[], metadata{}, channel, updated_at}]}` |
 | GET / PUT / DELETE | `/api/skills/{name}` | one skill with `body` and `content` (the whole `SKILL.md`) / write it from `{content}` — a built-in name creates your copy / delete one of yours |
 | POST | `/api/skills/{name}/enabled` `{enabled}` | switch a skill on or off (remembered in `app-settings.json`) |
 | POST | `/api/skills/import` `{url}` | fetch a `SKILL.md` — a raw link, or a GitHub folder or file page — and save it |
