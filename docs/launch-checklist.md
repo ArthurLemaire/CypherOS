@@ -109,11 +109,12 @@ Decisions this list rests on (see [design.md](design.md) for the reasoning): the
 
 ## 6. Device capabilities (P0, seven of them)
 
-- [ ] Kotlin local MCP server (Streamable HTTP, `127.0.0.1` + token); registered automatically as an `[[mcp.servers]]` entry; risk levels and taint
-- [ ] `nanomuse-device` CLI inside the rootfs (the §3 bridge)
-- [ ] Clipboard read/write, post a notification, calendar read/create/update/delete, contacts read-only, location, alarms and reminders, the Photo Picker
-- [ ] Permission defaults in the Sentinel table; reading notifications is its own switch, off by default
-- [ ] `DocumentsProvider`; share sheet → a new conversation
+- [x] Kotlin local MCP server (Streamable HTTP, `127.0.0.1` + token); registered automatically as the `device` MCP server (tools `device__*`); per-tool risk and taint through the new `MCPServerSettings.tools` overrides — [device.md](device.md)
+- [x] `nanomuse-device` CLI inside the rootfs (the §3 bridge): `capability [action] k=v…`, single-word tools (`notify`, `location`, `calendars`) take no action word
+- [x] Clipboard read/write, post a notification, calendar read/create/update/delete, contacts read-only, location, alarms and timers, the Photo Picker — all thirteen verified end to end on the emulator with the reference MCP client (permission dialog in the foreground, notification route from the background, declined and unanswered outcomes, clipboard from the background, alarm hand-off from the background, the picker)
+- [x] Permission defaults in the Sentinel table (`DEVICE_TOOLS` in `runtime.py`, checked against the Kotlin list by `tests/test_bridge.py`); reading notifications is not offered — recorded as its own switch, off by default, for P2
+- [x] `DocumentsProvider` (local build; compiles and lints, the root can only be seen on an arm64 phone — the emulator cannot install the local build); share sheet → a new conversation with the text as draft and the files uploaded (verified on the emulator from the Files app's share sheet)
+- [ ] P1: device tools in connect mode need a relay over the phone's WebSocket (the server cannot reach the phone's `127.0.0.1`)
 - [ ] P2: reading notifications, writing contacts, the whole photo library, SMS
 
 ---

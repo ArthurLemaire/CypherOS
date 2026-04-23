@@ -20,6 +20,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
@@ -28,10 +29,13 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.lifecycle.lifecycleScope
 import io.github.nanomuse.app.browser.TakeOverSheet
 import io.github.nanomuse.app.databinding.ActivityMainBinding
+import io.github.nanomuse.app.device.ShareInbox
 import io.github.nanomuse.app.runtime.LocalRuntime
 import io.github.nanomuse.app.runtime.RuntimeService
+import kotlinx.coroutines.launch
 
 /**
  * The app proper: the nanoMuse web app in a WebView, plus the parts a browser tab cannot do —
@@ -45,6 +49,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var ui: ActivityMainBinding
     private lateinit var prefs: Prefs
     private var pendingThread: String? = null
+    private var pendingShare: Intent? = null
     private var waitingForRuntime = false
     private var takeOver: TakeOverSheet? = null
     private val runtimeListener: (RuntimeService.State, String?) -> Unit = { state, detail ->
@@ -111,12 +116,18 @@ class MainActivity : AppCompatActivity() {
         } else {
             NotifyService.sync(this)
         }
+        if (ShareInbox.isShare(intent)) pendingShare = intent
         load(intent?.getStringExtra(EXTRA_THREAD))
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        if (ShareInbox.isShare(intent)) {
+            pendingShare = intent
+            load(null)
+            return
+        }
         intent.getStringExtra(EXTRA_THREAD)?.let { load(it) }
     }
 
@@ -235,6 +246,22 @@ class MainActivity : AppCompatActivity() {
             return
         }
         ui.offline.visibility = View.GONE
+        val share = pendingShare
+        if (share != null) {
+            // something shared from another app: a new conversation with it in the composer
+            pendingShare = null
+            lifecycleScope.launch {
+                val url = try {
+                    ShareInbox.accept(this@MainActivity, prefs, share)
+                } catch (e: Exception) {
+                    Log.w("MainActivity", "share into nanoMuse failed", e)
+                    Toast.makeText(this@MainActivity, getString(R.string.share_failed, e.message ?: ""), Toast.LENGTH_LONG).show()
+                    prefs.pageUrl(thread)
+                }
+                ui.web.loadUrl(url)
+            }
+            return
+        }
         ui.web.loadUrl(prefs.pageUrl(thread))
     }
 

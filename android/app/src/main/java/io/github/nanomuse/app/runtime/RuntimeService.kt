@@ -22,6 +22,7 @@ import io.github.nanomuse.app.MainActivity
 import io.github.nanomuse.app.Notifier
 import io.github.nanomuse.app.Prefs
 import io.github.nanomuse.app.R
+import io.github.nanomuse.app.device.DeviceHost
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -109,7 +110,9 @@ class RuntimeService : Service() {
         prefs.serverUrl = "http://127.0.0.1:$port"
         prefs.token = token
         prefs.mode = Prefs.MODE_LOCAL
-        val cmd = runtime.command(port, token)
+        // the phone's own capabilities, an MCP server on the loopback the Python side connects to
+        val host = DeviceHost.start(this)
+        val cmd = runtime.command(port, token, host.url, host.token)
         runtime.rotateLogs()
         val log = runtime.logFile()
         val builder = ProcessBuilder(cmd.argv)

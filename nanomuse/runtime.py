@@ -31,8 +31,57 @@ HOST_URL_ENV = "NANOMUSE_HOST_URL"
 HOST_TOKEN_ENV = "NANOMUSE_HOST_TOKEN"
 
 #: The MCP server name the app's device capabilities are registered under, and so the
-#: prefix of their tool names (``device_clipboard_read``): the CLI bridge counts on it.
+#: prefix of their tool names (``device__clipboard_read``, the ``server__tool`` form every
+#: MCP tool gets): the CLI bridge counts on it.
 DEVICE_SERVER = "device"
+DEVICE_PREFIX = DEVICE_SERVER + "__"
+
+
+@dataclass(frozen=True)
+class DeviceToolPolicy:
+    """What the Sentinel assumes about one of the phone's tools before any rule of the
+    user's: its risk level, whether it reads private data (taint), and the Android
+    permission it needs — that one is asked for on the phone, the first time."""
+
+    risk: str  # a RiskLevel value
+    private: bool = False
+    permission: str = ""
+    note: str = ""
+
+
+#: The permission defaults for the phone's tools (§6 of the launch checklist). The app
+#: implements these names (``android/…/device/DeviceTools.kt``); ``nanomuse-device <name>``
+#: and the model call them as ``device__<name>``. In the default ``ask`` mode: safe and
+#: moderate run, sensitive asks; reading private data taints the session so that a later
+#: send to an unknown destination asks too. Reading notifications is listed so the default
+#: is on record — the app does not offer it yet (P2), and when it does it is behind its own
+#: switch, off by default.
+DEVICE_TOOLS: dict[str, DeviceToolPolicy] = {
+    "clipboard_read": DeviceToolPolicy(
+        "moderate", private=True, note="only while the app is on screen (Android 10+)"
+    ),
+    "clipboard_write": DeviceToolPolicy("safe"),
+    "notify": DeviceToolPolicy("safe", permission="POST_NOTIFICATIONS"),
+    "calendars": DeviceToolPolicy("moderate", private=True, permission="READ_CALENDAR"),
+    "calendar_list": DeviceToolPolicy("moderate", private=True, permission="READ_CALENDAR"),
+    "calendar_create": DeviceToolPolicy("moderate", permission="WRITE_CALENDAR"),
+    "calendar_update": DeviceToolPolicy("moderate", permission="WRITE_CALENDAR"),
+    "calendar_delete": DeviceToolPolicy("sensitive", permission="WRITE_CALENDAR"),
+    "contacts_search": DeviceToolPolicy("moderate", private=True, permission="READ_CONTACTS"),
+    "location": DeviceToolPolicy("moderate", private=True, permission="ACCESS_FINE_LOCATION"),
+    "alarm_set": DeviceToolPolicy(
+        "moderate", note="the clock app confirms with its own notification"
+    ),
+    "timer_set": DeviceToolPolicy("moderate"),
+    "photo_pick": DeviceToolPolicy(
+        "safe",
+        private=True,
+        note="the user picks in the system Photo Picker; nothing else is readable",
+    ),
+    "notifications_read": DeviceToolPolicy(
+        "sensitive", private=True, note="not offered yet (P2); its own switch, off by default"
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -88,8 +137,10 @@ def on_device(environ: dict[str, str] | None = None) -> bool:
 
 def device_mcp_server(dev: Device) -> Any:
     """The app's capabilities as an MCP server entry, added to the configured ones: its
-    tools come out as ``device_<name>`` — what ``nanomuse-device <name>`` calls."""
-    from nanomuse.config import MCPServerSettings
+    tools come out as ``device__<name>`` — what ``nanomuse-device <name>`` calls — each
+    with the risk and privacy defaults of :data:`DEVICE_TOOLS`; a tool the app adds that
+    is not in the table gets the server's defaults (moderate, private)."""
+    from nanomuse.config import MCPServerSettings, MCPToolPolicy
     from nanomuse.schema import RiskLevel
 
     url = f"{dev.host_url}/mcp"
@@ -102,6 +153,10 @@ def device_mcp_server(dev: Device) -> Any:
         egress=False,
         # the phone's clipboard, calendar, contacts, photos: private by definition
         reads_private_data=True,
+        tools={
+            name: MCPToolPolicy(risk=RiskLevel(p.risk), reads_private_data=p.private)
+            for name, p in DEVICE_TOOLS.items()
+        },
     )
 
 
@@ -116,10 +171,13 @@ def _android_version(sdk: int) -> str:
 
 __all__ = [
     "DEVICE_ENV",
+    "DEVICE_PREFIX",
     "DEVICE_SERVER",
+    "DEVICE_TOOLS",
     "HOST_TOKEN_ENV",
     "HOST_URL_ENV",
     "Device",
+    "DeviceToolPolicy",
     "device",
     "device_mcp_server",
     "on_device",

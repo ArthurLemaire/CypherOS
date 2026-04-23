@@ -318,6 +318,21 @@ class GUISettings(BaseModel):
     )
 
 
+class MCPToolPolicy(BaseModel):
+    """What the Sentinel assumes about one tool of an MCP server, when the server's own
+    defaults are too coarse::
+
+        [mcp.servers.tools.delete_file]
+        risk = "sensitive"
+
+    A field left out keeps the server's value.
+    """
+
+    risk: RiskLevel | None = None
+    egress: bool | None = None
+    reads_private_data: bool | None = None
+
+
 class MCPServerSettings(BaseModel):
     name: str
     command: str | None = None
@@ -327,6 +342,8 @@ class MCPServerSettings(BaseModel):
     risk: RiskLevel = RiskLevel.MODERATE
     egress: bool = False
     reads_private_data: bool = False
+    # per-tool overrides, by the tool's own name on the server
+    tools: dict[str, MCPToolPolicy] = Field(default_factory=dict)
 
 
 class MCPSettings(BaseModel):

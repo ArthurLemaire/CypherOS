@@ -111,5 +111,7 @@ dependencies {
     // xz decompression for the root file system (pure Java, public domain)
     implementation("org.tukaani:xz:1.10")
     testImplementation("junit:junit:4.13.2")
+    // the real org.json for JVM tests of the MCP endpoint (the android.jar stubs return nulls)
+    testImplementation("org.json:json:20250517")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
 }

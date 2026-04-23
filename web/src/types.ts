@@ -469,6 +469,8 @@ export interface ConnectionsData {
     tools: number;
     connected: boolean;
     from_app: boolean;
+    /** the phone's own capabilities (local build): always there, cannot be removed */
+    builtin?: boolean;
   }>;
   vault: string[];
   onboarded: boolean;

@@ -80,12 +80,12 @@ And the environment (`nanomuse-serve` in the rootfs reads it):
 `nanomuse.runtime.device()` reads `NANOMUSE_DEVICE*`. With it:
 
 - The sandbox describes itself honestly: there is no bubblewrap under PRoot, and the app's own root file system *is* the box. `Sandbox.describe()` says so in the system prompt, and the shell runs directly.
-- `nanomuse serve` adds the app's device capabilities as the MCP server `device` when `NANOMUSE_HOST_URL` is set (tools appear as `device_<name>`).
+- `nanomuse serve` adds the app's device capabilities as the MCP server `device` when `NANOMUSE_HOST_URL` is set: the Kotlin side runs a small MCP server on `127.0.0.1` and the tools appear as `device__<name>` (`device__calendar_list`, `device__clipboard_read` …), each with its own Sentinel default. The tools, their permissions and what they ask the user: [device.md](device.md).
 - **The CLI bridge.** Every `shell` and `python_execute` call gets a one-command token (`NANOMUSE_BRIDGE`, `NANOMUSE_BRIDGE_TOKEN`), added after the sandbox has scrubbed all `NANOMUSE_*` from the environment, and revoked when the command ends (30 s of grace for backgrounded children). Three small stdlib-only CLIs in the rootfs use it to call back into the server:
 
   | CLI | Does |
   | --- | --- |
-  | `nanomuse-device <capability> [k=v …]` | A device tool (clipboard, calendar, alarm, contacts, location, notify, photos) |
+  | `nanomuse-device <capability> [action] [k=v …]` | A device tool: `clipboard read`, `calendar list from=2026-09-24`, `alarm set hour=7 minute=30 message=Train`, `contacts search query=张`, `notify title=Done body=Booked`, `location`, `photo pick` — `nanomuse-device list` shows what this phone has ([device.md](device.md)) |
   | `nanomuse-browser <action> [k=v …]` | The `browser` tool: `navigate` / `extract` / `click` / `type` / `key` / `scroll` / `back` / `screenshot` / `fetch URL [--post BODY]` (with the browser's cookies) / `profile mobile\|desktop` / `close` — [browser.md](browser.md) |
   | `nanomuse-open <url>` | Opens the page in the in-app take-over sheet; the rootfs sets it as `BROWSER` |
 

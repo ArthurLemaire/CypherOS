@@ -68,4 +68,20 @@
     <string name="takeover_done">Done</string>
     <string name="takeover_open_external">Open in the system browser</string>
     <string name="takeover_nothing">The agent has no page open right now.</string>
+    <!-- the phone's capabilities as tools -->
+    <string name="ask_permission_title">%1$s needs a permission</string>
+    <string name="ask_why_calendar">To read or add to your calendar. Tap to allow.</string>
+    <string name="ask_why_contacts">To look someone up in your contacts. Tap to allow.</string>
+    <string name="ask_why_location">To know where you are. Tap to allow.</string>
+    <string name="ask_why_notify">To notify you from the background. Tap to allow.</string>
+    <string name="ask_clipboard_title">%1$s wants to read the clipboard</string>
+    <string name="ask_clipboard_body">Android only shows the clipboard to the app on screen. Tap to let it read what you copied.</string>
+    <string name="ask_photos_title">%1$s asks for a photo</string>
+    <string name="ask_photos_body">Tap to choose. Only what you pick is shared.</string>
+    <string name="device_alarm_tap">Tap to set the alarm %1$s</string>
+    <string name="device_timer_tap">Tap to start a %1$s timer</string>
+    <string name="device_tap_body">%1$s cannot open the clock app from the background; one tap does it.</string>
+    <string name="documents_summary">What the agent made, and files for it</string>
+    <string name="documents_root">Workspace</string>
+    <string name="share_failed">Could not share that: %1$s</string>
 </resources>

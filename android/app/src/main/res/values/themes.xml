@@ -19,6 +19,16 @@
     </style>
 
     <!-- the browser take-over sheet: rounded top, the page fills the rest -->
+    <!-- an activity with nothing to show: the system dialog it opens is all the user sees -->
+    <style name="Theme.nanoMuse.Invisible" parent="Theme.nanoMuse">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+    </style>
+
     <style name="Theme.nanoMuse.Sheet" parent="ThemeOverlay.Material3.BottomSheetDialog">
         <item name="bottomSheetStyle">@style/Widget.nanoMuse.Sheet</item>
         <item name="android:windowSoftInputMode">adjustResize</item>

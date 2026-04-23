@@ -8,7 +8,7 @@ from typing import Any
 
 from nanomuse.bridge.tokens import BRIDGE_TOKEN_ENV, BRIDGE_URL_ENV, BridgeGrant, BridgeTokens
 from nanomuse.logger import logger
-from nanomuse.runtime import DEVICE_SERVER
+from nanomuse.runtime import DEVICE_PREFIX
 from nanomuse.schema import Function, ToolCall, ToolResult
 
 KINDS = ("device", "browser", "open")
@@ -69,11 +69,12 @@ class Bridge:
     # ------------------------------------------------------------------ the requests
     def device_tools(self) -> list[dict[str, str]]:
         """What `nanomuse-device list` prints: the device's tools, without their prefix."""
-        prefix = DEVICE_SERVER + "_"
         out = []
         for t in self.tools:
-            if t.name.startswith(prefix):
-                out.append({"name": t.name[len(prefix) :], "description": t.description[:200]})
+            if t.name.startswith(DEVICE_PREFIX):
+                out.append(
+                    {"name": t.name[len(DEVICE_PREFIX) :], "description": t.description[:200]}
+                )
         return out
 
     async def handle(self, token: str | None, kind: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -145,7 +146,7 @@ class Bridge:
             device_args = body.get("args") or {}
             if not isinstance(device_args, dict):
                 raise BridgeError(400, "arguments must be key=value pairs")
-            return f"{DEVICE_SERVER}_{name}", device_args
+            return f"{DEVICE_PREFIX}{name}", device_args
         if kind == "browser":
             action = str(body.get("action") or "").strip()
             wanted = _BROWSER_ACTIONS.get(action)
@@ -175,7 +176,7 @@ class Bridge:
                     "here (on the phone they come with the app; on a computer, connect the app)"
                 )
             names = ", ".join(sorted(t["name"] for t in have))
-            return f"this phone has no '{tool_name.removeprefix(DEVICE_SERVER + '_')}'; it has: {names}"
+            return f"this phone has no '{tool_name.removeprefix(DEVICE_PREFIX)}'; it has: {names}"
         if tool_name == "browser":
             return "the browser view is off (Connections → Browser in the app turns it on)"
         return f"the tool '{tool_name}' is not available here"

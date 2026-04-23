@@ -52,9 +52,9 @@ def test_pairs_parse_json_values_and_keep_strings():
 # ----------------------------------------------------------------------------- the plan
 def test_requests_map_to_tool_calls():
     plan = Bridge._plan
-    assert plan("device", {"tool": "clipboard_read", "args": {}}) == ("device_clipboard_read", {})
+    assert plan("device", {"tool": "clipboard_read", "args": {}}) == ("device__clipboard_read", {})
     assert plan("device", {"tool": "alarm-set", "args": {"time": "07:30"}}) == (
-        "device_alarm_set",
+        "device__alarm_set",
         {"time": "07:30"},
     )
     assert plan("browser", {"action": "navigate", "url": "https://example.com"}) == (
@@ -113,6 +113,31 @@ def test_programs_say_when_the_bridge_is_not_here(monkeypatch, capsys):
     assert "nanomuse serve" in capsys.readouterr().err
 
 
+def test_device_program_names_the_tool_from_capability_and_action(monkeypatch, capsys):
+    """`clipboard read` → clipboard_read; single-word tools take no action word."""
+    import nanomuse.bridge.cli as cli
+
+    sent: list[dict[str, Any]] = []
+
+    class Fake:
+        available = True
+
+        def post(self, kind: str, body: dict[str, Any]) -> dict[str, Any]:
+            sent.append({"kind": kind, **body})
+            return {"ok": True, "output": "fine"}
+
+    monkeypatch.setattr(cli, "BridgeClient", Fake)
+    assert device_main(["clipboard", "read"]) == 0
+    assert device_main(["alarm", "set", "hour=7", "minute=30", "message=Train"]) == 0
+    assert device_main(["notify", "title=Done", "body=Booked."]) == 0
+    assert device_main(["location"]) == 0
+    assert [s["tool"] for s in sent] == ["clipboard_read", "alarm_set", "notify", "location"]
+    assert sent[1]["args"] == {"hour": 7, "minute": 30, "message": "Train"}
+    assert sent[2]["args"] == {"title": "Done", "body": "Booked."}
+    assert sent[3]["args"] == {}
+    assert capsys.readouterr().out.count("fine") == 4
+
+
 def test_client_reports_an_unreachable_server(monkeypatch):
     client = BridgeClient(url="http://127.0.0.1:9", token="t", timeout=1)
     result = client.post("device", {"tool": "clipboard_read", "args": {}})
@@ -137,15 +162,19 @@ def test_device_is_read_from_the_environment():
     server = device_mcp_server(dev)
     assert server.name == "device" and server.url == "http://127.0.0.1:41234/mcp?token=h%2Ft"
     assert server.reads_private_data is True
+    # the permission defaults ride along, tool by tool
+    assert server.tools["calendar_delete"].risk == RiskLevel.SENSITIVE
+    assert server.tools["clipboard_write"].reads_private_data is False
+    assert server.tools["contacts_search"].reads_private_data is True
     assert Device("android", sdk="33").describe() == "on this phone (Android 13)"
     assert Device("android").describe() == "on this phone (Android)"
 
 
 # ----------------------------------------------------------------------------- end to end
 class FakeClipboard(BaseTool):
-    """Stands in for the phone's `device_clipboard_read` (an MCP tool in real life)."""
+    """Stands in for the phone's `device__clipboard_read` (an MCP tool in real life)."""
 
-    name: str = "device_clipboard_read"
+    name: str = "device__clipboard_read"
     description: str = "Read the phone's clipboard."
     parameters: dict[str, Any] = {"type": "object", "properties": {}}
     risk: RiskLevel = RiskLevel.MODERATE
@@ -212,7 +241,7 @@ def test_a_command_reaches_the_phone_through_the_bridge(settings: Settings):
         shell = [e for e in tools if e["tool"] == "shell"][0]
         assert shell["status"] == "ok", shell
         assert "hello from the clipboard" in shell["output"]
-        nested = [e for e in tools if e["tool"] == "device_clipboard_read"][0]
+        nested = [e for e in tools if e["tool"] == "device__clipboard_read"][0]
         assert nested["status"] == "ok" and nested["via"] == "shell"
         assert nested["output"] == "hello from the clipboard"
         # the call token died with the command

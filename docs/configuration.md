@@ -305,7 +305,16 @@ url                = "http://localhost:8000/mcp"   # streamable HTTP; falls back
 risk               = "sensitive"
 egress             = true         # counts as network egress for taint tracking
 reads_private_data = true         # taints the session when called
+
+# one tool of a server may differ from the server's defaults
+[mcp.servers.tools.list_events]
+risk               = "moderate"
+[mcp.servers.tools.delete_event]
+risk               = "sensitive"
+reads_private_data = false
 ```
+
+`tools` is optional and per tool name (without the `<server>__` prefix); anything not set falls back to the server's values. It is how the phone's own tools get their defaults: on a phone the app's capabilities appear as the server `device` without any configuration ([device.md](device.md)), with the per-tool table from `nanomuse/runtime.py`.
 
 ## `[server]`
 

@@ -2358,12 +2358,12 @@ function MCPCard({
               />
               <div className="min-w-0 flex-1">
                 <div className="text-[13.5px] font-medium truncate">
-                  {m.name}
+                  {m.builtin ? t("This phone") : m.name}
                 </div>
                 <div className="text-[11.5px] text-muted truncate">
-                  {m.url ?? [m.command, ...m.args].join(" ")} ·{" "}
+                  {m.builtin ? t("clipboard, notifications, calendar, contacts, location, alarms, photos") : (m.url ?? [m.command, ...m.args].join(" "))} ·{" "}
                   {t("{n} tools", { n: m.tools })} · {t(m.risk)}
-                  {!m.from_app && ` · ${t("from config.toml")}`}
+                  {!m.from_app && !m.builtin && ` · ${t("from config.toml")}`}
                 </div>
               </div>
               {m.from_app && (
