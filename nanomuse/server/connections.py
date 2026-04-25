@@ -15,6 +15,7 @@ import re
 import smtplib
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlsplit
 
 from nanomuse.config import (
     CalendarFeedSettings,
@@ -48,34 +49,139 @@ GUI_KEY = "GUI_API_KEY"
 EMAIL_ADDRESS = "EMAIL_ADDRESS"
 EMAIL_PASSWORD = "EMAIL_PASSWORD"
 
+# The provider presets the app offers. `models` is the fallback catalogue for when the
+# endpoint's own /models cannot be reached (see `llm_models`); names move fast, the live list
+# is the truth. `key_url` is where a key comes from; `key_hint` what one looks like there.
+# `group` sorts the form: what protocol the endpoint speaks.
 PROVIDERS: dict[str, dict[str, Any]] = {
     "deepseek": {
         "label": "DeepSeek",
+        "subtitle": "深度求索",
+        "group": "openai",
         "provider": "openai",
         "base_url": "https://api.deepseek.com",
         "models": ["deepseek-flash", "deepseek-chat", "deepseek-reasoner"],
+        "key_url": "https://platform.deepseek.com/api_keys",
+        "key_hint": "sk-…",
+    },
+    "kimi": {
+        "label": "Kimi",
+        "subtitle": "Moonshot AI · 月之暗面",
+        "group": "openai",
+        "provider": "openai",
+        "base_url": "https://api.moonshot.cn/v1",
+        "models": ["kimi-k2.6", "kimi-k2.7-code"],
+        "key_url": "https://platform.moonshot.cn/console/api-keys",
+        "key_hint": "sk-…",
+    },
+    "qwen": {
+        "label": "Qwen",
+        "subtitle": "阿里云百炼 · DashScope",
+        "group": "openai",
+        "provider": "openai",
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "models": ["qwen3.7-plus", "qwen3.7-max", "qwen3.6-flash"],
+        "key_url": "https://bailian.console.aliyun.com/?apiKey=1",
+        "key_hint": "sk-…",
+    },
+    "glm": {
+        "label": "GLM",
+        "subtitle": "智谱 AI",
+        "group": "openai",
+        "provider": "openai",
+        "base_url": "https://open.bigmodel.cn/api/paas/v4",
+        "models": ["glm-5.2", "glm-5"],
+        "key_url": "https://open.bigmodel.cn/usercenter/apikeys",
+        "key_hint": "xxxxxxxx.xxxxxxxx",
+    },
+    "doubao": {
+        "label": "豆包",
+        "subtitle": "火山方舟 · Volcengine Ark",
+        "group": "openai",
+        "provider": "openai",
+        "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+        # Ark models are versioned deployments; the live list has the exact ids
+        "models": ["doubao-seed-2-0-pro-260215", "doubao-seed-2-0-lite-260428"],
+        "key_url": "https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey",
+        "key_hint": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+    },
+    "minimax": {
+        "label": "MiniMax",
+        "subtitle": "MiniMax · 稀宇科技",
+        "group": "openai",
+        "provider": "openai",
+        "base_url": "https://api.minimaxi.com/v1",
+        "models": ["MiniMax-M3", "MiniMax-M2.7"],
+        "key_url": "https://platform.minimaxi.com/user-center/basic-information/interface-key",
+        "key_hint": "eyJ…",
     },
     "openai": {
         "label": "OpenAI",
+        "subtitle": "Chat Completions",
+        "group": "openai",
         "provider": "openai",
         "base_url": "https://api.openai.com/v1",
         "models": ["gpt-5-mini", "gpt-5", "gpt-4.1"],
+        "key_url": "https://platform.openai.com/api-keys",
+        "key_hint": "sk-proj-…",
+    },
+    "openai_responses": {
+        "label": "OpenAI",
+        "subtitle": "Responses API",
+        "group": "responses",
+        "provider": "openai_responses",
+        "base_url": "https://api.openai.com/v1",
+        "models": ["gpt-5-mini", "gpt-5", "gpt-4.1"],
+        "key_url": "https://platform.openai.com/api-keys",
+        "key_hint": "sk-proj-…",
     },
     "openrouter": {
         "label": "OpenRouter",
+        "subtitle": "many models, one key",
+        "group": "openai",
         "provider": "openai",
         "base_url": "https://openrouter.ai/api/v1",
         "models": ["deepseek/deepseek-chat", "anthropic/claude-sonnet-4", "openai/gpt-5-mini"],
+        "key_url": "https://openrouter.ai/keys",
+        "key_hint": "sk-or-v1-…",
     },
     "ollama": {
-        "label": "Ollama (local)",
+        "label": "Ollama",
+        "subtitle": "on this machine, no key",
+        "group": "local",
         "provider": "openai",
         "base_url": "http://127.0.0.1:11434/v1",
         "models": ["qwen3:8b", "llama3.1:8b"],
         "no_key": True,
     },
-    "custom": {"label": "Other OpenAI-compatible endpoint", "provider": "openai", "base_url": ""},
+    "custom": {
+        "label": "Other OpenAI-compatible endpoint",
+        "subtitle": "vLLM, LM Studio, a gateway, anything with /v1",
+        "group": "local",
+        "provider": "openai",
+        "base_url": "",
+        "key_optional": True,
+    },
 }
+
+
+def normalize_base_url(url: str) -> str:
+    """Trim, drop a trailing slash and add ``/v1`` when the URL names a host and nothing else.
+
+    An OpenAI-compatible server listens under ``/v1``; people paste the host. Anything with a
+    path of its own (``/api/paas/v4``, ``/compatible-mode/v1``) is left alone.
+    """
+    url = url.strip().rstrip("/")
+    if not url:
+        return ""
+    if "://" not in url:
+        url = "https://" + url
+    # a preset's own host is left exactly as the preset has it (DeepSeek listens at the root)
+    if any(url == str(p.get("base_url", "")).rstrip("/") for p in PROVIDERS.values()):
+        return url
+    if not urlsplit(url).path.rstrip("/"):
+        return url + "/v1"
+    return url
 
 
 def _vault_name(feed_name: str, prefix: str = "CALENDAR_") -> str:
@@ -245,6 +351,8 @@ class Connections:
         for key in ("provider", "model", "base_url", "tool_mode"):
             if body.get(key) is not None:
                 llm[key] = str(body[key]).strip()
+        if body.get("base_url") is not None:
+            llm["base_url"] = normalize_base_url(llm["base_url"])
         if llm.get("provider") not in (None, "openai", "openai_responses"):
             raise ValueError("provider must be 'openai' or 'openai_responses'")
         if llm.get("tool_mode") not in (None, "", "auto", "native", "prompt"):
@@ -438,6 +546,60 @@ class Connections:
             "indexed": indexed,
             "ms": int((loop.time() - started) * 1000),
         }
+
+    async def llm_models(self, body: dict[str, Any]) -> dict[str, Any]:
+        """The models an endpoint offers: its own ``/models`` when it answers, else the catalogue.
+
+        ``body``: ``base_url`` (or ``preset``), and ``api_key`` when the user has typed one
+        that is not saved yet; otherwise the vault key is used when the endpoint is the
+        configured one. Never touches settings — what the user typed in the form stays.
+        """
+        preset_id = str(body.get("preset") or "")
+        preset = PROVIDERS.get(preset_id) or {}
+        base_url = normalize_base_url(str(body.get("base_url") or preset.get("base_url") or ""))
+        catalogue: list[str] = list(preset.get("models") or [])
+        if not base_url:
+            return {"models": catalogue, "source": "catalogue"}
+        key = str(body.get("api_key") or "").strip()
+        if not key and normalize_base_url(self.settings.llm.base_url or "") == base_url:
+            key = self.vault.resolve(self.settings.llm.api_key or "", strict=False)
+        headers = {"Authorization": f"Bearer {key}"} if key else {}
+        candidates = [f"{base_url}/models"]
+        if not re.search(r"/v\d+$", base_url):
+            candidates.append(f"{base_url}/v1/models")
+        error = ""
+        try:
+            import httpx
+
+            async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+                for url in candidates:
+                    try:
+                        r = await client.get(url, headers=headers)
+                    except httpx.HTTPError as exc:
+                        error = f"{type(exc).__name__}"
+                        continue
+                    if r.status_code == 404:
+                        error = "404"
+                        continue
+                    if r.status_code >= 400:
+                        error = f"HTTP {r.status_code}"
+                        break
+                    data = r.json()
+                    rows = data.get("data") if isinstance(data, dict) else data
+                    ids = sorted(
+                        {
+                            str(row.get("id") if isinstance(row, dict) else row)
+                            for row in (rows or [])
+                            if (row.get("id") if isinstance(row, dict) else row)
+                        }
+                    )
+                    if ids:
+                        return {"models": ids, "source": "live"}
+                    error = "empty list"
+                    break
+        except Exception as exc:  # noqa: BLE001
+            error = f"{type(exc).__name__}"
+        return {"models": catalogue, "source": "catalogue", "error": error}
 
     async def test_llm(self) -> dict[str, Any]:
         loop = asyncio.get_running_loop()

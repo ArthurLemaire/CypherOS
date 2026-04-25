@@ -23,6 +23,7 @@
     GET|PUT /api/settings
     GET  /api/connections                 model, email, browser, MCP servers, vault names
     PUT  /api/connections/llm|embeddings|email|browser|calendar   POST /api/connections/llm|embeddings|email|calendar/test
+    POST /api/llm/models                 the models an endpoint offers (live /models, else the catalogue)
     POST /api/connections/calendar/feeds {name,url}  DELETE /api/connections/calendar/feeds/{name}
     PUT  /api/connections/contacts {enabled}  POST /api/connections/contacts/sources {name,url}
     POST /api/connections/contacts/import?name= (body: the .vcf text)  DELETE /api/connections/contacts/sources/{name}
@@ -146,6 +147,12 @@ class LLMBody(BaseModel):
     tool_mode: str | None = None
     # a new key goes straight into the vault; "" removes the key; None keeps it
     api_key: str | None = None
+
+
+class LLMModelsBody(BaseModel):
+    preset: str = ""
+    base_url: str = ""
+    api_key: str = ""
 
 
 class EmbeddingsBody(BaseModel):
@@ -696,6 +703,11 @@ def create_app(settings: Settings, service: MuseService | None = None) -> FastAP
     @app.post("/api/connections/llm/test", dependencies=dep)
     async def test_llm() -> dict[str, Any]:
         return await conn.test_llm()
+
+    @app.post("/api/llm/models", dependencies=dep)
+    async def llm_models(body: LLMModelsBody) -> dict[str, Any]:
+        """The models an endpoint offers (its /models, else the preset's catalogue); saves nothing."""
+        return await conn.llm_models(body.model_dump())
 
     @app.put("/api/connections/embeddings", dependencies=dep)
     async def put_embeddings(body: EmbeddingsBody) -> dict[str, Any]:

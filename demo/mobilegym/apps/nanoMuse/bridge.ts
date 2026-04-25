@@ -61,10 +61,13 @@ function threadRoute(thread: string): string {
   return `/?thread=${encodeURIComponent(thread)}`;
 }
 
+/** The agent's name as the user set it; learnt from the server's hello and profile updates. */
+let agentName = 'nanoMuse';
+
 /** Same titles the server uses for its Web Push notifications. */
 function backgroundTitle(about: string): string {
-  if (about.startsWith('Check-in: ')) return 'nanoMuse · check-in';
-  return about.replace('Working on your goal: ', '') || 'nanoMuse';
+  if (about.startsWith('Check-in: ')) return `${agentName} · check-in`;
+  return about.replace('Working on your goal: ', '') || agentName;
 }
 
 function firstLine(text: string, max = 140): string {
@@ -212,6 +215,8 @@ class MuseBridge {
     if (msg.kind === 'hello') {
       this.hooks.setLink('online');
       this.announce();
+      const named = (msg as { state: { profile?: { name?: string } } }).state.profile?.name;
+      if (named) agentName = named;
       if (!this.hooks.get().notify) return;
       const pending = (msg as { state: { pending_approvals?: TimelineEvent[] } }).state.pending_approvals ?? [];
       for (const ev of pending) this.notifyFor(ev);
@@ -219,6 +224,11 @@ class MuseBridge {
     }
     if (msg.kind === 'device_request') {
       void this.serve(msg as { id: string; op: string; params?: Record<string, unknown> });
+      return;
+    }
+    if (msg.kind === 'profile') {
+      const named = (msg as { profile?: { name?: string } }).profile?.name;
+      if (named) agentName = named;
       return;
     }
     if (!this.hooks.get().notify) return;
@@ -254,7 +264,7 @@ class MuseBridge {
     const body = isApproval ? [ev.summary, ev.purpose && `For: ${ev.purpose}`].filter(Boolean).join(' — ') : ev.text ?? '';
     const item = NotificationService.push({
       appId: manifest.id,
-      title: isApproval ? 'nanoMuse needs your approval' : 'nanoMuse has a question',
+      title: isApproval ? `${agentName} needs your approval` : `${agentName} has a question`,
       body: firstLine(body, 200),
       route: threadRoute(ev.thread),
       importance: 'high',

@@ -68,6 +68,15 @@ The panda: fur `#d8632e` lit to `#ee8a4c` and shaded to `#9e3f18`, deep fur `#bf
 
 Figtree throughout, set with Tailwind's scale: 15 px in bubbles, 12–13 px for status lines and captions, 17–20 px semibold for titles.
 
+## Identity: the name comes first
+
+Muse opens by asking what to call it, and the name is then everywhere — the header, the notifications, the way it talks about itself. nanoMuse does the same:
+
+- **First run is a checklist**, not a slideshow: three points about what it is (it does things for you; it keeps working when the app is closed; it asks you first where it matters), then three items — *meet your nanoMuse*, *add a model*, *connect mail, calendar, contacts* (optional) — ticked as they are done, with *Start* locked until a model answers. A reload mid-way keeps the ticks, because they are read from what was saved, not from the page.
+- **The naming page**: 1–20 characters, empty falls back to `nanoMuse`; six suggested names as chips (three Chinese, three English) and a shuffle; the avatar; a one-line tagline under the name (≤ 60 characters); then how it talks — a **tone** (formal / casual / playful / concise), **how much it says** (short / detailed / bullet points), free text for anything else, and what it should call you. Each of these is its own paragraph in the system prompt (`Profile` in `nanomuse/server/service.py`), so a tone can be changed without touching the free text.
+- **The name is threaded through**, not decorated: the header and the greeting, approval and permission copy ("Actions {name} wants to take…"), the CLI banner (`nanoMuse v0.1.0 · Momo`), the MobileGym bridge's titles, Settings ("You and Momo"). Where the product is meant — the app, the docs, the README — it stays *nanoMuse*.
+- **Bring your own key, no account with us.** The model form lists providers grouped by protocol (OpenAI-compatible Chat Completions · Responses API · local or your own endpoint) with vendor subtitles, a masked key with a reveal toggle, a *Get a key from …* link per vendor, a Base URL that gains `/v1` when it has no path, and endpoints that need no key at all (Ollama, or a custom one with *No key* ticked). The endpoint's own `/models` is asked for the list; a static catalogue stands in when it cannot be reached; a model typed by hand is never replaced. **There is no OAuth subscription login** and none is planned for 1.0: a login through us would make nanoMuse the account holder between you and the vendor, which is the one relationship this project exists to avoid.
+
 ## Where nanoMuse differs on purpose
 
 - **The phone's screen is visible.** Muse never shows you a screenshot; nanoMuse's phone steps are rows in the chat (`phone_act: tap "发送" …`) and the finger overlay shows on the phone itself, because a user should be able to see what a hand on their phone is doing.

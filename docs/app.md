@@ -31,7 +31,13 @@ The token is generated once and stored in `<data_dir>/server_token`; set `server
   <img src="screenshots/onboarding.png" width="24%" alt="First run: meet your nanoMuse">
 </p>
 
-On a fresh data directory the app opens with setup instead of the chat: your name; the agent's name, avatar, colour and style; the model (pick a provider, paste a key — it goes into the vault on the server and the model never sees it; or keep what `config.toml` already says); optionally your mailbox and calendar; then a few things to try. *Skip setup* at any point. Everything here can be changed later under the avatar. Setup does not reappear once finished, or once a conversation exists.
+On a fresh data directory the app opens with setup instead of the chat. First three points about what it is — it does things for you; it keeps working when the app is closed; it asks you first where it matters — then a checklist of three items, ticked as they are done:
+
+1. **Meet your nanoMuse** — the name first (1–20 characters; six suggestions and a shuffle; empty means nanoMuse), the avatar, a one-line tagline, then how it talks: a *tone* (formal / casual / playful / concise), *how much it says* (short / detailed / bullet points), anything else in your own words, and what it should call you.
+2. **Add a model** — providers grouped by protocol (OpenAI-compatible Chat Completions · Responses API · local or your own endpoint) with vendor subtitles: DeepSeek, Kimi, Qwen, GLM, 豆包, MiniMax, OpenAI, OpenRouter, Ollama, or any OpenAI-compatible endpoint. The key is masked with a reveal toggle and each vendor has a *Get a key* link; it goes into the vault on the server and the model never sees it. A Base URL without a path gains `/v1`; Ollama and custom endpoints may have no key. The endpoint's own `/models` fills the list (a catalogue stands in when it cannot be reached); a model you typed is never replaced.
+3. **Connect mail, calendar, contacts** — optional.
+
+*Start* stays locked until a model is saved; *Skip setup* is always there. A reload keeps the ticks. Everything here can be changed later under the avatar (*Settings* shows the same identity form). Setup does not reappear once finished, or once a conversation exists.
 
 ## What is on the screen
 
@@ -146,10 +152,11 @@ Everything the app does goes through this API, so another front-end (a Telegram 
 | POST / DELETE | `/api/triggers/{id}/fire`, `/api/triggers/{id}` | run it now with a sample occurrence / cancel |
 | POST | `/api/hooks/{id}?key=` | a trigger's webhook — no app token, the key is the credential (also accepted as `X-Hook-Key`); the body (≤ 64 KB, JSON pretty-printed) is the context. 404 for a wrong id or key, 409 once cancelled, 429 when deliveries come too close |
 | GET | `/api/files` · `/api/files/{path}?download=1` | list / read workspace files (HTML and SVG are served with `Content-Security-Policy: sandbox`) |
-| GET / PUT | `/api/settings` | view / change `{profile{name, emoji, color, style, user_name, proactive, goal_interval_minutes}, sentinel_mode, show_thinking, language}`; the view includes `onboarded` and `llm_ready` |
+| GET / PUT | `/api/settings` | view / change `{profile{name (≤ 20), avatar, emoji, color, tagline (≤ 60), tone, communication, style, user_name, proactive, goal_interval_minutes}, sentinel_mode, show_thinking, language}`; the view includes `onboarded` and `llm_ready` |
 | GET | `/api/connections` | model (`key_source`: vault · config · missing · none), provider presets, email, browser, MCP servers (`connected`, `tools`, `from_app`), vault names, `onboarded` |
 | PUT | `/api/connections/llm` `{provider, model, base_url, tool_mode, api_key}` | change the model; `api_key` set → stored in the vault, `""` → no key, omitted → unchanged. Takes effect immediately in every thread |
 | POST | `/api/connections/llm/test` | one short round trip to the model: `{ok, reply, ms}` or `{ok: false, error}` |
+| POST | `/api/llm/models` `{preset, base_url, api_key}` | the models an endpoint offers: its `/models` (then `/v1/models`) with the given key — or, without one, the key in the vault — `{models, source: "live"}`; when it cannot be reached, the preset's catalogue with `source: "catalogue"` and `error`. Saves nothing |
 | PUT | `/api/connections/embeddings` `{mode, model, base_url, api_key}` | recall by meaning: `mode` auto/on/off; `base_url` `""` → the model's endpoint; `model` `""` → the endpoint's default; `api_key` set → vault (`EMBEDDINGS_API_KEY`), `""` → the model's key, omitted → unchanged. Rebuilds the embedder on the spot |
 | POST | `/api/connections/embeddings/test` | one embeddings call, then every memory indexed: `{ok, model, dims, indexed, ms}` or `{ok: false, error}` |
 | PUT | `/api/connections/search` `{provider, api_key, base_url}` | web search: `provider` duckduckgo/brave/tavily/searxng; `api_key` set → vault (`SEARCH_API_KEY`), `""` removes it, omitted → unchanged; `base_url` the SearXNG instance. Applies to the next search |
