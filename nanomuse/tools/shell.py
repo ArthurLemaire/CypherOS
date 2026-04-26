@@ -19,6 +19,7 @@ import os
 import re
 import sys
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -157,8 +158,12 @@ async def _run(
     shell: bool,
     sandbox: Sandbox | None = None,
     network: bool = True,
+    extra_env: dict[str, str] | None = None,
 ) -> ToolResult:
     env = scrubbed_env()
+    if extra_env:
+        # the CLI bridge's call token: set on purpose, after the scrub, for this command only
+        env.update(extra_env)
     boxed = sandbox is not None and sandbox.active
     # a box that cannot take the network away never ran the command without it
     without_network = boxed and sandbox is not None and sandbox.blocks_network and not network
@@ -247,6 +252,9 @@ class Shell(BaseTool):
     # only then does the Sentinel treat it as egress. Without one, every shell command
     # may reach the network and is treated that way.
     sandbox: Sandbox | None = None
+    # The CLI bridge (nanomuse.bridge.server.Bridge) when a server is running: each
+    # command gets a call token so `nanomuse-device` and friends work from inside it.
+    bridge: Any = None
 
     def _network(self, args: dict[str, Any]) -> bool:
         command = str(args.get("command", ""))
@@ -276,14 +284,20 @@ class Shell(BaseTool):
             return ToolResult.fail("empty command")
         timeout = max(1.0, min(float(timeout or 60), 600.0))
         self.workspace.mkdir(parents=True, exist_ok=True)
-        return await _run(
-            command,
-            self.workspace,
-            timeout,
-            shell=True,
-            sandbox=self.sandbox,
-            network=self._network({"command": command, "network": network}),
-        )
+        env, grant = bridge_env(self.bridge, self.name, timeout)
+        try:
+            return await _run(
+                command,
+                self.workspace,
+                timeout,
+                shell=True,
+                sandbox=self.sandbox,
+                network=self._network({"command": command, "network": network}),
+                extra_env=env,
+            )
+        finally:
+            if self.bridge is not None:
+                self.bridge.release(grant)
 
 
 class PythonExecute(BaseTool):
@@ -306,6 +320,7 @@ class PythonExecute(BaseTool):
     # In the sandbox a script gets the network only when it imports something that uses
     # it (or starts programs, which could); see ``code_reach``.
     sandbox: Sandbox | None = None
+    bridge: Any = None  # as on Shell
 
     def assess(self, args: dict[str, Any]) -> CallAssessment:
         """Plain computation and files in the workspace are moderate (auto-allowed in the
@@ -339,6 +354,7 @@ class PythonExecute(BaseTool):
             fh.write(code)
             script = Path(fh.name)
         reach = code_reach(code, self.workspace)
+        env, grant = bridge_env(self.bridge, self.name, timeout)
         try:
             return await _run(
                 [sys.executable, str(script)],
@@ -347,9 +363,30 @@ class PythonExecute(BaseTool):
                 shell=False,
                 sandbox=self.sandbox,
                 network=bool(reach.get("network")) or bool(reach.get("processes")),
+                extra_env=env,
             )
         finally:
             script.unlink(missing_ok=True)
+            if self.bridge is not None:
+                self.bridge.release(grant)
 
 
-__all__ = ["PythonExecute", "Shell", "code_reach", "needs_network", "programs_of", "scrubbed_env"]
+def bridge_env(bridge: Any, tool: str, ttl: float) -> tuple[dict[str, str] | None, Any]:
+    """The call token for one command, when a bridge is there; ``(None, None)`` otherwise."""
+    if bridge is None:
+        return None, None
+    minted = bridge.env_for(uuid.uuid4().hex[:12], tool, ttl)
+    if minted is None:
+        return None, None
+    return minted
+
+
+__all__ = [
+    "PythonExecute",
+    "Shell",
+    "bridge_env",
+    "code_reach",
+    "needs_network",
+    "programs_of",
+    "scrubbed_env",
+]

@@ -27,9 +27,11 @@
             android:src="@mipmap/ic_launcher" />
 
         <TextView
+            android:id="@+id/offline_title"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
+            android:gravity="center"
             android:text="@string/offline_title"
             android:textColor="@color/text"
             android:textSize="20sp"
@@ -43,6 +45,28 @@
             android:gravity="center"
             android:textColor="@color/text_secondary"
             android:textSize="15sp" />
+
+        <ProgressBar
+            android:id="@+id/offline_progress"
+            style="?android:attr/progressBarStyle"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_marginTop="20dp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/offline_log"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:background="@color/bg_log"
+            android:fontFamily="monospace"
+            android:maxLines="12"
+            android:padding="10dp"
+            android:scrollbars="vertical"
+            android:textColor="@color/text_secondary"
+            android:textSize="11sp"
+            android:visibility="gone" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/retry"

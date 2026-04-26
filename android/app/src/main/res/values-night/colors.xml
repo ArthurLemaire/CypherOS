@@ -6,4 +6,5 @@
     <color name="accent">#1793FF</color>
     <color name="accent_soft">#12314F</color>
     <color name="border">#2E2E31</color>
+    <color name="bg_log">#1E2224</color>
 </resources>

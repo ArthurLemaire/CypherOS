@@ -1,0 +1,30 @@
+#!/bin/sh
+# What the Android app runs inside the root file system: the server, on the loopback, on
+# the port the app chose. The app sets the rest through the environment (docs/local-runtime.md):
+#   NANOMUSE_SERVER_TOKEN  the access token (shared with the WebView)
+#   NANOMUSE_DEVICE=android, NANOMUSE_DEVICE_MODEL, NANOMUSE_DEVICE_SDK
+#   NANOMUSE_HOST_URL / NANOMUSE_HOST_TOKEN   the app's own capabilities (an MCP server)
+#   TZ, LANG, http_proxy / https_proxy         from the phone's settings
+set -e
+export HOME="${HOME:-/root}"
+export PATH="/opt/nanomuse/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export LANG="${LANG:-C.UTF-8}" TERM="${TERM:-xterm-256color}" TMPDIR="${TMPDIR:-/tmp}"
+export NANOMUSE_DATA_DIR="${NANOMUSE_DATA_DIR:-$HOME/.nanomuse}"
+export NANOMUSE_WORKSPACE="${NANOMUSE_WORKSPACE:-$HOME/workspace}"
+# "open this in your browser", from any program, lands in the app's browser view
+export BROWSER="${BROWSER:-nanomuse-open}"
+# npm's global installs (lark-cli, tmeet …) go under the home, which survives an upgrade
+export NPM_CONFIG_PREFIX="${NPM_CONFIG_PREFIX:-$HOME/.npm-global}"
+export NPM_CONFIG_GLOBALCONFIG=/etc/npmrc   # where nanomuse-mirror writes the registry
+export PATH="$NPM_CONFIG_PREFIX/bin:$PATH"
+export PYTHONDONTWRITEBYTECODE=1
+mkdir -p "$NANOMUSE_DATA_DIR" "$NANOMUSE_WORKSPACE" "$NPM_CONFIG_PREFIX/bin"
+# package mirrors: chosen once from the phone's region (NANOMUSE_REGION, e.g. CN), kept after
+if [ ! -f /etc/nanomuse-mirror ]; then
+  case "${NANOMUSE_REGION:-}" in
+    CN|cn) nanomuse-mirror cn ;;
+    *) nanomuse-mirror default ;;
+  esac
+fi
+port="${NANOMUSE_SERVER_PORT:-8787}"
+exec nanomuse serve --host 127.0.0.1 --port "$port" --no-qr "$@"

@@ -45,6 +45,11 @@ android/app/build/
 android/local.properties
 android/keystore.properties
 android/.kotlin/
+# built, not committed: the root file system (scripts/rootfs/build.sh) and PRoot (android/native/build-proot.sh)
+android/app/src/local/assets/rootfs.tar.xz
+android/app/src/local/assets/rootfs.json
+android/app/src/local/jniLibs/
+android/native/build/
 *.jks
 *.keystore
 *.apk

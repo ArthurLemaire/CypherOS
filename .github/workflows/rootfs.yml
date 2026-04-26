@@ -1,0 +1,117 @@
+name: Rootfs
+
+# Builds what the phone runs nanoMuse in: the Alpine root file system (scripts/rootfs/) for
+# arm64, and PRoot for Android (android/native/build-proot.sh). Both are workflow artifacts
+# the Android workflow consumes (it calls this one); on version tags they are attached to the
+# GitHub release too, so a rootfs can be downloaded and inspected apart from the APK.
+#
+# The rootfs pins nanomuse to the commit being built (the wheel is built from the checkout),
+# so it changes whenever the Python side does — which is why the Android workflow, not this
+# one, watches pushes: one rootfs build per push, feeding one APK build.
+
+on:
+  pull_request:
+    paths:
+      - "scripts/rootfs/**"
+      - "android/native/**"
+      - ".github/workflows/rootfs.yml"
+  workflow_call:
+    outputs:
+      rootfs_artifact:
+        description: "Name of the artifact holding rootfs.tar.xz and rootfs.json"
+        value: nanomuse-rootfs-aarch64
+      proot_artifact:
+        description: "Name of the artifact holding libproot.so and libproot-loader.so"
+        value: nanomuse-proot-arm64-v8a
+  workflow_dispatch:
+    inputs:
+      node:
+        description: "Bundle Node.js (1) or not (0)"
+        default: "1"
+
+permissions:
+  contents: write
+
+env:
+  # the size gate on the compressed rootfs; the APK is this plus ~4 MB of app
+  ROOTFS_MAX_MB: "80"
+
+jobs:
+  rootfs:
+    name: rootfs (arm64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build
+        env:
+          NODE: ${{ github.event.inputs.node || '1' }}
+        run: scripts/rootfs/build.sh --no-install
+
+      - name: Report
+        run: |
+          cat dist/rootfs/*.json
+          {
+            echo "### Root file system"
+            echo
+            echo '```'
+            cat dist/rootfs/nanomuse-rootfs-*-aarch64.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stage for the app
+        run: |
+          mkdir -p stage
+          cp dist/rootfs/nanomuse-rootfs-*-aarch64.tar.xz stage/rootfs.tar.xz
+          cp dist/rootfs/nanomuse-rootfs-*-aarch64.json stage/rootfs.json
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: nanomuse-rootfs-aarch64
+          path: stage/
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/rootfs/nanomuse-rootfs-*-aarch64.tar.xz
+            dist/rootfs/nanomuse-rootfs-*-aarch64.json
+          generate_release_notes: false
+
+  proot:
+    name: proot (arm64-v8a)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r27c
+          add-to-path: false
+
+      - name: Build
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: android/native/build-proot.sh "$RUNNER_TEMP/proot"
+
+      - name: Check
+        run: |
+          ls -la "$RUNNER_TEMP/proot/arm64-v8a"
+          cat "$RUNNER_TEMP/proot/proot-version.json"
+          file "$RUNNER_TEMP/proot/arm64-v8a/"*.so
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: nanomuse-proot-arm64-v8a
+          path: ${{ runner.temp }}/proot/
+          if-no-files-found: error

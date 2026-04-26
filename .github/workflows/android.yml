@@ -1,9 +1,16 @@
 name: Android
 
-# Builds the Android app (android/) and, on version tags, attaches the APK to the GitHub
-# release. Signing: set the ANDROID_KEYSTORE_B64 / ANDROID_KEYSTORE_PASSWORD /
-# ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD secrets (see docs/android.md). Without them the
-# APK is signed with a throwaway debug key, which installs but cannot update a signed build.
+# Builds the Android app (android/) in both flavours and, on version tags, attaches the APKs
+# to the GitHub release:
+#
+#   nanomuse-<version>.apk           `local`: runs nanoMuse on the phone (Alpine + python +
+#                                    nanomuse inside the APK, under PRoot); arm64 only
+#   nanomuse-<version>-connect.apk   `connect`: the remote for a server on your computer
+#
+# The root file system and PRoot come from the Rootfs workflow (rootfs.yml), called here.
+# Signing: set the ANDROID_KEYSTORE_B64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS /
+# ANDROID_KEY_PASSWORD secrets (see docs/android.md). Without them the APKs are signed with a
+# throwaway debug key, which installs but cannot update a signed build.
 
 on:
   push:
@@ -11,7 +18,11 @@ on:
     tags: ["v*"]
     paths:
       - "android/**"
+      - "nanomuse/**"
+      - "pyproject.toml"
+      - "scripts/rootfs/**"
       - ".github/workflows/android.yml"
+      - ".github/workflows/rootfs.yml"
   pull_request:
     paths:
       - "android/**"
@@ -21,9 +32,49 @@ on:
 permissions:
   contents: write
 
+env:
+  # the local APK's size budget: the compressed rootfs plus the app itself
+  APK_MAX_MB: "80"
+
 jobs:
+  # The connect flavour alone: quick, and what a pull request needs to know.
+  connect:
+    name: connect APK + tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v5
+
+      - name: Build and test
+        run: ./gradlew --no-daemon assembleConnectDebug testConnectDebugUnitTest lintConnectDebug
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: android-test-results
+          path: android/app/build/reports/
+          if-no-files-found: ignore
+
+  runtime:
+    name: runtime
+    if: github.event_name != 'pull_request'
+    uses: ./.github/workflows/rootfs.yml
+    permissions:
+      contents: write
+
   apk:
-    name: build APK
+    name: release APKs
+    if: github.event_name != 'pull_request'
+    needs: [connect, runtime]
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -41,6 +92,22 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v5
 
+      - uses: actions/download-artifact@v7
+        with:
+          name: ${{ needs.runtime.outputs.rootfs_artifact }}
+          path: android/app/src/local/assets
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: ${{ needs.runtime.outputs.proot_artifact }}
+          path: android/app/src/local/jniLibs
+
+      - name: What went in
+        run: |
+          ls -la app/src/local/assets app/src/local/jniLibs/arm64-v8a
+          cat app/src/local/assets/rootfs.json
+          chmod 755 app/src/local/jniLibs/arm64-v8a/*.so
+
       - name: Release keystore
         if: env.KEYSTORE_B64 != ''
         run: |
@@ -53,24 +120,45 @@ jobs:
           } > keystore.properties
 
       - name: Build
-        run: ./gradlew --no-daemon assembleRelease lint
+        run: ./gradlew --no-daemon assembleLocalRelease assembleConnectRelease lintLocalRelease
 
-      - name: Name the APK
+      - name: Name the APKs
         id: apk
         run: |
           version="$(sed -n 's/^ *versionName = "\(.*\)"/\1/p' app/build.gradle.kts)"
-          out="nanomuse-${version}.apk"
-          cp app/build/outputs/apk/release/app-release.apk "$out"
-          # a second copy under a fixed name, so /releases/latest/download/nanomuse.apk always works
-          cp "$out" nanomuse.apk
-          echo "path=android/$out" >> "$GITHUB_OUTPUT"
+          cp app/build/outputs/apk/local/release/app-local-release.apk "nanomuse-${version}.apk"
+          cp app/build/outputs/apk/connect/release/app-connect-release.apk "nanomuse-${version}-connect.apk"
+          # copies under fixed names, so /releases/latest/download/nanomuse.apk always works
+          cp "nanomuse-${version}.apk" nanomuse.apk
+          cp "nanomuse-${version}-connect.apk" nanomuse-connect.apk
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          ls -la ./*.apk
+          {
+            echo "### APKs"
+            echo
+            echo '| file | MB |'
+            echo '|---|---|'
+            for f in nanomuse-${version}.apk nanomuse-${version}-connect.apk; do
+              echo "| $f | $(( $(stat -c %s "$f") / 1048576 )) |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Size budget
+        run: |
+          mb=$(( $(stat -c %s nanomuse.apk) / 1048576 ))
+          if [ "$mb" -gt "$APK_MAX_MB" ]; then
+            echo "the local APK is $mb MB, over the $APK_MAX_MB MB budget"; exit 1
+          fi
+          echo "local APK: $mb MB (budget $APK_MAX_MB MB)"
 
       - uses: actions/upload-artifact@v7
         with:
           name: nanomuse-apk
-          path: ${{ steps.apk.outputs.path }}
+          path: |
+            android/nanomuse-${{ steps.apk.outputs.version }}.apk
+            android/nanomuse-${{ steps.apk.outputs.version }}-connect.apk
           if-no-files-found: error
+          compression-level: 0
 
       - name: Tag matches the app version
         if: startsWith(github.ref, 'refs/tags/v')
@@ -82,13 +170,15 @@ jobs:
 
       # Only an APK signed with the release key goes on a release: a debug-signed one would
       # install, but could never be updated by (or update) a properly signed build. Without
-      # the secrets the APK is a workflow artifact and the maintainer attaches the one built
-      # with the key kept outside the repository (docs/android.md).
+      # the secrets the APKs are a workflow artifact and the maintainer attaches the ones
+      # built with the key kept outside the repository (docs/android.md).
       - name: Attach to the release
         if: startsWith(github.ref, 'refs/tags/v') && env.KEYSTORE_B64 != ''
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            ${{ steps.apk.outputs.path }}
+            android/nanomuse-${{ steps.apk.outputs.version }}.apk
+            android/nanomuse-${{ steps.apk.outputs.version }}-connect.apk
             android/nanomuse.apk
+            android/nanomuse-connect.apk
           generate_release_notes: false

@@ -118,13 +118,17 @@ nanomuse serve --host 0.0.0.0        # 打印一个网址和一个二维码
 
 ## 📱 Android
 
-从最新 Release [**下载 nanomuse.apk**](https://github.com/nano-muse/nanoMuse/releases/latest/download/nanomuse.apk)，在手机上打开。Android 8.0 或更新，任意 CPU。不是商店里的应用，Android 会问一次是否允许安装。
+从最新 Release [**下载 nanomuse.apk**](https://github.com/nano-muse/nanoMuse/releases/latest/download/nanomuse.apk)，在手机上打开。Android 8.0 或更新的 64 位手机。不是商店里的应用，Android 会问一次是否允许安装。
 
-然后在电脑上 `nanomuse serve --host 0.0.0.0`，在 App 里点 **扫描二维码**，对准终端。同一 Wi-Fi、Tailscale 之类的 VPN，或放在 TLS 后面的服务器都可以。
+第一屏问你的 nanoMuse 住在哪里：
+
+- **在这台手机上运行。** 整个 Agent 都在 APK 里——一个带 Python 和 `nanomuse` 的小型 Alpine Linux，第一次启动时解压，在用户态 chroot 里运行，不需要 root。电脑上什么都不用装：给 Agent 起个名字，贴一个模型密钥，就好了。它在后台持续工作，重启手机后自己回来。占用约 330 MB 存储。（[原理](https://github.com/nano-muse/nanoMuse/blob/main/docs/local-runtime.md)）
+- **连接我的电脑。** 在电脑上 `nanomuse serve --host 0.0.0.0`，在 App 里点 **扫描二维码**，对准终端。同一 Wi-Fi、Tailscale 之类的 VPN，或放在 TLS 后面的服务器都可以。还有一个只含这一模式、更小的 [`nanomuse-connect.apk`](https://github.com/nano-muse/nanoMuse/releases/latest/download/nanomuse-connect.apk)，任意 CPU 可用。
 
 比浏览器标签页多出来的：
 
 - App 关着也有通知：审批、提问和后台工作的结果，点开直达对应聊天
+- Agent 的 shell 能用上手机：沙箱里的 `nanomuse-device`、`nanomuse-browser`、`nanomuse-open` 能触达剪贴板、日历、闹钟和 App 内浏览器——受同一个 Sentinel 管
 - 扫码连接，局域网里的 `http://` 直接可用
 - 附件用系统文件选择器，下载进手机，链接用真正的浏览器打开
 

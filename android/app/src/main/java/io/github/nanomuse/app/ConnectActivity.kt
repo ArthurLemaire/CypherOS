@@ -10,6 +10,8 @@ import androidx.core.view.WindowInsetsCompat
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import io.github.nanomuse.app.databinding.ActivityConnectBinding
+import io.github.nanomuse.app.runtime.LocalRuntime
+import io.github.nanomuse.app.runtime.RuntimeService
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.OkHttpClient
@@ -18,15 +20,20 @@ import okhttp3.Response
 import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
 
 /**
- * First screen: point the phone at the QR code `nanomuse serve` prints, or paste the link.
- * The link is checked against the server (`GET /api/state`) before it is kept, so a typo or
- * a stale token is caught here and not as a blank page later.
+ * First screen. The build that carries a root file system asks where nanoMuse should live:
+ * on this phone (unpack, then start the runtime) or on the user's computer. The connect-only
+ * build goes straight to the second: point the phone at the QR code `nanomuse serve` prints,
+ * or paste the link. The link is checked against the server (`GET /api/state`) before it is
+ * kept, so a typo or a stale token is caught here and not as a blank page later.
  */
 class ConnectActivity : AppCompatActivity() {
     private lateinit var ui: ActivityConnectBinding
     private lateinit var prefs: Prefs
+    private lateinit var runtime: LocalRuntime
+    private var runtimeListener: ((RuntimeService.State, String?) -> Unit)? = null
     private val http = OkHttpClient.Builder().connectTimeout(6, TimeUnit.SECONDS).readTimeout(6, TimeUnit.SECONDS).build()
 
     private val scanner = registerForActivityResult(ScanContract()) { result ->
@@ -38,12 +45,14 @@ class ConnectActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = Prefs(this)
-        if (prefs.connected) {
+        runtime = LocalRuntime(this)
+        if (prefs.connected && (!prefs.isLocal || runtime.installed)) {
             openMain()
             return
         }
         ui = ActivityConnectBinding.inflate(layoutInflater)
         setContentView(ui.root)
+        if (runtime.available) setupModes()
         ViewCompat.setOnApplyWindowInsetsListener(ui.root) { v, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime())
             v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
@@ -67,8 +76,102 @@ class ConnectActivity : AppCompatActivity() {
             } else false
         }
         // a link shared from another app (or a deep link) lands here too
-        intent?.dataString?.let { ui.url.setText(it) }
+        intent?.dataString?.let {
+            ui.url.setText(it)
+            showRemote()
+        }
     }
+
+    override fun onDestroy() {
+        runtimeListener?.let { RuntimeService.listeners.remove(it) }
+        super.onDestroy()
+    }
+
+    // ------------------------------------------------------------------ on this phone
+
+    private fun setupModes() {
+        ui.title.text = getString(R.string.mode_title)
+        ui.body.text = getString(R.string.mode_body)
+        ui.modes.visibility = View.VISIBLE
+        ui.remote.visibility = View.GONE
+        val mb = ((runtime.bundled?.unpacked ?: 0L) / (1024 * 1024)).toInt().coerceAtLeast(1)
+        ui.localHint.text = getString(R.string.mode_local_hint, mb)
+        ui.runLocal.setOnClickListener { runLocal() }
+        ui.useRemote.setOnClickListener { showRemote() }
+    }
+
+    private fun showRemote() {
+        if (!runtime.available) return
+        ui.title.text = getString(R.string.connect_title)
+        ui.body.text = getText(R.string.connect_body)
+        ui.modes.visibility = View.GONE
+        ui.install.visibility = View.GONE
+        ui.remote.visibility = View.VISIBLE
+    }
+
+    /** Unpack (once), start the service, wait for the first health check, open the app. */
+    private fun runLocal() {
+        ui.modes.visibility = View.GONE
+        ui.error.visibility = View.GONE
+        ui.install.visibility = View.VISIBLE
+        ui.installProgress.isIndeterminate = false
+        ui.installProgress.progress = 0
+        ui.installText.text = getString(R.string.install_unpacking, 0)
+        thread(name = "rootfs-install") {
+            try {
+                if (!runtime.installed) {
+                    var lastPercent = -1
+                    runtime.install { done, total, _ ->
+                        val percent = if (total > 0) (done * 100 / total).toInt().coerceIn(0, 100) else 0
+                        if (percent != lastPercent) {
+                            lastPercent = percent
+                            runOnUiThread {
+                                ui.installProgress.progress = percent * 10
+                                ui.installText.text = getString(R.string.install_unpacking, percent)
+                            }
+                        }
+                    }
+                }
+                runOnUiThread { startLocal() }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    ui.install.visibility = View.GONE
+                    ui.modes.visibility = View.VISIBLE
+                    fail(getString(R.string.install_failed, e.message ?: e.javaClass.simpleName))
+                }
+            }
+        }
+    }
+
+    private fun startLocal() {
+        ui.installProgress.isIndeterminate = true
+        ui.installText.text = getString(R.string.install_starting)
+        prefs.mode = Prefs.MODE_LOCAL
+        val listener: (RuntimeService.State, String?) -> Unit = { state, detail ->
+            runOnUiThread {
+                when (state) {
+                    RuntimeService.State.RUNNING -> {
+                        runtimeListener?.let { RuntimeService.listeners.remove(it) }
+                        runtimeListener = null
+                        openMain()
+                    }
+                    RuntimeService.State.FAILED -> {
+                        runtimeListener?.let { RuntimeService.listeners.remove(it) }
+                        runtimeListener = null
+                        ui.install.visibility = View.GONE
+                        ui.modes.visibility = View.VISIBLE
+                        fail(detail ?: RuntimeService.lastError ?: getString(R.string.runtime_no_answer))
+                    }
+                    else -> Unit
+                }
+            }
+        }
+        runtimeListener = listener
+        RuntimeService.listeners.add(listener)
+        RuntimeService.start(this)
+    }
+
+    // ------------------------------------------------------------------ on the computer
 
     private fun connect(text: String) {
         val parsed = Prefs.parseLink(text)
@@ -90,6 +193,7 @@ class ConnectActivity : AppCompatActivity() {
                         response.code == 401 || response.code == 403 -> fail(getString(R.string.connect_unauthorized))
                         !response.isSuccessful -> fail(getString(R.string.connect_unreachable, origin))
                         else -> {
+                            prefs.mode = Prefs.MODE_REMOTE
                             prefs.serverUrl = origin
                             prefs.token = token
                             prefs.agentName = runCatching { JSONObject(body).getJSONObject("profile").optString("name") }.getOrDefault("")
