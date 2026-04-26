@@ -25,7 +25,8 @@ These win over the file. They cover the settings people change most often and wh
 | `NANOMUSE_SENTINEL_MODE` | `sentinel.mode` |
 | `NANOMUSE_SEARCH_PROVIDER`, `NANOMUSE_SEARCH_API_KEY`, `NANOMUSE_SEARCH_BASE_URL` | `[connectors.search]` |
 | `NANOMUSE_SERVER_HOST`, `NANOMUSE_SERVER_PORT`, `NANOMUSE_SERVER_TOKEN` | `[server]` |
-| `NANOMUSE_BROWSER_ENABLED=1` | `browser.enabled = true` (only ever turns it on; the browser Docker image sets it) |
+| `NANOMUSE_BROWSER_ENABLED=1` | `browser.enabled = true` (only ever turns it on; the browser Docker image sets it; the phone sets it through `NANOMUSE_DEVICE`) |
+| `NANOMUSE_BROWSER_BACKEND` | `browser.backend`: `auto`, `playwright` or `device` |
 | `NANOMUSE_GUI_ENABLED=1`, `NANOMUSE_GUI_PROVIDER`, `NANOMUSE_GUI_MODEL`, `NANOMUSE_GUI_BASE_URL`, `NANOMUSE_GUI_API_KEY` | `[gui]` — operating the phone, and the model that does it |
 | `NANOMUSE_VAULT_KEY` | Fernet key for the vault (default: `<data_dir>/vault.key`) |
 | `NANOMUSE_LOG_LEVEL` | `log_level` |
@@ -254,9 +255,13 @@ Mail triggers need the [email connector](#email); event triggers need a [calenda
 ```toml
 [browser]
 enabled    = true      # pip install "nanomuse[browser]" && playwright install chromium
-headless   = true
+backend    = "auto"    # auto | playwright | device — the phone's own WebView when a nanoMuse app is connected, Chromium otherwise
+profile    = ""        # mobile | desktop | "" (mobile on the phone, desktop on a computer)
+headless   = true      # Playwright only
 timeout_ms = 30000
 ```
+
+Logins made in Chromium live in `<workspace>/browser-profile/` and survive a restart; on the phone they live in the app's WebView. The two backends, the take-over, the logged-in `fetch` and what cannot log in inside a WebView: [browser.md](browser.md).
 
 ### The phone (`[gui]`)
 

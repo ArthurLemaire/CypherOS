@@ -152,6 +152,9 @@ class WebUI:
             "action": frame.action,
             "frame": fid,
             "by_user": frame.by_user,
+            "backend": frame.backend,
+            "width": frame.width,
+            "height": frame.height,
             "status": "live",
             "updated_ts": now_iso(),
         }

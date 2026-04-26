@@ -72,7 +72,7 @@ export function frameUrl(thread: string, frame: string): string {
 }
 
 export interface BrowserControl {
-  action: "click" | "type" | "key" | "scroll" | "navigate" | "look";
+  action: "click" | "type" | "key" | "scroll" | "navigate" | "look" | "handed_back";
   x?: number;
   y?: number;
   text?: string;

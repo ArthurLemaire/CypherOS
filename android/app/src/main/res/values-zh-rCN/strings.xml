@@ -56,4 +56,10 @@
     <string name="offline_body">%1$s 没有响应。请确认服务器在运行，并且手机和电脑在同一个网络。</string>
     <string name="retry">重试</string>
     <string name="change_server">更换服务器</string>
+
+    <string name="takeover_title">你的浏览器</string>
+    <string name="takeover_hint">页面交给你了。登录或做决定后点“完成”，智能体从这里继续。</string>
+    <string name="takeover_done">完成</string>
+    <string name="takeover_open_external">用系统浏览器打开</string>
+    <string name="takeover_nothing">智能体现在没有打开的页面。</string>
 </resources>

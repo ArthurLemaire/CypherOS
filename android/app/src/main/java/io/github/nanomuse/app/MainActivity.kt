@@ -20,6 +20,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -27,6 +28,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import io.github.nanomuse.app.browser.TakeOverSheet
 import io.github.nanomuse.app.databinding.ActivityMainBinding
 import io.github.nanomuse.app.runtime.LocalRuntime
 import io.github.nanomuse.app.runtime.RuntimeService
@@ -44,6 +46,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var prefs: Prefs
     private var pendingThread: String? = null
     private var waitingForRuntime = false
+    private var takeOver: TakeOverSheet? = null
     private val runtimeListener: (RuntimeService.State, String?) -> Unit = { state, detail ->
         runOnUiThread { runtimeChanged(state, detail) }
     }
@@ -281,6 +284,16 @@ class MainActivity : AppCompatActivity() {
         ui.offline.visibility = View.VISIBLE
     }
 
+    /** From the JS bridge: the agent's browser (this app's own WebView) into the user's hands. */
+    fun takeOverBrowser(thread: String) {
+        val sheet = takeOver ?: TakeOverSheet(this) {
+            val js = "window.dispatchEvent(new CustomEvent('nanomuse:browser-handed-back', {detail: {thread: " +
+                org.json.JSONObject.quote(thread) + "}}))"
+            if (::ui.isInitialized) ui.web.evaluateJavascript(js, null)
+        }.also { takeOver = it }
+        if (!sheet.show()) Toast.makeText(this, R.string.takeover_nothing, Toast.LENGTH_SHORT).show()
+    }
+
     /** From the JS bridge and the offline screen: drop the server and start over. */
     fun forget() {
         NotifyService.stop(this)
@@ -307,6 +320,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         RuntimeService.listeners.remove(runtimeListener)
+        takeOver?.dismiss()
         if (::ui.isInitialized) ui.web.destroy()
         super.onDestroy()
     }

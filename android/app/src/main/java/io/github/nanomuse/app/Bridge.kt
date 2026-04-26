@@ -36,6 +36,20 @@ class Bridge(private val activity: MainActivity) {
         activity.runOnUiThread { activity.forget() }
     }
 
+    /**
+     * The agent's browser runs in this app: pull it into the take-over sheet. When the user
+     * taps Done the page dispatches `nanomuse:browser-handed-back` with the thread, and the
+     * web app tells the server.
+     */
+    @JavascriptInterface
+    fun takeOverBrowser(thread: String?) {
+        activity.runOnUiThread { activity.takeOverBrowser(thread ?: "") }
+    }
+
+    /** Whether this app has a browser of its own to take over (always, on Android). */
+    @JavascriptInterface
+    fun hasBrowser(): Boolean = true
+
     companion object {
         const val NAME = "NanoMuseAndroid"
     }

@@ -17,6 +17,7 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
 import io.github.nanomuse.app.App
+import io.github.nanomuse.app.DeviceLink
 import io.github.nanomuse.app.MainActivity
 import io.github.nanomuse.app.Notifier
 import io.github.nanomuse.app.Prefs
@@ -54,6 +55,7 @@ class RuntimeService : Service() {
     private var startedAt = 0L
     private var ws: WebSocket? = null
     private var wsRetry: Runnable? = null
+    private var link: DeviceLink? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var releaseLock: Runnable? = null
     private val busy = HashMap<String, String>() // thread → what it is doing
@@ -199,6 +201,16 @@ class RuntimeService : Service() {
         closeSocket()
         val request = Request.Builder().url("ws://127.0.0.1:$port/ws?token=$token").build()
         ws = http.newWebSocket(request, object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                handler.post {
+                    if (ws !== webSocket) return@post
+                    // the phone is the server's device: its browser is the agent's browser
+                    link?.close()
+                    link = DeviceLink(this@RuntimeService) { reply -> webSocket.send(reply.toString()) }
+                    webSocket.send(link!!.hello().toString())
+                }
+            }
+
             override fun onMessage(webSocket: WebSocket, text: String) {
                 val msg = runCatching { JSONObject(text) }.getOrNull() ?: return
                 handler.post { if (ws === webSocket) handle(msg) }
@@ -225,10 +237,13 @@ class RuntimeService : Service() {
     private fun closeSocket() {
         wsRetry?.let { handler.removeCallbacks(it) }
         wsRetry = null
+        link?.close()
+        link = null
         ws?.let { s -> ws = null; runCatching { s.close(1000, null) } }
     }
 
     private fun handle(msg: JSONObject) {
+        if (link?.handle(msg) == true) return
         // approvals, questions, finished background work: the same notifications as remote mode
         notifier.handle(msg)
         when (msg.optString("kind")) {

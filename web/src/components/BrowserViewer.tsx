@@ -1,5 +1,6 @@
 import { ArrowRight, CornerDownLeft, Globe, Hand, Loader2, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { androidApp, nativeTakeOver } from "../android";
 import { api, frameUrl } from "../api";
 import { useT } from "../i18n";
 import { useStore } from "../store";
@@ -25,6 +26,25 @@ export function BrowserViewer({ thread, eventId, onClose }: { thread: string; ev
   const imgRef = useRef<HTMLImageElement>(null);
 
   useEffect(() => setGone(false), [event?.frame]);
+
+  // the phone's own browser: the app shows the real page in a sheet; when the user is done
+  // it says so and the server takes a fresh look
+  const inApp = event?.backend === "device" && nativeTakeOver();
+  useEffect(() => {
+    if (!inApp) return;
+    const onBack = (e: Event) => {
+      const detail = (e as CustomEvent<{ thread?: string }>).detail;
+      if (detail?.thread && detail.thread !== thread) return;
+      void api.browserControl(thread, { action: "handed_back" }).catch((err: Error) => toast(err.message));
+    };
+    window.addEventListener("nanomuse:browser-handed-back", onBack);
+    return () => window.removeEventListener("nanomuse:browser-handed-back", onBack);
+  }, [inApp, thread, toast]);
+
+  const takeOver = () => {
+    if (inApp) androidApp()?.takeOverBrowser?.(thread);
+    else setControl(true);
+  };
 
   const act = async (body: Parameters<typeof api.browserControl>[1]) => {
     setBusy(body.action);
@@ -149,7 +169,7 @@ export function BrowserViewer({ thread, eventId, onClose }: { thread: string; ev
               </button>
               <button
                 type="button"
-                onClick={() => setControl(true)}
+                onClick={takeOver}
                 className="flex items-center gap-1.5 rounded-full bg-accent px-3.5 py-2 text-[13px] font-semibold text-white"
               >
                 <Hand size={14} /> {t("Take over")}

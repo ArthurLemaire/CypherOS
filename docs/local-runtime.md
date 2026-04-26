@@ -86,7 +86,7 @@ And the environment (`nanomuse-serve` in the rootfs reads it):
   | CLI | Does |
   | --- | --- |
   | `nanomuse-device <capability> [k=v …]` | A device tool (clipboard, calendar, alarm, contacts, location, notify, photos) |
-  | `nanomuse-browser <action> [k=v …]` | The `browser` tool: `navigate` / `extract` / `click` / `type` / `fetch` / `screenshot` |
+  | `nanomuse-browser <action> [k=v …]` | The `browser` tool: `navigate` / `extract` / `click` / `type` / `key` / `scroll` / `back` / `screenshot` / `fetch URL [--post BODY]` (with the browser's cookies) / `profile mobile\|desktop` / `close` — [browser.md](browser.md) |
   | `nanomuse-open <url>` | Opens the page in the in-app take-over sheet; the rootfs sets it as `BROWSER` |
 
   The server runs the request as a nested tool call inside the calling command's context — the same Sentinel, the same permissions, the same timeline (`tool` events carry `via: "shell"`), so a script can no more escape the rules than the model can. Off the phone (no `NANOMUSE_BRIDGE` in the environment) the CLIs exit 2 with a one-line note; on a computer these things are done from the desktop anyway.
@@ -96,7 +96,7 @@ And the environment (`nanomuse-serve` in the rootfs reads it):
 - **PRoot is user-mode.** No real root, no mounting, no raw sockets, no `ptrace` inside (PRoot already uses it). Programs that read `/proc/self/…` or `/proc/stat` get the real Android values or the stand-ins. Anything that wants a capability Android does not grant apps (binding to ports below 1024, changing uid) fails the same way it would in Termux.
 - **Slower syscalls.** PRoot works by `ptrace`-ing every syscall. Compute-bound Python is barely affected; syscall-heavy work (a `git clone` of a big tree, `pip install` of many small files, `find /`) is 2–5× slower than native. `nanomuse serve` itself is idle most of the time.
 - **musl, not glibc.** Alpine uses musl. Most Python wheels come as `musllinux`; a prebuilt binary that assumes glibc needs `apk add gcompat`. Node is the Alpine build.
-- **No Chromium in the rootfs.** Playwright cannot run a browser here; the browser is always the app's own WebView (the `Browser` tool's device backend, `nanomuse-browser` from scripts). `apk add chromium` does install but does not start under PRoot on Android.
+- **No Chromium in the rootfs.** Playwright cannot run a browser here; the browser is always the app's own WebView (the `Browser` tool's device backend, `nanomuse-browser` from scripts — [browser.md](browser.md)). `apk add chromium` does install but does not start under PRoot on Android.
 - **Storage.** About 330 MB after unpacking, plus whatever the user installs. The compressed rootfs is under 70 MB; the APK a little more.
 - **Background limits.** Android may still kill the service under memory pressure or aggressive vendor battery managers (the per-vendor battery allowances are in [android.md](android.md)). The service is `START_STICKY` and restarts; the scheduler catches up on missed routines.
 - **What is in the box.** Alpine's `apk`, `git`, `curl`, `jq`, `bash`, `openssh-client`, `python3` with `pip`, and Node with `npm`. `uv` is not (35 MB); `pip install uv` gets it. `nanomuse-mirror cn|default` switches apk, pip and npm between the upstream servers and mirrors in mainland China; the first start picks from the phone's region.

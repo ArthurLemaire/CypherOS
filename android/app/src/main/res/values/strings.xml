@@ -61,4 +61,11 @@
     <string name="offline_body">%1$s did not answer. Check that the server is running and that this phone is on the same network.</string>
     <string name="retry">Try again</string>
     <string name="change_server">Change server</string>
+
+    <!-- The browser take-over sheet -->
+    <string name="takeover_title">Your browser</string>
+    <string name="takeover_hint">You have the page. Sign in or decide, then tap Done — the agent continues from here.</string>
+    <string name="takeover_done">Done</string>
+    <string name="takeover_open_external">Open in the system browser</string>
+    <string name="takeover_nothing">The agent has no page open right now.</string>
 </resources>

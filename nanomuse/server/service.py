@@ -750,6 +750,12 @@ class MuseService:
         tool = self.browser
         if tool is not None:
             tool.on_frame = self.ui.on_browser_frame
+            tool.link = self.phone
+
+    def browser_backend(self) -> str:
+        """Where the browser renders now: "playwright", "device", or "" for nowhere."""
+        tool = self.browser
+        return tool.backend_kind if tool is not None else ""
 
     async def browser_control(self, thread: str, body: dict[str, Any]) -> dict[str, Any]:
         """The user takes over the agent's browser from the app (tap, type, open a URL)."""
@@ -757,7 +763,7 @@ class MuseService:
         if tool is None:
             raise LookupError("the browser tool is not enabled")
         action = str(body.get("action") or "")
-        if action not in ("click", "type", "key", "scroll", "navigate", "look"):
+        if action not in ("click", "type", "key", "scroll", "navigate", "look", "handed_back"):
             raise ValueError(f"unknown browser action '{action}'")
         if action not in ("look", "navigate") and not tool.open:
             raise LookupError("the browser is not open right now — open a URL first")
@@ -1758,6 +1764,7 @@ class MuseService:
                 "mcp": [m.name for m in s.mcp.servers],
             },
             "phone": self.phone_view(),
+            "browser": {"backend": self.browser_backend()},
             "tools": [
                 {"name": t.name, "risk": t.risk.value, "description": t.description[:160]}
                 for t in self.app.tools

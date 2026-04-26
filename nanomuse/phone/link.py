@@ -2,7 +2,7 @@
 
 A device is any WebSocket client that announced itself::
 
-    → {"kind": "device", "name": "Pixel 7", "platform": "android", "gui": true,
+    → {"kind": "device", "name": "Pixel 7", "platform": "android", "gui": true, "browser": true,
        "apps": [{"id": "com.tencent.mm", "name": "微信"}], "screen": {"width": 1080, "height": 2400}}
 
 From then on the server may ask it things; every request carries an id and gets exactly
@@ -11,9 +11,11 @@ one answer::
     ← {"kind": "device_request", "id": "r1", "op": "screen", "params": {}}
     → {"kind": "device_result", "id": "r1", "ok": true, "result": {...}}
 
-Operations: ``screen`` (the current screen, see :mod:`nanomuse.phone.screen`) and ``act``
-(one action, see :mod:`nanomuse.tools.phone`). The device is a single user's own phone:
-when more than one is connected, the most recent one that can do GUI work is *the* phone.
+Operations: ``screen`` (the current screen, see :mod:`nanomuse.phone.screen`), ``act``
+(one action, see :mod:`nanomuse.tools.phone`) and ``browser`` (the app's WebView, see
+:class:`nanomuse.tools.browser_backends.DeviceBackend`). The device is a single user's own
+phone: when more than one is connected, the most recent one with the capability asked for
+is *the* phone.
 """
 
 from __future__ import annotations
@@ -38,6 +40,7 @@ class Device:
     name: str = "phone"
     platform: str = "unknown"  # android | mobilegym | ...
     gui: bool = False
+    browser: bool = False  # it has a WebView the agent may drive
     apps: list[dict[str, str]] = field(default_factory=list)  # [{"id": ..., "name": ...}]
     width: int = 0
     height: int = 0
@@ -50,6 +53,7 @@ class Device:
             "name": self.name,
             "platform": self.platform,
             "gui": self.gui,
+            "browser": self.browser,
             "apps": len(self.apps),
             "width": self.width,
             "height": self.height,
@@ -95,13 +99,20 @@ class PhoneLink:
             name=str(info.get("name") or "phone")[:60],
             platform=str(info.get("platform") or "unknown")[:30],
             gui=bool(info.get("gui")),
+            browser=bool(info.get("browser")),
             apps=apps,
             width=int(screen.get("width") or 0),
             height=int(screen.get("height") or 0),
             send=send,
         )
         self.devices[conn_id] = device
-        logger.info("phone connected: {} ({}, gui={})", device.name, device.platform, device.gui)
+        logger.info(
+            "phone connected: {} ({}, gui={}, browser={})",
+            device.name,
+            device.platform,
+            device.gui,
+            device.browser,
+        )
         self._changed()
         return device
 
@@ -125,7 +136,15 @@ class PhoneLink:
     @property
     def device(self) -> Device | None:
         """The phone to operate: the most recently connected one that can do GUI work."""
-        capable = [d for d in self.devices.values() if d.gui]
+        return self._latest(lambda d: d.gui)
+
+    @property
+    def browser_device(self) -> Device | None:
+        """The phone whose WebView the browser tool may drive."""
+        return self._latest(lambda d: d.browser)
+
+    def _latest(self, can: Callable[[Device], bool]) -> Device | None:
+        capable = [d for d in self.devices.values() if can(d)]
         if not capable:
             return None
         return max(capable, key=lambda d: d.connected_at)
@@ -144,9 +163,13 @@ class PhoneLink:
 
     # ------------------------------------------------------------------ requests
     async def request(
-        self, op: str, params: dict[str, Any] | None = None, timeout: float | None = None
+        self,
+        op: str,
+        params: dict[str, Any] | None = None,
+        timeout: float | None = None,
+        device: Device | None = None,
     ) -> dict[str, Any]:
-        device = self.device
+        device = device or self.device
         if device is None or device.send is None:
             raise DeviceError(
                 "no phone is connected. Open the nanoMuse app on the phone (with GUI operation "
@@ -188,6 +211,20 @@ class PhoneLink:
 
     async def act(self, params: dict[str, Any], timeout: float | None = None) -> dict[str, Any]:
         return await self.request("act", params, timeout=timeout)
+
+    async def browser(
+        self, op: str, params: dict[str, Any] | None = None, timeout: float | None = None
+    ) -> dict[str, Any]:
+        """One browser operation on the phone's WebView (``op`` as in ``DeviceBackend``)."""
+        device = self.browser_device
+        if device is None:
+            raise DeviceError(
+                "no phone with a browser is connected. Open the nanoMuse app on the phone, "
+                "then try again."
+            )
+        return await self.request(
+            "browser", {"op": op, **(params or {})}, timeout=timeout, device=device
+        )
 
 
 __all__ = ["Device", "DeviceError", "PhoneLink", "Sender"]

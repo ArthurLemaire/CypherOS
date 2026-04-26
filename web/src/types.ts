@@ -116,6 +116,11 @@ export interface BrowserEvent extends BaseEvent {
   status: "live" | "done";
   by_user?: boolean;
   updated_ts?: string;
+  /** which browser drew the frame: the phone's own WebView ("device") or Playwright on the server */
+  backend?: "device" | "playwright" | string;
+  /** frame size in CSS pixels — taps are mapped onto this */
+  width?: number;
+  height?: number;
 }
 
 export type TimelineEvent =

@@ -129,6 +129,7 @@ nanomuse serve --host 0.0.0.0        # 打印一个网址和一个二维码
 
 - App 关着也有通知：审批、提问和后台工作的结果，点开直达对应聊天
 - Agent 的 shell 能用上手机：沙箱里的 `nanomuse-device`、`nanomuse-browser`、`nanomuse-open` 能触达剪贴板、日历、闹钟和 App 内浏览器——受同一个 Sentinel 管
+- 手机自己的浏览器：Agent 在 App 的 WebView 里浏览，后台也全速运行；"接管"把真实页面推给你登录或做决定，点"完成"它接着干（[docs/browser.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/browser.md)）
 - 扫码连接，局域网里的 `http://` 直接可用
 - 附件用系统文件选择器，下载进手机，链接用真正的浏览器打开
 

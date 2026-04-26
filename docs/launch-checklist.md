@@ -67,17 +67,19 @@ Decisions this list rests on (see [design.md](design.md) for the reasoning): the
 
 ## 4. Browser (P0)
 
-- [ ] `BrowserBackend` interface + `PlaywrightBackend` + `DeviceBackend`; `_ANNOTATE_JS` shared; `on_frame` identical
-- [ ] **Persistent Playwright profile**: `launch_persistent_context(workspace/browser-profile)` so desktop logins survive a restart (`nanomuse/tools/browser.py` opens a fresh context today)
-- [ ] Device protocol `browser.*`; capability declaration
-- [ ] Kotlin offscreen WebView: `measure/layout` + `draw`; third-party cookies; native setters for input; a dialog queue; downloads into the workspace; Google domains → Custom Tabs; one tab
-- [ ] **Hidden-throttling check**: a WebView not attached to a window counts as hidden (rAF stops, timers run at 1 Hz); `onResume` + VISIBLE, a 1×1 container if needed; verified on a phone
-- [ ] UA / viewport profiles mobile / desktop / custom, on both backends
-- [ ] Take-over sheet: the same WebView attached to a bottom sheet, no reload; a mutex; "Take control" / "Done"; login wall → `ask_user` → the user logs in → the run continues
-- [ ] Logged-in `fetch` action (rung two of the ladder); `CookieManager.flush()`
-- [ ] Logged-in requests from scripts are covered by `nanomuse-browser fetch` (§3); exporting a cookie file drops to P2
-- [ ] Document: Google login does not work inside a WebView; scanning a QR code on the same phone is not possible; passkeys are not portable
-- [ ] Unit tests: backend parity, protocol, the Sentinel unchanged
+- [x] `BrowserBackend` interface + `PlaywrightBackend` + `DeviceBackend`; `_ANNOTATE_JS` shared; `on_frame` identical — `nanomuse/tools/browser_backends.py`, `browser.py`
+- [x] **Persistent Playwright profile**: `launch_persistent_context(workspace/browser-profile)`; verified: persistent cookies survive a restart, session cookies (no expiry) do not — documented
+- [x] Device protocol `browser.*` (fourteen ops); capability declaration in the phone's hello (`"browser": true`) — `DeviceLink.kt`, `phone/link.py`
+- [x] Kotlin offscreen WebView (`DeviceBrowser.kt`): a `Presentation` on a private `VirtualDisplay` (composited frames from its `ImageReader` are the screenshots), `measure/layout` + `draw` as the fallback; third-party cookies; native setters + `input`/`change` events for typing; a dialog queue; downloads into the workspace (local build) or the phone's Downloads (connect); one tab
+- [x] **Hidden-throttling check**: measured on the Android 13 emulator with the app in the background — 60 rAF/s, `setInterval(10 ms)` at 100/s, `visibilityState = visible`
+- [ ] The same measurement on a real phone (owner: needs a device; Android 8–10 and vendor ROMs)
+- [x] UA / viewport profiles `mobile` / `desktop` / custom, on both backends (`profile` action, `[browser] profile`)
+- [x] Take-over sheet: the same WebView moved into a bottom sheet, no reload; `userControl` mutex; **Take over** / **Done**; the web app sends `handed_back` and the agent gets a fresh frame — verified end to end on the emulator
+- [x] Logged-in `fetch` action (rung two of the ladder), cookies both ways, `CookieManager.flush()` — verified: a cookie set by a page arrives in `fetch`
+- [x] Logged-in requests from scripts: `nanomuse-browser fetch URL [--post BODY]`, `nanomuse-browser profile` (§3); exporting a cookie file stays P2
+- [x] Document: Google login does not work inside a WebView; scanning a QR code on the same phone is not possible; passkeys are not portable — [browser.md](browser.md)
+- [x] Unit tests: backend parity, protocol decoding, the Sentinel unchanged — `tests/test_browser.py`, `tests/test_bridge.py`
+- [ ] Google domains → Custom Tabs automatically (today: the sheet's "open in the system browser" arrow; automatic hand-off is P2 because a login made there does not reach the WebView anyway)
 
 ---
 

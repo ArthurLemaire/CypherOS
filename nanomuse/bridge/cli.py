@@ -157,8 +157,18 @@ def browser_main(argv: list[str] | None = None) -> int:
     )
     sub.add_parser("back", help="go back one page")
     sub.add_parser("screenshot", help="a picture of the page; prints where it was saved")
-    f = sub.add_parser("fetch", help="a page as text, without opening it in the view")
+    f = sub.add_parser(
+        "fetch",
+        help="GET a URL with the browser's cookies (signed in) and print the raw body; "
+        "--post BODY for a POST",
+    )
     f.add_argument("url")
+    f.add_argument("--post", dest="body", metavar="BODY", help="send this body with POST")
+    pr = sub.add_parser("profile", help="how the browser presents itself")
+    pr.add_argument("profile", nargs="?", choices=["mobile", "desktop"])
+    pr.add_argument("--user-agent", dest="user_agent")
+    pr.add_argument("--width", type=int)
+    pr.add_argument("--height", type=int)
     sub.add_parser("close", help="close the browser")
     ns = p.parse_args(argv)
     client = BridgeClient()
@@ -166,11 +176,24 @@ def browser_main(argv: list[str] | None = None) -> int:
         print(NOT_HERE, file=sys.stderr)
         return 2
     body: dict[str, Any] = {"action": ns.action}
-    for key in ("url", "index", "text", "key", "direction"):
+    for key in (
+        "url",
+        "index",
+        "text",
+        "key",
+        "direction",
+        "profile",
+        "user_agent",
+        "width",
+        "height",
+    ):
         if getattr(ns, key, None) is not None:
             body[key] = getattr(ns, key)
     if ns.action == "type" and ns.submit:
         body["submit"] = True
+    if ns.action == "fetch" and ns.body is not None:
+        body["method"] = "POST"
+        body["body"] = ns.body
     return _print(client.post("browser", body), ns.json)
 
 
