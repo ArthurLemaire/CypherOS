@@ -36,11 +36,11 @@
   animation: rp-tilt 7s ease-in-out infinite;
 }
 .rp .rp-ear-l {
-  transform-origin: 62px 60px;
+  transform-origin: 50px 72px;
   animation: rp-twitch-l 9s ease-in-out infinite;
 }
 .rp .rp-ear-r {
-  transform-origin: 138px 60px;
+  transform-origin: 150px 72px;
   animation: rp-twitch-r 11s ease-in-out 2s infinite;
 }
 .rp .rp-eyes {
@@ -52,7 +52,7 @@
   animation: rp-blink 6.4s linear infinite;
 }
 .rp .rp-tail {
-  transform-origin: 150px 200px;
+  transform-origin: 142px 198px;
   animation: rp-tail 5s ease-in-out infinite;
 }
 
@@ -203,11 +203,11 @@
   animation: rp-tilt-hold 3.2s ease-in-out infinite;
 }
 .rp-waiting .rp-raise {
-  transform-origin: 152px 178px;
+  transform-origin: 150px 180px;
   animation: rp-wave 3.2s ease-in-out infinite;
 }
 .rp-waiting .rp-bang {
-  transform-origin: 164px 50px;
+  transform-origin: 166px 50px;
   animation: rp-bob 1.4s ease-in-out infinite;
 }
 @keyframes rp-hop {

@@ -32,7 +32,11 @@ A study of Muse's screens — the announcement, the walkthrough and sizzle video
 
 ## The red panda
 
-Muse's doll says "there is someone here, and it is busy" without a spinner. nanoMuse's answer is a red panda — small, red-brown, a ringed tail, cream cheeks, tear marks — drawn as an SVG so that it can be posed from the app's state instead of swapped between photographs.
+Muse's doll says "there is someone here, and it is busy" without a spinner. nanoMuse's answer is a red panda — a round head with two small ringed ears, a cream face that comes down in two cheek lobes to a dark nose, big dark eyes with a catchlight, a ringed tail — drawn as an SVG so that it can be posed from the app's state instead of swapped between photographs.
+
+**Why this animal, drawn this way.** A giant panda is the obvious mascot and the one everyone already uses; a red panda is small, warm-coloured and curious, and reads as "a little helper" rather than "a national symbol". The drawing is simplified — few parts, big eyes, one expression change per mood — so it survives 16 px. Above that it is *2.5D*: radial gradients on the fur, body and cheeks, a sheen on the top of the head, a shade under the chin, a shadow the body sits in — the roundness a plush doll has, without a 3D render, which would not pose from CSS and would not stay a few kilobytes. It is never a real render and never an illustration with outlines; the parts are flat shapes with soft light on them.
+
+**Three levels of detail** (`detail` on the component, chosen from `size` by `detailFor` when not given): `mark` up to 28 px is flat colour with the head scaled up to fill the plate — the logo, tab-bar and list sizes; `avatar` up to 160 px has the gradients; `hero` above that adds the sheen, the finer tail rings and the small props. The icon, the Android launcher and the MobileGym launcher are the `mark` level rendered from the same geometry (`web/src/components/redPandaShapes.ts`), which is the one place the shapes live: the component and the asset generator both read from it.
 
 | State | What the app knows | What the panda does |
 |---|---|---|
@@ -45,7 +49,7 @@ Muse's doll says "there is someone here, and it is busy" without a spinner. nano
 
 The moods come from `web/src/mood.ts`: the status gives the pose it holds; two moments the store records — `finishedAt`, `mishapAt` — colour it briefly. Motion is CSS keyframes on SVG groups; every part is positioned by coordinates so the transforms can be animated, and `transform-box: view-box` with an explicit origin keeps the pivots where they belong. `still` freezes it for lists and pickers; `prefers-reduced-motion` stops all of it.
 
-The same drawing, reduced to the head, is the logo: `web/public/icon.svg` and the PWA icons, the README cover, and the Android adaptive launcher (a forest-green plate; a monochrome silhouette with the eyes and nose punched out for themed icons and the status bar). All of them are generated from one list of paths so they cannot drift apart.
+The same drawing, reduced to the head, is the logo: `web/public/icon.svg` and `mark.svg`, the PWA icons, the README cover, the Android adaptive launcher (a forest-green plate; the head flat, no gradients, because launcher masks and themed icons flatten everything anyway; a monochrome silhouette with the eyes, nose and mouth punched out for themed icons and the status bar) and the launcher icon of the MobileGym app. `npm run mascot:assets` in `web/` writes the vectors from `redPandaShapes.ts`, `npm run site:mascot` renders the six moods for the website, and `python scripts/mascot_png.py` rasterises the PWA icons and the cover — nothing is drawn twice, so the copies cannot drift apart. `RedPanda.test.tsx` holds a snapshot of the flat head, the silhouette and the idle hero; a change to the drawing has to update it on purpose.
 
 ## Colour and type, in numbers
 
@@ -60,7 +64,7 @@ The same drawing, reduced to the head, is the logo: `web/public/icon.svg` and th
 | `accent` | `#0064d4` | `#1793ff` |
 | user bubble | `#d8e9ff` | `#1c3d66` |
 
-The panda: fur `#d8632e`, deep fur `#bf4f23`, cream `#fff4e6`, markings `#2a1a14`, tear marks `#a8482a`, blush `#f4a0a0`; the plate behind it in the app `#dcebdc`, the logo plate `#2f7a5a`.
+The panda: fur `#d8632e` lit to `#ee8a4c` and shaded to `#9e3f18`, deep fur `#bf4f23` (ears, tail rings, paws), cream `#fff4e6` from `#fffaf2` to `#f3dfc6` at the cheeks, markings `#2a1a14` with an eye highlight `#4a302a`, blush `#f4a0a0`; the plate behind it in the app `#dcebdc`, the logo plate `#2f7a5a`. The `mark` level uses only the base colours.
 
 Figtree throughout, set with Tailwind's scale: 15 px in bubbles, 12–13 px for status lines and captions, 17–20 px semibold for titles.
 

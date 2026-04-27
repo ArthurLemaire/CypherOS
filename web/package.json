@@ -12,7 +12,8 @@
     "test": "vitest run",
     "check": "npm run lint && npm run typecheck && npm test",
     "preview": "vite preview",
-    "site:mascot": "node scripts/site-mascot.mjs"
+    "site:mascot": "node scripts/site-mascot.mjs",
+    "mascot:assets": "node scripts/mascot-assets.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.577.0",
