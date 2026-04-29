@@ -48,4 +48,4 @@ What does not change across phases: one agent rather than a framework, the Senti
 
 ## Where things are tracked
 
-The checklist in the [README](../README.md#roadmap) is the short form of this page. Issues and pull requests on [GitHub](https://github.com/nano-muse/nanoMuse) carry the detail; the [CHANGELOG](../CHANGELOG.md) records what landed.
+The checklist in the [README](../README.md#roadmap) is the short form of this page; the [launch checklist](launch-checklist.md) is the long form for the first release, item by item. Issues and pull requests on [GitHub](https://github.com/nano-muse/nanoMuse) carry the detail; the [CHANGELOG](../CHANGELOG.md) records what landed.
