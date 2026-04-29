@@ -77,7 +77,7 @@ Muse is a set of clients — iOS, Android, the web, WhatsApp, a Mac app — arou
 
 | | Meta Muse | nanoMuse |
 |---|---|---|
-| Phone | iOS and Android apps, thin clients of the VM | **Now.** An Android app and a web app; the agent runs on your computer, a home server or in Docker — no cloud VM. Next inside this phase: the app operates real apps through an accessibility service, then a local build with the brain inside the APK. |
+| Phone | iOS and Android apps, thin clients of the VM | **Now.** An Android app and a web app; the agent runs on your computer, a home server or in Docker — no cloud VM. Next inside this phase: a local build with the brain inside the APK — the whole agent, complete with the phone operator off — and, with that switch on, the app operating real apps through an accessibility service. |
 | Web | muse.ai, the same VM | **Next.** A hosted nanoMuse: a VM per user, sign in from any browser, the same agent and Sentinel, your own key or a starter quota. |
 | Desktop | a Mac app, the same VM | **Later.** A desktop app in two versions — local (the agent, its tools and its browser on the computer you sit at) and attached to your cloud VM. |
 
@@ -283,8 +283,8 @@ Three phases, one per platform; the full plan with the reasoning is in [docs/roa
 
 - [x] The agent, the Sentinel, the vault, the sandbox; the web app; the Android app; skills and MCP; 飞书 and 高德 without a screen
 - [x] The phone operator on the simulated phone, with traces
-- [ ] Android executor: the nanoMuse app operates real apps through an accessibility service (screenshots, gestures, the finger overlay), with Shizuku as an option
-- [ ] Local build: the brain inside the APK, so the phone needs no server at all
+- [ ] Local build: the brain inside the APK, so the phone needs no server at all — the whole agent, complete with the phone operator switched off
+- [ ] Android executor: with the switch on, the app operates real apps through an accessibility service (screenshots, gestures, the finger overlay), with Shizuku as an option
 - [ ] Free starter quota through the showcase gateway, then your own key
 - [ ] Muse features still missing: durable tasks with a take-over hand-off, watches that trigger on the world, ideas with evidence, a follow-up queue
 - [ ] Voice: speak a message and see it as text before it goes, through any OpenAI-compatible `/audio/transcriptions`

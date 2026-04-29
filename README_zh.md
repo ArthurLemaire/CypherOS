@@ -77,7 +77,7 @@ Muse 是围着一个 Agent 的一组客户端——iOS、Android、网页、What
 
 | | Meta Muse | nanoMuse |
 |---|---|---|
-| 手机 | iOS 和 Android App，VM 的瘦客户端 | **现在。** 一个 Android App 和一个网页 App；Agent 跑在你的电脑、家用服务器或 Docker 里——没有云端 VM。这一阶段接下来：App 通过无障碍服务操作真实 App，然后是大脑内嵌在 APK 里的本地版。 |
+| 手机 | iOS 和 Android App，VM 的瘦客户端 | **现在。** 一个 Android App 和一个网页 App；Agent 跑在你的电脑、家用服务器或 Docker 里——没有云端 VM。这一阶段接下来：大脑内嵌在 APK 里的本地版（完整的 Agent，不开界面操作也成立），以及打开开关后通过无障碍服务操作真实 App。 |
 | 网页 | muse.ai，同一台 VM | **之后。** 托管的 nanoMuse：每人一台 VM，任何浏览器登录，同一个 Agent 和 Sentinel，用自己的 key 或起步额度。 |
 | 桌面 | Mac App，同一台 VM | **再之后。** 两个版本的桌面 App——本地版（Agent、工具和浏览器都在你面前这台电脑上）和接到你云端 VM 的版本。 |
 
@@ -283,8 +283,8 @@ flowchart LR
 
 - [x] Agent、Sentinel、保险库、沙箱；网页 App；Android App；技能与 MCP；不碰界面的飞书和高德
 - [x] 模拟手机上的手机操作员，带轨迹回放
-- [ ] Android 执行器：nanoMuse App 通过无障碍服务操作真实 App（截图、手势、手指动效），Shizuku 可选
-- [ ] 本地版：大脑内嵌在 APK 里，手机完全不需要服务器
+- [ ] 本地版：大脑内嵌在 APK 里，手机完全不需要服务器——完整的 Agent，关着手机操作开关也成立
+- [ ] Android 执行器：开关打开后，App 通过无障碍服务操作真实 App（截图、手势、手指动效），Shizuku 可选
 - [ ] 通过演示站网关领取免费起步额度，之后用自己的 key
 - [ ] 还缺的 Muse 功能：可接管的持久任务、盯着世界变化的 watch、有依据的 Ideas、追问队列
 - [ ] 语音：说一句话，发出前先看到文字，走任意 OpenAI 兼容的 `/audio/transcriptions`

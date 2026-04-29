@@ -20,8 +20,8 @@ Shipped: the agent, the Sentinel, the vault and the sandbox; the web and Android
 
 Still to do in this phase:
 
-- **Android executor** — the nanoMuse app operates the real apps on the phone through an accessibility service: screenshots, gestures, the finger overlay; Shizuku as an option where it is allowed.
-- **Local build** — the brain inside the APK, so that a phone with a key needs no server at all. A model behind an API is still on the network; the *agent* is not.
+- **Local build** — the brain inside the APK, so that a phone with a key needs no server at all. A model behind an API is still on the network; the *agent* is not. This is the whole agent — chat, memory, goals, feed, skills, MCP, the Sentinel — and it is complete without the phone operator; operating the screen stays a switch that is off until you turn it on.
+- **Android executor** — with that switch on, the nanoMuse app operates the real apps on the phone through an accessibility service: screenshots, gestures, the finger overlay; Shizuku as an option where it is allowed.
 - **Starter quota** — a first budget of tokens from the showcase gateway, then your own key.
 - **Muse features still missing** — durable tasks with a take-over hand-off, watches that trigger on the world, ideas with evidence, a follow-up queue.
 - **Voice** — speak a message and see it as text before it goes, through any OpenAI-compatible `/audio/transcriptions`.
@@ -38,11 +38,11 @@ A desktop app in two versions. *Local*: the agent runs on the computer you sit a
 
 ## Features, not the definition
 
-Some of what nanoMuse does today is easy to mistake for what it is:
+Some of what nanoMuse does today is easy to mistake for what it is. The definition is the first sentence of this page — an open-source personal AI agent inspired by Muse — and the rest is where the project happens to be in September 2026:
 
-- **Operating a phone through its screen.** A hand for apps without an API — 12306, 微信, 支付宝 — and the last one the agent reaches for. 飞书 has a CLI, 高德 has an MCP server; those come first, and the showcase is written that way.
-- **No cloud VM.** True of phase 1 and a deliberate start, not a principle: phase 2 is a VM per user.
-- **Chinese services.** The built-in skills and the showcase speak Chinese because that is where the project lives and where the gaps are. The agent, the Sentinel and the apps are not tied to a country, and the app ships in English and 简体中文.
+- **Operating a phone through its screen.** A hand for apps without an API — 12306, 微信, 支付宝 — and the last one the agent reaches for. 飞书 has a CLI, 高德 has an MCP server; those come first, and the showcase is written that way. It is a switch, off by default, and every build of nanoMuse — the server, the Android app, the local build to come — is a complete agent with it off.
+- **A local APK.** Phase 1 puts the agent on hardware you own instead of a cloud VM. That is the starting point, not a principle: phase 2 is a VM per user, phase 3 a desktop in both forms.
+- **Chinese services.** The built-in skills and the showcase speak Chinese because that is where the project lives and where the gaps were widest. They are the first set of skills, not the boundary: the agent, the Sentinel, the skills format and the apps are not tied to a country, a skill for another service is a folder with a `SKILL.md`, and the app ships in English and 简体中文 with room for more.
 
 What does not change across phases: one agent rather than a framework, the Sentinel between it and anything irreversible, secrets that never reach the model, memory you can read and edit, any OpenAI-compatible model, MIT.
 
