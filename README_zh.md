@@ -29,6 +29,10 @@
   <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/screenshots/library.png" width="24%" alt="Library：Agent 做出来的页面和文件，带预览">
 </p>
 
+<p align="center">
+  <a href="https://nano-muse.github.io/nanoMuse/?lang=zh#video">▶ 看 66 秒宣传片</a> · <a href="https://nano-muse.github.io/nanoMuse/?lang=zh">官网</a> · <a href="https://demo.nanomuse.dev">在线演示</a>
+</p>
+
 ## 从这里开始
 
 | 你想… | 看这里 |

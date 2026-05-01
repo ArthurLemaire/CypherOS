@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>nanoMuse — promo storyboard</title>
+    <!-- 1280×720. Every frame is a pure function of time: render.py calls window.__render(ms)
+         and screenshots. Nothing here runs on a real clock; see site/promo/README.md. -->
+    <link rel="stylesheet" href="../assets/mascot.css" />
+    <link rel="stylesheet" href="../style.css" />
+    <style>
+      html, body { width: 1280px; height: 720px; margin: 0; overflow: hidden; background: var(--bg); }
+      body { position: relative; font-family: var(--font); color: var(--fg); }
+      .scene { position: absolute; inset: 0; display: block; }
+      .scene:not(.on) { display: none !important; }
+      .cue { opacity: 0; }
+      .cue.in { animation: enter 520ms cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+      @keyframes enter { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+      .cue.pop.in { animation-name: pop; }
+      @keyframes pop { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: none; } }
+      .cue.slide.in { animation-name: slide; }
+      .cue.gone { display: none !important; }
+      .phone-body > .cue:not(.in) { animation: none; }
+      @keyframes slide { from { opacity: 0; transform: translateY(60px); } to { opacity: 1; transform: none; } }
+
+      /* type */
+      .h { font-weight: 800; letter-spacing: -0.025em; line-height: 1.08; }
+      .h.xl { font-size: 64px; }
+      .h.l { font-size: 48px; }
+      .h.m { font-size: 36px; }
+      .cn { font-weight: 600; letter-spacing: 0; }
+      .sub { color: var(--muted); font-size: 22px; margin-top: 14px; }
+      .muted { color: var(--muted); }
+      .accent { color: var(--accent); }
+
+      /* scene 1 + 8: title cards */
+      .center { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; height: 100%; }
+      .big-panda { width: 220px; height: 220px; border-radius: 50%; background: var(--surface-2); position: relative; margin-bottom: 22px; }
+      .big-panda .clip { position: absolute; inset: 0; border-radius: 50%; overflow: hidden; }
+      .big-panda svg { width: 100%; height: 100%; display: block; }
+      .word { font-size: 56px; font-weight: 800; letter-spacing: -0.03em; display: flex; align-items: center; gap: 16px; }
+      .word img { width: 56px; height: 56px; }
+
+      /* scene 2: phone + captions */
+      .split { display: grid; grid-template-columns: 460px 1fr; height: 100%; align-items: center; padding: 0 90px 0 110px; gap: 40px; }
+      .phone { width: 320px; height: 640px; }
+      .phone-status { color: var(--muted); }
+      .captions { display: grid; gap: 8px; align-content: center; min-height: 420px; }
+      .cap { position: absolute; }
+      .cap .cn { display: block; margin-top: 10px; font-size: 28px; color: var(--muted); }
+      .captions { position: relative; height: 420px; }
+      .composer-text { color: var(--fg); overflow: hidden; white-space: nowrap; text-overflow: clip; max-width: 210px; }
+      .caret { display: inline-block; width: 2px; height: 14px; background: var(--fg); vertical-align: -2px; margin-left: 1px; }
+
+      /* scene 3: hands */
+      .hands-wrap { padding: 80px 110px; height: 100%; }
+      .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; margin-top: 40px; }
+      .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 22px 22px 20px; min-height: 150px; }
+      .tile .ico { font-size: 30px; margin-bottom: 12px; }
+      .tile h4 { margin: 0; font-size: 20px; font-weight: 700; }
+      .tile p { margin: 6px 0 0; color: var(--muted); font-size: 15px; line-height: 1.4; }
+      .tile.wide { grid-column: span 1; }
+      .foot-cap { position: absolute; left: 110px; bottom: 64px; font-size: 24px; }
+      .foot-cap .cn { color: var(--muted); margin-left: 14px; }
+
+      /* scene 4: the app screen */
+      .app12306 { position: absolute; inset: 0; background: #f5f6f8; display: flex; flex-direction: column; font-size: 13px; color: #1a1a1a; }
+      .app12306 .bar { background: #2d6ee8; color: #fff; padding: 46px 16px 12px; font-weight: 700; font-size: 16px; display: flex; justify-content: space-between; align-items: center; }
+      .app12306 .route { margin: 12px 14px 8px; background: #fff; border-radius: 14px; padding: 12px 14px; display: flex; justify-content: space-between; align-items: center; font-weight: 700; font-size: 15px; }
+      .app12306 .route small { display: block; color: #777; font-weight: 500; font-size: 12px; }
+      .app12306 .row { margin: 0 14px 8px; background: #fff; border-radius: 12px; padding: 12px 14px; display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; border: 2px solid transparent; }
+      .app12306 .row.hi { border-color: var(--accent); }
+      .app12306 .t { font-weight: 700; font-size: 16px; }
+      .app12306 .g { color: #777; font-size: 12px; }
+      .app12306 .price { color: #e8562d; font-weight: 800; font-size: 16px; text-align: right; }
+      .app12306 .ok { color: #1a9c5b; font-size: 12px; text-align: right; }
+      .app12306 .pay { margin: auto 14px 26px; background: #e8562d; color: #fff; text-align: center; padding: 12px; border-radius: 12px; font-weight: 700; font-size: 15px; }
+      .ripple { position: absolute; width: 22px; height: 22px; border-radius: 50%; border: 3px solid var(--accent); background: rgba(0,100,212,.25); }
+      .ripple.in { animation-name: ripple; animation-duration: 900ms; }
+      @keyframes ripple { 0% { opacity: 0; transform: scale(0.4); } 30% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(2.2); } }
+      .overlay { position: absolute; left: 14px; right: 14px; bottom: 90px; }
+      .overlay .approval { box-shadow: 0 20px 50px -20px rgba(0,0,0,.4); }
+      .phone.dim .app12306 { filter: brightness(0.92); }
+
+      /* scene 5: screens */
+      .screens-wrap { padding: 70px 110px 0; height: 100%; text-align: center; }
+      .shots { display: flex; justify-content: center; gap: 26px; margin-top: 34px; }
+      .shots img { width: 218px; border-radius: 26px; border: 1px solid var(--border); box-shadow: 0 30px 60px -30px rgba(0,0,0,.45); }
+
+      /* scene 6: terminal */
+      .term { width: 620px; background: #16171a; color: #e6e6e6; border-radius: 16px; padding: 18px 22px; font-family: var(--mono); font-size: 16px; line-height: 1.7; box-shadow: 0 40px 80px -40px rgba(0,0,0,.6); border: 1px solid #2a2b30; min-height: 230px; }
+      .term .dots { display: flex; gap: 7px; margin-bottom: 12px; }
+      .term .dots i { width: 11px; height: 11px; border-radius: 50%; background: #3a3b40; display: block; }
+      .term .p { color: #7dd3fc; }
+      .term .c { color: #a3e635; }
+      .models { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 26px; }
+      .models span { font-size: 16px; padding: 7px 14px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); }
+
+      /* scene 7: platforms */
+      .devices { display: flex; gap: 40px; justify-content: center; align-items: flex-end; margin-top: 60px; }
+      .dev { text-align: center; }
+      .dev .frame { border: 3px solid var(--border); border-radius: 22px; background: var(--surface); margin: 0 auto 16px; display: flex; align-items: center; justify-content: center; color: var(--muted); }
+      .dev.phone-d .frame { width: 120px; height: 220px; border-radius: 26px; }
+      .dev.web-d .frame { width: 320px; height: 210px; border-radius: 14px; }
+      .dev.desk-d .frame { width: 300px; height: 200px; border-radius: 14px; }
+      .dev.on .frame { border-color: var(--accent); }
+      .dev h4 { margin: 0; font-size: 22px; }
+      .dev .when { font-size: 15px; font-weight: 700; color: var(--accent); margin-top: 4px; }
+      .dev .note { color: var(--muted); font-size: 14px; margin-top: 4px; }
+      .dev .frame .mini { width: 46px; height: 46px; border-radius: 50%; background: var(--surface-2); position: relative; }
+      .dev .frame .mini .clip { position: absolute; inset: 0; border-radius: 50%; overflow: hidden; }
+      .dev .frame .mini svg { width: 100%; height: 100%; }
+    </style>
+  </head>
+  <body>
+    <!-- 1 · title -->
+    <section class="scene center" id="s-title">
+      <div class="big-panda cue pop" data-at="200" data-panda="idle"></div>
+      <div class="word cue" data-at="700"><img src="../assets/mark.svg" alt="" />nanoMuse</div>
+      <div class="h m cue" data-at="1200" style="margin-top: 22px">An open-source personal AI agent</div>
+      <div class="h m cn cue" data-at="1500" style="color: var(--muted); font-size: 30px; margin-top: 8px">开源的个人 AI 智能体</div>
+      <div class="sub cue" data-at="2000">Inspired by Meta Muse · MIT · runs on your machine</div>
+    </section>
+
+    <!-- 2 · ask → works → asks → done -->
+    <section class="scene" id="s-ask">
+      <div class="split">
+        <div class="phone cue pop" data-at="0" id="p1">
+          <div class="phone-top">
+            <span class="pill icon"><i class="dot"></i>≡</span>
+            <div class="phone-head">
+              <div class="avatar" id="p1-avatar"></div>
+              <div class="phone-name">nanoMuse</div>
+              <div class="phone-status" id="p1-status" data-state="idle">
+                <span class="s-idle">Idle · tap the avatar for activity</span>
+                <span class="s-working">Working · 12306, 高德, 飞书</span>
+                <span class="s-waiting">1 approval waiting for you</span>
+                <span class="s-done">Done · sent to 杭州出差</span>
+              </div>
+            </div>
+            <span class="pill icon">···</span>
+          </div>
+          <div class="phone-body">
+            <div class="msg user cue" data-at="3600">周五去杭州，帮我看下午的高铁，把最快的一趟和到西湖的路线发到项目群。</div>
+            <div class="chip cue" data-at="5000" data-done="6600"><span class="mono">amap__maps_direction_transit_integrated</span><i class="spin"></i></div>
+            <div class="chip cue" data-at="6700" data-done="8600"><span class="mono">phone · 12306 · 上海 → 杭州东，周五 14–18 点</span><i class="spin"></i></div>
+            <div class="approval cue pop" data-at="8800" data-until="12900">
+              <div class="ap-head">
+                <span class="shield"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6z"/></svg></span>
+                <div>
+                  <div class="ap-who">nanoMuse wants to</div>
+                  <div class="ap-what mono">lark-cli im +messages-send</div>
+                  <div class="ap-why">Post the train and the route to the 杭州出差 group</div>
+                  <span class="risk">SENSITIVE</span>
+                  <div class="ap-link">Exactly what will run</div>
+                </div>
+              </div>
+              <div class="ap-actions">
+                <span class="ap-btn deny">Deny</span>
+                <span class="ap-btn allow" data-press="12300">Allow</span>
+              </div>
+            </div>
+            <div class="chip cue" data-at="12900" data-done="14000"><span class="mono">lark-cli im +messages-send → 杭州出差</span><i class="spin"></i></div>
+            <div class="msg bot cue" data-at="14100">已发到「杭州出差」群。G7351 14:22 上海虹桥出发，15:07 到杭州东，二等座 ¥73；出站换地铁 1 号线到龙翔桥，骑车 8 分钟到断桥。票还没买，你一句话我就下单。</div>
+          </div>
+          <div class="phone-composer"><span class="plus">+</span><span class="composer-text" id="p1-typed"></span><span class="muted" id="p1-placeholder">Message</span><span class="send">↑</span></div>
+          <div class="phone-tabs">
+            <span class="tab on"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H8l-4 4z"/></svg></span>
+            <span class="tab"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h5"/></svg></span>
+            <span class="tab"><svg viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 1 3 11.2V17H9v-2.8A6 6 0 0 1 12 3z M10 20h4"/></svg></span>
+            <span class="tab"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5z M8 12l3 3 5-6"/></svg></span>
+            <span class="tab"><svg viewBox="0 0 24 24"><path d="M4 4h7v7H4z M13 4h7v7h-7z M4 13h7v7H4z M13 13h7v7h-7z"/></svg></span>
+          </div>
+        </div>
+        <div class="captions">
+          <div class="cap h l cue" data-at="400" data-until="4300">Ask it.<span class="cn">说一句。</span></div>
+          <div class="cap h l cue" data-at="4300" data-until="8800">It works.<br /><span class="muted" style="font-size: 30px; font-weight: 600">On your machine, in the background.</span><span class="cn">它去干活。在你的机器上，后台进行。</span></div>
+          <div class="cap h l cue" data-at="8800" data-until="14100">It asks before anything<br />it can't undo.<span class="cn">无法撤销的事，先问你。</span></div>
+          <div class="cap h l cue" data-at="14100">Done.<br /><span class="muted" style="font-size: 30px; font-weight: 600">Sent to the group. The ticket waits for your word.</span><span class="cn">完成。已发到群里，票等你一句话。</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3 · hands -->
+    <section class="scene" id="s-hands">
+      <div class="hands-wrap">
+        <div class="h l cue" data-at="200">One agent, many hands <span class="cn muted" style="font-size: 30px; margin-left: 16px">一个智能体，很多只手</span></div>
+        <div class="tiles">
+          <div class="tile cue" data-at="900"><div class="ico">🌐</div><h4>Web &amp; files</h4><p>Searches, reads pages, writes documents and code into a workspace you can open.</p></div>
+          <div class="tile cue" data-at="1400"><div class="ico">⌨️</div><h4>Shell, sandboxed</h4><p>Commands run in bubblewrap with only the folders you share.</p></div>
+          <div class="tile cue" data-at="1900"><div class="ico">🗺️</div><h4>MCP servers · 高德</h4><p>Places, weather, routes and travel times as tools.</p></div>
+          <div class="tile cue" data-at="2400"><div class="ico">🐦</div><h4>CLIs · 飞书</h4><p>Calendar, messages, docs and tasks through <code>lark-cli</code>, with your login.</p></div>
+          <div class="tile cue" data-at="2900"><div class="ico">📚</div><h4>Skills</h4><p>Agent Skills format. Nine built in; add a folder with a <code>SKILL.md</code>.</p></div>
+          <div class="tile cue" data-at="3400"><div class="ico">🧭</div><h4>A real browser</h4><p>Chromium, when a site needs clicking or a login.</p></div>
+          <div class="tile cue" data-at="3900"><div class="ico">📱</div><h4>The phone screen</h4><p>Reads the screen and taps through apps that have no API — 12306, 美团, 高德.</p></div>
+          <div class="tile cue" data-at="4400" style="background: var(--accent); color: #fff; border-color: var(--accent)"><div class="ico">🐾</div><h4>All in one task</h4><p style="color: rgba(255,255,255,.85)">高德 for the route, 12306 on the phone, 飞书 for the message.</p></div>
+        </div>
+        <div class="foot-cap cue" data-at="5600">The phone screen is one hand. Not the only one.<span class="cn">屏幕只是其中一只手。</span></div>
+      </div>
+    </section>
+
+    <!-- 4 · the screen -->
+    <section class="scene" id="s-screen">
+      <div class="split">
+        <div class="phone cue pop" data-at="0" id="p2">
+          <div class="app12306">
+            <div class="bar"><span>中国铁路 12306</span><span style="font-weight: 500; font-size: 13px">9月26日 周五</span></div>
+            <div class="route"><span>上海<small>虹桥 · 出发</small></span><span style="color: #999">→</span><span>杭州东<small>到达</small></span></div>
+            <div class="row cue" data-at="600"><span class="t">G7315 · 14:05 → 14:58</span><span class="price">¥73</span><span class="g">53 分 · 二等座</span><span class="ok">有票</span></div>
+            <div class="row hi cue" data-at="800"><span class="t">G7351 · 14:22 → 15:07</span><span class="price">¥73</span><span class="g">45 分 · 二等座 · 最快</span><span class="ok">有票</span></div>
+            <div class="row cue" data-at="1000"><span class="t">G1355 · 14:38 → 15:31</span><span class="price">¥73</span><span class="g">53 分 · 二等座</span><span class="ok">有票</span></div>
+            <div class="row cue" data-at="1200"><span class="t">D3141 · 15:02 → 16:10</span><span class="price">¥49</span><span class="g">68 分 · 二等座</span><span class="ok">候补</span></div>
+            <div class="pay">选择乘客并支付 ¥73</div>
+            <span class="ripple cue" data-at="2400" data-until="3400" style="left: 150px; top: 262px"></span>
+            <span class="ripple cue" data-at="4400" data-until="5400" style="left: 150px; top: 586px"></span>
+            <div class="overlay cue pop" data-at="5200">
+              <div class="approval">
+                <div class="ap-head">
+                  <span class="shield"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6z"/></svg></span>
+                  <div>
+                    <div class="ap-who">nanoMuse wants to</div>
+                    <div class="ap-what mono">tap: 支付 ¥73 · 12306</div>
+                    <div class="ap-why">Pay for G7351, second class, one passenger</div>
+                    <span class="risk">PAYMENT</span>
+                  </div>
+                </div>
+                <div class="ap-actions"><span class="ap-btn deny">Deny</span><span class="ap-btn allow">Allow</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="captions">
+          <div class="cap h l cue" data-at="400" data-until="5200">No API? It reads the screen<br />and taps.<span class="cn">没有 API 的 App？它读屏幕、点按钮。</span></div>
+          <div class="cap h l cue" data-at="5200">…and stops before it pays.<span class="cn">……到付款前，停下来问你。</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5 · the screens -->
+    <section class="scene" id="s-screens">
+      <div class="screens-wrap">
+        <div class="h l cue" data-at="200">Feed · Ideas · Goals · Library</div>
+        <div class="sub cue" data-at="600">What it did while you were away, in plain words. <span class="cn">你不在时它做了什么，用大白话告诉你。</span></div>
+        <div class="shots">
+          <img class="cue slide" data-at="1100" src="../assets/screens/feed.png" alt="" />
+          <img class="cue slide" data-at="1500" src="../assets/screens/goals.png" alt="" />
+          <img class="cue slide" data-at="1900" src="../assets/screens/library.png" alt="" />
+          <img class="cue slide" data-at="2300" src="../assets/screens/chat-approval.png" alt="" />
+        </div>
+      </div>
+    </section>
+
+    <!-- 6 · your machine, any model -->
+    <section class="scene" id="s-machine">
+      <div class="split" style="grid-template-columns: 640px 1fr; gap: 70px">
+        <div class="term cue pop" data-at="0">
+          <div class="dots"><i></i><i></i><i></i></div>
+          <div><span class="p">$</span> <span id="t-line1"></span></div>
+          <div class="cue" data-at="2200"><span class="p">$</span> <span id="t-line2"></span></div>
+          <div class="cue" data-at="4200" style="color: #b8b8b8">nanoMuse is at <span class="c">http://192.168.1.20:8787/?token=…</span></div>
+          <div class="cue" data-at="4500" style="color: #b8b8b8">Scan the QR code with the Android app. Ctrl+C stops it.</div>
+        </div>
+        <div>
+          <div class="h l cue" data-at="600">Your machine.<br />Any model.<span class="cn" style="display: block; font-size: 28px; color: var(--muted); margin-top: 10px">你的机器，模型随你选。</span></div>
+          <div class="models">
+            <span class="cue" data-at="2600">DeepSeek</span><span class="cue" data-at="2800">通义千问 Qwen</span><span class="cue" data-at="3000">Kimi</span><span class="cue" data-at="3200">GLM</span><span class="cue" data-at="3400">MiniMax</span><span class="cue" data-at="3600">OpenAI</span><span class="cue" data-at="3800">Ollama</span>
+          </div>
+          <div class="sub cue" data-at="4800">Any OpenAI-compatible endpoint. Domestic ones need no proxy.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7 · platforms -->
+    <section class="scene" id="s-where">
+      <div class="screens-wrap">
+        <div class="h l cue" data-at="200">Phone today. Web and desktop next. <span class="cn muted" style="display: block; font-size: 28px; margin-top: 10px">今天在手机上。网页和桌面端在路上。</span></div>
+        <div class="devices">
+          <div class="dev phone-d on cue" data-at="1000"><div class="frame"><div class="mini" data-panda="happy"></div></div><h4>Phone</h4><div class="when">Now · 现在</div><div class="note">Android app, your computer does the work.<br />No cloud VM.</div></div>
+          <div class="dev web-d cue" data-at="1600"><div class="frame"><img src="../assets/mark.svg" alt="" style="width: 44px; opacity: .35" /></div><h4>Web</h4><div class="when">Next · 下一步</div><div class="note">Hosted, a VM per user.</div></div>
+          <div class="dev desk-d cue" data-at="2200"><div class="frame"><img src="../assets/mark.svg" alt="" style="width: 44px; opacity: .35" /></div><h4>Desktop</h4><div class="when">Later · 之后</div><div class="note">Local and cloud-VM editions.</div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 8 · end card -->
+    <section class="scene center" id="s-end">
+      <div class="big-panda cue pop" data-at="200" data-panda="happy"></div>
+      <div class="word cue" data-at="600"><img src="../assets/mark.svg" alt="" />nanoMuse</div>
+      <div class="h m cue" data-at="1000" style="margin-top: 18px">github.com/nano-muse/nanoMuse</div>
+      <div class="sub cue" data-at="1400">Open source · MIT · inspired by Meta Muse · nano-muse.github.io/nanoMuse</div>
+    </section>
+
+    <script src="../assets/mascot.js"></script>
+    <script>
+      (function () {
+        var MASCOT = window.NANOMUSE_MASCOT || {};
+        function panda(el, mood, startAbs) {
+          if (el.dataset.current !== mood) {
+            el.dataset.current = mood;
+            el.innerHTML = '<span class="clip">' + (MASCOT[mood] || "") + "</span>";
+            var badge = el.parentElement && el.classList.contains("avatar") ? el.querySelector(".badge") : null;
+            if (el.classList.contains("avatar") && !badge) {
+              var b = document.createElement("span");
+              b.className = "badge";
+              b.textContent = "1";
+              el.appendChild(b);
+            }
+            el.dataset.start = startAbs;
+          }
+          el.classList.toggle("waiting", mood === "waiting");
+        }
+
+        var LINE1 = "uv tool install nanomuse";
+        var LINE2 = "nanomuse serve --host 0.0.0.0";
+        var ASK = "周五去杭州，帮我看下午的高铁，把最快的一趟和到西湖的路线发到项目群。";
+
+        var scenes = [
+          { id: "s-title", start: 0, end: 5200 },
+          {
+            id: "s-ask", start: 5200, end: 24200,
+            update: function (l, abs) {
+              var av = document.getElementById("p1-avatar");
+              var st = document.getElementById("p1-status");
+              var mood = "idle", state = "idle", moodAt = 0;
+              if (l >= 4300) { mood = "working"; state = "working"; moodAt = 4300; }
+              if (l >= 8800) { mood = "waiting"; state = "waiting"; moodAt = 8800; }
+              if (l >= 12900) { mood = "working"; state = "working"; moodAt = 12900; }
+              if (l >= 14100) { mood = "happy"; state = "done"; moodAt = 14100; }
+              if (l >= 17600) { mood = "idle"; state = "idle"; moodAt = 17600; }
+              panda(av, mood, abs + moodAt);
+              st.dataset.state = state;
+              // typing into the composer, then it is sent
+              var typed = document.getElementById("p1-typed");
+              var ph = document.getElementById("p1-placeholder");
+              var n = l < 900 ? 0 : Math.min(ASK.length, Math.floor((l - 900) / 70));
+              var sent = l >= 3600;
+              typed.textContent = sent ? "" : ASK.slice(0, n);
+              ph.style.display = sent || n === 0 ? "" : "none";
+            },
+          },
+          { id: "s-hands", start: 24200, end: 32400 },
+          { id: "s-screen", start: 32400, end: 40400 },
+          { id: "s-screens", start: 40400, end: 47400 },
+          {
+            id: "s-machine", start: 47400, end: 54400,
+            update: function (l) {
+              var a = document.getElementById("t-line1"), b = document.getElementById("t-line2");
+              a.textContent = LINE1.slice(0, Math.max(0, Math.floor((l - 500) / 55)));
+              b.textContent = l < 2200 ? "" : LINE2.slice(0, Math.floor((l - 2200) / 55));
+            },
+          },
+          { id: "s-where", start: 54400, end: 60400 },
+          { id: "s-end", start: 60400, end: 66000 },
+        ];
+        scenes.forEach(function (s) { s.el = document.getElementById(s.id); });
+        var FADE = 450;
+
+        window.__duration = 66000;
+        window.__render = function (t) {
+          scenes.forEach(function (sc) {
+            var on = t >= sc.start && t < sc.end;
+            sc.el.classList.toggle("on", on);
+            if (!on) return;
+            var l = t - sc.start;
+            sc.el.style.opacity = Math.min(1, l / FADE, (sc.end - t) / FADE);
+            sc.el.querySelectorAll("[data-at]").forEach(function (c) {
+              var at = +c.dataset.at, until = c.dataset.until ? +c.dataset.until : Infinity;
+              var vis = l >= at && l < until;
+              c.classList.toggle("in", vis);
+              c.classList.toggle("gone", l >= until);
+              if (vis) c.dataset.start = sc.start + at;
+              var p = c.getAttribute("data-panda");
+              if (p && vis) panda(c, p, sc.start + at);
+            });
+            sc.el.querySelectorAll("[data-done]").forEach(function (c) { c.classList.toggle("done", l >= +c.dataset.done); });
+            sc.el.querySelectorAll("[data-press]").forEach(function (c) { c.classList.toggle("pressed", l >= +c.dataset.press); });
+            sc.el.querySelectorAll(".mini[data-panda]").forEach(function (c) { panda(c, c.dataset.panda, sc.start); });
+            if (sc.update) sc.update(l, sc.start);
+          });
+          // Freeze every CSS animation at the time it should show for this frame.
+          document.getAnimations().forEach(function (a) {
+            a.pause();
+            var target = a.effect && a.effect.target;
+            var host = target && target.closest ? target.closest("[data-start]") : null;
+            var start = host ? +host.dataset.start : 0;
+            a.currentTime = Math.max(0, t - start);
+          });
+        };
+        // When opened by hand, play in real time so the storyboard can be checked in a browser.
+        if (!navigator.webdriver) {
+          var t0 = performance.now();
+          (function tick() {
+            var t = (performance.now() - t0) % window.__duration;
+            window.__render(t);
+            requestAnimationFrame(tick);
+          })();
+        }
+      })();
+    </script>
+  </body>
+</html>

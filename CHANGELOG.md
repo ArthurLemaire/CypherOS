@@ -37,6 +37,7 @@ The first release: an open-source personal AI agent inspired by Meta's Muse. One
 - **The Android app**: a native shell around the web app — scan the QR code `nanomuse serve` prints, then the same app in a WebView with notifications. Signed APK on every release.
 - **The showcase** (`demo/showcase/`): a gateway that starts a private nanoMuse per visitor next to the simulated phone, with metered model access and bring-your-own-key; images published from CI.
 - **Website**: `site/`, one static page in English and 中文 with the red panda playing a task end to end, published to GitHub Pages from `.github/workflows/pages.yml`.
+- **The film**: a 66-second promo (`site/media/nanomuse-promo.mp4`) rendered frame by frame from `site/promo/storyboard.html` with Playwright and ffmpeg — the same markup and mascot as the app, so it can be re-cut by editing HTML.
 
 ### Command line
 

@@ -22,6 +22,7 @@ cd ../site && python3 -m http.server 8000   # http://localhost:8000
 | `style.css` | Colours, type and radii copied from `web/src/index.css`; light and dark. |
 | `site.js` | The language toggle and the phone in the hero, which plays one task end to end. |
 | `assets/` (generated) | `mascot.js` + `mascot.css` from `web/src/components/RedPanda.tsx`, icons, fonts, `screens/` from `docs/screenshots/`, `cover.png`. |
+| `media/` | The promo video and its poster, rendered from `promo/storyboard.html` by `promo/render.py` (see `promo/README.md`). Committed: 1.7 MB. |
 
 The phone mock in the hero is not a video: it is the app's own markup and the mascot's own
 stylesheet, so when the panda or the approval card changes in the app, `npm run site:mascot`
