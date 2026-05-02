@@ -35,6 +35,9 @@ web/dist/
 web/.vite/
 npm-debug.log*
 
+# website: generated from web/ and docs/ by `npm run site:mascot` (see site/README.md)
+site/assets/
+
 # android app (the signing key lives outside the repo; see docs/android.md)
 android/.gradle/
 android/build/

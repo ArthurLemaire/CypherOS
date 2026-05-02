@@ -7,7 +7,8 @@
 <div align="center">
   <p>
     <a href="https://github.com/nano-muse/nanoMuse/blob/main/README.md">English</a> |
-    <a href="https://github.com/nano-muse/nanoMuse/blob/main/README_zh.md">简体中文</a>
+    <a href="https://github.com/nano-muse/nanoMuse/blob/main/README_zh.md">简体中文</a> |
+    <a href="https://nano-muse.github.io/nanoMuse/">Website</a>
   </p>
   <p>
     <a href="https://github.com/nano-muse/nanoMuse"><img src="https://img.shields.io/github/stars/nano-muse/nanoMuse?style=flat&logo=github" alt="GitHub stars"></a>
