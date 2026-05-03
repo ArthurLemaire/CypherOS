@@ -19,7 +19,7 @@
   </p>
 </div>
 
-🧸 **nanoMuse** is an open-source, self-hosted personal agent in the shape of Meta's [Muse](https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/), made to work in China: one agent with a name and a face, on your phone, that does things rather than answering questions, keeps working while the app is closed, and asks before anything you could not undo. Where Muse leans on Western services with APIs, nanoMuse will also work the apps on your phone through their screens (12306, WeChat, Alipay…) as a GUI agent, so the same agent works where those APIs do not exist. Any OpenAI-compatible model. One Python package, a web app inside it, and an Android app.
+🐾 **nanoMuse** is an open-source personal AI agent inspired by Meta's [Muse](https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/). One agent with a name and a face, yours: it does things instead of answering questions, keeps working while the app is closed, remembers you, and asks before anything you could not undo. It works through whatever the job needs — the web, files and commands, MCP servers and command-line tools (飞书, 高德), skills, and the apps on your phone through their screens where there is no API (12306, WeChat, Alipay). Any OpenAI-compatible model. Today it is an Android app and a web app served by one Python package from your own machine, no cloud VM; a hosted web version on a per-user VM and a desktop app come next ([roadmap](#roadmap)).
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/screenshots/chat-approval.png" width="24%" alt="Chat: the agent stops before a shell command and asks">
@@ -39,7 +39,9 @@
 | Know what it will and will not do on its own | [Sentinel](#%EF%B8%8F-sentinel) and [docs/sentinel.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/sentinel.md) |
 | Connect mail, a calendar, contacts, a browser or MCP servers | [Connectors](https://github.com/nano-muse/nanoMuse/blob/main/docs/configuration.md#connectors) |
 | Let it operate the apps on a phone (12306, WeChat, Alipay) | [docs/gui.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/gui.md) and the [simulated phone](https://github.com/nano-muse/nanoMuse/blob/main/demo/mobilegym/README.md) |
+| See what to ask it — 飞书 through its CLI, 高德 through MCP, the phone, all three at once | [Showcase](https://github.com/nano-muse/nanoMuse/blob/main/docs/showcase.md) |
 | Run it in Docker or keep it running on a server | [Deploy](#%EF%B8%8F-deploy) |
+| Know where it is going — phone now, web on a cloud VM and desktop next | [Roadmap](#roadmap) and [docs/roadmap.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/roadmap.md) |
 | Read the code | [Architecture](#architecture) |
 
 ## What can nanoMuse do?
@@ -47,20 +49,34 @@
 nanoMuse is a personal agent you talk to from your phone. It can:
 
 - research, write pages and documents, run shell commands and Python, send mail, read your calendar and your contacts, browse the web
+- use the tools a service already has: any [MCP](https://modelcontextprotocol.io) server (高德地图 for places, routes and weather) and any command-line tool (飞书 through lark-cli: your agenda, a message to a colleague, an event, a document) — no screen involved ([showcase](https://github.com/nano-muse/nanoMuse/blob/main/docs/showcase.md))
 - operate the apps on your phone through their screens when there is no API — look up trains in 12306, read and answer WeChat, work through Alipay — with a switch, and a stop at every send or pay button ([docs/gui.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/gui.md))
 - stop and ask before anything hard to undo, with an approval you scope (once, this task, always) and can revoke
 - work on goals over weeks while the app is closed, check in on a schedule, and start work when mail arrives, an event is near or a webhook fires
 - write you a feed: short posts from what it knows about you and what you asked it to follow
 - remember you in a memory you can read, edit and forget, and recall it by meaning
-- follow skills in the [Agent Skills](https://agentskills.io) format and use any [MCP](https://modelcontextprotocol.io) server
+- follow skills in the [Agent Skills](https://agentskills.io) format — nine built in, yours in a folder, other agents' skills as they are
 - run on any OpenAI-compatible model: DeepSeek, OpenAI, OpenRouter, Ollama, vLLM, a gateway with its own headers
 
 ## 💡 Why nanoMuse
 
-- **The Muse shape, in the open**: chat, feed, ideas, goals and library on a phone; a plush avatar that moves while it works; one agent, not a bot framework.
+- **The Muse shape, in the open**: chat, feed, ideas, goals and library on a phone; a red panda at the top of the chat that changes pose with what the agent is doing; one agent, not a bot framework.
+- **One agent, many hands**: the same agent reaches a service through its API, its MCP server, its command-line tool, a browser, or — last — the screen of the app on your phone. The Sentinel sits between it and all of them.
 - **Safety is the architecture**: the agent never touches a tool directly. A `Sentinel` decides allow / ask / deny per call, keeps secrets out of the model, tracks where private data goes, and logs everything. On Linux every command runs in its own [bubblewrap](https://github.com/containers/bubblewrap) sandbox.
 - **Your machine, your model**: runs on a laptop, a home server or in Docker. Chat Completions or the Responses API, streaming, native or prompt-based tool calling, local models included.
 - **Small enough to read**: about 18k lines of typed Python, 11k of TypeScript and 800 of Kotlin. No orchestration framework underneath. About 240 tests.
+
+## Where it runs
+
+Muse is a set of clients — iOS, Android, the web, WhatsApp, a Mac app — around one agent that runs in a cloud VM per user. nanoMuse takes the same shape one platform at a time, and starts where the VM is not needed:
+
+| | Meta Muse | nanoMuse |
+|---|---|---|
+| Phone | iOS and Android apps, thin clients of the VM | **Now.** An Android app and a web app; the agent runs on your computer, a home server or in Docker — no cloud VM. Next inside this phase: the app operates real apps through an accessibility service, then a local build with the brain inside the APK. |
+| Web | muse.ai, the same VM | **Next.** A hosted nanoMuse: a VM per user, sign in from any browser, the same agent and Sentinel, your own key or a starter quota. |
+| Desktop | a Mac app, the same VM | **Later.** A desktop app in two versions — local (the agent, its tools and its browser on the computer you sit at) and attached to your cloud VM. |
+
+Operating a phone through its screen, running without a cloud VM, and knowing Chinese services are features of the first phase, not the definition. [docs/roadmap.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/roadmap.md) has the plan in full.
 
 ## 📦 Install
 
@@ -226,7 +242,9 @@ More in [docs/architecture.md](https://github.com/nano-muse/nanoMuse/blob/main/d
 | Remembers you | SQLite memory the agent keeps tidy and you can edit, recalled by keyword and by meaning |
 | Works on goals in the background | Goals with steps; a scheduler advances them and reports to the chat |
 | A feed written for you | Posts from your instructions and what it knows, once a day or on demand |
-| iOS and Android apps | A web app installable to the home screen, and an Android app |
+| iOS, Android, the web, WhatsApp and a Mac app, all clients of the VM | An Android app and a web app installable to the home screen today; the web on a cloud VM and a desktop app next |
+| A plush doll that changes pose while it works | A red panda drawn live, with a pose for idle, working, waiting, done, failed and offline |
+| Western services through their APIs | The same, plus 飞书 through its CLI, 高德 through MCP, and 12306 / WeChat / Alipay through the phone's screen |
 | Meta's models | Any OpenAI-compatible model |
 | Closed | MIT |
 
@@ -235,7 +253,9 @@ More in [docs/architecture.md](https://github.com/nano-muse/nanoMuse/blob/main/d
 - [Configuration](https://github.com/nano-muse/nanoMuse/blob/main/docs/configuration.md): every setting, environment overrides, connectors, MCP, local models
 - [Sentinel](https://github.com/nano-muse/nanoMuse/blob/main/docs/sentinel.md): policy order, rules, taint tracking, vault, audit, the sandbox
 - [Operating the phone](https://github.com/nano-muse/nanoMuse/blob/main/docs/gui.md): the switch, the operator and its model, what asks first, traces, the device protocol
-- [Showcase: what to ask it](https://github.com/nano-muse/nanoMuse/blob/main/docs/showcase.md): tasks for the simulated phone — on the phone, without it, and both
+- [Showcase: what to ask it](https://github.com/nano-muse/nanoMuse/blob/main/docs/showcase.md): 飞书 through lark-cli, 高德 through MCP, the phone's apps, none of it, and asks that mix them
+- [Roadmap](https://github.com/nano-muse/nanoMuse/blob/main/docs/roadmap.md): the phone without a cloud VM, then the web on one, then the desktop both ways
+- [Design](https://github.com/nano-muse/nanoMuse/blob/main/docs/design.md): what was learned from Muse's screens — type, colour, layout, the avatar's poses — and how nanoMuse maps them
 - [The app and its API](https://github.com/nano-muse/nanoMuse/blob/main/docs/app.md): screens, phone access, tokens, every endpoint
 - [Android](https://github.com/nano-muse/nanoMuse/blob/main/docs/android.md): install, notifications, building and signing
 - [CLI](https://github.com/nano-muse/nanoMuse/blob/main/docs/cli.md): `chat`, `run`, `serve`, `daemon`, `goals`, `memory`, `skills`, `vault`, `phone`, `audit`, `doctor`
@@ -252,11 +272,27 @@ More in [docs/architecture.md](https://github.com/nano-muse/nanoMuse/blob/main/d
 
 ## Roadmap
 
+Three phases, one per platform; the full plan with the reasoning is in [docs/roadmap.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/roadmap.md).
+
+**Phase 1 — the phone, no cloud VM** (now)
+
+- [x] The agent, the Sentinel, the vault, the sandbox; the web app; the Android app; skills and MCP; 飞书 and 高德 without a screen
+- [x] The phone operator on the simulated phone, with traces
 - [ ] Android executor: the nanoMuse app operates real apps through an accessibility service (screenshots, gestures, the finger overlay), with Shizuku as an option
-- [ ] Local build: the brain inside the APK, so the phone needs no server
+- [ ] Local build: the brain inside the APK, so the phone needs no server at all
 - [ ] Free starter quota through the showcase gateway, then your own key
 - [ ] Muse features still missing: durable tasks with a take-over hand-off, watches that trigger on the world, ideas with evidence, a follow-up queue
 - [ ] Voice: speak a message and see it as text before it goes, through any OpenAI-compatible `/audio/transcriptions`
+
+**Phase 2 — the web, on a cloud VM**
+
+- [ ] A hosted nanoMuse: one VM per user with the agent, its browser and its files inside; sign in from any browser; the same Sentinel; your own key or the starter quota
+- [ ] The Android and web apps as clients of your VM as well as of your own machine
+
+**Phase 3 — the desktop, both ways**
+
+- [ ] A desktop app that runs the agent locally, with the files and browser of the computer you sit at
+- [ ] The same app attached to your cloud VM
 - [ ] iOS: the same shell as the Android app
 
 ## 🤝 Contribute
@@ -282,7 +318,7 @@ Related: [nanobot](https://github.com/HKUDS/nanobot) is a personal assistant fra
 
 ## Disclaimer
 
-nanoMuse is an independent community project. It is not affiliated with, endorsed by, or derived from Meta Platforms, Inc. or its Muse product. The plush avatars are the project's own; the name and the design ideas are used for comparison.
+nanoMuse is an independent community project. It is not affiliated with, endorsed by, or derived from Meta Platforms, Inc. or its Muse product. The red panda and the plush avatars are the project's own; the name and the design ideas are used for comparison.
 
 ## License
 
