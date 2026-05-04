@@ -130,6 +130,8 @@ def test_builtin_skills_are_well_formed():
         "meeting-prep",
         "train-tickets",
         "phone-messages",
+        "feishu",
+        "amap",
     } <= set(names)
     assert lib.errors == {} and all(s.source == BUILT_IN for s in lib.all())
     for s in lib.all():
@@ -266,11 +268,11 @@ async def test_skills_tool(tmp_path: Path):
     assert b.warnings == ["this replaces one of the built-in skills"]
     assert tool.assess({"action": "remove", "name": "x"}).risk == RiskLevel.SENSITIVE
     r = await tool.execute(action="list")
-    assert r.ok and r.output.startswith("7 skills:\n- compare-options (built-in)")
+    assert r.ok and r.output.startswith("9 skills:\n- amap (built-in)")
     r = await tool.execute(action="use", name="trip-plan")
     assert r.ok and r.output.startswith("# Skill: trip-plan\n") and "## Research" in r.output
     r = await tool.execute(action="use", name="nope")
-    assert not r.ok and "available: compare-options" in r.error
+    assert not r.ok and "available: amap, compare-options" in r.error
     assert not (await tool.execute(action="use")).ok
     r = await tool.execute(
         action="save",

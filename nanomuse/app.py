@@ -99,7 +99,11 @@ class NanoMuseApp:
             persistent_approvals_file=settings.data_dir / "approvals.json",
         )
         self.llm = llm or self.make_llm()
-        self.mcp = MCPManager(settings.mcp.servers) if settings.mcp.servers else None
+        self.mcp = (
+            MCPManager(settings.mcp.servers, resolve=lambda v: self.vault.resolve(v, strict=False))
+            if settings.mcp.servers
+            else None
+        )
         self.tools = self._build_tools()
         self.agent = MuseAgent(
             settings=settings,
@@ -198,6 +202,9 @@ class NanoMuseApp:
             data_dir=s.data_dir,
             # a skill's scripts and references are readable from inside the box
             ro_roots=[self.skills.own_dir, self.skills.builtin_dir] if s.skills.enabled else [],
+            # and so are the tools the user shares with it (a CLI under ~/.nvm; its login)
+            shared=list(s.sandbox.share),
+            shared_ro=list(s.sandbox.share_read_only),
         )
         tools = ToolCollection(
             Terminate(),

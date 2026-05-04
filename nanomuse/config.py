@@ -235,6 +235,13 @@ class SandboxSettings(BaseModel):
     # "auto": bubblewrap when it is installed and works here; "bwrap": insist (a startup
     # error otherwise); "off": commands run unboxed, with the scrubbed environment only.
     mode: str = "auto"
+    # Directories from outside the box that commands may use — the home directory as a
+    # whole stays out. `share_read_only` for the programs (a CLI under ~/.nvm), `share`
+    # for state a tool must also write (its login, a token it refreshes). Both are bound
+    # where they are and, when under the home directory, at the same place under the
+    # box's own home, so a tool that looks in $HOME finds them.
+    share: list[Path] = Field(default_factory=list)
+    share_read_only: list[Path] = Field(default_factory=list)
 
 
 class TriggerSettings(BaseModel):
@@ -641,6 +648,8 @@ def load_settings(path: str | Path | None = None) -> Settings:
     settings.data_dir = settings.data_dir.expanduser()
     settings.agent.workspace = settings.agent.workspace.expanduser()
     settings.agent.extra_roots = [p.expanduser() for p in settings.agent.extra_roots]
+    settings.sandbox.share = [p.expanduser() for p in settings.sandbox.share]
+    settings.sandbox.share_read_only = [p.expanduser() for p in settings.sandbox.share_read_only]
     apply_app_settings(settings, load_app_settings(settings.data_dir))
     return settings
 

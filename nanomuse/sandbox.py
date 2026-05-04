@@ -143,6 +143,8 @@ class Sandbox:
         data_dir: Path | None = None,
         probe: bool = True,
         ro_roots: list[Path] | None = None,
+        shared: list[Path] | None = None,
+        shared_ro: list[Path] | None = None,
     ):
         self.settings = settings
         self.workspace = workspace.resolve()
@@ -150,6 +152,12 @@ class Sandbox:
         # read-only inside the box (skills' scripts and references); bound after the
         # data-dir mask so a folder under the data dir is still there
         self.ro_roots = [p.resolve() for p in (ro_roots or [])]
+        # directories the user shares with the box — a CLI (read-only) and its login
+        # state (read-write) — bound where they are and, when they live under the home
+        # directory, also at the same place under the box's own home, where a tool that
+        # asks $HOME will look for them
+        self.shared = [p.resolve() for p in (shared or [])]
+        self.shared_ro = [p.resolve() for p in (shared_ro or [])]
         self.data_dir = data_dir.resolve() if data_dir else None
         self.bwrap = shutil.which("bwrap")
         self.version = ""
@@ -287,21 +295,28 @@ class Sandbox:
         # lives outside /usr — often under the hidden home; only those directories come in
         for prefix in interpreter_roots():
             args += ["--ro-bind-try", str(prefix), str(prefix)]
-        roots = [self.workspace, *self.extra_roots]
+        roots = [self.workspace, *self.extra_roots, *self.shared]
         for root in roots:
             args += ["--bind-try", str(root), str(root)]
         masked = self.data_dir and any(self.data_dir.is_relative_to(r) for r in roots)
         if masked:
             # the data dir (vault, sessions, tokens) inside a bound root: mask it
             args += ["--tmpfs", str(self.data_dir)]
-        for root in self.ro_roots:
+        for root in [*self.ro_roots, *self.shared_ro]:
             under_mask = bool(masked and self.data_dir and root.is_relative_to(self.data_dir))
             if root.is_dir() and (under_mask or not any(root.is_relative_to(r) for r in roots)):
                 args += ["--ro-bind-try", str(root), str(root)]
         home = "/tmp/home"
+        args += ["--dir", home]
+        real_home = Path.home().resolve()
+        mirrored = [
+            *((r, "--bind-try") for r in self.shared),
+            *((r, "--ro-bind-try") for r in self.shared_ro),
+        ]
+        for root, flag in mirrored:
+            if root != real_home and root.is_relative_to(real_home):
+                args += [flag, str(root), f"{home}/{root.relative_to(real_home)}"]
         args += [
-            "--dir",
-            home,
             "--setenv",
             "HOME",
             home,

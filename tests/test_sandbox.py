@@ -251,3 +251,46 @@ async def test_no_network_failure_is_explained(tmp_path: Path):
         command='echo "Temporary failure in name resolution" >&2; exit 6', network=True
     )
     assert r.error == "exit code 6" and "ran without network access" not in r.output
+
+
+def test_shared_directories_are_bound_and_mirrored_under_the_box_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A CLI the user shares (read-only) and its login state (read-write) are bound where
+    they are and, when under the home directory, at the same place under /tmp/home — a
+    tool that asks $HOME finds them. The rest of home stays out."""
+    monkeypatch.setattr("nanomuse.sandbox.shutil.which", lambda _name: "/usr/bin/bwrap")
+    monkeypatch.setattr("nanomuse.sandbox.platform.system", lambda: "Linux")
+    home = tmp_path / "home"
+    monkeypatch.setattr("nanomuse.sandbox.Path.home", classmethod(lambda cls: home))
+    programs = home / ".nvm"
+    state = home / ".lark-cli"
+    elsewhere = tmp_path / "opt-tools"
+    for p in (programs, state, elsewhere):
+        p.mkdir(parents=True)
+    ws = tmp_path / "ws"
+    box = Sandbox(
+        SandboxSettings(),
+        workspace=ws,
+        shared=[state],
+        shared_ro=[programs, elsewhere],
+        probe=False,
+    )
+    joined = " ".join(box.wrap(["/bin/true"], network=False, cwd=ws))
+    assert f"--bind-try {state} {state}" in joined
+    assert f"--bind-try {state} /tmp/home/.lark-cli" in joined
+    assert f"--ro-bind-try {programs} {programs}" in joined
+    assert f"--ro-bind-try {programs} /tmp/home/.nvm" in joined
+    # outside home: bound where it is, nothing to mirror
+    assert (
+        f"--ro-bind-try {elsewhere} {elsewhere}" in joined
+        and f"{elsewhere} /tmp/home" not in joined
+    )
+    assert f" {home} " not in joined  # home itself is never bound
+    # the config expands ~ and the settings carry both lists
+    s = Settings.model_validate(
+        {"sandbox": {"share": ["~/.lark-cli"], "share_read_only": ["~/.nvm"]}}
+    )
+    assert s.sandbox.share == [Path("~/.lark-cli")] and s.sandbox.share_read_only == [
+        Path("~/.nvm")
+    ]
