@@ -1,0 +1,401 @@
+/* The red panda's motion. The pose comes from the SVG (RedPanda.tsx); this file makes it
+   live: a breath, blinks at uneven intervals, an ear twitch, a glance to the side — and, per
+   mood, a sway while it types, a hop and a wave while it waits, a bounce when it is pleased,
+   z's while it sleeps, a shake and a drip when something went wrong.
+
+   Every animated element is positioned with plain coordinates, never a transform attribute,
+   because a CSS transform would replace it. Origins are in user units of the 200×200 box. */
+
+.rp {
+  display: block;
+  overflow: visible;
+}
+.rp .rp-all,
+.rp .rp-head,
+.rp .rp-ear,
+.rp .rp-eyes,
+.rp .rp-blink,
+.rp .rp-tail,
+.rp .rp-paw-l,
+.rp .rp-paw-r,
+.rp .rp-raise,
+.rp .rp-bang,
+.rp .rp-spark,
+.rp .rp-z,
+.rp .rp-drop {
+  transform-box: view-box;
+}
+
+/* ---- idle ------------------------------------------------------------------------------- */
+.rp .rp-all {
+  transform-origin: 100px 200px;
+  animation: rp-breathe 4.6s ease-in-out infinite;
+}
+.rp .rp-head {
+  transform-origin: 100px 160px;
+  animation: rp-tilt 7s ease-in-out infinite;
+}
+.rp .rp-ear-l {
+  transform-origin: 62px 60px;
+  animation: rp-twitch-l 9s ease-in-out infinite;
+}
+.rp .rp-ear-r {
+  transform-origin: 138px 60px;
+  animation: rp-twitch-r 11s ease-in-out 2s infinite;
+}
+.rp .rp-eyes {
+  animation: rp-glance 9s ease-in-out infinite;
+}
+.rp .rp-blink {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: rp-blink 6.4s linear infinite;
+}
+.rp .rp-tail {
+  transform-origin: 150px 200px;
+  animation: rp-tail 5s ease-in-out infinite;
+}
+
+@keyframes rp-breathe {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-1.5px) scale(1.015);
+  }
+}
+@keyframes rp-tilt {
+  0%,
+  100% {
+    transform: rotate(-1.5deg);
+  }
+  50% {
+    transform: rotate(1.5deg);
+  }
+}
+@keyframes rp-twitch-l {
+  0%,
+  88%,
+  100% {
+    transform: rotate(0);
+  }
+  91% {
+    transform: rotate(-9deg);
+  }
+  94% {
+    transform: rotate(3deg);
+  }
+}
+@keyframes rp-twitch-r {
+  0%,
+  88%,
+  100% {
+    transform: rotate(0);
+  }
+  91% {
+    transform: rotate(9deg);
+  }
+  94% {
+    transform: rotate(-3deg);
+  }
+}
+@keyframes rp-glance {
+  0%,
+  66%,
+  92%,
+  100% {
+    transform: translate(0, 0);
+  }
+  70%,
+  86% {
+    transform: translate(-3px, 0.5px);
+  }
+}
+@keyframes rp-blink {
+  0%,
+  17%,
+  21%,
+  61%,
+  65%,
+  66%,
+  70%,
+  100% {
+    transform: scaleY(1);
+  }
+  19%,
+  63%,
+  68% {
+    transform: scaleY(0.08);
+  }
+}
+@keyframes rp-tail {
+  0%,
+  100% {
+    transform: rotate(-3deg);
+  }
+  50% {
+    transform: rotate(3deg);
+  }
+}
+
+/* ---- working: at the laptop ------------------------------------------------------------- */
+.rp-working .rp-all {
+  animation: rp-sway 2.8s ease-in-out infinite;
+}
+.rp-working .rp-head {
+  animation: rp-nod 2.8s ease-in-out infinite;
+}
+.rp-working .rp-eyes {
+  animation: rp-read 1.8s ease-in-out infinite;
+}
+.rp-working .rp-typing {
+  transform-origin: center;
+  animation: rp-type 0.36s ease-in-out infinite alternate;
+}
+.rp-working .rp-paw-r.rp-typing {
+  animation-delay: 0.18s;
+}
+.rp-working .rp-tail {
+  animation: rp-tail 1.6s ease-in-out infinite;
+}
+@keyframes rp-sway {
+  0%,
+  100% {
+    transform: rotate(-2.5deg);
+  }
+  50% {
+    transform: rotate(2.5deg);
+  }
+}
+@keyframes rp-nod {
+  0%,
+  100% {
+    transform: rotate(1deg) translateY(1px);
+  }
+  50% {
+    transform: rotate(-1deg) translateY(0);
+  }
+}
+@keyframes rp-read {
+  0%,
+  100% {
+    transform: translate(-2px, 3px);
+  }
+  50% {
+    transform: translate(2px, 3px);
+  }
+}
+@keyframes rp-type {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-4px);
+  }
+}
+
+/* ---- waiting: a hop, a wave, a card held up --------------------------------------------- */
+.rp-waiting .rp-all {
+  animation: rp-hop 3.2s ease-in-out infinite;
+}
+.rp-waiting .rp-head {
+  animation: rp-tilt-hold 3.2s ease-in-out infinite;
+}
+.rp-waiting .rp-raise {
+  transform-origin: 152px 178px;
+  animation: rp-wave 3.2s ease-in-out infinite;
+}
+.rp-waiting .rp-bang {
+  transform-origin: 164px 50px;
+  animation: rp-bob 1.4s ease-in-out infinite;
+}
+@keyframes rp-hop {
+  0%,
+  70%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  78% {
+    transform: translateY(-9px) scale(1.03, 0.97);
+  }
+  86% {
+    transform: translateY(0) scale(0.98, 1.03);
+  }
+  92% {
+    transform: translateY(-3px) scale(1);
+  }
+}
+@keyframes rp-tilt-hold {
+  0%,
+  100% {
+    transform: rotate(-4deg);
+  }
+  60% {
+    transform: rotate(-4deg);
+  }
+  80% {
+    transform: rotate(2deg);
+  }
+}
+@keyframes rp-wave {
+  0%,
+  50%,
+  100% {
+    transform: rotate(0);
+  }
+  10%,
+  30% {
+    transform: rotate(14deg);
+  }
+  20%,
+  40% {
+    transform: rotate(-8deg);
+  }
+}
+@keyframes rp-bob {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-3px) scale(1.06);
+  }
+}
+
+/* ---- happy: a bounce and a twinkle -------------------------------------------------------- */
+.rp-happy .rp-all {
+  animation: rp-bounce 0.7s cubic-bezier(0.3, 0.9, 0.4, 1.1) 2;
+}
+.rp-happy .rp-tail {
+  animation: rp-tail 0.5s ease-in-out infinite;
+}
+.rp-happy .rp-spark {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: rp-twinkle 0.9s ease-in-out infinite alternate;
+}
+.rp-happy .rp-spark-2 {
+  animation-delay: 0.3s;
+}
+@keyframes rp-bounce {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  40% {
+    transform: translateY(-9px) scale(1.02, 0.98);
+  }
+  70% {
+    transform: translateY(0) scale(0.98, 1.02);
+  }
+}
+@keyframes rp-twinkle {
+  from {
+    transform: scale(0.6) rotate(-10deg);
+    opacity: 0.4;
+  }
+  to {
+    transform: scale(1.1) rotate(10deg);
+    opacity: 1;
+  }
+}
+
+/* ---- sleepy: slow breath, a lean, z's ---------------------------------------------------- */
+.rp-sleepy .rp-all {
+  animation: rp-breathe 6.5s ease-in-out infinite;
+}
+.rp-sleepy .rp-head {
+  animation: none;
+  transform: rotate(5deg);
+}
+.rp-sleepy .rp-ear-l,
+.rp-sleepy .rp-ear-r {
+  animation: none;
+}
+.rp-sleepy .rp-z {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: rp-float 3s ease-in-out infinite;
+}
+.rp-sleepy .rp-z-2 {
+  animation-delay: 1s;
+}
+.rp-sleepy .rp-z-3 {
+  animation-delay: 2s;
+}
+@keyframes rp-float {
+  0% {
+    transform: translateY(4px);
+    opacity: 0;
+  }
+  30%,
+  60% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-10px);
+    opacity: 0;
+  }
+}
+
+/* ---- error: drooped ears, a shake, a drop ------------------------------------------------ */
+.rp-error .rp-all {
+  animation: rp-shake 0.55s ease-in-out 1;
+}
+.rp-error .rp-ear-l {
+  animation: none;
+  transform: rotate(-12deg);
+}
+.rp-error .rp-ear-r {
+  animation: none;
+  transform: rotate(12deg);
+}
+.rp-error .rp-head {
+  animation: none;
+  transform: rotate(-2deg);
+}
+.rp-error .rp-drop {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: rp-drip 1.8s ease-in infinite;
+}
+@keyframes rp-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20%,
+  60% {
+    transform: translateX(-3px);
+  }
+  40%,
+  80% {
+    transform: translateX(3px);
+  }
+}
+@keyframes rp-drip {
+  0% {
+    transform: translateY(-4px) scale(0.7);
+    opacity: 0;
+  }
+  30% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(12px) scale(1);
+    opacity: 0;
+  }
+}
+
+/* ---- still, and reduced motion ----------------------------------------------------------- */
+.rp-still *,
+.rp-still .rp-all {
+  animation: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rp * {
+    animation: none !important;
+  }
+}

@@ -2,6 +2,7 @@ import { Box, Check, ChevronRight, LogOut, Moon, Shield, ShieldAlert, ShieldChec
 import { useEffect, useState, type ReactNode } from "react";
 import { androidApp } from "../android";
 import { api, setToken } from "../api";
+import { MASCOT } from "../avatars";
 import { Avatar } from "../components/Avatar";
 import { AVATAR_COLORS, AvatarPicker } from "../components/AvatarPicker";
 import { BackBar } from "../components/BackBar";
@@ -36,7 +37,7 @@ export function SettingsScreen() {
   const { state, refreshSettings, setTab, toast } = useStore();
   const s = state.settings;
   const [name, setName] = useState("");
-  const [look, setLook] = useState({ avatar: "sunny", emoji: "✨", color: AVATAR_COLORS[0] });
+  const [look, setLook] = useState({ avatar: MASCOT, emoji: "✨", color: AVATAR_COLORS[0] });
   const [style, setStyle] = useState("");
   const [userName, setUserName] = useState("");
   const [saving, setSaving] = useState(false);

@@ -489,6 +489,7 @@ const zhCN: Record<string, string> = {
   "Make it yours, and decide how careful it should be.": "把它变成你的，并决定它应该多谨慎。",
   Name: "名字",
   Avatar: "头像",
+  "The red panda": "小熊猫",
   Colour: "颜色",
   "Personality & style": "个性与风格",
   "e.g. Warm, concise, a little witty. Uses metric units. Calls me Sam.": "例如：温暖、简洁、略带风趣。使用公制单位。称呼我 Sam。",

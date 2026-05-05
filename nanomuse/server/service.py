@@ -118,8 +118,9 @@ _QUIET_HOURS_RE = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)-([01]?\d|2[0-3]):([0-
 @dataclass
 class Profile:
     name: str = "nanoMuse"
-    # the face: one of the plush dolls shipped with the app (web/public/avatars), or "" for the emoji
-    avatar: str = "sunny"
+    # the face: "panda" (the red panda the app draws live), one of the plush dolls shipped
+    # with the app (web/public/avatars), or "" for the emoji
+    avatar: str = "panda"
     emoji: str = "✨"
     color: str = "#0064d4"
     style: str = ""

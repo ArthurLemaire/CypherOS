@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- the red panda from web/public/icon.svg, fitted to the adaptive-icon safe zone (generated together with it) -->
+    <group
+        android:scaleX="0.36"
+        android:scaleY="0.36"
+        android:translateX="18.00"
+        android:translateY="15.84">
+        <path
+            android:pathData="M26 62a26 26 0 1 1 52 0a26 26 0 1 1 -52 0zM122 62a26 26 0 1 1 52 0a26 26 0 1 1 -52 0zM38 112a62 54 0 1 1 124 0a62 54 0 1 1 -124 0zM68 110a11 11 0 1 0 22 0a11 11 0 1 0 -22 0zM110 110a11 11 0 1 0 22 0a11 11 0 1 0 -22 0zM91 129Q95 139 100 141Q105 139 109 129Q100 124 91 129zM88 146Q100 158 112 146Q100 152 88 146z"
+            android:fillColor="#FFFFFFFF" />
+    </group>
+</vector>

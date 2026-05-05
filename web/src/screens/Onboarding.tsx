@@ -1,6 +1,7 @@
 import { ArrowRight, Loader2, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { MASCOT } from "../avatars";
 import { Avatar } from "../components/Avatar";
 import { AVATAR_COLORS, AvatarPicker } from "../components/AvatarPicker";
 import { useT } from "../i18n";
@@ -32,7 +33,7 @@ export function Onboarding() {
   const [userName, setUserName] = useState(state.profile?.user_name ?? "");
   const [name, setName] = useState(state.profile?.name ?? "nanoMuse");
   const [look, setLook] = useState({
-    avatar: state.profile?.avatar ?? "sunny",
+    avatar: state.profile?.avatar ?? MASCOT,
     emoji: state.profile?.emoji ?? "✨",
     color: state.profile?.color ?? AVATAR_COLORS[0],
   });
