@@ -102,6 +102,15 @@ class Settings:
     byok_enabled: bool
     byok_hosts: tuple[str, ...]
 
+    # --- trial credentials for the phone app (see trials.py)
+    trial_enabled: bool
+    trial_db: str
+    trial_tokens: int  # lifetime budget of one trial
+    trial_per_ip_daily: int  # new trials per address per day
+    trial_daily_new: int  # new trials per day, all told
+    trial_daily_tokens: int  # what all trials together may spend in a day
+    trial_rpm: int  # requests per minute per trial
+
     @classmethod
     def from_env(cls) -> Settings:
         main = Lane(
@@ -154,10 +163,23 @@ class Settings:
             daily_tokens=_int("DAILY_LLM_TOKENS", 6_000_000),
             byok_enabled=_bool("BYOK_ENABLED", True),
             byok_hosts=hosts or DEFAULT_BYOK_HOSTS,
+            trial_enabled=_bool("TRIAL_ENABLED", False),
+            trial_db=_str("TRIAL_DB", "/data/trials.db"),
+            trial_tokens=_int("TRIAL_TOKENS", 1_000_000),
+            trial_per_ip_daily=_int("TRIAL_PER_IP_DAILY", 5),
+            trial_daily_new=_int("TRIAL_DAILY_NEW", 200),
+            trial_daily_tokens=_int("TRIAL_DAILY_TOKENS", 20_000_000),
+            trial_rpm=_int("TRIAL_RPM", 30),
         )
 
     def session_origin(self, sid: str) -> str:
         return f"{self.public_scheme}://{sid}.{self.session_domain}{self.public_port}"
+
+    def trial_base_url(self, trial_id: str, lane: str = "main") -> str:
+        """Where a phone points its OpenAI-compatible client for a trial."""
+        return (
+            f"{self.public_scheme}://{self.site_host}{self.public_port}/llm/trial/{trial_id}/{lane}"
+        )
 
     def lane(self, name: str) -> Lane | None:
         return {"main": self.main, "gui": self.gui}.get(name)

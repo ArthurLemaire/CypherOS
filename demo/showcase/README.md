@@ -53,6 +53,20 @@ Two lanes: `main` (the model that talks to the visitor) and `gui` (the one that 
 and taps; many small calls with a screenshot each). The default is 阿里云百炼's `qwen3.8-27b`
 for both — it reads screenshots, so one key does everything. Set `GUI_*` to split the lanes.
 
+### Trial credentials for the phone app
+
+The same proxy can hand a new phone its first model. With `TRIAL_ENABLED=1`, `POST /api/trial`
+with `{"device": "<a random id the app keeps>"}` answers with a key (`nmt_…`) and two
+addresses — `https://<SITE_HOST>/llm/trial/<id>/main` and `…/gui` — that go straight into the
+app's `[llm]` and `[gui]` settings. Every call through them is metered against the trial's
+lifetime budget, `TRIAL_TOKENS` (a million); spent, the proxy answers 429 `trial_exhausted` and
+the app asks for the user's own key. One trial per device: asking again with the same id
+rotates the key and keeps the count, so a reinstall recovers nothing extra. New trials are
+capped per address (`TRIAL_PER_IP_DAILY`) and per day (`TRIAL_DAILY_NEW`, 200); all trials
+together may spend `TRIAL_DAILY_TOKENS` a day; each is held to `TRIAL_RPM` requests a minute.
+Trials live in SQLite on the `gateway-data` volume and survive restarts; `GET /api/trial/<id>`
+with the key shows what is left, and `/api/demo/info` carries the totals.
+
 ## Deploying
 
 You need: a Linux box with Docker (4 cores / 8 GB is plenty for `MAX_SESSIONS=20` — a session
@@ -127,8 +141,8 @@ counters live in memory and start from zero when it restarts.
 
 ## Known limits
 
-- One gateway, one host. The counters are in memory; that is fine for a showcase and would need
-  a store to scale out.
+- One gateway, one host. The session counters are in memory (the trials are in SQLite); that is
+  fine for a showcase and would need a shared store to scale out.
 - The gateway holds the Docker socket, i.e. root on the host. It is the trusted part; keep it
   off the public network (compose does: only Caddy is published).
 - No egress from sessions means the search, fetch and browser tools fail inside a demo. That is

@@ -9,6 +9,7 @@ import pytest
 from showcase_gateway.app import create_app
 from showcase_gateway.config import Lane, Settings
 from showcase_gateway.sessions import SessionManager
+from showcase_gateway.trials import TrialManager, TrialStore
 
 
 class FakeRunner:
@@ -66,6 +67,13 @@ def make_settings(**over) -> Settings:
         daily_requests=100,
         daily_tokens=100_000,
         byok_hosts=("models.example", "byok.example", "localhost"),
+        trial_enabled=True,
+        trial_db=":memory:",
+        trial_tokens=1000,
+        trial_per_ip_daily=2,
+        trial_daily_new=3,
+        trial_daily_tokens=100_000,
+        trial_rpm=5,
     )
     values.update(over)
     return replace(base, **values)
@@ -128,7 +136,8 @@ def world():
     client = httpx.AsyncClient(transport=httpx.MockTransport(upstream.handler))
     manager = SessionManager(settings, runner, http=client, clock=clock)
     manager.resolve = lambda host, port: ["93.184.216.34"]
-    app = create_app(settings, manager, client=client)
+    trials = TrialManager(settings, TrialStore(":memory:"), clock=clock)
+    app = create_app(settings, manager, client=client, trials=trials)
     return settings, runner, upstream, clock, manager, app
 
 

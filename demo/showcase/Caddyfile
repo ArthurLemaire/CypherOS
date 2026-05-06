@@ -36,8 +36,17 @@
 		-Server
 	}
 
+	# the showcase API, trial credentials for the phone app, and the model proxy the trials use
 	handle /api/demo/* {
 		reverse_proxy gateway:8000
+	}
+	handle /api/trial* {
+		reverse_proxy gateway:8000
+	}
+	handle /llm/trial/* {
+		reverse_proxy gateway:8000 {
+			flush_interval -1
+		}
 	}
 
 	# MobileGym's companion dataset (app media, theme widgets). Optional; see README.
