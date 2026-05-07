@@ -267,11 +267,18 @@ Use nanoMuse for a real task, report what broke, then pick something focused.
 - [Open issues](https://github.com/nano-muse/nanoMuse/issues) for problems to look into.
 - A [pull request](https://github.com/nano-muse/nanoMuse/pulls) for a focused fix. Another language for the app is one dictionary file in `web/src/i18n/`.
 
-## Related projects
+## Acknowledgements
 
-- [nanobot](https://github.com/HKUDS/nanobot): a personal assistant framework that lives in chat apps (Telegram, Discord, Slack, WeChat). Pick it for a bot in the channels you already use; nanoMuse is one agent with Muse's product shape and safety model.
-- [OpenClaw](https://github.com/openclaw/openclaw): the always-on gateway approach many assistant projects follow.
-- [browser-use](https://github.com/browser-use/browser-use): the element-annotation idea behind the browser tool.
+nanoMuse stands on other people's work. [THIRD_PARTY_NOTICES.md](https://github.com/nano-muse/nanoMuse/blob/main/THIRD_PARTY_NOTICES.md) has the terms; the short list:
+
+- [MobileGym](https://github.com/Purewhiter/mobilegym) — the simulated Android phone the showcase runs on, with Chinese apps as React apps in the browser; the finger overlay follows its touch feedback.
+- [MemGUI-Bench](https://github.com/lgy0404/MemGUI-Bench) — the `mobile_use` operator prompt and loop the phone operator is ported from.
+- [PhoneHarness](https://github.com/lsdefine/PhoneHarness) — deterministic-first routing and the JSONL-trace-to-HTML idea.
+- [CopilotKit/OpenMuse](https://github.com/CopilotKit/OpenMuse) — product designs for durable tasks, watches, ideas with evidence and the follow-up queue.
+- [Open-AutoGLM](https://github.com/zai-org/Open-AutoGLM) and [ClawGUI](https://github.com/ClawGUI/ClawGUI-APP) — reference points for the Android executor.
+- [modern-screenshot](https://github.com/qq15725/modern-screenshot), [Caddy](https://github.com/caddyserver/caddy) and its Cloudflare modules, [Figtree](https://github.com/erikdkennedy/figtree), [bubblewrap](https://github.com/containers/bubblewrap).
+
+Related: [nanobot](https://github.com/HKUDS/nanobot) is a personal assistant framework for chat apps (Telegram, Discord, Slack, WeChat) — pick it for a bot in the channels you already use; [browser-use](https://github.com/browser-use/browser-use) is where the browser tool's element annotation comes from.
 
 ## Disclaimer
 
