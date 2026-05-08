@@ -85,29 +85,3 @@ def test_provider_key_fallback_follows_the_host(tmp_path: Path, monkeypatch: pyt
     monkeypatch.delenv("OPENAI_API_KEY")
     assert not key_for("https://api.openai.com/v1")  # DeepSeek's key does not stand in
     assert key_for("https://api.deepseek.com") == "sk-deepseek"
-
-
-def test_pre_rename_environment_still_counts():
-    """OPENMUSE_* (the name until 0.6.0) is read as NANOMUSE_* unless the new one is set."""
-    from nanomuse import alias_legacy_env
-
-    env = {
-        "OPENMUSE_LLM_MODEL": "old",
-        "OPENMUSE_DATA_DIR": "/old",
-        "NANOMUSE_DATA_DIR": "/new",
-        "HOME": "/h",
-    }
-    assert alias_legacy_env(env) == ["NANOMUSE_LLM_MODEL"]
-    assert env["NANOMUSE_LLM_MODEL"] == "old"
-    assert env["NANOMUSE_DATA_DIR"] == "/new"
-
-
-def test_pre_rename_data_dir_is_kept(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    from nanomuse.config import _default_data_dir
-
-    monkeypatch.setenv("HOME", str(tmp_path))
-    assert _default_data_dir() == tmp_path / ".nanomuse"  # a fresh machine
-    (tmp_path / ".openmuse").mkdir()
-    assert _default_data_dir() == tmp_path / ".openmuse"  # an upgrade keeps its data
-    (tmp_path / ".nanomuse").mkdir()
-    assert _default_data_dir() == tmp_path / ".nanomuse"  # the new one wins once it exists

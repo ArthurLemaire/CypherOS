@@ -21,8 +21,6 @@
 
 🧸 **nanoMuse** 是一个开源、自托管的个人 Agent，形态照着 Meta 的 [Muse](https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/) 来，并且为中国大陆做了适配：一个有名字、有脸的 Agent，住在你手机里，替你做事而不只是回答问题，关掉 App 也继续干活，做任何不可撤销的事之前先问你。Muse 依赖的那些有 API 的海外服务，在国内多半没有对应；nanoMuse 会以 GUI Agent 的方式直接操作你手机上的 App（12306、微信、支付宝……）的界面，让同一个 Agent 在没有 API 的地方也能干活。任何 OpenAI 兼容模型都能跑。一个 Python 包，网页 App 内置其中，另有一个 Android App。
 
-> nanoMuse 在 0.6.0 之前叫 **OpenMuse**，和 CopilotKit 的同名项目没有关系。
-
 <p align="center">
   <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/screenshots/chat-approval.png" width="24%" alt="聊天：Agent 在一条 shell 命令前停下来问你">
   <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/screenshots/feed.png" width="24%" alt="Feed：按你的要求写给你的帖子">
@@ -247,29 +245,17 @@ flowchart LR
 
 ## 发布
 
-**最新版本：[v0.7.0](https://github.com/nano-muse/nanoMuse/releases/tag/v0.7.0)**
+**v0.1.0 是第一个版本**，正在准备中：Agent 与 Sentinel、网页 App、Android App、模拟手机上的手机操作员、托管的演示站。打标签之前，`main` 就是可运行的版本——`pip install git+https://github.com/nano-muse/nanoMuse.git`，或镜像 `ghcr.io/nano-muse/nanomuse:edge`。
 
-v0.7.0 是改名：OpenMuse 变成 nanoMuse。
-
-- 包名 `nanomuse`、命令 `nanomuse`、环境变量 `NANOMUSE_*`（`OPENMUSE_*` 仍然可用）、数据目录 `~/.nanomuse`（已有的 `~/.openmuse` 会继续沿用）。
-- Android App 换了应用 ID，会和旧版并存安装；网页 App 会迁移本地存储，手机不用重新配对。
-- Docker 镜像改为 `ghcr.io/nano-muse/nanomuse`。
-
-所有版本：[CHANGELOG.md](https://github.com/nano-muse/nanoMuse/blob/main/CHANGELOG.md) · [GitHub releases](https://github.com/nano-muse/nanoMuse/releases)
-
-## 最近更新
-
-- **v0.7.0** 🏷️ 改名 nanoMuse，迁移到 [nano-muse/nanoMuse](https://github.com/nano-muse/nanoMuse)。
-- **v0.6.0** 🧸 Muse 外观、毛绒头像、Feed 帖子、停止按钮、Android App。
-- **v0.5.0** 📎 手机附件、通过任意 `/embeddings` 按含义召回、Brave / Tavily / SearXNG 搜索。
-- **v0.4.0** 🧩 `SKILL.md` 格式的技能、触发器（邮件、日历、webhook）、通讯录、每条命令一个沙箱。
-- **v0.3.0** 📅 日历连接器、会自我整理且可撤销的记忆。
-- **v0.2.0** 📱 有范围的审批、手机 App 外壳、产物、手机上配置连接、主动性、推送通知、浏览器视图、简体中文。
+[CHANGELOG.md](https://github.com/nano-muse/nanoMuse/blob/main/CHANGELOG.md) · [GitHub releases](https://github.com/nano-muse/nanoMuse/releases)
 
 ## 路线图
 
+- [ ] Android 执行器：nanoMuse App 通过无障碍服务操作真实 App（截图、手势、手指动效），Shizuku 可选
+- [ ] 本地版：大脑内嵌在 APK 里，手机不需要服务器
+- [ ] 通过演示站网关领取免费起步额度，之后用自己的 key
+- [ ] 还缺的 Muse 功能：可接管的持久任务、盯着世界变化的 watch、有依据的 Ideas、追问队列
 - [ ] 语音：说一句话，发出前先看到文字，走任意 OpenAI 兼容的 `/audio/transcriptions`
-- [ ] 评测：一小组日常任务和各模型的通过率，让选模型有据可依
 - [ ] iOS：与 Android App 相同的外壳
 
 ## 🤝 参与
