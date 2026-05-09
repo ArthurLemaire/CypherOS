@@ -247,17 +247,19 @@ def parse_tagged_text(text: str) -> dict[str, Any]:
     if not text:
         return result
 
-    head = text
+    head, payload = text, ""
     m = _TOOL_CALL_RE.search(text)
     if m:
         payload = m.group(1)
         head = text[: m.start()]
     else:
         fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
-        m2 = fenced or _JSON_RE.search(text)
-        payload = m2.group(1) if fenced else (m2.group(0) if m2 else "")
-        if m2:
-            head = text[: m2.start()]
+        if fenced:
+            payload, head = fenced.group(1), text[: fenced.start()]
+        else:
+            bare = _JSON_RE.search(text)
+            if bare:
+                payload, head = bare.group(0), text[: bare.start()]
     if payload:
         try:
             result["tool_call"] = json.loads(payload)
@@ -542,9 +544,8 @@ class PhoneOperator:
                 steps.append(entry)
 
             try:
-                screen = self.link.last_screen if not result.error else await self.link.screen()
-                if screen is None:
-                    screen = await self.link.screen()
+                fresh = self.link.last_screen if not result.error else None
+                screen = fresh if fresh is not None else await self.link.screen()
             except DeviceError as exc:
                 outcome.message = str(exc)
                 break

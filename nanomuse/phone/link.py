@@ -139,7 +139,7 @@ class PhoneLink:
         return {
             "connected": d is not None,
             "device": d.to_dict() if d else None,
-            "last_screen": self.last_screen.to_dict(brief=True) if self.last_screen else None,
+            "last_screen": self.last_screen.to_dict() if self.last_screen else None,
         }
 
     # ------------------------------------------------------------------ requests
