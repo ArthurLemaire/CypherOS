@@ -60,11 +60,9 @@ idles at ~150 MB), a domain on Cloudflare, and a 百炼 key (or any OpenAI-compa
 that takes images).
 
 ```bash
-# 1. DNS on Cloudflare:   demo.nanomuse.dev  A  <server>   proxied — Cloudflare caches the phone,
-#                                                          which is most of the bytes
+# 1. DNS on Cloudflare:   demo.nanomuse.dev  A  <server>   DNS only (see the note on the proxy)
 #                         *.s.nanomuse.dev   A  <server>   DNS only — sessions are WebSockets to Caddy
 #    Cloudflare → My Profile → API Tokens: Zone → DNS → Edit and Zone → Zone → Read on the zone.
-#    SSL/TLS mode "Full (strict)": the origin has a real Let's Encrypt certificate.
 
 # 2. the code
 git clone https://github.com/nano-muse/nanoMuse.git && cd nanoMuse/demo/showcase
@@ -92,10 +90,15 @@ Updating: `git pull && docker pull ghcr.io/nano-muse/nanomuse:latest && docker c
 Sessions in flight end when the gateway restarts; visitors get *Your Muse on the showcase server
 has ended* and a button for a new one.
 
-Behind Cloudflare's proxy the visitor's address arrives in `X-Forwarded-For`. Caddy is built
-with the [cloudflare-ip](https://github.com/WeidiDeng/caddy-cloudflare-ip) module and trusts
-that header from Cloudflare's ranges only, so `PER_IP_*` still counts visitors rather than
-Cloudflare's edges. Both certificates are obtained through Cloudflare's DNS API (`CLOUDFLARE_API_TOKEN`).
+Both certificates are obtained through Cloudflare's DNS API (`CLOUDFLARE_API_TOKEN`); the
+records themselves stay "DNS only". Cloudflare's proxy can be switched on for `SITE_HOST`
+when the site is under attack — Caddy is built with the
+[cloudflare-ip](https://github.com/WeidiDeng/caddy-cloudflare-ip) module and trusts
+`X-Forwarded-For` from Cloudflare's ranges only, so `PER_IP_*` keeps counting visitors rather
+than edges (set the zone's SSL/TLS mode to *Full (strict)*: the origin has a real certificate).
+It is off by default on purpose: from mainland China the free plan routes through overseas
+edges, and the phone's 1.6 MB bundle that a Hong Kong server delivers in 2–3 s took 15–40 s
+through the proxy in our measurements. The audience this is for reaches the origin faster.
 
 ### Running it on your machine
 
