@@ -236,10 +236,11 @@ More in [docs/architecture.md](https://github.com/nano-muse/nanoMuse/blob/main/d
 
 - [Configuration](https://github.com/nano-muse/nanoMuse/blob/main/docs/configuration.md): every setting, environment overrides, connectors, MCP, local models
 - [Sentinel](https://github.com/nano-muse/nanoMuse/blob/main/docs/sentinel.md): policy order, rules, taint tracking, vault, audit, the sandbox
-- [Operating the phone](https://github.com/nano-muse/nanoMuse/blob/main/docs/gui.md): the switch, the operator and its model, what asks first, the device protocol
+- [Operating the phone](https://github.com/nano-muse/nanoMuse/blob/main/docs/gui.md): the switch, the operator and its model, what asks first, traces, the device protocol
+- [Showcase: what to ask it](https://github.com/nano-muse/nanoMuse/blob/main/docs/showcase.md): tasks for the simulated phone — on the phone, without it, and both
 - [The app and its API](https://github.com/nano-muse/nanoMuse/blob/main/docs/app.md): screens, phone access, tokens, every endpoint
 - [Android](https://github.com/nano-muse/nanoMuse/blob/main/docs/android.md): install, notifications, building and signing
-- [CLI](https://github.com/nano-muse/nanoMuse/blob/main/docs/cli.md): `chat`, `run`, `serve`, `daemon`, `goals`, `memory`, `skills`, `vault`, `audit`, `doctor`
+- [CLI](https://github.com/nano-muse/nanoMuse/blob/main/docs/cli.md): `chat`, `run`, `serve`, `daemon`, `goals`, `memory`, `skills`, `vault`, `phone`, `audit`, `doctor`
 - [Architecture](https://github.com/nano-muse/nanoMuse/blob/main/docs/architecture.md): source map and extension points
 - [Deployment](https://github.com/nano-muse/nanoMuse/blob/main/docs/deployment.md): Docker, Compose, systemd, TLS
 - [Troubleshooting](https://github.com/nano-muse/nanoMuse/blob/main/docs/troubleshooting.md)

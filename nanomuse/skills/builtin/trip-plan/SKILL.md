@@ -20,6 +20,7 @@ Everything goes in `trips/<place>-<yyyy-mm>/` in the workspace: `itinerary.html`
 
 - `web_search` for: how to get there and around, the weather in that season, opening days of the two or three things worth seeing, and anything that must be booked ahead. Two or three searches, then stop; `web_fetch` a page only when the search result is not enough.
 - Prices and times only from pages you actually read. If you did not find something, say "check" next to it rather than inventing a figure.
+- Trains in China: when the phone is connected, get real options from the 12306 app with `phone_task` as the `train-tickets` skill describes (search only, no booking); the times and prices go into the itinerary and the budget. Without the phone, "check 12306" in the plan.
 
 ## Itinerary (`itinerary.html`)
 

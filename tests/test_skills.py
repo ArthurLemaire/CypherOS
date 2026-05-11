@@ -122,9 +122,15 @@ def test_builtin_skills_are_well_formed():
     lib = SkillLibrary(SkillsSettings(), own_dir=Path("/nonexistent/skills"))
     names = [s.name for s in lib.all()]
     assert names == sorted(names) and len(names) >= 5
-    assert {"weekly-review", "trip-plan", "inbox-triage", "compare-options", "meeting-prep"} <= set(
-        names
-    )
+    assert {
+        "weekly-review",
+        "trip-plan",
+        "inbox-triage",
+        "compare-options",
+        "meeting-prep",
+        "train-tickets",
+        "phone-messages",
+    } <= set(names)
     assert lib.errors == {} and all(s.source == BUILT_IN for s in lib.all())
     for s in lib.all():
         assert len(s.description) <= 300, f"{s.name}: the index line would be cut"
@@ -260,7 +266,7 @@ async def test_skills_tool(tmp_path: Path):
     assert b.warnings == ["this replaces one of the built-in skills"]
     assert tool.assess({"action": "remove", "name": "x"}).risk == RiskLevel.SENSITIVE
     r = await tool.execute(action="list")
-    assert r.ok and r.output.startswith("5 skills:\n- compare-options (built-in)")
+    assert r.ok and r.output.startswith("7 skills:\n- compare-options (built-in)")
     r = await tool.execute(action="use", name="trip-plan")
     assert r.ok and r.output.startswith("# Skill: trip-plan\n") and "## Research" in r.output
     r = await tool.execute(action="use", name="nope")
