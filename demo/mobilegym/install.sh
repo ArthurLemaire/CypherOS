@@ -22,4 +22,9 @@ fi
 rm -rf "$target/apps/nanoMuse"
 cp -R "$here/apps/nanoMuse" "$target/apps/nanoMuse"
 echo "installed apps/nanoMuse into $target"
-echo "next: (cd $target && npm install && npm run dev), then open the nanoMuse app on the phone."
+# the module's one dependency beyond MobileGym's own: it renders the phone's screenshot in the
+# tab. --no-save leaves the checkout's package.json and lockfile untouched.
+if [ -d "$target/node_modules" ] && [ ! -d "$target/node_modules/modern-screenshot" ]; then
+  (cd "$target" && npm install --no-save --no-audit --no-fund modern-screenshot@^4.7.0)
+fi
+echo "next: (cd $target && npm install && npm install --no-save modern-screenshot && npm run dev), then open the nanoMuse app on the phone."

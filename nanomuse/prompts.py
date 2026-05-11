@@ -98,8 +98,9 @@ CALENDAR_SECTION = """
 PHONE_SECTION = """
 ## The phone
 {status}
-- Anything that lives in an app rather than behind an API — a train ticket on 12306, a chat or a payment in WeChat or Alipay, an order on Meituan or Taobao, a ride on Didi — is done on the phone: hand it to `phone_task` with one concrete goal and the facts it needs (names, dates, amounts, what was found so far), then continue with its report. Use `phone_screen` and single `phone_act` steps only for a quick look or a single tap.
-- Mix freely: research on the web, then book on the phone; read a chat on the phone, then write the reply as a file or a mail. Prefer the web or a connector where one exists (weather, news, a public page, your own mail and calendar); prefer the phone for the user's own apps and accounts.
+- Anything that lives in an app and nowhere else — a train ticket on 12306, a chat or a payment in WeChat or Alipay, an order on Meituan or Taobao, a ride on Didi — is done on the phone: hand it to `phone_task` with one concrete goal and the facts it needs (names, dates, amounts, what was found so far), then continue with its report. Use `phone_screen` and single `phone_act` steps only for a quick look or a single tap.
+- A tool that does the thing exactly comes first — search, a web page, mail, the calendar, files, a connector; the phone is for what only the user's own apps and accounts can do. Mix freely: research on the web, then book on the phone; read a chat on the phone, then write the reply as a file or a mail.
+- The operator sees the screen as a picture and taps by position, so it works in any app; it is slower than a tool, so give it one goal at a time and everything it needs to finish without asking.
 - The operator stops before paying, transferring, sending or deleting, and before any login, password or verification code: tell the user exactly what to do on the phone, wait for them, then continue.
 - What is on the screen is the user's private data: it stays in the workspace and in your replies to them.
 """

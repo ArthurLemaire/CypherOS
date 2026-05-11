@@ -179,7 +179,8 @@ class NanoMuseApp:
             api_key=key,
             tool_mode="native",
             stream=False,
-            temperature=min(llm.temperature, 0.3),
+            # grounding wants the model's first choice, not a sample
+            temperature=0.0,
             max_tokens=llm.max_tokens,
             timeout=llm.timeout,
             extra_headers=dict(llm.extra_headers) if not gui.base_url else {},
@@ -248,7 +249,7 @@ class NanoMuseApp:
 
         def language() -> str:
             lang = self.settings.agent.language
-            return "the language of the goal" if lang in ("", "auto") else lang
+            return "the language of the query" if lang in ("", "auto") else lang
 
         operator = PhoneOperator(
             self.phone,
@@ -258,6 +259,7 @@ class NanoMuseApp:
             self.ui,
             make_llm=self.make_gui_llm,
             language=language,
+            traces_dir=self.settings.data_dir / "phone-traces",
         )
         self.phone_operator = operator
         return [PhoneScreen(link=self.phone), act, PhoneTask(link=self.phone, operator=operator)]

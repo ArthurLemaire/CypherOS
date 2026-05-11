@@ -143,6 +143,16 @@ nanomuse vault delete EMAIL_PASSWORD
 
 Reference secrets as `{{vault:EMAIL_PASSWORD}}` in the config or in tool arguments. See [sentinel.md](sentinel.md#credential-vault).
 
+## Phone
+
+```bash
+nanomuse phone traces [--limit 20]                 # every phone_task on record: id, when, status, steps, goal
+nanomuse phone trace pt-20260923-230710-5be7       # one task step by step: screen, latency, action, what was sent
+nanomuse phone trace pt-20260923-230710-5be7 -o trace.html   # a self-contained page with every screen and tap drawn on it
+```
+
+Traces are written whenever the agent operates the phone ([gui.md](gui.md#traces)); the HTML page is one file with the screenshots inlined, made to be attached to an issue.
+
 ## Audit and config
 
 ```bash

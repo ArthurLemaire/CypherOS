@@ -17,7 +17,10 @@ WORKDIR /src
 RUN git clone --depth 1 --branch "${MOBILEGYM_REF}" "${MOBILEGYM_REPO}" mobilegym
 COPY demo/mobilegym/apps/nanoMuse mobilegym/apps/nanoMuse
 WORKDIR /src/mobilegym
+# modern-screenshot renders the phone's screenshot in the tab (the nanoMuse module's only
+# extra dependency); --no-save keeps MobileGym's lockfile as upstream has it
 RUN npm ci --no-audit --no-fund \
+ && npm install --no-save --no-audit --no-fund modern-screenshot@^4.7.0 \
  && VITE_NANOMUSE_DEMO="${NANOMUSE_DEMO}" npm run build
 
 FROM caddy:2-builder AS caddy-build

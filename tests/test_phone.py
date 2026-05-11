@@ -1,11 +1,13 @@
-"""The phone: screens, the link, the tools' risk, the operator loop, and the server side."""
+"""The phone: screens, the link, the tools' risk, the operator loop, traces, and the server side."""
 
 from __future__ import annotations
 
 import asyncio
 import base64
 import json
+import struct
 import time
+import zlib
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +18,15 @@ from nanomuse.config import GUISettings, Settings
 from nanomuse.llm import MockLLM
 from nanomuse.phone import PhoneLink, Screen
 from nanomuse.phone.link import DeviceError
-from nanomuse.phone.operator import PhoneOperator, parse_step
+from nanomuse.phone.operator import (
+    PhoneOperator,
+    Step,
+    parse_step,
+    parse_tagged_text,
+    to_device_action,
+)
+from nanomuse.phone.screen import image_size
+from nanomuse.phone.trace import list_traces, read_trace, render_html
 from nanomuse.schema import LLMResponse, RiskLevel
 from nanomuse.sentinel import AuditLog, Sentinel
 from nanomuse.server import create_app
@@ -24,9 +34,26 @@ from nanomuse.server.service import MuseService
 from nanomuse.tools.phone import PhoneAct, PhoneScreen, PhoneTask
 from nanomuse.ui import ApprovalDecision, ApprovalRequest
 
-PNG = base64.b64encode(
-    b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
-).decode()  # a header is enough to be saved as .png
+
+def png(width: int, height: int) -> str:
+    """A real (tiny) PNG of the given size, base64 — one grey row, repeated."""
+
+    def chunk(kind: bytes, body: bytes) -> bytes:
+        return (
+            struct.pack(">I", len(body))
+            + kind
+            + body
+            + struct.pack(">I", zlib.crc32(kind + body) & 0xFFFFFFFF)
+        )
+
+    raw = b"".join(b"\x00" + b"\x80" * width for _ in range(height))
+    return base64.b64encode(
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 0, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(raw))
+        + chunk(b"IEND", b"")
+    ).decode()
+
 
 PAY_SCREEN = {
     "app": "alipay",
@@ -34,42 +61,33 @@ PAY_SCREEN = {
     "route": "/transfer/confirm",
     "width": 390,
     "height": 844,
-    "elements": [
-        {"id": 1, "role": "text", "text": "转账给 张三", "bounds": [20, 100, 370, 140]},
-        {"id": 2, "role": "text", "text": "¥ 500.00", "bounds": [20, 160, 370, 220]},
-        {
-            "id": 3,
-            "role": "input",
-            "text": "",
-            "desc": "备注",
-            "bounds": [20, 240, 370, 290],
-            "editable": True,
-        },
-        {
-            "id": 4,
-            "role": "button",
-            "text": "确认付款",
-            "bounds": [40, 760, 350, 808],
-            "clickable": True,
-        },
-    ],
-    "screenshot": PNG,
+    "keyboard": False,
+    "screenshot": png(39, 84),
 }
 
 HOME_SCREEN = {
     "app": "launcher",
     "app_name": "Home",
-    "elements": [
-        {"id": 1, "role": "icon", "text": "微信", "bounds": [10, 10, 90, 90], "clickable": True},
-        {
-            "id": 2,
-            "role": "icon",
-            "text": "支付宝",
-            "bounds": [100, 10, 190, 90],
-            "clickable": True,
-        },
-    ],
+    "width": 390,
+    "height": 844,
+    "screenshot": png(39, 84),
 }
+
+
+def reply(action: str, thought: str = "look", **arguments: Any) -> LLMResponse:
+    """A model turn in the mobile_use dialect."""
+    call = {"name": "mobile_use", "arguments": {"action": action, **arguments}}
+    return LLMResponse(
+        content=f"Thought: {thought}\nAction: {arguments.pop('_label', action)}\n"
+        f"<tool_call>\n{json.dumps(call, ensure_ascii=False)}\n</tool_call>"
+    )
+
+
+def labelled(label: str, action: str, **arguments: Any) -> LLMResponse:
+    call = {"name": "mobile_use", "arguments": {"action": action, **arguments}}
+    return LLMResponse(
+        content=f"Thought: I see it.\nAction: {label}\n<tool_call>\n{json.dumps(call, ensure_ascii=False)}\n</tool_call>"
+    )
 
 
 class FakePhone:
@@ -137,23 +155,52 @@ def make_sentinel(settings: Settings, ui: AutoApproveUI) -> Sentinel:
     return Sentinel(settings.sentinel, audit=audit, ui=ui)
 
 
+def make_operator(
+    settings: Settings, link: PhoneLink, llm: MockLLM, ui: AutoApproveUI, **gui_kw: Any
+) -> tuple[PhoneOperator, PhoneAct]:
+    gui = GUISettings(**gui_kw)
+    act = PhoneAct(link=link, gui=gui)
+    operator = PhoneOperator(
+        link,
+        gui,
+        make_sentinel(settings, ui),
+        act,
+        ui,
+        make_llm=lambda: llm,
+        traces_dir=settings.data_dir / "phone-traces",
+    )
+    return operator, act
+
+
 # ----------------------------------------------------------------------------- screens
-def test_screen_renders_elements_and_saves_the_picture(tmp_path: Path):
+def test_screen_is_a_picture_with_a_caption(tmp_path: Path):
     screen = Screen.from_device(PAY_SCREEN, shots_dir=tmp_path / "shots")
-    text = screen.render()
-    assert text.startswith("支付宝 (alipay) · /transfer/confirm · 390×844 · keyboard hidden")
-    assert '[4] button "确认付款" {clickable} @(195,784)' in text
-    assert "[3] input (备注) {editable}" in text
-    assert screen.element(4).center == (195, 784)
-    assert screen.find_words(["付款", "pay", "删除"]) == ["付款"]
+    assert screen.render() == "支付宝 (alipay) · /transfer/confirm · 390×844 · keyboard hidden"
     assert screen.image_path and screen.image_path.endswith(".png")
     assert Path(screen.image_path).exists()
-    assert screen.to_dict(brief=True)["elements"] == 4
+    assert screen.image_size == (39, 84)  # the picture may be smaller than the screen
+    assert screen.to_dict()["image"] == screen.image_path
+
+    # a device that says nothing about its size: the picture's own size stands in
+    bare = Screen.from_device({"app": "x", "screenshot": png(36, 80)}, shots_dir=tmp_path / "s")
+    assert (bare.width, bare.height) == (36, 80)
+
+    none = Screen.from_device({"app": "x", "note": "screen is locked"})
+    assert not none.has_image and "(the device sent no screenshot)" in none.render()
+    assert "note: screen is locked" in none.render()
 
 
-def test_screen_without_elements_says_so():
-    screen = Screen.from_device({"app": "x"})
-    assert "(no elements reported" in screen.render()
+def test_image_size_reads_png_and_jpeg_headers():
+    assert image_size(base64.b64decode(png(12, 7))) == (12, 7)
+    jpeg = (
+        b"\xff\xd8"
+        + b"\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
+        + b"\xff\xc0\x00\x11\x08"
+        + struct.pack(">HH", 800, 360)
+        + b"\x03\x01\x22\x00\x02\x11\x01\x03\x11\x01"
+    )
+    assert image_size(jpeg) == (360, 800)
+    assert image_size(b"GIF89a") is None
 
 
 # ----------------------------------------------------------------------------- the link
@@ -205,168 +252,314 @@ def test_the_most_recent_gui_device_is_the_phone():
 
 
 # ----------------------------------------------------------------------------- tools
-async def test_phone_act_risk_follows_what_is_under_the_finger(tmp_path: Path):
+async def test_phone_act_risk_follows_the_label_under_the_finger():
     link = PhoneLink()
     FakePhone(link, [PAY_SCREEN])
     await link.screen()
     act = PhoneAct(link=link, gui=GUISettings())
 
-    pay = act.assess({"action": "tap", "element": 4})
+    pay = act.assess({"action": "tap", "x": 195, "y": 784, "label": "确认付款"})
     assert pay.risk == RiskLevel.SENSITIVE and pay.warnings and pay.egress
-    assert pay.target == "alipay" and "确认付款" in pay.summary
+    assert pay.target == "alipay"
+    assert pay.summary == 'phone_act: tap "确认付款" at (195,784) in 支付宝 (alipay)'
 
-    note = act.assess({"action": "tap", "element": 3})
+    note = act.assess({"action": "tap", "x": 100, "y": 260, "label": "备注"})
     assert note.risk == RiskLevel.MODERATE and not note.warnings
 
     blind = act.assess({"action": "tap", "x": 195, "y": 784})
-    assert (
-        blind.risk == RiskLevel.SENSITIVE
-    )  # the screen talks about paying; we cannot see the target
+    assert blind.risk == RiskLevel.MODERATE and "no `label`" in blind.warnings[0]
 
-    typing = act.assess({"action": "type", "element": 3, "text": "房租"})
-    assert typing.risk == RiskLevel.MODERATE and 'type "房租"' in typing.summary
+    icon = act.assess({"action": "tap", "x": 30, "y": 30, "label": "支付宝"})
+    assert icon.risk == RiskLevel.MODERATE  # an app's name is never a payment step
+
+    typing = act.assess({"action": "type", "text": "房租", "label": "备注"})
+    assert typing.risk == RiskLevel.MODERATE and 'type "房租" into "备注"' in typing.summary
+    blind_send = act.assess({"action": "type", "text": "hi", "submit": True})
+    assert blind_send.risk == RiskLevel.SENSITIVE
 
     swipe = act.assess({"action": "swipe", "direction": "up"})
-    assert (
-        swipe.risk == RiskLevel.MODERATE
-        and swipe.summary == "phone_act: swipe up in 支付宝 (alipay)"
-    )
+    assert swipe.risk == RiskLevel.MODERATE
+    assert swipe.summary == "phone_act: swipe up in 支付宝 (alipay)"
+    pointed = act.assess({"action": "swipe", "x": 200, "y": 600, "x2": 200, "y2": 200})
+    assert "(200,600)→(200,200)" in pointed.summary
+
+    send = act.assess({"action": "enter", "label": "发送"})
+    assert send.risk == RiskLevel.SENSITIVE
 
 
-async def test_phone_act_resolves_elements_and_returns_the_next_screen(tmp_path: Path):
+async def test_phone_act_takes_coordinates_and_returns_the_next_screen(tmp_path: Path):
     link = PhoneLink(shots_dir=tmp_path / "shots")
     phone = FakePhone(link, [HOME_SCREEN, PAY_SCREEN])
     screen_tool = PhoneScreen(link=link)
     first = await screen_tool.execute()
-    assert first.ok and '[2] icon "支付宝"' in first.output
+    assert first.ok and first.output.startswith("Home (launcher) · 390×844") and first.images
 
     act = PhoneAct(link=link, gui=GUISettings())
-    missing = await act.execute(action="tap", element=9)
-    assert not missing.ok and "no element [9]" in missing.error
+    unlabelled = await act.execute(action="tap", x=145, y=50)
+    assert not unlabelled.ok and "needs `label`" in unlabelled.error
+    nowhere = await act.execute(action="tap", label="x")
+    assert not nowhere.ok and "needs `x` and `y`" in nowhere.error
+    outside = await act.execute(action="tap", x=900, y=50, label="x")
+    assert not outside.ok and "outside the 390×844 screen" in outside.error
 
-    result = await act.execute(action="tap", element=2)
+    result = await act.execute(action="tap", x=145, y=50, label="支付宝")
     assert result.ok and result.output.startswith("Done: ok. Screen now:")
-    assert phone.acts[-1] == {"action": "tap", "element": 2, "x": 145, "y": 50, "label": "支付宝"}
-    assert (
-        "确认付款" in result.output and result.images
-    )  # the new screen came back with its picture
+    assert phone.acts[-1] == {"action": "tap", "label": "支付宝", "x": 145.0, "y": 50.0}
+    assert "支付宝 (alipay)" in result.output and result.images  # the new screen, with its picture
+
+    swiped = await act.execute(action="swipe", x=200, y=600, x2=200, y2=200)
+    assert swiped.ok and phone.acts[-1] == {
+        "action": "swipe",
+        "x": 200.0,
+        "y": 600.0,
+        "x2": 200.0,
+        "y2": 200.0,
+    }
+    by_direction = await act.execute(action="swipe", direction="up", distance=0.3)
+    assert by_direction.ok and phone.acts[-1] == {
+        "action": "swipe",
+        "direction": "up",
+        "distance": 0.3,
+    }
+    assert not (await act.execute(action="swipe", x=1, y=1)).ok
 
     opened = await act.execute(action="open_app", app="微信")
     assert opened.ok and phone.acts[-1]["app"] == "wechat"
+    typed = await act.execute(action="type", text="房租", clear=True)
+    assert typed.ok and phone.acts[-1] == {
+        "action": "type",
+        "text": "房租",
+        "clear": True,
+        "submit": False,
+    }
+    held = await act.execute(action="long_press", x=10, y=10, label="row", seconds=2)
+    assert held.ok and phone.acts[-1]["seconds"] == 2.0
 
     bad = await act.execute(action="type")
     assert not bad.ok and "`type` needs `text`" in bad.error
     assert not (await act.execute(action="fly")).ok
 
 
-# ----------------------------------------------------------------------------- the operator
-def test_parse_step_is_tolerant():
-    assert (
-        parse_step('{"thought": "t", "action": {"action": "tap", "element": 1}}')["action"][
-            "element"
-        ]
-        == 1
+# ----------------------------------------------------------------------------- parsing
+def test_parse_tagged_text_and_steps():
+    text = (
+        "Thought: The search box is at the top.\n"
+        "Action: Tap the search box\n"
+        '<tool_call>\n{"name": "mobile_use", "arguments": {"action": "click", "coordinate": [500, 120]}}\n</tool_call>'
     )
-    fenced = '```json\n{"thought": "x", "action": {"action": "back"}}\n```'
-    assert parse_step(fenced)["action"]["action"] == "back"
-    prose = 'I will tap it. {"action": "tap", "element": 3}'
-    assert parse_step(prose) == {"thought": "", "action": {"action": "tap", "element": 3}}
-    assert parse_step("no json here") is None
+    parts = parse_tagged_text(text)
+    assert parts["thinking"] == "The search box is at the top."
+    assert parts["conclusion"] == "Tap the search box"
+    assert parts["tool_call"]["arguments"]["action"] == "click"
+
+    step = parse_step(text)
+    assert isinstance(step, Step) and step.kind == "click" and step.action == "Tap the search box"
+    assert step.arguments["coordinate"] == pytest.approx([500 / 999, 120 / 999])
+
+    # a box instead of a point, a <think> block, no Thought/Action lines, a code fence
+    boxed = parse_step(
+        '<think>hmm</think>```json\n{"name": "mobile_use", "arguments": {"action": "long_press", "coordinate": [100, 100, 300, 300], "time": 2}}\n```'
+    )
+    assert boxed.arguments["coordinate"] == pytest.approx([200 / 999, 200 / 999])
+    assert boxed.action.startswith("long_press at")
+    # the bare arguments object is accepted too
+    bare = parse_step('Action: go back\n{"action": "system_button", "button": "Back"}')
+    assert bare.kind == "system_button" and bare.action == "go back"
+    assert parse_step("Thought: I am not sure what to do.") is None
+    assert (
+        parse_step('<tool_call>{"name": "mobile_use", "arguments": {"action": 3}}</tool_call>')
+        is None
+    )
+    assert parse_step("<tool_call>{not json}</tool_call>") is None
     assert parse_step(None) is None
 
 
+def test_to_device_action_maps_the_dialect_onto_the_phone():
+    screen = Screen(app="x", width=1000, height=2000)
+
+    def step(action: str, **arguments: Any) -> Step:
+        return Step(
+            thought="",
+            action=f"do {action}",
+            name="mobile_use",
+            arguments={"action": action, **arguments},
+        )
+
+    assert to_device_action(step("click", coordinate=[0.5, 0.25]), screen) == {
+        "action": "tap",
+        "x": 500.0,
+        "y": 500.0,
+        "label": "do click",
+    }
+    held = to_device_action(step("long_press", coordinate=[0.1, 0.1], time=9), screen)
+    assert held["action"] == "long_press" and held["seconds"] == 5.0  # capped
+    swipe = to_device_action(step("swipe", coordinate=[0.5, 0.8], coordinate2=[0.5, 0.2]), screen)
+    assert swipe == {
+        "action": "swipe",
+        "x": 500.0,
+        "y": 1600.0,
+        "x2": 500.0,
+        "y2": 400.0,
+        "label": "do swipe",
+    }
+    assert to_device_action(step("type", text="hello"), screen)["text"] == "hello"
+    assert to_device_action(step("system_button", button="Home"), screen)["action"] == "home"
+    assert to_device_action(step("system_button", button="Menu"), screen)["action"] == "recents"
+    assert to_device_action(step("wait", time=30), screen) == {"action": "wait", "seconds": 10.0}
+    assert to_device_action(step("open", text="12306"), screen)["app"] == "12306"
+    assert to_device_action(step("answer", text="done"), screen) is None
+    assert to_device_action(step("terminate", status="success"), screen) is None
+    with pytest.raises(ValueError, match="needs `coordinate`"):
+        to_device_action(step("click"), screen)
+    with pytest.raises(ValueError, match="unknown system button"):
+        to_device_action(step("system_button", button="Volume"), screen)
+    with pytest.raises(ValueError, match="unknown action"):
+        to_device_action(step("fly"), screen)
+
+
+# ----------------------------------------------------------------------------- the operator
 async def test_operator_runs_until_done_and_asks_before_paying(settings: Settings):
     link = PhoneLink(shots_dir=settings.agent.workspace / "screenshots")
     phone = FakePhone(link, [HOME_SCREEN, PAY_SCREEN, PAY_SCREEN])
     ui = AutoApproveUI(approve=True)
-    sentinel = make_sentinel(settings, ui)
-    gui = GUISettings(max_steps=6)
-    act = PhoneAct(link=link, gui=gui)
     llm = MockLLM(
         [
-            LLMResponse(
-                content='{"thought": "open alipay", "action": {"action": "tap", "element": 2}}'
-            ),
-            LLMResponse(content='{"thought": "pay", "action": {"action": "tap", "element": 4}}'),
-            LLMResponse(
-                content='{"thought": "paid", "action": {"action": "done", "message": "已向张三转账 ¥500.00"}}'
-            ),
+            labelled("Tap the 支付宝 icon", "click", coordinate=[372, 59]),
+            labelled("Tap 确认付款", "click", coordinate=[499, 928]),
+            labelled("Report the result", "answer", text="已向张三转账 ¥500.00"),
         ]
     )
-    operator = PhoneOperator(link, gui, sentinel, act, ui, make_llm=lambda: llm)
+    operator, _ = make_operator(settings, link, llm, ui, max_steps=6)
     outcome = await operator.run("给张三转 500 元", context="he is a friend")
     assert outcome.status == "done" and outcome.steps == 3
     assert outcome.message == "已向张三转账 ¥500.00"
-    assert [a["action"] for a in phone.acts] == ["tap", "tap"]
+    # 999-space points landed on the 390×844 screen, with the Action sentence as the label
+    assert phone.acts[0] == {"action": "tap", "x": 145.2, "y": 49.8, "label": "Tap the 支付宝 icon"}
+    assert phone.acts[1]["label"] == "Tap 确认付款"
     # the payment tap went through the Sentinel and was asked about
     assert len(ui.requests) == 1 and ui.requests[0].risk == RiskLevel.SENSITIVE
     assert "确认付款" in ui.requests[0].summary
     report = outcome.report()
     assert report.startswith("The phone operator finished. (3 steps)")
-    assert "- tap [4]" in report
-    # the operator's prompt carried the goal, the context and the apps
-    system = llm.calls[0]["messages"][0].content
-    assert "给张三转 500 元" in system and "he is a friend" in system and "微信 (wechat)" in system
+    assert '- tap "Tap 确认付款"' in report and f"Trace: {outcome.trace_id}" in report
+
+    # the model saw the mobile_use tool, the query, the progress and one picture per step
+    first = llm.calls[0]["messages"]
+    assert '"name": "mobile_use"' in first[0].content and "999x999" in first[0].content
+    assert "The user query: 给张三转 500 元" in first[1].content
+    assert "(Known already: he is a friend)" in first[1].content
+    assert first[1].images and len(first[1].images) == 1
+    third = llm.calls[2]["messages"][1].content
+    assert "Step 1: Tap the 支付宝 icon; Step 2: Tap 确认付款; " in third
+
+    # and the trace says the same
+    records = read_trace(settings.data_dir / "phone-traces" / f"{outcome.trace_id}.jsonl")
+    assert [r["kind"] for r in records] == ["task", "step", "step", "step", "end"]
+    assert records[1]["params"]["action"] == "tap" and records[1]["screen"]["image"]
+    assert records[-1]["status"] == "done"
+    listing = list_traces(settings.data_dir / "phone-traces")
+    assert listing[0]["id"] == outcome.trace_id and listing[0]["steps"] == 3
+    page = render_html(records)
+    assert "Tap 确认付款" in page and "<circle" in page and "data:image/png;base64" in page
 
 
 async def test_operator_stops_when_the_user_refuses(settings: Settings):
-    link = PhoneLink()
+    link = PhoneLink(shots_dir=settings.agent.workspace / "screenshots")
     FakePhone(link, [PAY_SCREEN])
     ui = AutoApproveUI(approve=False)
-    sentinel = make_sentinel(settings, ui)
-    gui = GUISettings(max_steps=6)
-    act = PhoneAct(link=link, gui=gui)
     llm = MockLLM(
         [
-            LLMResponse(content='{"thought": "pay", "action": {"action": "tap", "element": 4}}'),
-            LLMResponse(
-                content='{"thought": "try again", "action": {"action": "tap", "element": 4}}'
-            ),
+            labelled("Tap 确认付款", "click", coordinate=[499, 928]),
+            labelled("Tap 确认付款 again", "click", coordinate=[499, 928]),
         ]
     )
-    operator = PhoneOperator(link, gui, sentinel, act, ui, make_llm=lambda: llm)
+    operator, _ = make_operator(settings, link, llm, ui, max_steps=6)
     outcome = await operator.run("pay")
     assert outcome.status == "blocked" and "Sentinel blocked" in outcome.message
     assert len(ui.requests) == 2
+    # the refusal was told to the model before its second try
+    assert "Result: the owner refused this step" in llm.calls[1]["messages"][1].content
 
 
-async def test_operator_handles_bad_replies_and_step_limits(settings: Settings):
-    link = PhoneLink()
+async def test_operator_handles_bad_replies_step_limits_and_loops(settings: Settings):
+    shots = settings.agent.workspace / "screenshots"
+    link = PhoneLink(shots_dir=shots)
     FakePhone(link, [HOME_SCREEN])
     ui = AutoApproveUI()
-    sentinel = make_sentinel(settings, ui)
-    gui = GUISettings(max_steps=2)
-    act = PhoneAct(link=link, gui=gui)
     llm = MockLLM(
         [
             LLMResponse(content="I am not sure what to do"),
-            LLMResponse(content='{"thought": "back", "action": {"action": "back"}}'),
-            LLMResponse(content='{"thought": "back", "action": {"action": "back"}}'),
+            labelled("Go back", "system_button", button="Back"),
+            labelled("Go back", "system_button", button="Back"),
         ]
     )
-    operator = PhoneOperator(link, gui, sentinel, act, ui, make_llm=lambda: llm)
+    operator, _ = make_operator(settings, link, llm, ui, max_steps=2)
     outcome = await operator.run("look around")
     assert outcome.status == "max_steps" and outcome.steps == 2
-    # the nudge after the unparseable reply reached the model
-    assert any("not one JSON object" in (m.content or "") for m in llm.calls[1]["messages"])
+    # the nudge after the unparseable reply reached the model, in the same step
+    assert any("not in the response format" in (m.content or "") for m in llm.calls[1]["messages"])
 
-    ask = MockLLM([LLMResponse(content='{"action": "ask", "message": "请输入支付密码"}')])
-    operator = PhoneOperator(link, gui, sentinel, act, ui, make_llm=lambda: ask)
+    never = MockLLM([LLMResponse(content="nope")] * 3)
+    operator, _ = make_operator(settings, link, never, ui, max_steps=2)
+    outcome = await operator.run("look around")
+    assert outcome.status == "failed" and "usable actions" in outcome.message
+
+    ask = MockLLM([labelled("Ask for the password", "ask_user", text="请输入支付密码")])
+    operator, _ = make_operator(settings, link, ask, ui)
     outcome = await operator.run("pay")
     assert outcome.status == "ask" and outcome.message == "请输入支付密码"
     assert "needs the user" in outcome.report()
 
+    gave_up = MockLLM([labelled("Stop", "terminate", status="failure", text="no such chat")])
+    operator, _ = make_operator(settings, link, gave_up, ui)
+    outcome = await operator.run("read the chat")
+    assert outcome.status == "abort" and outcome.message == "no such chat"
+
+    # the same tap three times is pointed out, and does not go to the phone a third time
+    phone = FakePhone(PhoneLink(shots_dir=shots), [HOME_SCREEN])
+    same = [labelled("Tap the icon", "click", coordinate=[100, 100]) for _ in range(3)]
+    looping = MockLLM([*same, labelled("Stop", "terminate", status="failure", text="stuck")])
+    operator, _ = make_operator(settings, phone.link, looping, ui, max_steps=6)
+    outcome = await operator.run("tap")
+    assert outcome.status == "abort" and len(phone.acts) == 2
+    assert "taken three times" in looping.calls[3]["messages"][1].content
+
+
+async def test_operator_starts_in_the_app_and_needs_pictures(settings: Settings):
+    link = PhoneLink(shots_dir=settings.agent.workspace / "screenshots")
+    phone = FakePhone(link, [HOME_SCREEN, PAY_SCREEN])
+    ui = AutoApproveUI()
+    llm = MockLLM([labelled("Done", "terminate", status="success", text="ok")])
+    operator, _ = make_operator(settings, link, llm, ui)
+    outcome = await operator.run("check", app="支付宝")
+    assert outcome.status == "done" and phone.acts[0] == {
+        "action": "open_app",
+        "app": "alipay",
+        "label": "open 支付宝",
+    }
+
+    blind = MockLLM([])
+    blind.vision_available = False
+    operator, _ = make_operator(settings, link, blind, ui)
+    outcome = await operator.run("check")
+    assert outcome.status == "failed" and "does not take images" in outcome.message
+
+    dark = PhoneLink()
+    FakePhone(dark, [{"app": "x", "width": 1, "height": 1}])
+    operator, _ = make_operator(settings, dark, MockLLM([]), ui)
+    outcome = await operator.run("check")
+    assert outcome.status == "failed" and "no screenshot" in outcome.message
+
 
 async def test_phone_task_tool_reports_the_outcome(settings: Settings):
-    link = PhoneLink()
+    link = PhoneLink(shots_dir=settings.agent.workspace / "screenshots")
     FakePhone(link, [HOME_SCREEN])
     ui = AutoApproveUI()
-    gui = GUISettings()
-    act = PhoneAct(link=link, gui=gui)
-    llm = MockLLM([LLMResponse(content='{"action": "done", "message": "nothing to do"}')])
-    operator = PhoneOperator(link, gui, make_sentinel(settings, ui), act, ui, make_llm=lambda: llm)
+    llm = MockLLM([labelled("Report", "answer", text="nothing to do")])
+    operator, _ = make_operator(settings, link, llm, ui)
     task = PhoneTask(link=link, operator=operator)
     assert task.assess({"goal": "check", "app": "wechat"}).target == "wechat"
+    assert "another tool does exactly" in task.description
     result = await task.execute(goal="check the chat")
     assert result.ok and "nothing to do" in result.output
     assert not (await task.execute()).ok
@@ -415,6 +608,7 @@ def test_gui_switch_and_device_handshake(settings: Settings):
                     "platform": "mobilegym",
                     "gui": True,
                     "apps": [{"id": "wechat", "name": "微信"}],
+                    "screen": {"width": 360, "height": 800},
                 }
             )
             msg = ws.receive_json()

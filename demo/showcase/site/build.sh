@@ -15,9 +15,9 @@ gateway=${NANOMUSE_DEMO:-/api/demo}
 if [ ! -d "$checkout" ]; then
   git clone --depth 1 "${MOBILEGYM_REPO:-https://github.com/Purewhiter/mobilegym.git}" "$checkout"
 fi
-"$root/demo/mobilegym/install.sh" "$checkout"
 cd "$checkout"
 [ -d node_modules ] || npm ci --no-audit --no-fund
+"$root/demo/mobilegym/install.sh" "$checkout"
 VITE_NANOMUSE_DEMO="$gateway" npm run build
 rm -rf "$here/dist"
 cp -R dist "$here/dist"
