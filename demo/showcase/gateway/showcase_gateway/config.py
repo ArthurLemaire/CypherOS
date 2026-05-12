@@ -8,9 +8,10 @@ from dataclasses import dataclass
 # Model providers a visitor may point their own key at. Anything else is refused so that the
 # gateway cannot be used to reach arbitrary hosts from the server.
 DEFAULT_BYOK_HOSTS = (
+    "dashscope.aliyuncs.com",
+    "maas.aliyuncs.com",  # 百炼 dedicated endpoints: <id>.<region>.maas.aliyuncs.com
     "api.deepseek.com",
     "api.openai.com",
-    "dashscope.aliyuncs.com",
     "open.bigmodel.cn",
     "api.moonshot.cn",
     "api.siliconflow.cn",
@@ -105,8 +106,8 @@ class Settings:
     def from_env(cls) -> Settings:
         main = Lane(
             provider=_str("MAIN_PROVIDER", "openai"),
-            model=_str("MAIN_MODEL", "deepseek-flash"),
-            base_url=_str("MAIN_BASE_URL", "https://api.deepseek.com"),
+            model=_str("MAIN_MODEL", "qwen3.8-27b"),
+            base_url=_str("MAIN_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
             api_key=_str("MAIN_API_KEY"),
         )
         gui = Lane(

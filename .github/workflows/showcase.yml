@@ -1,0 +1,103 @@
+name: Showcase images
+
+# Publishes the two images the hosted demo runs (demo/showcase/docker-compose.yml):
+#   ghcr.io/nano-muse/showcase-caddy     Caddy + Cloudflare modules + the built phone (MobileGym
+#                                        with the nanoMuse app)
+#   ghcr.io/nano-muse/showcase-gateway   the session gateway
+# main -> :latest and :sha-<short>. The server then does `docker compose pull && up -d`.
+# Pull requests that touch the showcase build both without pushing.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "demo/**"
+      - ".github/workflows/showcase.yml"
+  pull_request:
+    paths:
+      - "demo/**"
+      - ".github/workflows/showcase.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: showcase-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gateway-tests:
+    name: gateway tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install -e './demo/showcase/gateway[dev]'
+      - run: pytest -q demo/showcase/gateway/tests
+
+  publish:
+    name: build and push
+    needs: gateway-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tags (caddy)
+        id: meta_caddy
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/showcase-caddy
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=sha-
+          labels: |
+            org.opencontainers.image.title=nanoMuse showcase — Caddy and the phone
+            org.opencontainers.image.licenses=MIT
+
+      - name: Build and push (caddy)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: demo/showcase/caddy/Dockerfile
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta_caddy.outputs.tags }}
+          labels: ${{ steps.meta_caddy.outputs.labels }}
+          cache-from: type=gha,scope=showcase-caddy
+          cache-to: type=gha,mode=max,scope=showcase-caddy
+
+      - name: Tags (gateway)
+        id: meta_gateway
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/showcase-gateway
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=sha-
+          labels: |
+            org.opencontainers.image.title=nanoMuse showcase — session gateway
+            org.opencontainers.image.licenses=MIT
+
+      - name: Build and push (gateway)
+        uses: docker/build-push-action@v7
+        with:
+          context: demo/showcase/gateway
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta_gateway.outputs.tags }}
+          labels: ${{ steps.meta_gateway.outputs.labels }}
+          cache-from: type=gha,scope=showcase-gateway
+          cache-to: type=gha,mode=max,scope=showcase-gateway
