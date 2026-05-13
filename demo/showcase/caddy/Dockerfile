@@ -20,6 +20,9 @@ RUN npm ci --no-audit --no-fund \
  && VITE_NANOMUSE_DEMO="${NANOMUSE_DEMO}" npm run build
 
 FROM caddy:2-builder AS caddy-build
+# a Go module mirror for networks where proxy.golang.org is slow, e.g. GOPROXY=https://goproxy.cn,direct
+ARG GOPROXY=https://proxy.golang.org,direct
+ENV GOPROXY=${GOPROXY}
 RUN xcaddy build --with github.com/caddy-dns/cloudflare
 
 FROM caddy:2
