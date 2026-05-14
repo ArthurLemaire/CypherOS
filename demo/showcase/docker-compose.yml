@@ -1,0 +1,64 @@
+# The public nanoMuse showcase: a phone in the browser (MobileGym with the nanoMuse app) and a
+# private, short-lived nanoMuse per visitor. See README.md for the whole picture and the
+# deployment steps.
+#
+#   cp .env.example .env && $EDITOR .env
+#   docker pull ghcr.io/nano-muse/nanomuse:latest        # what the visitors' sessions run
+#   docker compose up -d --build
+#
+# Sessions are started by the gateway on the `nanomuse-sessions` network, which has no way out:
+# the only thing a visitor's Muse can talk to is the gateway (and through it, the model).
+
+services:
+  caddy:
+    build:
+      context: ../..
+      dockerfile: demo/showcase/caddy/Dockerfile
+      args:
+        MOBILEGYM_REF: ${MOBILEGYM_REF:-main}
+    image: nanomuse-showcase-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      SITE_HOST: ${SITE_HOST}
+      SESSION_DOMAIN: ${SESSION_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./data/mobilegym-data:/srv/cdn:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - edge
+    depends_on:
+      - gateway
+
+  gateway:
+    build: ./gateway
+    image: nanomuse-showcase-gateway
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      INTERNAL_URL: http://gateway:8000
+      SESSIONS_NETWORK: nanomuse-sessions
+      TRUST_PROXY: "1"
+      LISTEN_PORT: "8000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - edge
+      - sessions
+
+networks:
+  edge: {}
+  sessions:
+    name: nanomuse-sessions
+    internal: true
+
+volumes:
+  caddy-data: {}
+  caddy-config: {}

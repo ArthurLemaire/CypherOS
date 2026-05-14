@@ -40,6 +40,12 @@ shell around the real nanoMuse web app:
   (`[gui] enabled`, or Connections → Phone in the app); [docs/gui.md](../../docs/gui.md) has the
   rest, including what asks for approval first.
 
+- **The hosted showcase** — built with `VITE_NANOMUSE_DEMO=/api/demo`, the setup page first
+  offers a Muse on the showcase server: one tap (or none, the first time) and the *showcase
+  gateway* ([`demo/showcase/`](../showcase/)) starts a private nanoMuse for this visitor, for a
+  while and within a model budget, with the option of the visitor's own model key. A normal
+  checkout has the variable empty and never asks the gateway for anything.
+
 The lighter variant needs nothing installed: open the simulator's own Browser app and go to the
 link `nanomuse serve` prints. That is the web app as any phone browser gets it — full screen, tab
 bar, approval cards — minus the notifications, which is what this module adds.
@@ -96,11 +102,12 @@ apps/nanoMuse/
 ├── navigation.declaration.ts routes (/ and /setup), transitions, UI states
 ├── navigation.ts             go()/back() over the declaration
 ├── navigation.types.ts       re-exports the platform's shared types
-├── state.ts                  Zustand store: server URL, token, notify and GUI switches; wires the bridge
+├── state.ts                  Zustand store: server URL, token, notify and GUI switches, showcase session; wires the bridge
 ├── bridge.ts                 WebSocket → NotificationService; device announce, screen/act requests
+├── demo.ts                   the showcase gateway's API (start/end a hosted session), used on the public site
 ├── gui.ts                    the simulator as a device: DOM → element list, actions → __SIM_INPUT__
 ├── pages/MusePage.tsx        the web app, full screen
-├── pages/SetupPage.tsx       server address, token, the operate-this-phone switch
+├── pages/SetupPage.tsx       hosted Muse (showcase), or server address + token; the operate-this-phone switch
 ├── hooks/useNanoMuseGestures.ts
 ├── data/                     defaults
 └── res/icons.tsx

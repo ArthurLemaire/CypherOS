@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
+import { realNow } from '@/os/TimeService';
 import { IcOffline, IcWarning } from '../res/icons';
 import { useNanoMuseStore } from '../state';
 import { useNanoMuseGestures } from '../hooks/useNanoMuseGestures';
@@ -11,6 +12,7 @@ import { useNanoMuseGestures } from '../hooks/useNanoMuseGestures';
 export default function MusePage() {
   const serverUrl = useNanoMuseStore((s) => s.serverUrl);
   const token = useNanoMuseStore((s) => s.token);
+  const demo = useNanoMuseStore((s) => s.demo);
   const link = useNanoMuseStore((s) => s.link);
   const { bindTap, go } = useNanoMuseGestures();
   const location = useLocation();
@@ -35,6 +37,8 @@ export default function MusePage() {
   }, [serverUrl, token, location.search]);
 
   const trouble = link === 'unauthorized' || link === 'unreachable';
+  // a hosted showcase session that has run out: the server behind serverUrl is gone for good
+  const demoOver = demo !== null && trouble && (realNow() / 1000 > demo.expiresAt || link === 'unauthorized');
   const dark = useBrowserDark();
   const palette = dark ? WEB_APP_DARK : WEB_APP_LIGHT;
 
@@ -61,7 +65,9 @@ export default function MusePage() {
               {link === 'unauthorized' ? <IcWarning size={20} /> : <IcOffline size={20} />}
             </div>
             <div className="flex-1 min-w-0 text-[13px] leading-snug text-app-text">
-              {link === 'unauthorized' ? (
+              {demoOver ? (
+                <>Your Muse on the showcase server has ended, and everything in it with it.</>
+              ) : link === 'unauthorized' ? (
                 <>The server refused this phone&apos;s token.</>
               ) : (
                 <>
@@ -74,7 +80,7 @@ export default function MusePage() {
               {...bindTap('setup.open')}
               className="shrink-0 rounded-xl bg-app-primary text-app-on-primary text-[12.5px] font-semibold px-3 py-1.5"
             >
-              Change server
+              {demoOver ? 'New Muse' : 'Change server'}
             </button>
           </div>
         )}
