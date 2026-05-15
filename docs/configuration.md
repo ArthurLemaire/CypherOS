@@ -26,6 +26,7 @@ These win over the file. They cover the settings people change most often and wh
 | `NANOMUSE_SEARCH_PROVIDER`, `NANOMUSE_SEARCH_API_KEY`, `NANOMUSE_SEARCH_BASE_URL` | `[connectors.search]` |
 | `NANOMUSE_SERVER_HOST`, `NANOMUSE_SERVER_PORT`, `NANOMUSE_SERVER_TOKEN` | `[server]` |
 | `NANOMUSE_BROWSER_ENABLED=1` | `browser.enabled = true` (only ever turns it on; the browser Docker image sets it) |
+| `NANOMUSE_GUI_ENABLED=1`, `NANOMUSE_GUI_PROVIDER`, `NANOMUSE_GUI_MODEL`, `NANOMUSE_GUI_BASE_URL`, `NANOMUSE_GUI_API_KEY` | `[gui]` — operating the phone, and the model that does it |
 | `NANOMUSE_VAULT_KEY` | Fernet key for the vault (default: `<data_dir>/vault.key`) |
 | `NANOMUSE_LOG_LEVEL` | `log_level` |
 
@@ -257,6 +258,24 @@ headless   = true
 timeout_ms = 30000
 ```
 
+### The phone (`[gui]`)
+
+With this on, the agent can read a connected phone's screen and tap, type and swipe in its apps — the way to reach 12306, WeChat or Alipay, which have no API. Off by default; the *Phone* card on the Connections screen is the same switch. How it works and what Sentinel does with it: [gui.md](gui.md).
+
+```toml
+[gui]
+enabled          = false
+provider         = "openai"          # the operator's own model; openai | openai_responses
+model            = ""                # empty: the main [llm] model does it
+base_url         = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+api_key          = "{{vault:GUI_API_KEY}}"
+max_steps        = 30                # the most one phone_task may take
+device_timeout_s = 20.0              # how long to wait for the phone to answer
+sensitive_words  = ["确认支付", "立即付款", "转账", "提交订单", "发送", "删除", "pay now", "place order", "send", "delete"]  # a tap on these asks first
+```
+
+`model`, `base_url` and `api_key` fall back to `[llm]` when empty; a key is only needed when the operator's `base_url` is a different service.
+
 ### MCP servers
 
 Anything that speaks the [Model Context Protocol](https://modelcontextprotocol.io) becomes a set of tools named `<server>__<tool>`, each passing through Sentinel with the risk level you assign.
@@ -302,4 +321,4 @@ max_upload_mb    = 25            # largest file the app may attach to a message
 | `sessions/` | CLI conversation history |
 | `skills/<name>/SKILL.md` | your skills (the Agent Skills format); a name that matches a built-in replaces it |
 | `threads/`, `profile.json`, `ideas.json`, `server_token`, `logs/` | app state |
-| `./workspace` (`agent.workspace`) | files the agent reads and writes |
+| `./workspace` (`agent.workspace`) | files the agent reads and writes; `screenshots/` holds the last forty screens a phone sent |

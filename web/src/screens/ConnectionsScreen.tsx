@@ -14,6 +14,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Smartphone,
   Trash2,
   Unplug,
   Upload,
@@ -35,7 +36,7 @@ export function ConnectionsScreen() {
   const { state } = useStore();
   const [data, setData] = useState<ConnectionsData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const name = state.profile?.name ?? "OpenMuse";
+  const name = state.profile?.name ?? "nanoMuse";
   const t = useT();
 
   const load = useCallback(async () => {
@@ -76,6 +77,7 @@ export function ConnectionsScreen() {
             <CalendarCard data={data} onChange={load} />
             <ContactsCard data={data} onChange={load} />
             <BrowserCard data={data} onChange={load} />
+            <PhoneCard data={data} onChange={load} />
             <MCPCard data={data} onChange={load} />
             <VaultCard data={data} onChange={load} />
           </>
@@ -633,7 +635,7 @@ const CALENDAR_HINTS: Array<{ id: string; label: string; hint: string }> = [
   { id: "outlook", label: "Outlook", hint: "Settings → Calendar → Shared calendars → Publish a calendar → ICS link" },
   { id: "icloud", label: "iCloud", hint: "Share Calendar → Public Calendar → copy the webcal:// link" },
   { id: "fastmail", label: "Fastmail", hint: "Settings → Calendars → Export → Calendar URL" },
-  { id: "file", label: ".ics file", hint: "A path on the machine where OpenMuse runs, for example ~/calendar.ics" },
+  { id: "file", label: ".ics file", hint: "A path on the machine where nanoMuse runs, for example ~/calendar.ics" },
 ];
 
 export function CalendarCard({ data, onChange, compact }: { data: ConnectionsData; onChange: () => void; compact?: boolean }) {
@@ -1069,9 +1071,103 @@ function BrowserCard({ data, onChange }: { data: ConnectionsData; onChange: () =
     >
       {!b.available && (
         <p className="text-[12.5px] text-muted">
-          {t("Install it where the server runs:")} <code className="rounded bg-surface-2 px-1">pip install &quot;openmuse[browser]&quot; &amp;&amp; playwright install chromium</code>
+          {t("Install it where the server runs:")} <code className="rounded bg-surface-2 px-1">pip install &quot;nanomuse[browser]&quot; &amp;&amp; playwright install chromium</code>
         </p>
       )}
+    </Card>
+  );
+}
+
+// ------------------------------------------------------------------ phone (GUI)
+function PhoneCard({ data, onChange }: { data: ConnectionsData; onChange: () => void }) {
+  const { toast } = useStore();
+  const t = useT();
+  const g = data.gui;
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [model, setModel] = useState(g.model);
+  const [baseUrl, setBaseUrl] = useState(g.base_url);
+  const [apiKey, setApiKey] = useState("");
+  const [result, setResult] = useState<TestResult | null>(null);
+  useEffect(() => {
+    setModel(g.model);
+    setBaseUrl(g.base_url);
+  }, [g.model, g.base_url]);
+
+  const flip = async () => {
+    setBusy(true);
+    try {
+      await api.setGui({ enabled: !g.enabled });
+      onChange();
+    } catch (e) {
+      toast((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const save = async () => {
+    setBusy(true);
+    setResult(null);
+    try {
+      await api.setGui({ model: model.trim(), base_url: baseUrl.trim(), ...(apiKey ? { api_key: apiKey.trim() } : {}) });
+      setApiKey("");
+      onChange();
+      setResult(await api.testGui());
+    } catch (e) {
+      toast((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const phone = g.phone;
+  const summary = phone.connected
+    ? t("{name} is connected", { name: phone.device?.name ?? t("A phone") })
+    : g.enabled
+      ? t("No phone connected — open the app on the phone")
+      : t("Tap, type and swipe in the apps on your phone");
+  return (
+    <Card
+      icon={<Smartphone size={19} />}
+      title={t("Phone")}
+      summary={summary}
+      status={g.enabled && phone.connected ? { text: t("On"), tone: "ok" } : g.enabled ? { text: t("Waiting"), tone: "warn" } : { text: t("Off"), tone: "off" }}
+      open={open}
+      onToggle={() => setOpen((v) => !v)}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-[13px] leading-snug">
+          <div className="font-medium">{t("Operate the phone")}</div>
+          <div className="text-[12px] text-muted">
+            {t("When on, the agent can read the screen and act in the apps on the connected phone — 12306, WeChat, Alipay… It asks before paying, sending or deleting.")}
+          </div>
+        </div>
+        <button type="button" role="switch" aria-checked={g.enabled} disabled={busy} onClick={() => void flip()} className={cx("relative h-7 w-12 shrink-0 rounded-full transition", g.enabled ? "bg-accent" : "bg-surface-2 border border-border")}>
+          <span className={cx("absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition", g.enabled ? "left-[22px]" : "left-0.5")} />
+        </button>
+      </div>
+      {phone.connected && phone.device && (
+        <div className="rounded-2xl bg-surface-2 px-3 py-2 text-[12.5px] text-muted">
+          {t("{name} ({platform}), {n} apps", { name: phone.device.name, platform: phone.device.platform, n: String(phone.device.apps) })}
+          {phone.last_screen && <> · {t("last seen in {app}", { app: phone.last_screen.app_name || phone.last_screen.app })}</>}
+        </div>
+      )}
+      <div className="text-[12px] text-muted leading-snug">
+        {t("The operator's model looks at screens step by step: a small, fast model that takes images. Empty = the main model. 阿里云百炼: base URL https://dashscope.aliyuncs.com/compatible-mode/v1, model qwen3.8-27b.")}
+      </div>
+      <Field label={t("Model")}>
+        <input value={model} onChange={(e) => setModel(e.target.value)} placeholder={t("same as the main model")} className={inputCls} />
+      </Field>
+      <Field label={t("Base URL")}>
+        <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder={t("same as the main model")} className={inputCls} />
+      </Field>
+      <Field label={t("API key")} hint={g.key_source === "vault" ? t("A key is in the vault; leave empty to keep it.") : g.key_source === "config" ? t("Set in config.toml.") : t("Leave empty to use the main model's key.")}>
+        <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-…" className={inputCls} autoComplete="off" />
+      </Field>
+      <button type="button" disabled={busy} onClick={() => void save()} className={primaryBtn}>
+        {busy ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+        {t("Save and test")}
+      </button>
+      {result && <TestLine result={result} okText={t("The operator's model answers.")} />}
     </Card>
   );
 }

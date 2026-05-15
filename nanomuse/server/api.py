@@ -44,7 +44,8 @@ import asyncio
 import contextlib
 import mimetypes
 import secrets
-from collections.abc import AsyncIterator
+import uuid
+from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
@@ -729,6 +730,24 @@ def create_app(settings: Settings, service: MuseService | None = None) -> FastAP
     async def test_email() -> dict[str, Any]:
         return await conn.test_email()
 
+    @app.put("/api/connections/gui", dependencies=dep)
+    async def set_gui(body: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return svc.connections.set_gui(body)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/api/connections/gui/test", dependencies=dep)
+    async def test_gui() -> dict[str, Any]:
+        return await svc.connections.test_gui()
+
+    @app.get("/api/phone", dependencies=dep)
+    async def phone_status() -> dict[str, Any]:
+        view = svc.phone_view()
+        if svc.phone.last_screen is not None:
+            view["screen"] = svc.phone.last_screen.to_dict()
+        return view
+
     @app.put("/api/connections/browser", dependencies=dep)
     async def put_browser(body: BrowserBody) -> dict[str, Any]:
         return conn.set_browser(body.enabled)
@@ -1049,17 +1068,24 @@ def create_app(settings: Settings, service: MuseService | None = None) -> FastAP
         await ws.accept()
         queue = svc.bus.subscribe()
         await ws.send_json({"kind": "hello", "state": svc.state()})
+        conn_id = f"ws-{uuid.uuid4().hex[:8]}"
+        # one writer for this socket: the pump and the device requests share it
+        lock = asyncio.Lock()
+
+        async def send(msg: dict[str, Any]) -> None:
+            async with lock:
+                await ws.send_json(msg)
 
         async def pump() -> None:
             while True:
                 msg = await queue.get()
-                await ws.send_json(msg)
+                await send(msg)
 
         pump_task = asyncio.create_task(pump())
         try:
             while True:
                 data = await ws.receive_json()
-                await _handle_ws_message(svc, ws, data)
+                await _handle_ws_message(svc, ws, data, conn_id=conn_id, send=send)
         except WebSocketDisconnect:
             pass
         except Exception as exc:  # noqa: BLE001
@@ -1067,6 +1093,7 @@ def create_app(settings: Settings, service: MuseService | None = None) -> FastAP
         finally:
             pump_task.cancel()
             svc.bus.unsubscribe(queue)
+            svc.phone.detach(conn_id)
 
     # ------------------------------------------------------------------ static SPA
     if STATIC_DIR.is_dir():
@@ -1107,10 +1134,23 @@ def create_app(settings: Settings, service: MuseService | None = None) -> FastAP
     return app
 
 
-async def _handle_ws_message(svc: MuseService, ws: WebSocket, data: dict[str, Any]) -> None:
+async def _handle_ws_message(
+    svc: MuseService,
+    ws: WebSocket,
+    data: dict[str, Any],
+    conn_id: str = "",
+    send: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+) -> None:
     kind = data.get("kind") or data.get("type")
     try:
-        if kind == "send":
+        if kind == "device":
+            # a phone announcing itself: from now on the server may ask it for its screen
+            svc.phone.attach(conn_id, data, send or ws.send_json)
+            await ws.send_json({"kind": "device_ack", "phone": svc.phone_view()})
+        elif kind == "device_result":
+            if not svc.phone.resolve(data):
+                logger.debug("device result for no pending request: {}", data.get("id"))
+        elif kind == "send":
             files = data.get("files")
             svc.send(
                 str(data.get("thread") or MAIN_THREAD),

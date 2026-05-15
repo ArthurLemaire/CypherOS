@@ -261,6 +261,58 @@ class BrowserSettings(BaseModel):
     timeout_ms: int = 30_000
 
 
+class GUISettings(BaseModel):
+    """Operating the apps on the user's phone through their screens (the GUI agent).
+
+    Off by default. When on, and a phone (the Android app with its accessibility service,
+    or the MobileGym module) is connected, the agent gets the ``phone_screen``,
+    ``phone_act`` and ``phone_task`` tools. ``phone_task`` runs a step loop with its own
+    model — a smaller, faster one that takes images is the usual choice (``model``); when
+    left empty the main model does it. ``base_url`` / ``api_key`` default to the main
+    model's, so one provider (e.g. 阿里云百炼) can serve both.
+    """
+
+    enabled: bool = False
+    provider: Literal["openai", "openai_responses"] = "openai"
+    model: str = ""
+    base_url: str | None = None
+    api_key: str = ""
+    # Steps one ``phone_task`` may take on the screen before it has to report back.
+    max_steps: int = 30
+    # How long to wait for the phone to answer one request (screen or action).
+    device_timeout_s: float = 20.0
+    # Words on a screen (or a target element) that make an action *sensitive*: paying,
+    # transferring money, sending, deleting, placing an order. Approval is asked every
+    # time; no standing grant covers them. Kept specific on purpose — "支付" alone would
+    # match the app name 支付宝 — and an element that is an app's name never counts.
+    sensitive_words: list[str] = Field(
+        default_factory=lambda: [
+            "确认支付",
+            "立即支付",
+            "确认付款",
+            "立即付款",
+            "付款",
+            "转账",
+            "确认订单",
+            "提交订单",
+            "立即购买",
+            "确认下单",
+            "发送",
+            "删除",
+            "注销",
+            "解绑",
+            "pay now",
+            "confirm payment",
+            "purchase",
+            "transfer",
+            "send",
+            "delete",
+            "confirm order",
+            "place order",
+        ]
+    )
+
+
 class MCPServerSettings(BaseModel):
     name: str
     command: str | None = None
@@ -304,6 +356,7 @@ class Settings(BaseModel):
     skills: SkillsSettings = Field(default_factory=SkillsSettings)
     sandbox: SandboxSettings = Field(default_factory=SandboxSettings)
     browser: BrowserSettings = Field(default_factory=BrowserSettings)
+    gui: GUISettings = Field(default_factory=GUISettings)
     mcp: MCPSettings = Field(default_factory=MCPSettings)
     server: ServerSettings = Field(default_factory=ServerSettings)
     # Where the settings came from (informational).
@@ -457,6 +510,17 @@ def _apply_env_overrides(raw: dict[str, Any]) -> None:
     # mounted config.toml keeps the last word otherwise
     if os.environ.get("NANOMUSE_BROWSER_ENABLED", "").strip().lower() in ("1", "true", "yes", "on"):
         raw.setdefault("browser", {})["enabled"] = True
+    gui = raw.setdefault("gui", {})
+    if os.environ.get("NANOMUSE_GUI_ENABLED", "").strip().lower() in ("1", "true", "yes", "on"):
+        gui["enabled"] = True
+    for env, key in (
+        ("NANOMUSE_GUI_PROVIDER", "provider"),
+        ("NANOMUSE_GUI_MODEL", "model"),
+        ("NANOMUSE_GUI_BASE_URL", "base_url"),
+        ("NANOMUSE_GUI_API_KEY", "api_key"),
+    ):
+        if (val := os.environ.get(env)) not in (None, ""):
+            gui[key] = val
 
 
 APP_SETTINGS_FILE = "app-settings.json"
@@ -553,6 +617,16 @@ def apply_app_settings(settings: Settings, data: dict[str, Any]) -> None:
     if browser := data.get("browser"):
         if "enabled" in browser:
             settings.browser.enabled = bool(browser["enabled"])
+    if gui := data.get("gui"):
+        if "enabled" in gui:
+            settings.gui.enabled = bool(gui["enabled"])
+        if gui.get("provider") in ("openai", "openai_responses"):
+            settings.gui.provider = gui["provider"]
+        for key in ("model", "base_url", "api_key"):
+            # "" is meaningful: back to the main model's endpoint and key
+            if key in gui and gui[key] is not None:
+                value = str(gui[key]).strip().rstrip("/")
+                setattr(settings.gui, key, value if value or key != "base_url" else None)
     for raw_server in (data.get("mcp") or {}).get("servers") or []:
         try:
             server = MCPServerSettings.model_validate(raw_server)

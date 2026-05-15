@@ -12,11 +12,11 @@ const zhCN: Record<string, string> = {
   Library: "文件库",
   "Main chat": "主对话",
   "Side chat": "侧边对话",
-  "Reconnecting to your OpenMuse…": "正在重新连接你的 OpenMuse…",
+  "Reconnecting to your nanoMuse…": "正在重新连接你的 nanoMuse…",
   "Reconnecting…": "重新连接中…",
-  "Connect to your OpenMuse": "连接到你的 OpenMuse",
-  "This app talks to the OpenMuse server you run yourself. Scan the QR code printed by":
-    "这个应用连接的是你自己运行的 OpenMuse 服务器。扫描下面命令打印的二维码",
+  "Connect to your nanoMuse": "连接到你的 nanoMuse",
+  "This app talks to the nanoMuse server you run yourself. Scan the QR code printed by":
+    "这个应用连接的是你自己运行的 nanoMuse 服务器。扫描下面命令打印的二维码",
   ", or paste the access token below.": "，或在下方粘贴访问令牌。",
   "Access token": "访问令牌",
   Connect: "连接",
@@ -354,8 +354,8 @@ const zhCN: Record<string, string> = {
   Activity: "活动",
   "Every action, including refused ones": "每一次操作，包括被拒绝的",
   Approvals: "审批",
-  "Actions your OpenMuse wants to take but cannot without you. Each one shows what will run and why; a permission you grant is bound to that exact tool and target.":
-    "你的 OpenMuse 想执行但没有你就无法进行的操作。每一项都会显示将要运行什么以及原因；你授予的权限只绑定到那个具体的工具和目标。",
+  "Actions your nanoMuse wants to take but cannot without you. Each one shows what will run and why; a permission you grant is bound to that exact tool and target.":
+    "你的 nanoMuse 想执行但没有你就无法进行的操作。每一项都会显示将要运行什么以及原因；你授予的权限只绑定到那个具体的工具和目标。",
   "Nothing waiting": "没有待处理项",
   "{n} waiting for you": "{n} 项等待你处理",
   Permissions: "权限",
@@ -402,7 +402,7 @@ const zhCN: Record<string, string> = {
   "Revoke {what}": "撤销 {what}",
   "Revoked: {subject}": "已撤销：{subject}",
   "Reset all granted permissions": "重置所有已授予的权限",
-  "Forget every permission you granted? Your OpenMuse will ask again next time.": "忘掉你授予的所有权限？下次你的 OpenMuse 会重新询问。",
+  "Forget every permission you granted? Your nanoMuse will ask again next time.": "忘掉你授予的所有权限？下次你的 nanoMuse 会重新询问。",
   "Permissions reset": "权限已重置",
   "Always ask (from config)": "始终询问（来自配置）",
   "Tools: {tools}.": "工具：{tools}。",
@@ -485,7 +485,7 @@ const zhCN: Record<string, string> = {
 
   // ── Settings ──────────────────────────────────────────────────────────────────────
   You: "你",
-  "Your OpenMuse": "你的 OpenMuse",
+  "Your nanoMuse": "你的 nanoMuse",
   "Make it yours, and decide how careful it should be.": "把它变成你的，并决定它应该多谨慎。",
   Name: "名字",
   Avatar: "头像",
@@ -528,7 +528,7 @@ const zhCN: Record<string, string> = {
   "Let {name} notify this phone": "让 {name} 通知这台手机",
   "The app stays connected to your server in the background. Approvals, questions and finished background work arrive as notifications and open the right chat.":
     "应用在后台保持与服务器的连接。审批、提问和后台完成的工作会以通知送达，并打开对应的对话。",
-  "OpenMuse for Android {version}": "OpenMuse Android 版 {version}",
+  "nanoMuse for Android {version}": "nanoMuse Android 版 {version}",
   "Disconnect from this server": "断开此服务器",
   "This device only": "仅这台设备",
   "1 device subscribed": "1 台设备已订阅",
@@ -584,7 +584,7 @@ const zhCN: Record<string, string> = {
   "Settings → Calendar → Shared calendars → Publish a calendar → ICS link": "设置 → 日历 → 共享日历 → 发布日历 → ICS 链接",
   "Share Calendar → Public Calendar → copy the webcal:// link": "共享日历 → 公共日历 → 复制 webcal:// 链接",
   "Settings → Calendars → Export → Calendar URL": "设置 → 日历 → 导出 → 日历 URL",
-  "A path on the machine where OpenMuse runs, for example ~/calendar.ics": "OpenMuse 所在机器上的文件路径，例如 ~/calendar.ics",
+  "A path on the machine where nanoMuse runs, for example ~/calendar.ics": "nanoMuse 所在机器上的文件路径，例如 ~/calendar.ics",
   Work: "工作",
   "Private .ics link or file path": "私密 .ics 链接或文件路径",
   "Stored encrypted in the vault as CALENDAR_{name}.": "加密保存在保险库中，名为 CALENDAR_{name}。",
@@ -700,7 +700,7 @@ const zhCN: Record<string, string> = {
 
   // ── Onboarding ────────────────────────────────────────────────────────────────────
   "Skip setup": "跳过设置",
-  "Meet your OpenMuse": "认识你的 OpenMuse",
+  "Meet your nanoMuse": "认识你的 nanoMuse",
   "A personal agent that does the work: it searches, browses, writes files and code, reads and sends mail, and keeps going on long goals while you are away.":
     "一个真正干活的个人助手：它搜索、浏览网页、编写文件和代码、收发邮件，并在你离开时继续推进长期目标。",
   "Yours, on your machine": "属于你，运行在你的机器上",
@@ -711,7 +711,7 @@ const zhCN: Record<string, string> = {
   "Your name": "你的名字",
   "Anything else it should know about you — where you live, what you do, what you like — you can just tell it in the chat. It remembers.":
     "其他它应该了解的事——你住在哪里、做什么工作、喜欢什么——直接在对话里告诉它就行。它会记住。",
-  "Now, your OpenMuse": "接下来，你的 OpenMuse",
+  "Now, your nanoMuse": "接下来，你的 nanoMuse",
   "Give it a name, a look and a way of talking.": "给它一个名字、一个形象和一种说话方式。",
   "Warm and concise": "温暖而简洁",
   "Direct, no small talk": "直接，不闲聊",
@@ -834,6 +834,23 @@ const zhCN: Record<string, string> = {
   "Stored encrypted in the vault as EMBEDDINGS_API_KEY. Ollama needs none.": "加密存在保险库里，名为 EMBEDDINGS_API_KEY。Ollama 不需要密钥。",
   "Blank uses the endpoint's default: {model}. On Ollama: ollama pull qwen3-embedding:0.6b (reads Chinese and English).":
     "留空则用该接口的默认模型：{model}。Ollama 上：ollama pull qwen3-embedding:0.6b（中英文都能读）。",
+  "Phone": "手机",
+  "{name} is connected": "{name} 已连接",
+  "A phone": "一台手机",
+  "No phone connected — open the app on the phone": "没有连接的手机——在手机上打开 App",
+  "Tap, type and swipe in the apps on your phone": "在你手机上的 App 里点击、输入、滑动",
+  "Waiting": "等待中",
+  "Operate the phone": "操作手机",
+  "When on, the agent can read the screen and act in the apps on the connected phone — 12306, WeChat, Alipay… It asks before paying, sending or deleting.": "打开后，Agent 可以读取已连接手机的屏幕，并在上面的 App 里操作——12306、微信、支付宝……付款、发送、删除之前会先问你。",
+  "{name} ({platform}), {n} apps": "{name}（{platform}），{n} 个 App",
+  "last seen in {app}": "上次看到在 {app}",
+  "The operator's model looks at screens step by step: a small, fast model that takes images. Empty = the main model. 阿里云百炼: base URL https://dashscope.aliyuncs.com/compatible-mode/v1, model qwen3.8-27b.": "操作手机的模型一步步看屏幕：选一个小而快、能看图的模型。留空 = 用主模型。阿里云百炼：Base URL https://dashscope.aliyuncs.com/compatible-mode/v1，模型 qwen3.8-27b。",
+  "same as the main model": "与主模型相同",
+  "A key is in the vault; leave empty to keep it.": "保险库里已有密钥；留空则保留。",
+  "Set in config.toml.": "在 config.toml 里设置。",
+  "Leave empty to use the main model's key.": "留空则使用主模型的密钥。",
+  "Save and test": "保存并测试",
+  "The operator's model answers.": "操作手机的模型有回应。",
 };
 
 export default zhCN;

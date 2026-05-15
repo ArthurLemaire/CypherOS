@@ -40,6 +40,7 @@
 | Point it at DeepSeek, OpenAI, Ollama or a company gateway | [Models](#-models) and [Configuration](https://github.com/nano-muse/nanoMuse/blob/main/docs/configuration.md) |
 | Know what it will and will not do on its own | [Sentinel](#%EF%B8%8F-sentinel) and [docs/sentinel.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/sentinel.md) |
 | Connect mail, a calendar, contacts, a browser or MCP servers | [Connectors](https://github.com/nano-muse/nanoMuse/blob/main/docs/configuration.md#connectors) |
+| Let it operate the apps on a phone (12306, WeChat, Alipay) | [docs/gui.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/gui.md) and the [simulated phone](https://github.com/nano-muse/nanoMuse/blob/main/demo/mobilegym/README.md) |
 | Run it in Docker or keep it running on a server | [Deploy](#%EF%B8%8F-deploy) |
 | Read the code | [Architecture](#architecture) |
 
@@ -48,6 +49,7 @@
 nanoMuse is a personal agent you talk to from your phone. It can:
 
 - research, write pages and documents, run shell commands and Python, send mail, read your calendar and your contacts, browse the web
+- operate the apps on your phone through their screens when there is no API — look up trains in 12306, read and answer WeChat, work through Alipay — with a switch, and a stop at every send or pay button ([docs/gui.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/gui.md))
 - stop and ask before anything hard to undo, with an approval you scope (once, this task, always) and can revoke
 - work on goals over weeks while the app is closed, check in on a schedule, and start work when mail arrives, an event is near or a webhook fires
 - write you a feed: short posts from what it knows about you and what you asked it to follow
@@ -234,6 +236,7 @@ More in [docs/architecture.md](https://github.com/nano-muse/nanoMuse/blob/main/d
 
 - [Configuration](https://github.com/nano-muse/nanoMuse/blob/main/docs/configuration.md): every setting, environment overrides, connectors, MCP, local models
 - [Sentinel](https://github.com/nano-muse/nanoMuse/blob/main/docs/sentinel.md): policy order, rules, taint tracking, vault, audit, the sandbox
+- [Operating the phone](https://github.com/nano-muse/nanoMuse/blob/main/docs/gui.md): the switch, the operator and its model, what asks first, the device protocol
 - [The app and its API](https://github.com/nano-muse/nanoMuse/blob/main/docs/app.md): screens, phone access, tokens, every endpoint
 - [Android](https://github.com/nano-muse/nanoMuse/blob/main/docs/android.md): install, notifications, building and signing
 - [CLI](https://github.com/nano-muse/nanoMuse/blob/main/docs/cli.md): `chat`, `run`, `serve`, `daemon`, `goals`, `memory`, `skills`, `vault`, `audit`, `doctor`

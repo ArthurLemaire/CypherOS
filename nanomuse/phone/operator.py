@@ -38,7 +38,7 @@ You get the current screen: the app, and its visible elements as lines `[id] rol
 
 Actions (`action` object):
 - `{{"action": "tap", "element": ID}}` — also `long_press`, `double_tap`. Prefer an element id; `{{"action": "tap", "x": 100, "y": 200}}` only when nothing has an id.
-- `{{"action": "type", "element": ID, "text": "…", "clear": true, "submit": false}}` — tap the field first when it is not focused; `submit` presses enter/search.
+- `{{"action": "type", "element": ID, "text": "…", "clear": true}}` — into a field (`input` elements); the field is tapped first. Never tap the keys of the on-screen keyboard; typing and sending are two steps: `type`, then tap the send/search button or `enter` on the next step.
 - `{{"action": "swipe", "direction": "up"}}` — the finger moves up, so the content scrolls down; `down`, `left`, `right`; add `element` to swipe inside a list.
 - `{{"action": "back"}}`, `{{"action": "home"}}`, `{{"action": "enter"}}`, `{{"action": "wait", "seconds": 2}}` (a page is loading).
 - `{{"action": "open_app", "app": "12306"}}` — by name or id. Apps on this phone: {apps}.
@@ -49,7 +49,8 @@ Actions (`action` object):
 ## Rules
 - One action per step. Read the screen you are given; do not assume what a tap did — the next screen tells you.
 - Never type passwords, card numbers, PINs or one-time codes, and never approve a payment or a transfer on your own: stop with `ask` before that step and describe the screen (amount, payee, what is about to happen).
-- Paying, transferring, sending a message, deleting and placing an order are not undone by pressing back. Do the step the goal asks for and no more: do not send, buy or delete anything the goal did not name.
+- Paying, transferring, sending a message, deleting and placing an order are not undone by pressing back. Do the step the goal asks for and no more: do not send, buy or delete anything the goal did not name, and never type trial text or press buttons "to see what happens".
+- If the field shows text you did not mean to send (`value=`), clear it (`type` with `clear` and an empty `text`) rather than sending it.
 - If a permission dialog, a pop-up or an ad covers the screen, close it first. If the same screen comes back three times, try another way or `abort`.
 - Do not leave the app the goal needs unless a step requires it. Keep to the goal; report anything else you noticed in your `done` message rather than acting on it.
 - Write `message` texts in {language}.
@@ -111,6 +112,13 @@ def parse_step(text: str | None) -> dict[str, Any] | None:
             # {"action": "tap", ...} without the wrapper is accepted too
             if "action" in data and not isinstance(data["action"], dict):
                 return {"thought": str(data.get("thought", "")), "action": data}
+            action = data.get("action")
+            if isinstance(action, dict) and "action" not in action:
+                # {"action": {"type": "tap", ...}} — some models name the field differently
+                for alias in ("type", "name", "kind", "op"):
+                    if alias in action:
+                        action["action"] = action.pop(alias)
+                        break
             return data
     return None
 
@@ -188,6 +196,11 @@ class PhoneOperator:
             data = parse_step(response.content)
             if data is None or not isinstance(data.get("action"), dict):
                 bad_replies += 1
+                logger.debug(
+                    "phone step {}: reply was not an action: {!r}",
+                    step,
+                    (response.content or "")[:600],
+                )
                 history.append((user_text, screen, response.content or ""))
                 history.append(
                     (
@@ -272,6 +285,8 @@ class PhoneOperator:
 
     async def _act(self, action: dict[str, Any], outcome: Outcome, thought: str = "") -> ToolResult:
         args = {k: v for k, v in action.items() if k != "thought"}
+        # typing and sending are two steps: the send is assessed against the screen with the text in
+        args.pop("submit", None)
         call = ToolCall(
             function=Function(
                 name=self.act_tool.name, arguments=json.dumps(args, ensure_ascii=False)

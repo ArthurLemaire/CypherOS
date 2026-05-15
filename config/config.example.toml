@@ -195,6 +195,20 @@ headless = true
 timeout_ms = 30000
 
 # ------------------------------------------------------------------------------
+# The phone — the agent reads a connected phone's screen and taps, types and swipes
+# in its apps (12306, WeChat, Alipay have no API). Off by default; the Phone card in
+# the app is the same switch. docs/gui.md explains what asks for approval.
+# ------------------------------------------------------------------------------
+[gui]
+enabled = false
+provider = "openai"      # the operator's own model, openai | openai_responses
+model = ""               # empty → the main [llm] model operates the phone
+# base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"   # e.g. 阿里云百炼 with model = "qwen3.8-27b"
+# api_key = "{{vault:GUI_API_KEY}}"
+max_steps = 30           # the most one phone task may take
+device_timeout_s = 20.0  # how long to wait for the phone to answer one request
+
+# ------------------------------------------------------------------------------
 # MCP servers — reuse the ecosystem instead of writing connectors.
 # ------------------------------------------------------------------------------
 # [[mcp.servers]]

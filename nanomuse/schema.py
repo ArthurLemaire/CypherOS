@@ -172,6 +172,9 @@ class ToolResult(BaseModel):
     system: str | None = None
     # Set by control tools (terminate) to stop the loop.
     stop: bool = False
+    # Pictures that go with the output (absolute paths in the workspace): a phone screenshot.
+    # The agent shows them to the model when it takes images; the text stands alone otherwise.
+    images: list[str] | None = None
 
     @property
     def ok(self) -> bool:

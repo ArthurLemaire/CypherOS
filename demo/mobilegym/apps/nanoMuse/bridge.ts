@@ -1,4 +1,5 @@
 import { NotificationService } from '@/os/NotificationService';
+import { act, installedApps, readScreen, type ActParams } from './gui';
 import { manifest } from './manifest';
 
 /**
@@ -9,6 +10,10 @@ import { manifest } from './manifest';
  * whole simulator session and turns the events a phone would be notified about into
  * simulated Android notifications: approvals waiting for you, questions the agent asked,
  * and results of background work. Tapping one opens the nanoMuse app on that chat.
+ *
+ * The same socket makes this simulated phone a device the agent can operate (see `gui.ts`):
+ * after `hello` the module announces itself with `{"kind": "device", "gui": true}` and answers
+ * the server's `device_request` messages — its screen, or one action — with `device_result`.
  */
 
 type LinkState = 'off' | 'connecting' | 'online' | 'unauthorized' | 'unreachable';
@@ -17,6 +22,8 @@ interface Settings {
   serverUrl: string;
   token: string;
   notify: boolean;
+  /** Let the agent operate this phone (read the screen, tap, type) when its GUI switch is on. */
+  gui: boolean;
 }
 
 interface Hooks {
@@ -43,6 +50,7 @@ interface TimelineEvent {
 type WsMessage =
   | { kind: 'hello'; state: { pending_approvals?: TimelineEvent[] } }
   | { kind: 'event' | 'update'; event: TimelineEvent }
+  | { kind: 'device_request'; id: string; op: string; params?: Record<string, unknown> }
   | { kind: string };
 
 const RECONNECT_MIN_MS = 1000;
@@ -79,8 +87,9 @@ class MuseBridge {
   /** (Re)connect if the settings changed; disconnect if they were cleared. Idempotent. */
   sync(): void {
     if (!this.hooks) return;
-    const { serverUrl, token, notify } = this.hooks.get();
-    const key = serverUrl && token && notify ? `${serverUrl}|${token}` : '';
+    const { serverUrl, token, notify, gui } = this.hooks.get();
+    // the socket is needed for notifications or for GUI operation; either keeps it open
+    const key = serverUrl && token && (notify || gui) ? `${serverUrl}|${token}|${gui ? 'g' : ''}` : '';
     if (key === this.key && (this.ws || this.reconnectTimer)) return;
     this.key = key;
     this.teardown();
@@ -163,14 +172,54 @@ class MuseBridge {
     };
   }
 
+  private send(msg: Record<string, unknown>): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg));
+  }
+
+  /** `{"kind": "device", ...}`: from now on the server may ask this phone for its screen. */
+  private announce(): void {
+    if (!this.hooks?.get().gui) return;
+    this.send({
+      kind: 'device',
+      name: 'MobileGym',
+      platform: 'mobilegym',
+      gui: true,
+      apps: installedApps(),
+      screen: { width: 360, height: 800 },
+    });
+  }
+
+  private async serve(msg: { id: string; op: string; params?: Record<string, unknown> }): Promise<void> {
+    if (!this.hooks?.get().gui) {
+      this.send({ kind: 'device_result', id: msg.id, ok: false, error: 'GUI operation is turned off on this phone' });
+      return;
+    }
+    try {
+      let result: unknown;
+      if (msg.op === 'screen') result = readScreen();
+      else if (msg.op === 'act') result = await act((msg.params ?? {}) as unknown as ActParams);
+      else throw new Error(`unknown op '${msg.op}'`);
+      this.send({ kind: 'device_result', id: msg.id, ok: true, result });
+    } catch (err) {
+      this.send({ kind: 'device_result', id: msg.id, ok: false, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
   private handle(msg: WsMessage): void {
     if (!this.hooks) return;
     if (msg.kind === 'hello') {
       this.hooks.setLink('online');
+      this.announce();
+      if (!this.hooks.get().notify) return;
       const pending = (msg as { state: { pending_approvals?: TimelineEvent[] } }).state.pending_approvals ?? [];
       for (const ev of pending) this.notifyFor(ev);
       return;
     }
+    if (msg.kind === 'device_request') {
+      void this.serve(msg as { id: string; op: string; params?: Record<string, unknown> });
+      return;
+    }
+    if (!this.hooks.get().notify) return;
     if (msg.kind === 'event' || msg.kind === 'update') {
       const ev = (msg as { event: TimelineEvent }).event;
       if (ev.type === 'approval' || ev.type === 'question') {

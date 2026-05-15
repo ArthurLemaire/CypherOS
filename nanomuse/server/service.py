@@ -29,6 +29,7 @@ from nanomuse.goals import Goal
 from nanomuse.llm import BaseLLM
 from nanomuse.logger import logger
 from nanomuse.memory.consolidate import TidyReport, tidy
+from nanomuse.phone import PhoneLink
 from nanomuse.reminders import Reminder
 from nanomuse.schema import Attachment, Message, Role
 from nanomuse.sentinel.grants import SCOPES
@@ -261,7 +262,13 @@ class MuseService:
         self.ui._timelines_provider = lambda: [(t.id, t.timeline) for t in self.threads.values()]
         self.push = PushService(settings.data_dir)
         self.ui.on_event = self._maybe_push
-        self.app = NanoMuseApp(settings, ui=self.ui, llm=llm, session_id="app")
+        # The phone: whichever device announces itself on the WebSocket (see nanomuse.phone).
+        self.phone = PhoneLink(
+            timeout_s=settings.gui.device_timeout_s,
+            shots_dir=settings.agent.workspace.resolve() / "screenshots",
+        )
+        self.phone.on_change = self.publish_phone
+        self.app = NanoMuseApp(settings, ui=self.ui, llm=llm, session_id="app", phone=self.phone)
         self.watch_browser()
         self._watch_reminders()
         self._mail_polled_at: float | None = None
@@ -278,6 +285,12 @@ class MuseService:
         self.started_at = now_iso()
         self.next_goal_pass_at: datetime | None = None
         self._load_threads()
+
+    def phone_view(self) -> dict[str, Any]:
+        return {**self.phone.status(), "gui_enabled": self.settings.gui.enabled}
+
+    def publish_phone(self) -> None:
+        self.bus.publish({"kind": "phone", "phone": self.phone_view()})
 
     # ------------------------------------------------------------------ lifecycle
     async def start(self) -> None:
@@ -1732,8 +1745,10 @@ class MuseService:
                 "calendar": s.connectors.calendar.enabled and bool(s.connectors.calendar.feeds),
                 "contacts": s.connectors.contacts.enabled and self.app.contacts.configured,
                 "browser": s.browser.enabled,
+                "gui": s.gui.enabled,
                 "mcp": [m.name for m in s.mcp.servers],
             },
+            "phone": self.phone_view(),
             "tools": [
                 {"name": t.name, "risk": t.risk.value, "description": t.description[:160]}
                 for t in self.app.tools
@@ -1782,6 +1797,7 @@ class MuseService:
             ],
             "goals": [goal_to_dict(g) for g in self.app.goals.list()],
             "settings": self.settings_view(),
+            "phone": self.phone_view(),
         }
 
 

@@ -40,6 +40,7 @@
 | 接 DeepSeek、OpenAI、Ollama 或公司网关 | [模型](#-模型) 和 [配置](https://github.com/nano-muse/nanoMuse/blob/main/docs/configuration.md) |
 | 搞清楚它什么会自己做、什么会先问 | [Sentinel](#%EF%B8%8F-sentinel) 和 [docs/sentinel.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/sentinel.md) |
 | 接邮箱、日历、通讯录、浏览器或 MCP 服务器 | [Connectors](https://github.com/nano-muse/nanoMuse/blob/main/docs/configuration.md#connectors) |
+| 让它操作手机上的 App（12306、微信、支付宝） | [docs/gui.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/gui.md) 和[模拟手机](https://github.com/nano-muse/nanoMuse/blob/main/demo/mobilegym/README.md) |
 | 用 Docker 跑，或在服务器上常驻 | [部署](#%EF%B8%8F-部署) |
 | 读代码 | [架构](#架构) |
 
@@ -48,6 +49,7 @@
 nanoMuse 是一个你在手机上和它说话的个人 Agent。它能：
 
 - 查资料、写页面和文档、跑 shell 命令和 Python、发邮件、读你的日历和通讯录、上网浏览
+- 在没有 API 的地方直接操作手机上的 App 界面——在 12306 查车次、读微信并回消息、在支付宝里办事——有开关，每个「发送」「支付」按钮前都会停下来问你（[docs/gui.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/gui.md)）
 - 在任何难以撤销的事之前停下来问你，审批有范围（仅此一次、本次任务、始终），随时可撤销
 - 在 App 关着的时候花几周推进一个目标，按计划向你汇报，在邮件到达、日程临近或 webhook 触发时开始干活
 - 给你写一份 Feed：根据它对你的了解和你让它关注的东西，写几篇短帖子
@@ -234,6 +236,7 @@ flowchart LR
 
 - [配置](https://github.com/nano-muse/nanoMuse/blob/main/docs/configuration.md)：每个设置项、环境变量覆盖、连接器、MCP、本地模型
 - [Sentinel](https://github.com/nano-muse/nanoMuse/blob/main/docs/sentinel.md)：策略顺序、规则、污点追踪、保险库、审计、沙箱
+- [操作手机](https://github.com/nano-muse/nanoMuse/blob/main/docs/gui.md)：开关、操作员和它的模型、哪些步骤会先问、设备协议
 - [App 与它的 API](https://github.com/nano-muse/nanoMuse/blob/main/docs/app.md)：页面、手机访问、令牌、每个端点
 - [Android](https://github.com/nano-muse/nanoMuse/blob/main/docs/android.md)：安装、通知、构建与签名
 - [CLI](https://github.com/nano-muse/nanoMuse/blob/main/docs/cli.md)：`chat`、`run`、`serve`、`daemon`、`goals`、`memory`、`skills`、`vault`、`audit`、`doctor`

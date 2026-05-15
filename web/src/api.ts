@@ -30,7 +30,23 @@ import type {
   WsMessage,
 } from "./types";
 
-const TOKEN_KEY = "openmuse_token";
+const TOKEN_KEY = "nanomuse_token";
+
+// The app was called OpenMuse until 0.6.0: carry its localStorage over once so an
+// existing phone stays paired (token, language, seen feed posts) after the rename.
+try {
+  for (const key of Object.keys(localStorage)) {
+    if (key.startsWith("openmuse_")) {
+      const renamed = "nanomuse_" + key.slice("openmuse_".length);
+      if (localStorage.getItem(renamed) === null) {
+        localStorage.setItem(renamed, localStorage.getItem(key) ?? "");
+      }
+      localStorage.removeItem(key);
+    }
+  }
+} catch {
+  // storage disabled: nothing to migrate
+}
 
 export class AuthError extends Error {
   constructor() {
@@ -230,6 +246,8 @@ export const api = {
   setSkillEnabled: (name: string, enabled: boolean) =>
     request<SkillInfo>(`/api/skills/${encodeURIComponent(name)}/enabled`, json({ enabled })),
   importSkill: (url: string) => request<SkillDetail>("/api/skills/import", json({ url })),
+  setGui: (body: Record<string, unknown>) => request<ConnectionsData["gui"]>("/api/connections/gui", { method: "PUT", body: JSON.stringify(body) }),
+  testGui: () => request<TestResult & { model?: string }>("/api/connections/gui/test", { method: "POST" }),
   setBrowser: (enabled: boolean) =>
     request<ConnectionsData["browser"]>("/api/connections/browser", { method: "PUT", body: JSON.stringify({ enabled }) }),
   addMCP: (body: Record<string, unknown>) => request<ConnectionsData>("/api/connections/mcp", json(body)),

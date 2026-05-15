@@ -136,7 +136,12 @@ class PhoneAct(BaseTool):
             summary = f"phone_act: {action} {what}{where}"
         elif action == "type":
             text = str(args.get("text") or "")
-            summary = f'phone_act: type "{text[:40]}"' + (f" into {ref}" if ref else "") + where
+            summary = (
+                f'phone_act: type "{text[:40]}"'
+                + (f" into {ref}" if ref else "")
+                + (" and press enter" if args.get("submit") else "")
+                + where
+            )
         elif action == "swipe":
             summary = f"phone_act: swipe {args.get('direction') or ''}{where}"
         elif action == "open_app":
@@ -154,12 +159,16 @@ class PhoneAct(BaseTool):
             elif screen is not None:
                 # a blind tap on a screen that talks about paying: we cannot tell what is under it
                 hit = screen.find_words(words)
-        elif (
-            action in ("type", "enter")
-            and args.get("submit", action == "enter")
-            and screen is not None
-        ):
+        elif action == "enter" and screen is not None:
             hit = screen.find_words(words)
+        elif action == "type" and args.get("submit"):
+            # the send button only shows once there is text, so the screen we have cannot tell
+            # a search box from a chat: submitting blind is a step the user gets to see
+            risk, egress = RiskLevel.SENSITIVE, True
+            warnings.append(
+                "this types and submits in one step — the text goes out (a message, a search, an "
+                "order) before anyone sees the screen"
+            )
         if hit:
             risk, egress = RiskLevel.SENSITIVE, True
             warnings.append(

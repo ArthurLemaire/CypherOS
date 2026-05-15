@@ -124,6 +124,26 @@ class MuseAgent:
             return ""
         return prompts.SKILLS_SECTION.format(items=index)
 
+    def phone_section(self) -> str:
+        """The phone, when GUI operation is on: connected or not, and what is on it."""
+        task = self.tools.get("phone_task")
+        link = getattr(task, "link", None)
+        if task is None or link is None:
+            return ""
+        device = link.device
+        if device is None:
+            status = (
+                "- GUI operation is on, but no phone is connected right now: the `phone_*` tools "
+                "will fail until the user opens the nanoMuse app on the phone (or the MobileGym "
+                "module). Say so if a step needs the phone."
+            )
+        else:
+            apps = device.app_list()
+            status = f"- The user's phone is connected: {device.name} ({device.platform})."
+            if apps:
+                status += f" Apps on it: {apps}."
+        return prompts.PHONE_SECTION.format(status=status)
+
     def contacts_note(self) -> str:
         """One line on the address book, when there is one (the tool does the looking up)."""
         book = self.contacts
@@ -219,7 +239,7 @@ class MuseAgent:
             tool_names=", ".join(t.name for t in self.tools),
             user_profile=profile,
             memories=memories,
-            goals=goals + calendar + self.skills_section(),
+            goals=goals + calendar + self.phone_section() + self.skills_section(),
             extra=extra,
         )
 
@@ -338,6 +358,7 @@ class MuseAgent:
                     continue
 
                 stop = False
+                pictures: list[str] = []
                 for call in response.tool_calls:
                     tool = self.tools.get(call.name)
                     if tool is None:
@@ -356,11 +377,26 @@ class MuseAgent:
                         result = await self.sentinel.guard(call, tool)
                     self.ui.on_tool_result(call, result)
                     self.messages.append(Message.tool(result.for_model(), call.id, call.name))
+                    if result.images:
+                        pictures.extend(result.images)
                     if result.stop:
                         final = result.output
                         stop = True
                 if stop:
                     break
+                if (
+                    pictures
+                    and self.llm.vision_available is not False
+                    and self.settings.llm.vision != "off"
+                ):
+                    # A tool result cannot carry an image, so the picture (the phone's screen)
+                    # follows as a user message; models without vision get the text alone.
+                    self.messages.append(
+                        Message.user(
+                            "[The screenshot that goes with the tool result above.]",
+                            images=pictures[-2:],
+                        )
+                    )
                 if self._is_stuck():
                     logger.warning("agent seems stuck – nudging")
                     self.messages.append(Message.user(prompts.STUCK_PROMPT))

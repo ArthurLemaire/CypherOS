@@ -1,5 +1,6 @@
 {
   "serverUrl": "",
   "token": "",
-  "notify": true
+  "notify": true,
+  "gui": true
 }
