@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from openmuse.goals import GoalStore
-from openmuse.memory import MemoryStore
-from openmuse.memory.store import tokenize
+from nanomuse.goals import GoalStore
+from nanomuse.memory import MemoryStore
+from nanomuse.memory.store import tokenize
 
 
 def test_tokenize_mixed():
@@ -146,7 +146,7 @@ def test_goals_lifecycle(tmp_path: Path):
 def test_goal_categories_due_dates_and_check_ins(tmp_path: Path):
     from datetime import UTC, datetime, timedelta
 
-    from openmuse.goals import next_check_in, parse_check_in
+    from nanomuse.goals import next_check_in, parse_check_in
 
     store = GoalStore(tmp_path / "g.db")
     g = store.create(
@@ -247,7 +247,7 @@ def test_goal_proposals_are_the_users_call(tmp_path: Path):
 def test_goal_categories_due_and_check_ins(tmp_path: Path):
     from datetime import UTC, datetime, timedelta
 
-    from openmuse.goals import next_check_in, parse_check_in
+    from nanomuse.goals import next_check_in, parse_check_in
 
     store = GoalStore(tmp_path / "g.db")
     g = store.create(
@@ -368,7 +368,7 @@ def test_goal_categories_due_dates_and_proposals(tmp_path: Path):
 def test_goal_check_ins(tmp_path: Path):
     from datetime import UTC, datetime, timedelta
 
-    from openmuse.goals import next_check_in, parse_check_in
+    from nanomuse.goals import next_check_in, parse_check_in
 
     assert parse_check_in("daily 08:00") == ("daily", None, 8, 0)
     assert parse_check_in("weekly mon 09:30") == ("weekly", 0, 9, 30)

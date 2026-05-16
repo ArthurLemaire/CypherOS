@@ -1,6 +1,6 @@
 # Contributing
 
-Use OpenMuse for a real task, report what broke, then pick something focused. Issues and pull requests are welcome; for anything larger than a fix, open an issue first so we can agree on the shape.
+Use nanoMuse for a real task, report what broke, then pick something focused. Issues and pull requests are welcome; for anything larger than a fix, open an issue first so we can agree on the shape.
 
 ## Setup
 
@@ -8,25 +8,25 @@ Use OpenMuse for a real task, report what broke, then pick something focused. Is
 git clone https://github.com/nano-muse/nanoMuse.git && cd nanoMuse
 uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"            # add ",browser" for the Playwright tool
-openmuse config init                  # config/config.toml is git-ignored
+nanomuse config init                  # config/config.toml is git-ignored
 ```
 
 The phone app lives in `web/` (React, TypeScript, Tailwind, Vite). Node 20+ is only needed if you change it:
 
 ```bash
 cd web && npm install
-npm run dev            # http://localhost:5173, proxied to `openmuse serve` on 8787
+npm run dev            # http://localhost:5173, proxied to `nanomuse serve` on 8787
 npm run check          # eslint, tsc, vitest
-npm run build          # writes openmuse/server/static/ — commit the result with your change
+npm run build          # writes nanomuse/server/static/ — commit the result with your change
 ```
 
 ## Before you push
 
 ```bash
-ruff check openmuse tests scripts && ruff format openmuse tests scripts
+ruff check nanomuse tests scripts && ruff format nanomuse tests scripts
 mypy                                           # types; config in pyproject.toml
 python -m pytest -q                            # MockLLM only, no network
-OPENMUSE_LIVE=1 python -m pytest -q -m live    # optional: against your configured model
+NANOMUSE_LIVE=1 python -m pytest -q -m live    # optional: against your configured model
 python scripts/provider_check.py               # optional: five real tasks against your model, one line each
 cd web && npm run check && npm run build       # if you touched web/
 ```
@@ -45,9 +45,9 @@ CI runs the Python checks on Linux and macOS with Python 3.11–3.13 (Windows is
 
 ## Adding a tool
 
-1. Subclass `BaseTool` in `openmuse/tools/`: `name`, `description`, `parameters` (JSON schema), `risk`, `async execute(**kwargs) -> ToolResult`.
-2. Register it in `openmuse/app.py::_build_tools` (behind a config flag if it needs credentials or an optional dependency).
-3. Add a label in `openmuse/server/webui.py::_TOOL_LABELS` so the app shows a readable status.
+1. Subclass `BaseTool` in `nanomuse/tools/`: `name`, `description`, `parameters` (JSON schema), `risk`, `async execute(**kwargs) -> ToolResult`.
+2. Register it in `nanomuse/app.py::_build_tools` (behind a config flag if it needs credentials or an optional dependency).
+3. Add a label in `nanomuse/server/webui.py::_TOOL_LABELS` so the app shows a readable status.
 4. Add a unit test in `tests/test_tools.py`.
 5. Mention it in `docs/configuration.md` if it has settings.
 
@@ -55,9 +55,9 @@ Prefer an [MCP server](https://modelcontextprotocol.io) for integrations with an
 
 ## Releasing (maintainers)
 
-1. Bump `version` in `pyproject.toml` and `openmuse/__init__.py`; move the `Unreleased` entries in `CHANGELOG.md` under the new version with today's date; commit.
+1. Bump `version` in `pyproject.toml` and `nanomuse/__init__.py`; move the `Unreleased` entries in `CHANGELOG.md` under the new version with today's date; commit.
 2. `git tag vX.Y.Z && git push origin main vX.Y.Z`.
-3. The [Release](.github/workflows/release.yml) workflow checks the tag against the version, builds and smoke-tests the wheel, then publishes to PyPI through Trusted Publishing (`pypi` environment, no stored token). The [Docker image](.github/workflows/docker.yml) workflow pushes `ghcr.io/nano-muse/openmuse:X.Y.Z` and `:latest` for amd64 and arm64.
+3. The [Release](.github/workflows/release.yml) workflow checks the tag against the version, builds and smoke-tests the wheel, then publishes to PyPI through Trusted Publishing (`pypi` environment, no stored token). The [Docker image](.github/workflows/docker.yml) workflow pushes `ghcr.io/nano-muse/nanomuse:X.Y.Z` and `:latest` for amd64 and arm64.
 4. Paste the changelog section into the GitHub release.
 
 Dependabot's weekly PRs are grouped per ecosystem. A `web/` bump changes the bundle by definition, so CI does not check the committed build on those PRs; after merging one, run `cd web && npm ci && npm run build` and commit the result (`chore(web): rebuild after dependency updates`).

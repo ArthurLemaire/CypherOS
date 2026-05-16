@@ -6,11 +6,11 @@ from pathlib import Path
 import httpx
 import pytest
 
-from openmuse.schema import RiskLevel
-from openmuse.tools import Files, PythonExecute, Shell, Terminate
-from openmuse.tools.email_tool import scrub_email_secrets
-from openmuse.tools.shell import code_reach, scrubbed_env
-from openmuse.tools.web import fetch_public, host_of, html_to_markdown
+from nanomuse.schema import RiskLevel
+from nanomuse.tools import Files, PythonExecute, Shell, Terminate
+from nanomuse.tools.email_tool import scrub_email_secrets
+from nanomuse.tools.shell import code_reach, scrubbed_env
+from nanomuse.tools.web import fetch_public, host_of, html_to_markdown
 
 
 async def test_files_workspace_scoping(tmp_path: Path):
@@ -75,7 +75,7 @@ async def test_shell_and_python(tmp_path: Path):
     py = PythonExecute(workspace=tmp_path)
     r = await py.execute(code="import sys; print(sys.version_info.major)")
     assert r.ok and r.output.startswith(str(sys.version_info.major))
-    assert not list(tmp_path.glob("openmuse_*.py"))  # temp script cleaned up
+    assert not list(tmp_path.glob("nanomuse_*.py"))  # temp script cleaned up
 
 
 def test_subprocess_env_is_scrubbed_of_credentials():
@@ -87,8 +87,8 @@ def test_subprocess_env_is_scrubbed_of_credentials():
             "OPENAI_API_KEY": "sk-1",
             "WQ_API_KEY": "x",
             "DEEPSEEK_API_KEY": "x",
-            "OPENMUSE_VAULT_KEY": "x",
-            "OPENMUSE_SERVER_TOKEN": "x",
+            "NANOMUSE_VAULT_KEY": "x",
+            "NANOMUSE_SERVER_TOKEN": "x",
             "GITHUB_TOKEN": "x",
             "AWS_SECRET_ACCESS_KEY": "x",
             "DB_PASSWORD": "x",
@@ -96,17 +96,17 @@ def test_subprocess_env_is_scrubbed_of_credentials():
             "HTTP_PROXY": "http://proxy:3128",
         }
     )
-    assert set(env) == {"PATH", "HOME", "LANG", "HTTP_PROXY", "OPENMUSE_SANDBOX"}
+    assert set(env) == {"PATH", "HOME", "LANG", "HTTP_PROXY", "NANOMUSE_SANDBOX"}
 
 
 async def test_python_and_shell_children_cannot_read_secrets(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("MY_SECRET_TOKEN", "hunter2")
-    monkeypatch.setenv("OPENMUSE_VAULT_KEY", "k")
+    monkeypatch.setenv("NANOMUSE_VAULT_KEY", "k")
     monkeypatch.setenv("PLAIN_SETTING", "yes")
     py = PythonExecute(workspace=tmp_path)
     r = await py.execute(
         code="import os; print(os.environ.get('MY_SECRET_TOKEN'), "
-        "os.environ.get('OPENMUSE_VAULT_KEY'), os.environ.get('PLAIN_SETTING'))"
+        "os.environ.get('NANOMUSE_VAULT_KEY'), os.environ.get('PLAIN_SETTING'))"
     )
     assert r.ok and r.output.startswith("None None yes")
     if sys.platform == "win32":
@@ -209,7 +209,7 @@ def test_host_and_markdown():
 
 
 async def test_cut_off_arguments_tell_the_model_what_happened(tmp_path: Path):
-    from openmuse.tools.base import safe_execute
+    from nanomuse.tools.base import safe_execute
 
     files = Files(workspace=tmp_path)
     short = await safe_execute(files, {"__raw__": '{"action": "wri'})

@@ -3,11 +3,11 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
 // The production build is written straight into the Python package so that
-// `pip install openmuse` ships the app and `openmuse serve` can serve it.
+// `pip install nanomuse` ships the app and `nanomuse serve` can serve it.
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   build: {
-    outDir: "../openmuse/server/static",
+    outDir: "../nanomuse/server/static",
     emptyOutDir: true,
     sourcemap: false,
   },

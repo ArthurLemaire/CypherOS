@@ -1,6 +1,6 @@
 name: Docker image
 
-# Publishes ghcr.io/openmuseagent/openmuse for linux/amd64 and linux/arm64:
+# Publishes ghcr.io/nano-muse/nanomuse for linux/amd64 and linux/arm64:
 #   main            -> :edge
 #   tag vX.Y.Z      -> :X.Y.Z, :X.Y, :latest
 # Pull requests build the amd64 image without pushing (the CI workflow smoke-tests it).
@@ -40,8 +40,8 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ghcr.io/${{ github.repository_owner }}/openmuse
-          # lower-case is required by GHCR; the owner is OpenMuseAgent
+          images: ghcr.io/${{ github.repository_owner }}/nanomuse
+          # lower-case is required by GHCR; the owner is nano-muse
           flavor: latest=false
           tags: |
             type=edge,branch=main
@@ -49,7 +49,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
           labels: |
-            org.opencontainers.image.title=OpenMuse
+            org.opencontainers.image.title=nanoMuse
             org.opencontainers.image.description=Open-source version of Meta's Muse personal agent: phone app, Sentinel gatekeeper, credential vault, memory and goals. Bring your own model.
             org.opencontainers.image.licenses=MIT
 
@@ -72,7 +72,7 @@ jobs:
         id: meta_browser
         uses: docker/metadata-action@v6
         with:
-          images: ghcr.io/${{ github.repository_owner }}/openmuse
+          images: ghcr.io/${{ github.repository_owner }}/nanomuse
           flavor: |
             latest=false
             suffix=-browser
@@ -82,8 +82,8 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
           labels: |
-            org.opencontainers.image.title=OpenMuse (with browser)
-            org.opencontainers.image.description=OpenMuse with Chromium bundled for the browser tool.
+            org.opencontainers.image.title=nanoMuse (with browser)
+            org.opencontainers.image.description=nanoMuse with Chromium bundled for the browser tool.
             org.opencontainers.image.licenses=MIT
 
       - name: Build and push (browser)

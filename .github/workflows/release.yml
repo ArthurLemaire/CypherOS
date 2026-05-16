@@ -36,8 +36,8 @@ jobs:
         run: |
           uv venv /tmp/smoke
           uv pip install --python /tmp/smoke/bin/python dist/*.whl
-          /tmp/smoke/bin/openmuse version
-          /tmp/smoke/bin/openmuse config init --path /tmp/smoke/config.toml
+          /tmp/smoke/bin/nanomuse version
+          /tmp/smoke/bin/nanomuse config init --path /tmp/smoke/config.toml
           test -f /tmp/smoke/config.toml
 
       - uses: actions/upload-artifact@v7
@@ -52,7 +52,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/project/openmuse/
+      url: https://pypi.org/project/nanomuse/
     permissions:
       id-token: write
     steps:

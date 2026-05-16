@@ -10,17 +10,17 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from openmuse import search as search_mod
-from openmuse.config import SearchSettings, Settings, apply_app_settings, load_app_settings
-from openmuse.llm import MockLLM
-from openmuse.search import SearchResult, WebSearchProvider, _region
-from openmuse.server.api import create_app
-from openmuse.server.service import MuseService
-from openmuse.tools import WebSearch
-from openmuse.vault import CredentialVault
+from nanomuse import search as search_mod
+from nanomuse.config import SearchSettings, Settings, apply_app_settings, load_app_settings
+from nanomuse.llm import MockLLM
+from nanomuse.search import SearchResult, WebSearchProvider, _region
+from nanomuse.server.api import create_app
+from nanomuse.server.service import MuseService
+from nanomuse.tools import WebSearch
+from nanomuse.vault import CredentialVault
 
 DDG_ROWS = [
-    {"title": "OpenMuse", "href": "https://github.com/nano-muse/nanoMuse", "body": "An agent."},
+    {"title": "nanoMuse", "href": "https://github.com/nano-muse/nanoMuse", "body": "An agent."},
     {"title": "Muse", "href": "https://example.com/muse", "body": "Something else."},
 ]
 
@@ -83,9 +83,9 @@ async def test_duckduckgo_is_the_default(ddg):
     p = WebSearchProvider(SearchSettings())
     assert p.name == "duckduckgo" and p.configured and p.host == "duckduckgo.com"
     assert p.describe() == "DuckDuckGo (no key needed)"
-    results, note = await p.search("openmuse", 1, "cn-zh")
-    assert note == "" and [r.title for r in results] == ["OpenMuse"]
-    assert ddg == [{"query": "openmuse", "max_results": 1, "region": "cn-zh"}]
+    results, note = await p.search("nanomuse", 1, "cn-zh")
+    assert note == "" and [r.title for r in results] == ["nanoMuse"]
+    assert ddg == [{"query": "nanomuse", "max_results": 1, "region": "cn-zh"}]
 
 
 async def test_brave(wire: Wire, ddg):
@@ -101,13 +101,13 @@ async def test_brave(wire: Wire, ddg):
     p = WebSearchProvider(SearchSettings(provider="brave", api_key="brv-key"))
     assert p.configured and p.host == "api.search.brave.com"
     assert p.describe() == "Brave Search (key set)"
-    results, note = await p.search("openmuse", 2, "cn-zh")
+    results, note = await p.search("nanomuse", 2, "cn-zh")
     assert note == "" and ddg == []
     assert [(r.title, r.snippet) for r in results] == [("A", "first"), ("B", "second")]
     req = wire.requests[0]
     assert req.method == "GET" and req.url.host == "api.search.brave.com"
     assert req.headers["X-Subscription-Token"] == "brv-key"
-    assert req.url.params["q"] == "openmuse" and req.url.params["count"] == "2"
+    assert req.url.params["q"] == "nanomuse" and req.url.params["count"] == "2"
     assert req.url.params["country"] == "CN" and req.url.params["search_lang"] == "zh"
     # no region → no country/lang parameters
     await p.search("x", 1, "")
@@ -121,14 +121,14 @@ async def test_tavily(wire: Wire, ddg):
         ]
     }
     p = WebSearchProvider(SearchSettings(provider="tavily", api_key="tvly-key"))
-    results, note = await p.search("openmuse", 5, "")
+    results, note = await p.search("nanomuse", 5, "")
     assert note == "" and ddg == []
     assert results[0].title == "T" and len(results[0].snippet) == 400
     req = wire.requests[0]
     assert req.method == "POST" and req.url == "https://api.tavily.com/search"
     assert req.headers["Authorization"] == "Bearer tvly-key"
     assert json.loads(req.content) == {
-        "query": "openmuse",
+        "query": "nanomuse",
         "max_results": 5,
         "search_depth": "basic",
     }
@@ -139,7 +139,7 @@ async def test_searxng(wire: Wire, ddg):
     p = WebSearchProvider(SearchSettings(provider="searxng", base_url="http://127.0.0.1:8080/"))
     assert p.configured and p.host == "127.0.0.1"
     assert p.describe() == "SearXNG at http://127.0.0.1:8080/"
-    results, note = await p.search("openmuse", 3, "cn-zh")
+    results, note = await p.search("nanomuse", 3, "cn-zh")
     assert note == "" and results[0].snippet == "from searx" and ddg == []
     req = wire.requests[0]
     assert str(req.url).startswith("http://127.0.0.1:8080/search?")
@@ -148,9 +148,9 @@ async def test_searxng(wire: Wire, ddg):
     assert "language" not in wire.requests[1].url.params
     # a SearXNG that is not one (HTML instead of JSON) is a clear error, not a traceback
     wire.text = "<html>not a search api</html>"
-    results, note = await p.search("openmuse", 3, "")
+    results, note = await p.search("nanomuse", 3, "")
     assert "not JSON" in note and "results from DuckDuckGo" in note
-    assert [r.title for r in results] == ["OpenMuse", "Muse"]
+    assert [r.title for r in results] == ["nanoMuse", "Muse"]
 
 
 async def test_failures_fall_back_to_duckduckgo_with_a_note(
@@ -158,17 +158,17 @@ async def test_failures_fall_back_to_duckduckgo_with_a_note(
 ):
     p = WebSearchProvider(SearchSettings(provider="brave", api_key="k"))
     wire.status = 429
-    results, note = await p.search("openmuse", 2, "")
+    results, note = await p.search("nanomuse", 2, "")
     assert (
         results
         and note == "Brave Search failed (rate limited (HTTP 429)) — results from DuckDuckGo"
     )
     wire.status = 401
-    _, note = await p.search("openmuse", 2, "")
+    _, note = await p.search("nanomuse", 2, "")
     assert "the key was refused (HTTP 401)" in note
     wire.status = 500
     wire.text = "boom"
-    _, note = await p.search("openmuse", 2, "")
+    _, note = await p.search("nanomuse", 2, "")
     assert "HTTP 500: boom" in note
     assert len(ddg) == 3
 
@@ -178,7 +178,7 @@ async def test_failures_fall_back_to_duckduckgo_with_a_note(
     monkeypatch.setattr(
         search_mod, "_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(unreachable))
     )
-    _, note = await p.search("openmuse", 2, "")
+    _, note = await p.search("nanomuse", 2, "")
     assert (
         note
         == "Brave Search failed (could not reach api.search.brave.com) — results from DuckDuckGo"
@@ -194,12 +194,12 @@ async def test_failures_fall_back_to_duckduckgo_with_a_note(
 async def test_unconfigured_provider_uses_duckduckgo_and_says_so(wire: Wire, ddg):
     p = WebSearchProvider(SearchSettings(provider="brave"))
     assert not p.configured and p.describe() == "Brave Search (no key)"
-    results, note = await p.search("openmuse", 2, "")
+    results, note = await p.search("nanomuse", 2, "")
     assert results and note == "Brave Search: no API key — results from DuckDuckGo"
     assert wire.requests == []
     p = WebSearchProvider(SearchSettings(provider="searxng"))
     assert not p.configured
-    _, note = await p.search("openmuse", 2, "")
+    _, note = await p.search("nanomuse", 2, "")
     assert note == "SearXNG: no instance URL — results from DuckDuckGo"
 
 
@@ -231,12 +231,12 @@ async def test_tool_renders_results_and_the_note(wire: Wire, ddg):
     wire.body = {
         "web": {"results": [{"title": "A", "url": "https://a.example", "description": "first"}]}
     }
-    out = await tool.execute(query="openmuse", max_results=1)
+    out = await tool.execute(query="nanomuse", max_results=1)
     assert out.output == "1. A\n   https://a.example\n   first"
     wire.status = 429
-    out = await tool.execute(query="openmuse", max_results=2)
+    out = await tool.execute(query="nanomuse", max_results=2)
     lines = out.output.splitlines()
-    assert lines[0].startswith("(Brave Search failed") and lines[1] == "1. OpenMuse"
+    assert lines[0].startswith("(Brave Search failed") and lines[1] == "1. nanoMuse"
     assert (await tool.execute(query="  ")).error
     # the default tool is DuckDuckGo
     plain = WebSearch()
@@ -257,12 +257,12 @@ def test_settings_layering(settings: Settings, monkeypatch: pytest.MonkeyPatch):
     assert web.api_key == "{{vault:SEARCH_API_KEY}}"
     # environment variables
     monkeypatch.chdir(settings.data_dir)  # no ./config/config.toml here
-    monkeypatch.delenv("OPENMUSE_CONFIG", raising=False)
-    monkeypatch.setenv("OPENMUSE_SEARCH_PROVIDER", "brave")
-    monkeypatch.setenv("OPENMUSE_SEARCH_API_KEY", "env-key")
-    monkeypatch.setenv("OPENMUSE_DATA_DIR", str(settings.data_dir))
-    monkeypatch.setenv("OPENMUSE_WORKSPACE", str(settings.agent.workspace))
-    from openmuse.config import load_settings
+    monkeypatch.delenv("NANOMUSE_CONFIG", raising=False)
+    monkeypatch.setenv("NANOMUSE_SEARCH_PROVIDER", "brave")
+    monkeypatch.setenv("NANOMUSE_SEARCH_API_KEY", "env-key")
+    monkeypatch.setenv("NANOMUSE_DATA_DIR", str(settings.data_dir))
+    monkeypatch.setenv("NANOMUSE_WORKSPACE", str(settings.agent.workspace))
+    from nanomuse.config import load_settings
 
     loaded = load_settings(None)
     assert loaded.connectors.search.provider == "brave"

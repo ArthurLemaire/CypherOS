@@ -1,12 +1,12 @@
 # Configuration
 
-OpenMuse reads one TOML file. `openmuse config init` writes a commented copy of [`config/config.example.toml`](../config/config.example.toml) to `config/config.toml`; `openmuse config show` prints the effective settings with secrets masked.
+nanoMuse reads one TOML file. `nanomuse config init` writes a commented copy of [`config/config.example.toml`](../config/config.example.toml) to `config/config.toml`; `nanomuse config show` prints the effective settings with secrets masked.
 
 Search order:
 
-1. `--config PATH` / `OPENMUSE_CONFIG`
+1. `--config PATH` / `NANOMUSE_CONFIG`
 2. `./config/config.toml`
-3. `~/.openmuse/config.toml`
+3. `~/.nanomuse/config.toml`
 
 Any string value may contain `${VAR}` or `${VAR:-default}`; it is replaced with the environment variable when the file is loaded, so API keys never need to be written down. `api_key`, `address` and `password` may also be `{{vault:NAME}}`: the value is read from the encrypted vault when the client is built, never shown to the model.
 
@@ -18,16 +18,16 @@ These win over the file. They cover the settings people change most often and wh
 
 | Variable | Setting |
 |---|---|
-| `OPENMUSE_LLM_PROVIDER`, `OPENMUSE_LLM_MODEL`, `OPENMUSE_LLM_BASE_URL`, `OPENMUSE_LLM_API_KEY`, `OPENMUSE_LLM_TOOL_MODE` | `[llm]` |
+| `NANOMUSE_LLM_PROVIDER`, `NANOMUSE_LLM_MODEL`, `NANOMUSE_LLM_BASE_URL`, `NANOMUSE_LLM_API_KEY`, `NANOMUSE_LLM_TOOL_MODE` | `[llm]` |
 | `DEEPSEEK_API_KEY`, `OPENAI_API_KEY` | used as `llm.api_key` when it is empty — DeepSeek's for a `*.deepseek.com` `base_url`, OpenAI's for every other host (OpenAI itself, OpenRouter, a gateway, vLLM) |
-| `OPENMUSE_DATA_DIR` | `data_dir` (default `~/.openmuse`) |
-| `OPENMUSE_WORKSPACE` | `agent.workspace` (default `./workspace`) |
-| `OPENMUSE_SENTINEL_MODE` | `sentinel.mode` |
-| `OPENMUSE_SEARCH_PROVIDER`, `OPENMUSE_SEARCH_API_KEY`, `OPENMUSE_SEARCH_BASE_URL` | `[connectors.search]` |
-| `OPENMUSE_SERVER_HOST`, `OPENMUSE_SERVER_PORT`, `OPENMUSE_SERVER_TOKEN` | `[server]` |
-| `OPENMUSE_BROWSER_ENABLED=1` | `browser.enabled = true` (only ever turns it on; the browser Docker image sets it) |
-| `OPENMUSE_VAULT_KEY` | Fernet key for the vault (default: `<data_dir>/vault.key`) |
-| `OPENMUSE_LOG_LEVEL` | `log_level` |
+| `NANOMUSE_DATA_DIR` | `data_dir` (default `~/.nanomuse`) |
+| `NANOMUSE_WORKSPACE` | `agent.workspace` (default `./workspace`) |
+| `NANOMUSE_SENTINEL_MODE` | `sentinel.mode` |
+| `NANOMUSE_SEARCH_PROVIDER`, `NANOMUSE_SEARCH_API_KEY`, `NANOMUSE_SEARCH_BASE_URL` | `[connectors.search]` |
+| `NANOMUSE_SERVER_HOST`, `NANOMUSE_SERVER_PORT`, `NANOMUSE_SERVER_TOKEN` | `[server]` |
+| `NANOMUSE_BROWSER_ENABLED=1` | `browser.enabled = true` (only ever turns it on; the browser Docker image sets it) |
+| `NANOMUSE_VAULT_KEY` | Fernet key for the vault (default: `<data_dir>/vault.key`) |
+| `NANOMUSE_LOG_LEVEL` | `log_level` |
 
 ## `[llm]`
 
@@ -45,7 +45,7 @@ stream        = true
 tool_mode     = "auto"             # "auto" | "native" | "prompt" — see below
 vision        = "auto"             # pictures attached in chat go to the model: "auto" | "on" | "off"
 pass_reasoning = false             # send reasoning_content back with assistant turns (some DeepSeek endpoints)
-extra_headers = {}                 # e.g. { "X-End-User-Id" = "openmuse" }
+extra_headers = {}                 # e.g. { "X-End-User-Id" = "nanomuse" }
 extra_body    = {}                 # e.g. { "thinking" = { "type" = "enabled" } }
 ```
 
@@ -64,7 +64,7 @@ Provider recipes:
 
 | `tool_mode` | What happens |
 |---|---|
-| `auto` (default) | The API's function calling. If the endpoint *rejects* the `tools` field — Ollama for a model without a tool template ("does not support tools"), vLLM started without a tool parser — OpenMuse logs one warning and describes the tools in the prompt for the rest of the run. |
+| `auto` (default) | The API's function calling. If the endpoint *rejects* the `tools` field — Ollama for a model without a tool template ("does not support tools"), vLLM started without a tool parser — nanoMuse logs one warning and describes the tools in the prompt for the rest of the run. |
 | `native` | Always the function-calling API; a rejection is an error. |
 | `prompt` | Tools are described in the system prompt and calls are parsed from `<tool_call>` blocks. The only mode that works with endpoints that silently *ignore* `tools` (no error, the model just never calls anything) — some "agent app" gateways do this. |
 
@@ -83,7 +83,7 @@ Ollama serves an OpenAI-compatible API at `http://localhost:11434/v1`; models wi
 | `gemma3:4b` | prompt, via the `auto` fallback | 5/5 | Ollama rejects `tools` for it; emits ```` ```tool_call ```` fences, which the prompt parser accepts |
 | DeepSeek V4.1 Flash (hosted) | native | 5/5 | 1–4 s per task |
 
-Small models bend the protocol in predictable ways, and OpenMuse meets them halfway rather than failing the task: a reply that is a bare or fenced JSON object naming one of the tools (with an arguments object) counts as a tool call in every mode; JSON strings may contain real newlines; `files.write` turns a one-line text with two or more spelled-out `\n` into lines (code, which has real newlines, is never touched). A quoted JSON object with other keys stays text.
+Small models bend the protocol in predictable ways, and nanoMuse meets them halfway rather than failing the task: a reply that is a bare or fenced JSON object naming one of the tools (with an arguments object) counts as a tool call in every mode; JSON strings may contain real newlines; `files.write` turns a one-line text with two or more spelled-out `\n` into lines (code, which has real newlines, is never touched). A quoted JSON object with other keys stays text.
 
 Set `max_tokens` to what the model can produce in one turn (4096 is fine for these) and keep `agent.max_context_messages` modest — a local 8B model with an 8k context window fills up fast once tool results start coming back.
 
@@ -93,7 +93,7 @@ Models that emit `<think>…</think>` inside the content are handled: the reason
 
 ```toml
 [agent]
-name                 = "OpenMuse"      # what the agent calls itself (the app's profile overrides this)
+name                 = "nanoMuse"      # what the agent calls itself (the app's profile overrides this)
 max_steps            = 30              # tool calls per turn before it must wrap up
 workspace            = "./workspace"   # the only directory the files tool can touch
 language             = "auto"          # or a fixed language: "English", "中文", ...
@@ -134,7 +134,7 @@ How the pieces combine is described in [sentinel.md](sentinel.md).
 mode = "auto"                        # auto | bwrap | off
 ```
 
-On Linux with [bubblewrap](https://github.com/containers/bubblewrap) installed (`apt install bubblewrap`, `dnf install bubblewrap`), every `shell` and `python_execute` call runs in its own namespace: the workspace and `agent.extra_roots` are the only writable places, your home directory is not there, `/tmp` is private, and there is no network unless the call was assessed as needing it. `auto` uses it when it works here and says so in the log when it does not; `bwrap` insists (`openmuse doctor` fails otherwise); `off` runs commands unboxed, with the scrubbed environment only. Details and what changes for the Sentinel in [sentinel.md → The sandbox](sentinel.md#the-sandbox).
+On Linux with [bubblewrap](https://github.com/containers/bubblewrap) installed (`apt install bubblewrap`, `dnf install bubblewrap`), every `shell` and `python_execute` call runs in its own namespace: the workspace and `agent.extra_roots` are the only writable places, your home directory is not there, `/tmp` is private, and there is no network unless the call was assessed as needing it. `auto` uses it when it works here and says so in the log when it does not; `bwrap` insists (`nanomuse doctor` fails otherwise); `off` runs commands unboxed, with the scrubbed environment only. Details and what changes for the Sentinel in [sentinel.md → The sandbox](sentinel.md#the-sandbox).
 
 ## `[memory]`
 
@@ -150,7 +150,7 @@ embedding_api_key  = ""        # a key of its own, "{{vault:EMBEDDINGS_API_KEY}}
 
 Recall is by keyword — rare words weigh more, Chinese is matched by character pairs — and, with an embedding endpoint, by meaning too: every memory is embedded once (the vector is kept in `memory.db` next to a hash of the text, so a changed line is embedded again and a switch back to a model is free), the message is embedded per turn, and the memories closest in meaning are fused with the keyword ranking, so "写邮件给房东" recalls "the landlord is Bob Li" though they share no word. Any OpenAI-compatible `/embeddings` works: OpenAI (`text-embedding-3-small` is the default there and on most gateways), [Ollama](https://ollama.com) with an embedding model pulled (`ollama pull qwen3-embedding:0.6b` — the default on `:11434`, small, reads Chinese and English), OpenRouter (`openai/text-embedding-3-small`). DeepSeek has none, so with it point `embedding_base_url` somewhere that has — Ollama next to DeepSeek is the usual pairing — or leave recall by keyword.
 
-`auto` tries the endpoint once per start and falls back to keyword recall when the call fails, saying why in the log — one failed call, not one per turn; an endpoint that was unreachable is tried again after five minutes. `on` insists: recall still falls back, but the failure is a warning and `openmuse doctor` fails on it. `off` never embeds. `embedding_api_key` empty means the model's own key on its own endpoint; set from the app it is a `{{vault:EMBEDDINGS_API_KEY}}` reference. The gateway headers in `llm.extra_headers` go to the model's endpoint only, not to another one named here. *Connections → Recall by meaning* in the app sets all of this and tests it; `openmuse memory recall "…"` shows what would be recalled, with each memory's closeness.
+`auto` tries the endpoint once per start and falls back to keyword recall when the call fails, saying why in the log — one failed call, not one per turn; an endpoint that was unreachable is tried again after five minutes. `on` insists: recall still falls back, but the failure is a warning and `nanomuse doctor` fails on it. `off` never embeds. `embedding_api_key` empty means the model's own key on its own endpoint; set from the app it is a `{{vault:EMBEDDINGS_API_KEY}}` reference. The gateway headers in `llm.extra_headers` go to the model's endpoint only, not to another one named here. *Connections → Recall by meaning* in the app sets all of this and tests it; `nanomuse memory recall "…"` shows what would be recalled, with each memory's closeness.
 
 ## `[skills]`
 
@@ -161,7 +161,7 @@ dir      = ""                        # your skills; empty → <data_dir>/skills
 disabled = ["inbox-triage"]          # built-in ones to leave out of the model's list
 ```
 
-A skill is a folder with a `SKILL.md` — YAML front matter with `name` and `description`, then the steps in Markdown — in the [Agent Skills](https://agentskills.io) format, so skills written for other agents work here. Five are built in (`weekly-review`, `trip-plan`, `inbox-triage`, `compare-options`, `meeting-prep`); a folder in `dir` with the same name as a built-in replaces it. The model gets the index (name and description of every enabled skill) in its system prompt and reads a skill's steps with the `skills` tool when a request fits; `/name` at the start of a chat message runs one directly. Saving or removing a skill from chat is a sensitive call — it asks first, whatever the Sentinel mode. Skills switched off in the app are remembered in `app-settings.json`; the list here and that one are merged. Inside the [sandbox](sentinel.md#the-sandbox) a skill's folder (its scripts and reference files) is visible read-only. See [the app → Skills](app.md#skills) and `openmuse skills` in the [CLI](cli.md#skills).
+A skill is a folder with a `SKILL.md` — YAML front matter with `name` and `description`, then the steps in Markdown — in the [Agent Skills](https://agentskills.io) format, so skills written for other agents work here. Five are built in (`weekly-review`, `trip-plan`, `inbox-triage`, `compare-options`, `meeting-prep`); a folder in `dir` with the same name as a built-in replaces it. The model gets the index (name and description of every enabled skill) in its system prompt and reads a skill's steps with the `skills` tool when a request fits; `/name` at the start of a chat message runs one directly. Saving or removing a skill from chat is a sensitive call — it asks first, whatever the Sentinel mode. Skills switched off in the app are remembered in `app-settings.json`; the list here and that one are merged. Inside the [sandbox](sentinel.md#the-sandbox) a skill's folder (its scripts and reference files) is visible read-only. See [the app → Skills](app.md#skills) and `nanomuse skills` in the [CLI](cli.md#skills).
 
 ## Connectors
 
@@ -180,7 +180,7 @@ password      = "{{vault:EMAIL_PASSWORD}}"
 scrub_secrets = true   # remove one-time codes and reset links before the model reads a mail
 ```
 
-Store the values with `openmuse vault set EMAIL_ADDRESS` and `openmuse vault set EMAIL_PASSWORD`. `read_emails` marks the session as tainted; `send_email` is in `always_ask_tools` by default.
+Store the values with `nanomuse vault set EMAIL_ADDRESS` and `nanomuse vault set EMAIL_PASSWORD`. `read_emails` marks the session as tainted; `send_email` is in `always_ask_tools` by default.
 
 ### Calendar
 
@@ -195,14 +195,14 @@ day_end         = "18:00"
 
 [[connectors.calendar.feeds]]
 name = "Work"
-url  = "{{vault:CALENDAR_WORK}}"   # the link is the secret: openmuse vault set CALENDAR_WORK
+url  = "{{vault:CALENDAR_WORK}}"   # the link is the secret: nanomuse vault set CALENDAR_WORK
 
 [[connectors.calendar.feeds]]
 name = "Family"
 url  = "~/family.ics"
 ```
 
-The `calendar` tool reads (agenda, search, free time) and *drafts*: an event it proposes is written as `calendar/<date>-<title>.ics` in the workspace, and the app shows it as a card with an *Add to calendar* button. It never writes to your calendar itself. Today's and tomorrow's events are in the system prompt; the Feed shows them under *Today*. `openmuse calendar add NAME URL` does the same as the Connections screen.
+The `calendar` tool reads (agenda, search, free time) and *drafts*: an event it proposes is written as `calendar/<date>-<title>.ics` in the workspace, and the app shows it as a card with an *Add to calendar* button. It never writes to your calendar itself. Today's and tomorrow's events are in the system prompt; the Feed shows them under *Today*. `nanomuse calendar add NAME URL` does the same as the Connections screen.
 
 ### Contacts
 
@@ -218,10 +218,10 @@ url  = "~/Downloads/contacts.vcf"
 
 [[connectors.contacts.sources]]
 name = "Nextcloud"
-url  = "{{vault:CONTACTS_NEXTCLOUD}}"   # a link, kept in the vault: openmuse vault set CONTACTS_NEXTCLOUD
+url  = "{{vault:CONTACTS_NEXTCLOUD}}"   # a link, kept in the vault: nanomuse vault set CONTACTS_NEXTCLOUD
 ```
 
-Besides the sources there is always *My contacts*, `<data_dir>/contacts.vcf`: the people the agent was told about in chat ("the landlord is Bob Li, bob@example.com") through `contacts` action=add — the only book it writes to, and the only one it can remove people from. The `contacts` tool searches by name, nickname, company, email or phone (every word must match, prefixes count, a character inside a Chinese name counts); a look-up is private data and taints the session. `openmuse contacts search | list | add | sources | add-source | remove-source` from the CLI.
+Besides the sources there is always *My contacts*, `<data_dir>/contacts.vcf`: the people the agent was told about in chat ("the landlord is Bob Li, bob@example.com") through `contacts` action=add — the only book it writes to, and the only one it can remove people from. The `contacts` tool searches by name, nickname, company, email or phone (every word must match, prefixes count, a character inside a Chinese name counts); a look-up is private data and taints the session. `nanomuse contacts search | list | add | sources | add-source | remove-source` from the CLI.
 
 ### Web search
 
@@ -230,11 +230,11 @@ Who answers `web_search`. DuckDuckGo needs nothing and is the default, but it is
 ```toml
 [connectors.search]
 provider = "duckduckgo"          # duckduckgo | brave | tavily | searxng
-api_key  = "{{vault:SEARCH_API_KEY}}"   # brave / tavily: openmuse vault set SEARCH_API_KEY
+api_key  = "{{vault:SEARCH_API_KEY}}"   # brave / tavily: nanomuse vault set SEARCH_API_KEY
 base_url = ""                    # searxng: your instance, e.g. "http://127.0.0.1:8080"
 ```
 
-Whichever is picked, a search that fails — a lapsed key, a rate limit, an instance that is down — is answered by DuckDuckGo instead, once, with a note on top of the results saying so, so the task goes on; `openmuse doctor` reports a provider that is missing what it needs. The `region` argument of the tool (`cn-zh`, `us-en`) is passed to every provider in its own terms. The provider's host is a destination you chose, so a search after private data was read does not need approval the way an unknown host would (see [taint tracking](sentinel.md#taint-tracking)); `web_fetch` of a result still does.
+Whichever is picked, a search that fails — a lapsed key, a rate limit, an instance that is down — is answered by DuckDuckGo instead, once, with a note on top of the results saying so, so the task goes on; `nanomuse doctor` reports a provider that is missing what it needs. The `region` argument of the tool (`cn-zh`, `us-en`) is passed to every provider in its own terms. The provider's host is a destination you chose, so a search after private data was read does not need approval the way an unknown host would (see [taint tracking](sentinel.md#taint-tracking)); `web_fetch` of a result still does.
 
 ## `[triggers]`
 
@@ -252,7 +252,7 @@ Mail triggers need the [email connector](#email); event triggers need a [calenda
 
 ```toml
 [browser]
-enabled    = true      # pip install "openmuse[browser]" && playwright install chromium
+enabled    = true      # pip install "nanomuse[browser]" && playwright install chromium
 headless   = true
 timeout_ms = 30000
 ```
@@ -293,9 +293,9 @@ max_upload_mb    = 25            # largest file the app may attach to a message
 
 | Path | Contents |
 |---|---|
-| `~/.openmuse/` (`data_dir`) | everything below |
+| `~/.nanomuse/` (`data_dir`) | everything below |
 | `memory.db`, `goals.db` | SQLite |
-| `vault.enc`, `vault.key` | encrypted secrets and the key (or `OPENMUSE_VAULT_KEY`) |
+| `vault.enc`, `vault.key` | encrypted secrets and the key (or `NANOMUSE_VAULT_KEY`) |
 | `audit.jsonl` | append-only audit log |
 | `approvals.json` | permissions you granted for 24 hours or always (tool + target, scope, expiry) |
 | `app-settings.json` | what was changed in the app's Connections screen, layered over `config.toml` (no secrets, only `{{vault:NAME}}` references) |

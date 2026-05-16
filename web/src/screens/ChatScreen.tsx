@@ -26,7 +26,7 @@ export function ChatScreen() {
   const [threadsOpen, setThreadsOpen] = useState(false);
   // the browser card being watched (or driven) full-screen
   const [browserView, setBrowserView] = useState<string | null>(null);
-  const name = profile?.name ?? "OpenMuse";
+  const name = profile?.name ?? "nanoMuse";
 
   const listRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);

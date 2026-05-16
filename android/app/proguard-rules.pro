@@ -1,5 +1,5 @@
 # The JavaScript bridge is reached by name from the page.
--keepclassmembers class io.github.openmuseagent.openmuse.Bridge {
+-keepclassmembers class io.github.nanomuse.app.Bridge {
     @android.webkit.JavascriptInterface <methods>;
 }
 -dontwarn okhttp3.**

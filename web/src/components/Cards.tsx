@@ -166,7 +166,7 @@ export function scopeLabel(scope: string, tool: string, target?: string | null):
 
 export function ApprovalCard({
   event,
-  name = "OpenMuse",
+  name = "nanoMuse",
   onDecide,
 }: {
   event: ApprovalEvent;

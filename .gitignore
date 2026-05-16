@@ -29,7 +29,7 @@ venv/
 .coverage
 htmlcov/
 
-# web app sources (the production build in openmuse/server/static IS committed)
+# web app sources (the production build in nanomuse/server/static IS committed)
 web/node_modules/
 web/dist/
 web/.vite/

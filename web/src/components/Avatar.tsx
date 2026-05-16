@@ -51,7 +51,7 @@ export function Avatar({
         setWiggle(true);
         onClick?.();
       }}
-      aria-label={`${profile?.name ?? "OpenMuse"} avatar`}
+      aria-label={`${profile?.name ?? "nanoMuse"} avatar`}
       className={cx("relative shrink-0 select-none rounded-full", onClick ? "transition active:scale-95" : "cursor-default", className)}
       style={{ width: size, height: size }}
     >

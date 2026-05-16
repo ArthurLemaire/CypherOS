@@ -39,7 +39,7 @@ export function IdeasScreen() {
   const { state, send, openThread, toast } = useStore();
   const [data, setData] = useState<IdeasData | null>(null);
   const [loading, setLoading] = useState(false);
-  const name = state.profile?.name ?? "OpenMuse";
+  const name = state.profile?.name ?? "nanoMuse";
   const t = useT();
 
   const load = async (refresh = false) => {

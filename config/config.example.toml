@@ -1,9 +1,9 @@
-# OpenMuse configuration
-# Copy to config/config.toml (or ~/.openmuse/config.toml) and edit.
+# nanoMuse configuration
+# Copy to config/config.toml (or ~/.nanomuse/config.toml) and edit.
 # String values may reference environment variables: "${VAR}" or "${VAR:-default}".
 
 # Where memory, goals, vault, audit log and sessions are stored.
-data_dir = "~/.openmuse"
+data_dir = "~/.nanomuse"
 log_level = "INFO"
 
 # ------------------------------------------------------------------------------
@@ -40,7 +40,7 @@ api_key = "${DEEPSEEK_API_KEY}"
 # model = "my-app-id"
 # base_url = "https://gateway.example.com/v1"
 # api_key = "${GATEWAY_API_KEY}"
-# extra_headers = { "X-End-User-Id" = "openmuse" }
+# extra_headers = { "X-End-User-Id" = "nanomuse" }
 
 max_tokens = 4096
 temperature = 0.3
@@ -64,7 +64,7 @@ pass_reasoning = false
 
 # ------------------------------------------------------------------------------
 [agent]
-name = "OpenMuse"
+name = "nanoMuse"
 max_steps = 30
 workspace = "./workspace"       # the agent's files live here
 # Directories outside the workspace the files tool may use. Reads there count as
@@ -135,7 +135,7 @@ imap_port = 993
 smtp_host = "smtp.gmail.com"
 smtp_port = 587
 smtp_starttls = true
-# Store with: openmuse vault set EMAIL_ADDRESS ; openmuse vault set EMAIL_PASSWORD
+# Store with: nanomuse vault set EMAIL_ADDRESS ; nanomuse vault set EMAIL_PASSWORD
 address = "{{vault:EMAIL_ADDRESS}}"
 password = "{{vault:EMAIL_PASSWORD}}"
 scrub_secrets = true     # strip one-time codes / reset links before the model reads mail
@@ -147,7 +147,7 @@ day_start = "09:00"      # working hours, for "when am I free"
 day_end = "18:00"
 # Private .ics links (Google: Settings → Integrate calendar → Secret address in iCal format;
 # Outlook: Shared calendars → Publish; iCloud: Share Calendar → Public Calendar) or .ics files.
-# The link is the secret: openmuse vault set CALENDAR_WORK
+# The link is the secret: nanomuse vault set CALENDAR_WORK
 # [[connectors.calendar.feeds]]
 # name = "Work"
 # url = "{{vault:CALENDAR_WORK}}"
@@ -165,7 +165,7 @@ enabled = true
 # Tavily take a key, SearXNG the URL of an instance you run (json among its formats). A
 # failed search falls back to DuckDuckGo once, with a note.
 provider = "duckduckgo"               # duckduckgo | brave | tavily | searxng
-# api_key = "{{vault:SEARCH_API_KEY}}"  # brave / tavily: openmuse vault set SEARCH_API_KEY
+# api_key = "{{vault:SEARCH_API_KEY}}"  # brave / tavily: nanomuse vault set SEARCH_API_KEY
 # base_url = "http://127.0.0.1:8080"    # searxng
 
 [skills]
@@ -190,7 +190,7 @@ mail_poll_minutes = 5
 hook_min_seconds = 10
 
 [browser]
-enabled = false          # pip install "openmuse[browser]" && playwright install chromium
+enabled = false          # pip install "nanomuse[browser]" && playwright install chromium
 headless = true
 timeout_ms = 30000
 
@@ -210,7 +210,7 @@ timeout_ms = 30000
 # reads_private_data = true
 
 # ------------------------------------------------------------------------------
-# App server — `openmuse serve` (the phone app)
+# App server — `nanomuse serve` (the phone app)
 # ------------------------------------------------------------------------------
 [server]
 host = "127.0.0.1"       # 0.0.0.0 to open it on your Wi-Fi, then scan the QR code with your phone

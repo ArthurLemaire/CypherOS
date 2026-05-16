@@ -1,8 +1,18 @@
 # Changelog
 
-All notable changes to OpenMuse. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/). Unreleased changes are on `main`.
+All notable changes to nanoMuse (OpenMuse until 0.6.0). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/). Unreleased changes are on `main`.
 
 ## [Unreleased]
+
+## [0.7.0] — 2026-09-23
+
+The rename. OpenMuse became **nanoMuse** and moved to [nano-muse/nanoMuse](https://github.com/nano-muse/nanoMuse); the old repository is no longer maintained. The project is also taking a clearer direction: a Muse that works in China, where the agent operates the apps on your phone through their screens when no API exists — that part starts in the next release.
+
+### Changed
+
+- **Everything is called nanoMuse.** The PyPI package and the command are `nanomuse` (`pip install nanomuse`, `nanomuse serve`); the Python package is `nanomuse`; environment variables are `NANOMUSE_*`; the data directory is `~/.nanomuse`; the Docker image is `ghcr.io/nano-muse/nanomuse`; the Android application id is `io.github.nanomuse.app`; the release APK is `nanomuse-<version>.apk` and `nanomuse.apk`. Web app title, manifest, prompts and docs follow. "Meta Muse" stays as the name of the product being copied.
+- **Compatibility for a while.** `OPENMUSE_*` environment variables are still read when the `NANOMUSE_*` one is not set (aliased once on import). An existing `~/.openmuse` data directory keeps being used when `~/.nanomuse` does not exist. The web app carries its localStorage over (`openmuse_*` → `nanomuse_*`), so a paired phone stays paired.
+- **The Android app installs next to the old one**, because the application id changed; the old OpenMuse app can be uninstalled after connecting the new one. Same signing key.
 
 ## [0.6.0] — 2026-09-23
 
@@ -128,7 +138,8 @@ First public release.
 - Mobile-first web app built with React, Vite and Tailwind, shipped inside the package.
 - Docker image and Compose file; GitHub Actions CI; PyPI publishing through Trusted Publishing.
 
-[Unreleased]: https://github.com/nano-muse/nanoMuse/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/nano-muse/nanoMuse/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/nano-muse/nanoMuse/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/nano-muse/nanoMuse/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/nano-muse/nanoMuse/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/nano-muse/nanoMuse/compare/v0.3.0...v0.4.0

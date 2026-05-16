@@ -6,15 +6,15 @@ from typing import Any
 
 import pytest
 
-from openmuse.config import SentinelRule, SentinelSettings
-from openmuse.schema import Function, RiskLevel, ToolCall, ToolResult
-from openmuse.sentinel import AuditLog, Decision, Policy, Sentinel, host_allowed
-from openmuse.sentinel import grants as grants_module
-from openmuse.sentinel.grants import GrantStore
-from openmuse.tools.base import BaseTool, CallAssessment
-from openmuse.tools.shell import programs_of
-from openmuse.ui import ApprovalDecision, ApprovalRequest, HeadlessUI
-from openmuse.vault import CredentialVault
+from nanomuse.config import SentinelRule, SentinelSettings
+from nanomuse.schema import Function, RiskLevel, ToolCall, ToolResult
+from nanomuse.sentinel import AuditLog, Decision, Policy, Sentinel, host_allowed
+from nanomuse.sentinel import grants as grants_module
+from nanomuse.sentinel.grants import GrantStore
+from nanomuse.tools.base import BaseTool, CallAssessment
+from nanomuse.tools.shell import programs_of
+from nanomuse.ui import ApprovalDecision, ApprovalRequest, HeadlessUI
+from nanomuse.vault import CredentialVault
 
 
 class Echo(BaseTool):

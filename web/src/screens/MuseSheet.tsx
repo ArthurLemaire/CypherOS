@@ -48,14 +48,14 @@ import { describeCadence } from "./GoalsScreen";
 type View = "menu" | "activity" | "approvals" | "permissions" | "upcoming";
 
 /**
- * Tap the avatar: the menu behind your OpenMuse. What it has been doing (activity log),
+ * Tap the avatar: the menu behind your nanoMuse. What it has been doing (activity log),
  * what is waiting for you (approvals queue, across every chat), what it is allowed to do
  * (permissions), what it will do next (upcoming), plus its memory and settings.
  */
 export function MuseSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { state, setTab } = useStore();
   const [view, setView] = useState<View>("menu");
-  const name = state.profile?.name ?? "OpenMuse";
+  const name = state.profile?.name ?? "nanoMuse";
   const pending = state.pendingApprovals.length;
   const t = useT();
 
@@ -266,7 +266,7 @@ function ApprovalsView({ onDone }: { onDone: () => void }) {
   return (
     <div className="space-y-4 pb-2">
       <p className="text-[12.5px] text-muted">
-        {t("Actions your OpenMuse wants to take but cannot without you. Each one shows what will run and why; a permission you grant is bound to that exact tool and target.")}
+        {t("Actions your nanoMuse wants to take but cannot without you. Each one shows what will run and why; a permission you grant is bound to that exact tool and target.")}
       </p>
       {list.map((ev) => (
         <div key={ev.id}>
@@ -287,7 +287,7 @@ function UpcomingView({ onSettings }: { onSettings: () => void }) {
   const { state, refreshSettings, toast } = useStore();
   const [data, setData] = useState<UpcomingData | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const name = state.profile?.name ?? "OpenMuse";
+  const name = state.profile?.name ?? "nanoMuse";
   const t = useT();
 
   const load = () => api.upcoming().then(setData).catch((e: Error) => toast(e.message));
@@ -931,7 +931,7 @@ function PermissionsView({ open }: { open: boolean }) {
   const [data, reload] = useActivity(open);
 
   const reset = async () => {
-    if (!window.confirm(t("Forget every permission you granted? Your OpenMuse will ask again next time."))) return;
+    if (!window.confirm(t("Forget every permission you granted? Your nanoMuse will ask again next time."))) return;
     try {
       await api.resetApprovals();
       await reload();

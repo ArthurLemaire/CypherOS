@@ -64,10 +64,10 @@ jobs:
           bwrap --unshare-all --ro-bind / / -- /bin/true && echo "bubblewrap works here" || echo "bubblewrap cannot create a namespace here; the boxed tests will skip"
 
       - name: Ruff lint
-        run: uv run ruff check openmuse tests scripts
+        run: uv run ruff check nanomuse tests scripts
 
       - name: Ruff format
-        run: uv run ruff format --check openmuse tests scripts
+        run: uv run ruff format --check nanomuse tests scripts
 
       - name: Mypy
         run: uv run mypy
@@ -82,7 +82,7 @@ jobs:
           uv build
           uv venv --python 3.12 /tmp/smoke
           uv pip install --python /tmp/smoke/bin/python dist/*.whl
-          /tmp/smoke/bin/openmuse version
+          /tmp/smoke/bin/nanomuse version
 
   web:
     name: web app build
@@ -111,9 +111,9 @@ jobs:
         # the merge (see CONTRIBUTING.md, "Releasing")
         if: github.actor != 'dependabot[bot]'
         run: |
-          if [ -n "$(git status --porcelain openmuse/server/static)" ]; then
-            echo "openmuse/server/static is out of date — run 'cd web && npm run build' and commit the result"
-            git status --porcelain openmuse/server/static
+          if [ -n "$(git status --porcelain nanomuse/server/static)" ]; then
+            echo "nanomuse/server/static is out of date — run 'cd web && npm run build' and commit the result"
+            git status --porcelain nanomuse/server/static
             exit 1
           fi
 
@@ -130,8 +130,8 @@ jobs:
           context: .
           push: false
           load: true
-          tags: openmuse:ci
+          tags: nanomuse:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Smoke test
-        run: docker run --rm openmuse:ci version
+        run: docker run --rm nanomuse:ci version

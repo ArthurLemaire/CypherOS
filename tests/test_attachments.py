@@ -15,20 +15,20 @@ from fastapi.testclient import TestClient
 from openai import AsyncOpenAI
 from PIL import Image
 
-from openmuse.agent import Incoming, MuseAgent
-from openmuse.config import LLMSettings, Settings, apply_app_settings
-from openmuse.llm import MockLLM
-from openmuse.llm import openai_chat as chat_mod
-from openmuse.llm.openai_chat import OpenAIChatLLM
-from openmuse.llm.openai_responses import _to_input_items
-from openmuse.llm.prompt_tools import PromptToolAdapter
-from openmuse.llm.vision import content_parts, image_data_url, says_no_images, without_images
-from openmuse.schema import Attachment, LLMResponse, Message
-from openmuse.sentinel import AuditLog, Sentinel
-from openmuse.server.api import create_app
-from openmuse.server.service import MuseService
-from openmuse.tools import Files, Terminate, ToolCollection
-from openmuse.ui import HeadlessUI
+from nanomuse.agent import Incoming, MuseAgent
+from nanomuse.config import LLMSettings, Settings, apply_app_settings
+from nanomuse.llm import MockLLM
+from nanomuse.llm import openai_chat as chat_mod
+from nanomuse.llm.openai_chat import OpenAIChatLLM
+from nanomuse.llm.openai_responses import _to_input_items
+from nanomuse.llm.prompt_tools import PromptToolAdapter
+from nanomuse.llm.vision import content_parts, image_data_url, says_no_images, without_images
+from nanomuse.schema import Attachment, LLMResponse, Message
+from nanomuse.sentinel import AuditLog, Sentinel
+from nanomuse.server.api import create_app
+from nanomuse.server.service import MuseService
+from nanomuse.tools import Files, Terminate, ToolCollection
+from nanomuse.ui import HeadlessUI
 
 
 def make_pdf(text: str) -> bytes:

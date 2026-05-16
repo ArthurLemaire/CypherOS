@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from openmuse.reminders import ReminderStore, parse_when
-from openmuse.tools import Reminders
+from nanomuse.reminders import ReminderStore, parse_when
+from nanomuse.tools import Reminders
 
 
 def test_parse_when_reads_what_the_model_writes():
