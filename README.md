@@ -1,31 +1,31 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/OpenMuseAgent/OpenMuse/main/docs/cover.png" width="160" alt="OpenMuse">
+  <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/cover.png" width="160" alt="OpenMuse">
 </p>
 
 <h1 align="center">OpenMuse</h1>
 
 <div align="center">
   <p>
-    <a href="https://github.com/OpenMuseAgent/OpenMuse/blob/main/README.md">English</a> |
-    <a href="https://github.com/OpenMuseAgent/OpenMuse/blob/main/README_zh.md">简体中文</a>
+    <a href="https://github.com/nano-muse/nanoMuse/blob/main/README.md">English</a> |
+    <a href="https://github.com/nano-muse/nanoMuse/blob/main/README_zh.md">简体中文</a>
   </p>
   <p>
-    <a href="https://github.com/OpenMuseAgent/OpenMuse"><img src="https://img.shields.io/github/stars/OpenMuseAgent/OpenMuse?style=flat&logo=github" alt="GitHub stars"></a>
+    <a href="https://github.com/nano-muse/nanoMuse"><img src="https://img.shields.io/github/stars/nano-muse/nanoMuse?style=flat&logo=github" alt="GitHub stars"></a>
     <a href="https://pypi.org/project/openmuse/"><img src="https://img.shields.io/pypi/v/openmuse" alt="PyPI version"></a>
-    <a href="https://github.com/OpenMuseAgent/OpenMuse/releases/latest/download/openmuse.apk"><img src="https://img.shields.io/badge/Android-APK-3DDC84?logo=android&logoColor=white" alt="Android APK"></a>
-    <a href="https://github.com/OpenMuseAgent/OpenMuse/actions/workflows/ci.yml"><img src="https://github.com/OpenMuseAgent/OpenMuse/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+    <a href="https://github.com/nano-muse/nanoMuse/releases/latest/download/openmuse.apk"><img src="https://img.shields.io/badge/Android-APK-3DDC84?logo=android&logoColor=white" alt="Android APK"></a>
+    <a href="https://github.com/nano-muse/nanoMuse/actions/workflows/ci.yml"><img src="https://github.com/nano-muse/nanoMuse/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
     <a href="https://pypi.org/project/openmuse/"><img src="https://img.shields.io/badge/python-%3E%3D3.11-blue" alt="Python 3.11 or newer"></a>
-    <a href="https://github.com/OpenMuseAgent/OpenMuse/blob/main/LICENSE"><img src="https://img.shields.io/github/license/OpenMuseAgent/OpenMuse" alt="MIT License"></a>
+    <a href="https://github.com/nano-muse/nanoMuse/blob/main/LICENSE"><img src="https://img.shields.io/github/license/nano-muse/nanoMuse" alt="MIT License"></a>
   </p>
 </div>
 
 🧸 **OpenMuse** is an open-source, self-hosted personal agent in the shape of Meta's [Muse](https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/): one agent with a name and a face, on your phone, that does things rather than answering questions, keeps working while the app is closed, and asks before anything you could not undo. Any OpenAI-compatible model. One Python package, a web app inside it, and an Android app.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/OpenMuseAgent/OpenMuse/main/docs/screenshots/chat-approval.png" width="24%" alt="Chat: the agent stops before a shell command and asks">
-  <img src="https://raw.githubusercontent.com/OpenMuseAgent/OpenMuse/main/docs/screenshots/feed.png" width="24%" alt="Feed: posts written for you from your instructions">
-  <img src="https://raw.githubusercontent.com/OpenMuseAgent/OpenMuse/main/docs/screenshots/goals.png" width="24%" alt="Goals: tracked on a schedule, or step by step">
-  <img src="https://raw.githubusercontent.com/OpenMuseAgent/OpenMuse/main/docs/screenshots/library.png" width="24%" alt="Library: pages and files the agent made, with previews">
+  <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/screenshots/chat-approval.png" width="24%" alt="Chat: the agent stops before a shell command and asks">
+  <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/screenshots/feed.png" width="24%" alt="Feed: posts written for you from your instructions">
+  <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/screenshots/goals.png" width="24%" alt="Goals: tracked on a schedule, or step by step">
+  <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/screenshots/library.png" width="24%" alt="Library: pages and files the agent made, with previews">
 </p>
 
 ## Start Here
@@ -34,10 +34,10 @@
 |---|---|
 | Get it on your phone in five minutes | [Install](#-install) and [Quick Start](#-quick-start) |
 | Install the Android app | [Android](#-android) |
-| Use it from the terminal | [CLI](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/cli.md) |
-| Point it at DeepSeek, OpenAI, Ollama or a company gateway | [Models](#-models) and [Configuration](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/configuration.md) |
-| Know what it will and will not do on its own | [Sentinel](#%EF%B8%8F-sentinel) and [docs/sentinel.md](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/sentinel.md) |
-| Connect mail, a calendar, contacts, a browser or MCP servers | [Connectors](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/configuration.md#connectors) |
+| Use it from the terminal | [CLI](https://github.com/nano-muse/nanoMuse/blob/main/docs/cli.md) |
+| Point it at DeepSeek, OpenAI, Ollama or a company gateway | [Models](#-models) and [Configuration](https://github.com/nano-muse/nanoMuse/blob/main/docs/configuration.md) |
+| Know what it will and will not do on its own | [Sentinel](#%EF%B8%8F-sentinel) and [docs/sentinel.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/sentinel.md) |
+| Connect mail, a calendar, contacts, a browser or MCP servers | [Connectors](https://github.com/nano-muse/nanoMuse/blob/main/docs/configuration.md#connectors) |
 | Run it in Docker or keep it running on a server | [Deploy](#%EF%B8%8F-deploy) |
 | Read the code | [Architecture](#architecture) |
 
@@ -67,7 +67,7 @@ Python 3.11 or newer, on Linux, macOS or Windows. The phone app ships inside the
 | Track | Install with | Update with |
 |---|---|---|
 | Stable | `uv tool install openmuse` or `pip install openmuse` | the same tool, `--upgrade` |
-| Latest | `uv tool install git+https://github.com/OpenMuseAgent/OpenMuse.git` | run it again |
+| Latest | `uv tool install git+https://github.com/nano-muse/nanoMuse.git` | run it again |
 | Source | `git clone` + `uv pip install -e ".[dev]"` | `git pull` |
 
 ```bash
@@ -95,7 +95,7 @@ Prefer the terminal? `openmuse chat` is the same agent with approvals in the con
 
 ## 📱 Android
 
-[**Download openmuse.apk**](https://github.com/OpenMuseAgent/OpenMuse/releases/latest/download/openmuse.apk) from the latest release and open it on the phone. Android 8.0 or newer, any CPU. It is not from a store, so Android asks once to allow the install.
+[**Download openmuse.apk**](https://github.com/nano-muse/nanoMuse/releases/latest/download/openmuse.apk) from the latest release and open it on the phone. Android 8.0 or newer, any CPU. It is not from a store, so Android asks once to allow the install.
 
 Then `openmuse serve --host 0.0.0.0` on your computer, tap **Scan QR code** in the app and point the camera at the terminal. Same Wi-Fi, a VPN such as Tailscale, or your server behind TLS all work.
 
@@ -105,18 +105,18 @@ What the app adds over the browser tab:
 - connect by QR code, plain `http://` on the LAN
 - the file picker for attachments, downloads to the phone, links in the real browser
 
-No Android? Add the web app to the home screen instead; it installs as a PWA and gets Web Push over `https://`. Build the APK yourself or read how it works in [docs/android.md](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/android.md).
+No Android? Add the web app to the home screen instead; it installs as a PWA and gets Web Push over `https://`. Build the APK yourself or read how it works in [docs/android.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/android.md).
 
 ## ☁️ Deploy
 
 ```bash
 docker run -d --name openmuse -p 8787:8787 -e DEEPSEEK_API_KEY=sk-... \
   -v openmuse-data:/data -v "$PWD/workspace:/workspace" \
-  ghcr.io/openmuseagent/openmuse:latest
+  ghcr.io/nano-muse/openmuse:latest
 docker logs openmuse            # the URL with the access token
 ```
 
-The image is linux/amd64 and linux/arm64; `:latest-browser` bundles Chromium for the browser tool. From a checkout, `docker compose up -d app` does the same and `docker compose up -d daemon` advances goals with no UI. To reach it from outside your network, put it behind Tailscale or a reverse proxy with TLS rather than opening the port. Details, including a systemd unit: [docs/deployment.md](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/deployment.md).
+The image is linux/amd64 and linux/arm64; `:latest-browser` bundles Chromium for the browser tool. From a checkout, `docker compose up -d app` does the same and `docker compose up -d daemon` advances goals with no UI. To reach it from outside your network, put it behind Tailscale or a reverse proxy with TLS rather than opening the port. Details, including a systemd unit: [docs/deployment.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/deployment.md).
 
 ## 🌐 The app
 
@@ -131,7 +131,7 @@ The image is linux/amd64 and linux/arm64; `:latest-browser` bundles Chromium for
 | Library | Everything it made, newest first, with previews. Pages render in a sandbox that cannot reach your token. |
 | Avatar | Tap it: the status and a *Stop* button, approvals across all chats, the activity log, permissions you granted, what is upcoming, memory, skills, connections, settings. |
 
-Reminders ("remind me at six to call mum"), routines ("every weekday at 07:30, a one-line weather check") and triggers (new mail, a calendar event, a webhook) are set from the chat and listed under *Upcoming*. Everything the app does goes through a REST + WebSocket API, documented in [docs/app.md](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/app.md), so another front-end can drive the same agent.
+Reminders ("remind me at six to call mum"), routines ("every weekday at 07:30, a one-line weather check") and triggers (new mail, a calendar event, a webhook) are set from the chat and listed under *Upcoming*. Everything the app does goes through a REST + WebSocket API, documented in [docs/app.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/app.md), so another front-end can drive the same agent.
 
 ## 🛡️ Sentinel
 
@@ -156,7 +156,7 @@ match  = { command = "*rm -rf*" }
 action = "deny"
 ```
 
-Secrets live in an encrypted vault (`openmuse vault set EMAIL_PASSWORD`, or the Connections screen) and are referenced as `{{vault:EMAIL_PASSWORD}}`; Sentinel fills them in right before a call and redacts them from the output, so the model never sees one. Every decision goes to `audit.jsonl`. What is and is not covered: [docs/sentinel.md](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/sentinel.md); reporting: [SECURITY.md](https://github.com/OpenMuseAgent/OpenMuse/blob/main/SECURITY.md).
+Secrets live in an encrypted vault (`openmuse vault set EMAIL_PASSWORD`, or the Connections screen) and are referenced as `{{vault:EMAIL_PASSWORD}}`; Sentinel fills them in right before a call and redacts them from the output, so the model never sees one. Every decision goes to `audit.jsonl`. What is and is not covered: [docs/sentinel.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/sentinel.md); reporting: [SECURITY.md](https://github.com/nano-muse/nanoMuse/blob/main/SECURITY.md).
 
 ## 🧠 Models
 
@@ -176,7 +176,7 @@ api_key  = "${DEEPSEEK_API_KEY}"
 # An endpoint that ignores `tools`:  tool_mode = "prompt"
 ```
 
-Or `OPENMUSE_LLM_MODEL`, `OPENMUSE_LLM_BASE_URL`, `OPENMUSE_LLM_API_KEY`, `OPENMUSE_LLM_PROVIDER`. Local models work: `qwen3:8b` on Ollama passes the [provider check](https://github.com/OpenMuseAgent/OpenMuse/blob/main/scripts/provider_check.py) with native tool calling, `gemma3:4b` through the prompt fallback. Full reference: [docs/configuration.md](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/configuration.md).
+Or `OPENMUSE_LLM_MODEL`, `OPENMUSE_LLM_BASE_URL`, `OPENMUSE_LLM_API_KEY`, `OPENMUSE_LLM_PROVIDER`. Local models work: `qwen3:8b` on Ollama passes the [provider check](https://github.com/nano-muse/nanoMuse/blob/main/scripts/provider_check.py) with native tool calling, `gemma3:4b` through the prompt fallback. Full reference: [docs/configuration.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/configuration.md).
 
 ## Architecture
 
@@ -212,7 +212,7 @@ flowchart LR
 | Android app (Kotlin, WebView, notification service) | `android/` |
 | Terminal UI and CLI | `openmuse/console.py`, `openmuse/cli.py` |
 
-More in [docs/architecture.md](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/architecture.md).
+More in [docs/architecture.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/architecture.md).
 
 ## OpenMuse and Meta Muse
 
@@ -230,19 +230,19 @@ More in [docs/architecture.md](https://github.com/OpenMuseAgent/OpenMuse/blob/ma
 
 ## Docs
 
-- [Configuration](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/configuration.md): every setting, environment overrides, connectors, MCP, local models
-- [Sentinel](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/sentinel.md): policy order, rules, taint tracking, vault, audit, the sandbox
-- [The app and its API](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/app.md): screens, phone access, tokens, every endpoint
-- [Android](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/android.md): install, notifications, building and signing
-- [CLI](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/cli.md): `chat`, `run`, `serve`, `daemon`, `goals`, `memory`, `skills`, `vault`, `audit`, `doctor`
-- [Architecture](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/architecture.md): source map and extension points
-- [Deployment](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/deployment.md): Docker, Compose, systemd, TLS
-- [Troubleshooting](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/troubleshooting.md)
-- [A simulated phone](https://github.com/OpenMuseAgent/OpenMuse/blob/main/demo/mobilegym/README.md): OpenMuse as a native app on MobileGym, notifications included, in one browser tab
+- [Configuration](https://github.com/nano-muse/nanoMuse/blob/main/docs/configuration.md): every setting, environment overrides, connectors, MCP, local models
+- [Sentinel](https://github.com/nano-muse/nanoMuse/blob/main/docs/sentinel.md): policy order, rules, taint tracking, vault, audit, the sandbox
+- [The app and its API](https://github.com/nano-muse/nanoMuse/blob/main/docs/app.md): screens, phone access, tokens, every endpoint
+- [Android](https://github.com/nano-muse/nanoMuse/blob/main/docs/android.md): install, notifications, building and signing
+- [CLI](https://github.com/nano-muse/nanoMuse/blob/main/docs/cli.md): `chat`, `run`, `serve`, `daemon`, `goals`, `memory`, `skills`, `vault`, `audit`, `doctor`
+- [Architecture](https://github.com/nano-muse/nanoMuse/blob/main/docs/architecture.md): source map and extension points
+- [Deployment](https://github.com/nano-muse/nanoMuse/blob/main/docs/deployment.md): Docker, Compose, systemd, TLS
+- [Troubleshooting](https://github.com/nano-muse/nanoMuse/blob/main/docs/troubleshooting.md)
+- [A simulated phone](https://github.com/nano-muse/nanoMuse/blob/main/demo/mobilegym/README.md): OpenMuse as a native app on MobileGym, notifications included, in one browser tab
 
 ## Releases
 
-**Latest release: [v0.6.0](https://github.com/OpenMuseAgent/OpenMuse/releases/tag/v0.6.0)**
+**Latest release: [v0.6.0](https://github.com/nano-muse/nanoMuse/releases/tag/v0.6.0)**
 
 v0.6.0 is the app as Meta Muse looks, and the Android app.
 
@@ -251,7 +251,7 @@ v0.6.0 is the app as Meta Muse looks, and the Android app.
 - The Android app: connect by QR code, notifications while the app is closed. `openmuse.apk` on every release.
 - Sandboxed commands work from a relative workspace path (they failed with "Can't chdir" before).
 
-Every version: [CHANGELOG.md](https://github.com/OpenMuseAgent/OpenMuse/blob/main/CHANGELOG.md) · [GitHub releases](https://github.com/OpenMuseAgent/OpenMuse/releases)
+Every version: [CHANGELOG.md](https://github.com/nano-muse/nanoMuse/blob/main/CHANGELOG.md) · [GitHub releases](https://github.com/nano-muse/nanoMuse/releases)
 
 ## Recent Updates
 
@@ -271,9 +271,9 @@ Every version: [CHANGELOG.md](https://github.com/OpenMuseAgent/OpenMuse/blob/mai
 
 Use OpenMuse for a real task, report what broke, then pick something focused.
 
-- [CONTRIBUTING.md](https://github.com/OpenMuseAgent/OpenMuse/blob/main/CONTRIBUTING.md) has the development setup; CI runs `ruff`, `pytest`, the web build and the Android build.
-- [Open issues](https://github.com/OpenMuseAgent/OpenMuse/issues) for problems to look into.
-- A [pull request](https://github.com/OpenMuseAgent/OpenMuse/pulls) for a focused fix. Another language for the app is one dictionary file in `web/src/i18n/`.
+- [CONTRIBUTING.md](https://github.com/nano-muse/nanoMuse/blob/main/CONTRIBUTING.md) has the development setup; CI runs `ruff`, `pytest`, the web build and the Android build.
+- [Open issues](https://github.com/nano-muse/nanoMuse/issues) for problems to look into.
+- A [pull request](https://github.com/nano-muse/nanoMuse/pulls) for a focused fix. Another language for the app is one dictionary file in `web/src/i18n/`.
 
 ## Related projects
 
@@ -287,4 +287,4 @@ OpenMuse is an independent community project. It is not affiliated with, endorse
 
 ## License
 
-[MIT](https://github.com/OpenMuseAgent/OpenMuse/blob/main/LICENSE)
+[MIT](https://github.com/nano-muse/nanoMuse/blob/main/LICENSE)

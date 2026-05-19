@@ -5,7 +5,7 @@ Use OpenMuse for a real task, report what broke, then pick something focused. Is
 ## Setup
 
 ```bash
-git clone https://github.com/OpenMuseAgent/OpenMuse.git && cd OpenMuse
+git clone https://github.com/nano-muse/nanoMuse.git && cd nanoMuse
 uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"            # add ",browser" for the Playwright tool
 openmuse config init                  # config/config.toml is git-ignored
@@ -57,7 +57,7 @@ Prefer an [MCP server](https://modelcontextprotocol.io) for integrations with an
 
 1. Bump `version` in `pyproject.toml` and `openmuse/__init__.py`; move the `Unreleased` entries in `CHANGELOG.md` under the new version with today's date; commit.
 2. `git tag vX.Y.Z && git push origin main vX.Y.Z`.
-3. The [Release](.github/workflows/release.yml) workflow checks the tag against the version, builds and smoke-tests the wheel, then publishes to PyPI through Trusted Publishing (`pypi` environment, no stored token). The [Docker image](.github/workflows/docker.yml) workflow pushes `ghcr.io/openmuseagent/openmuse:X.Y.Z` and `:latest` for amd64 and arm64.
+3. The [Release](.github/workflows/release.yml) workflow checks the tag against the version, builds and smoke-tests the wheel, then publishes to PyPI through Trusted Publishing (`pypi` environment, no stored token). The [Docker image](.github/workflows/docker.yml) workflow pushes `ghcr.io/nano-muse/openmuse:X.Y.Z` and `:latest` for amd64 and arm64.
 4. Paste the changelog section into the GitHub release.
 
 Dependabot's weekly PRs are grouped per ecosystem. A `web/` bump changes the bundle by definition, so CI does not check the committed build on those PRs; after merging one, run `cd web && npm ci && npm run build` and commit the result (`chore(web): rebuild after dependency updates`).

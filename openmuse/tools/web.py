@@ -19,7 +19,7 @@ from openmuse.search import WebSearchProvider
 from openmuse.tools.base import BaseTool, CallAssessment
 
 USER_AGENT = (
-    "Mozilla/5.0 (X11; Linux x86_64) OpenMuse/0.1 (+https://github.com/OpenMuseAgent/OpenMuse)"
+    "Mozilla/5.0 (X11; Linux x86_64) OpenMuse/0.1 (+https://github.com/nano-muse/nanoMuse)"
 )
 
 
