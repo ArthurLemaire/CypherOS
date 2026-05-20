@@ -28,6 +28,9 @@ jobs:
     defaults:
       run:
         working-directory: android
+    env:
+      # the secrets context cannot be read in a step's `if`; an env value can
+      KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
     steps:
       - uses: actions/checkout@v7
 
@@ -39,9 +42,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v5
 
       - name: Release keystore
-        if: ${{ secrets.ANDROID_KEYSTORE_B64 != '' }}
-        env:
-          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        if: env.KEYSTORE_B64 != ''
         run: |
           echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
           {
@@ -84,7 +85,7 @@ jobs:
       # the secrets the APK is a workflow artifact and the maintainer attaches the one built
       # with the key kept outside the repository (docs/android.md).
       - name: Attach to the release
-        if: startsWith(github.ref, 'refs/tags/v') && secrets.ANDROID_KEYSTORE_B64 != ''
+        if: startsWith(github.ref, 'refs/tags/v') && env.KEYSTORE_B64 != ''
         uses: softprops/action-gh-release@v2
         with:
           files: |
