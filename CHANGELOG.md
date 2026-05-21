@@ -4,8 +4,13 @@ All notable changes to OpenMuse. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-09-23
+
+The app as Meta Muse looks, and an Android app. A plush avatar that moves while it works, one blue accent, a feed written for you, a stop button — and `openmuse.apk` on every release, so the phone gets notifications with the app closed.
+
 ### Added
 
+- **An Android app.** `android/` is a native shell around the web app: connect by scanning the QR code `openmuse serve` prints (or paste the link), then the same app in a WebView — with the file picker for attachments, downloads to the phone, links opening in the real browser, and plain HTTP on the LAN. What the browser could not do: a foreground service keeps one WebSocket open to your server while the app is closed, so approvals, questions and the last word of background work arrive as notifications that open the right chat; a resolved approval takes its notification down; reconnects after a network change or a reboot. Inside the app, *Settings → Notifications* shows the phone's switch instead of Web Push, and *About* has *Disconnect from this server*. Built by `.github/workflows/android.yml` and attached to each release as `openmuse-<version>.apk` and as `openmuse.apk`, so `https://github.com/OpenMuseAgent/OpenMuse/releases/latest/download/openmuse.apk` always points at the current one (Android 8.0+). See [docs/android.md](docs/android.md).
 - **A feed written for you.** The Feed tab opens with *Feed instructions* — one prompt in your words: topics to follow, nudges on your goals, a morning plan, the tone — and posts the agent writes from that and what it knows about you (memory, goals, today's calendar, the last conversation): a few short Markdown posts a day, in your language, each with a follow-up you can send to the chat. A new batch is written once a day while background work is on and outside quiet hours, or on demand (*New posts*); the phone gets one notification per batch. What happened while you were away stays below, as before. `GET /api/feed/posts`, `PUT /api/feed/instructions`, `POST /api/feed/posts/refresh`, `DELETE /api/feed/posts/{id}`.
 - **A stop button.** The status sheet (tap the avatar) shows *Stop* while a run is on: the run ends, a card waiting on you expires, what was queued behind it is dropped, and the transcript is left in a shape the model can continue from. `POST /api/threads/{id}/stop`.
 - **Plush avatars.** Six dolls to pick from in setup and in Settings, with an idle breath, a sway while working and a hop while waiting for you (still under *reduce motion*); tap one and it wiggles. An emoji on a colour is still there for anyone who prefers it. `profile.avatar` in the settings API; old profiles keep their emoji.
@@ -14,8 +19,13 @@ All notable changes to OpenMuse. The format follows [Keep a Changelog](https://k
 
 - **The look, after Meta Muse.** Near-white and near-black surfaces, one blue accent, grey bubbles for the agent and light-blue for you with the time between groups of messages, a floating icon-only tab bar, a centred avatar header with the live status line, and a single *+ Message* composer. Type is [Figtree](https://github.com/erikdkennedy/figtree) (OFL), bundled. Goals list as *Tracking* / *Goals* rows with a check circle and one line of status; Ideas are rows grouped by area; the approval card reads "*{name} wants to … at host*" with *Deny* / *Allow*; artifact cards and the Library show live previews of pages and pictures; the status sheet has a four-way control (Approvals, Activity, Permissions, Upcoming).
 - **It is called OpenMuse.** The default agent name, the CLI prompt, the console, push notifications and every screen say *OpenMuse* unless you named it; "Meta Muse" is used only when comparing with the original.
+- **The README** is short and scannable: a start-here table, what it can do, install, a three-command quick start, the Android download, deploy, then the details. Screenshots are of the new look; links are absolute so PyPI renders them. The package is marked Beta.
 
-- **An Android app.** `android/` is a native shell around the web app: connect by scanning the QR code `openmuse serve` prints (or paste the link), then the same app in a WebView — with the file picker for attachments, downloads to the phone, links opening in the real browser, and plain HTTP on the LAN. What the browser could not do: a foreground service keeps one WebSocket open to your server while the app is closed, so approvals, questions and the last word of background work arrive as notifications that open the right chat; a resolved approval takes its notification down; reconnects after a network change or a reboot. Inside the app, *Settings → Notifications* shows the phone's switch instead of Web Push, and *About* has *Disconnect from this server*. Built by `.github/workflows/android.yml` and attached to each release as `openmuse-<version>.apk` (Android 8.0+). See [docs/android.md](docs/android.md).
+### Fixed
+
+- **Sandboxed commands failed from a relative workspace.** With the config's default `workspace = "./workspace"`, bubblewrap was told to change into `workspace` *after* pivoting to the new root, where no such directory exists — every `shell` and `python_execute` call ended in "Can't chdir to workspace" while the sandbox self-check (which uses `/`) passed. The directory is now made absolute first.
+- **The wrong provider's key was never sent.** With `llm.api_key` empty, `DEEPSEEK_API_KEY` used to stand in whatever the `base_url` — a config pointed at OpenAI could go out with DeepSeek's key. Now DeepSeek's variable is used for `*.deepseek.com` only and `OPENAI_API_KEY` for every other host (OpenAI, OpenRouter, a gateway, vLLM).
+- **The approval card said "at df".** The host line is shown for network tools only, a recipient line for mail; the chat header's status line is about the open chat, not whichever thread happens to be working.
 
 ## [0.5.0] — 2026-09-23
 
@@ -118,7 +128,8 @@ First public release.
 - Mobile-first web app built with React, Vite and Tailwind, shipped inside the package.
 - Docker image and Compose file; GitHub Actions CI; PyPI publishing through Trusted Publishing.
 
-[Unreleased]: https://github.com/OpenMuseAgent/OpenMuse/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/OpenMuseAgent/OpenMuse/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/OpenMuseAgent/OpenMuse/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/OpenMuseAgent/OpenMuse/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/OpenMuseAgent/OpenMuse/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/OpenMuseAgent/OpenMuse/compare/v0.2.0...v0.3.0

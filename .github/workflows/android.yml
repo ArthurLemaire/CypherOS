@@ -79,8 +79,12 @@ jobs:
             echo "tag v$tag does not match android versionName ${{ steps.apk.outputs.version }}"; exit 1
           fi
 
+      # Only an APK signed with the release key goes on a release: a debug-signed one would
+      # install, but could never be updated by (or update) a properly signed build. Without
+      # the secrets the APK is a workflow artifact and the maintainer attaches the one built
+      # with the key kept outside the repository (docs/android.md).
       - name: Attach to the release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') && secrets.ANDROID_KEYSTORE_B64 != ''
         uses: softprops/action-gh-release@v2
         with:
           files: |

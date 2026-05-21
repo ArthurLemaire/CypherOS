@@ -19,7 +19,7 @@ These win over the file. They cover the settings people change most often and wh
 | Variable | Setting |
 |---|---|
 | `OPENMUSE_LLM_PROVIDER`, `OPENMUSE_LLM_MODEL`, `OPENMUSE_LLM_BASE_URL`, `OPENMUSE_LLM_API_KEY`, `OPENMUSE_LLM_TOOL_MODE` | `[llm]` |
-| `DEEPSEEK_API_KEY`, `OPENAI_API_KEY` | used as `llm.api_key` when it is empty |
+| `DEEPSEEK_API_KEY`, `OPENAI_API_KEY` | used as `llm.api_key` when it is empty — DeepSeek's for a `*.deepseek.com` `base_url`, OpenAI's for every other host (OpenAI itself, OpenRouter, a gateway, vLLM) |
 | `OPENMUSE_DATA_DIR` | `data_dir` (default `~/.openmuse`) |
 | `OPENMUSE_WORKSPACE` | `agent.workspace` (default `./workspace`) |
 | `OPENMUSE_SENTINEL_MODE` | `sentinel.mode` |

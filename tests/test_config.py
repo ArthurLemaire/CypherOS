@@ -64,3 +64,24 @@ def test_defaults_without_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     s = load_settings()
     assert s.llm.api_key == "sk-from-env"
     assert s.source == "defaults+env"
+
+
+def test_provider_key_fallback_follows_the_host(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """A missing api_key is filled from the provider's own variable, never another's."""
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-deepseek")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
+    monkeypatch.delenv("OPENMUSE_LLM_API_KEY", raising=False)
+    cfg = tmp_path / "config.toml"
+
+    def key_for(base_url: str | None) -> str | None:
+        line = f'base_url = "{base_url}"\n' if base_url else ""
+        cfg.write_text(f'data_dir = "{tmp_path / "data"}"\n[llm]\n{line}')
+        return load_settings(cfg).llm.api_key
+
+    assert key_for(None) == "sk-deepseek"  # the default endpoint is DeepSeek's
+    assert key_for("https://api.deepseek.com") == "sk-deepseek"
+    assert key_for("https://api.openai.com/v1") == "sk-openai"
+    assert key_for("https://openrouter.ai/api/v1") == "sk-openai"  # the shared convention
+    monkeypatch.delenv("OPENAI_API_KEY")
+    assert not key_for("https://api.openai.com/v1")  # DeepSeek's key does not stand in
+    assert key_for("https://api.deepseek.com") == "sk-deepseek"

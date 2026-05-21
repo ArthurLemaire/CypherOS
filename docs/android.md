@@ -13,7 +13,7 @@ Everything else is the same web app, served by your `openmuse serve`.
 
 ## Install
 
-Download `openmuse-<version>.apk` from the [latest release](https://github.com/OpenMuseAgent/OpenMuse/releases/latest) and open it on the phone. Android asks once to allow installs from your browser or file manager. Android 8.0 (API 26) or newer, any CPU.
+Download [`openmuse.apk`](https://github.com/OpenMuseAgent/OpenMuse/releases/latest/download/openmuse.apk) (always the current release; the same file is also there as `openmuse-<version>.apk`) and open it on the phone. Android asks once to allow installs from your browser or file manager. Android 8.0 (API 26) or newer, any CPU. Every release is signed with the same key, so a newer APK installs over the old one and keeps its connection.
 
 Then:
 
@@ -65,7 +65,7 @@ The same four values can come from the environment as `OPENMUSE_STOREFILE`, `OPE
 
 ## Releases
 
-`.github/workflows/android.yml` builds the APK on every change under `android/` and, on a `v*` tag, attaches `openmuse-<version>.apk` to the GitHub release. For a properly signed release APK the repository needs four secrets: `ANDROID_KEYSTORE_B64` (the `.jks` file, base64), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`. Without them the workflow still produces an APK, signed with a throwaway debug key.
+`.github/workflows/android.yml` builds the APK on every change under `android/` and, on a `v*` tag, attaches `openmuse-<version>.apk` and `openmuse.apk` to the GitHub release — but only when it could sign with the release key, which the repository gets from four secrets: `ANDROID_KEYSTORE_B64` (the `.jks` file, base64), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`. Without them the workflow still builds an APK signed with a throwaway debug key and keeps it as a workflow artifact; the maintainer then attaches the APK built locally with the real key. A debug-signed APK never goes on a release, because it could not be updated by a properly signed one.
 
 The `versionName` in `android/app/build.gradle.kts` must match the tag, like the Python package's version does.
 
