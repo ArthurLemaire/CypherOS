@@ -1,90 +1,83 @@
 <p align="center">
-  <img src="web/public/icon.svg" width="88" alt="OpenMuse">
+  <img src="https://raw.githubusercontent.com/OpenMuseAgent/OpenMuse/main/docs/cover.png" width="160" alt="OpenMuse">
 </p>
 
 <h1 align="center">OpenMuse</h1>
 
-<p align="center">
-  An open-source version of Meta's <a href="https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/">Muse</a>: a personal agent that works for you from your phone, keeps going while the app is closed, and asks before it does anything you can't undo. Self-hosted, any model.
-</p>
+<div align="center">
+  <p>
+    <a href="https://github.com/OpenMuseAgent/OpenMuse/blob/main/README.md">English</a> |
+    <a href="https://github.com/OpenMuseAgent/OpenMuse/blob/main/README_zh.md">简体中文</a>
+  </p>
+  <p>
+    <a href="https://github.com/OpenMuseAgent/OpenMuse"><img src="https://img.shields.io/github/stars/OpenMuseAgent/OpenMuse?style=flat&logo=github" alt="GitHub stars"></a>
+    <a href="https://pypi.org/project/openmuse/"><img src="https://img.shields.io/pypi/v/openmuse" alt="PyPI version"></a>
+    <a href="https://github.com/OpenMuseAgent/OpenMuse/releases/latest/download/openmuse.apk"><img src="https://img.shields.io/badge/Android-APK-3DDC84?logo=android&logoColor=white" alt="Android APK"></a>
+    <a href="https://github.com/OpenMuseAgent/OpenMuse/actions/workflows/ci.yml"><img src="https://github.com/OpenMuseAgent/OpenMuse/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+    <a href="https://pypi.org/project/openmuse/"><img src="https://img.shields.io/badge/python-%3E%3D3.11-blue" alt="Python 3.11 or newer"></a>
+    <a href="https://github.com/OpenMuseAgent/OpenMuse/blob/main/LICENSE"><img src="https://img.shields.io/github/license/OpenMuseAgent/OpenMuse" alt="MIT License"></a>
+  </p>
+</div>
+
+🧸 **OpenMuse** is an open-source, self-hosted personal agent in the shape of Meta's [Muse](https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/): one agent with a name and a face, on your phone, that does things rather than answering questions, keeps working while the app is closed, and asks before anything you could not undo. Any OpenAI-compatible model. One Python package, a web app inside it, and an Android app.
 
 <p align="center">
-  <a href="https://github.com/OpenMuseAgent/OpenMuse/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/OpenMuseAgent/OpenMuse/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://pypi.org/project/openmuse/"><img alt="PyPI" src="https://img.shields.io/pypi/v/openmuse.svg"></a>
-  <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
-  <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-blue.svg">
-  <br>
-  English · <a href="README_zh.md">简体中文</a>
+  <img src="https://raw.githubusercontent.com/OpenMuseAgent/OpenMuse/main/docs/screenshots/chat-approval.png" width="24%" alt="Chat: the agent stops before a shell command and asks">
+  <img src="https://raw.githubusercontent.com/OpenMuseAgent/OpenMuse/main/docs/screenshots/feed.png" width="24%" alt="Feed: posts written for you from your instructions">
+  <img src="https://raw.githubusercontent.com/OpenMuseAgent/OpenMuse/main/docs/screenshots/goals.png" width="24%" alt="Goals: tracked on a schedule, or step by step">
+  <img src="https://raw.githubusercontent.com/OpenMuseAgent/OpenMuse/main/docs/screenshots/library.png" width="24%" alt="Library: pages and files the agent made, with previews">
 </p>
 
-<p align="center">
-  <img src="docs/demo.gif" width="300" alt="OpenMuse on a phone: one task from the request to the finished page, with one scoped approval on the way">
-</p>
-<p align="center">
-  <sub>One task, start to finish: <em>"Make me a packing list for 4 days in Kyoto… then commit it to my kyoto-notes repo."</em> The agent finds the repo, stops once before its first <code>git</code> command — approved <em>for this task</em>, so the commit later needs no second tap — writes a page you can tick off, commits it, and the reply links the file. A real run on DeepSeek V4.1 Flash, 52 s; the wait in the middle is cut.</sub>
-</p>
-
-<p align="center">
-  <img src="docs/screenshots/chat-approval.png" width="24%" alt="Chat with an approval card">
-  <img src="docs/screenshots/goal-detail.png" width="24%" alt="A goal with its plan">
-  <img src="docs/screenshots/ideas.png" width="24%" alt="Ideas tab">
-  <img src="docs/screenshots/settings.png" width="24%" alt="Sentinel settings and the sandbox">
-</p>
-
-## Start here
+## Start Here
 
 | You want to... | Go to |
 |---|---|
-| Install and open the app on your phone | [Install](#install) → [Quick start](#quick-start) |
-| Use it from the terminal instead | [CLI](docs/cli.md) |
-| Point it at DeepSeek, OpenAI, Ollama, or an internal gateway | [Models](#models) · [Configuration](docs/configuration.md) |
-| Understand what it will and won't do without asking | [Sentinel](#sentinel) · [docs/sentinel.md](docs/sentinel.md) |
-| Connect email, a calendar, your contacts, a browser, or MCP servers | [Configuration → Connectors](docs/configuration.md#connectors) |
-| Read the code | [Architecture](#architecture) · [docs/architecture.md](docs/architecture.md) |
-| Run it in Docker | [Deployment](docs/deployment.md) |
-| See it as an app on a (simulated) phone, notifications included | [demo/mobilegym](demo/mobilegym/README.md) |
+| Get it on your phone in five minutes | [Install](#-install) and [Quick Start](#-quick-start) |
+| Install the Android app | [Android](#-android) |
+| Use it from the terminal | [CLI](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/cli.md) |
+| Point it at DeepSeek, OpenAI, Ollama or a company gateway | [Models](#-models) and [Configuration](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/configuration.md) |
+| Know what it will and will not do on its own | [Sentinel](#%EF%B8%8F-sentinel) and [docs/sentinel.md](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/sentinel.md) |
+| Connect mail, a calendar, contacts, a browser or MCP servers | [Connectors](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/configuration.md#connectors) |
+| Run it in Docker or keep it running on a server | [Deploy](#%EF%B8%8F-deploy) |
+| Read the code | [Architecture](#architecture) |
 
-## What it does
+## What can OpenMuse do?
 
-Meta's Muse is an agent that does things rather than answering questions: it researches, plans, writes files, sends mail, works on goals over weeks, and every risky action passes through a separate gatekeeper. OpenMuse rebuilds that shape in the open:
+OpenMuse is a personal agent you talk to from your phone. It can:
 
-- One long conversation with your agent, plus side chats for separate tasks. Tool calls show up inline as chips you can expand. Attach photos and files from the phone — a receipt, a contract PDF, a spreadsheet — and the agent works from what is in them; pictures go to models that take images, and the rest are told plainly what they cannot see.
-- Approval cards. Anything hard to undo (a shell command, an email, a network call after reading private data) stops and waits for a tap. An approval is scoped — once, this task, until restart, 24 hours, always — and bound to what it was for: `git` commands, email to one address, one website. Every permission you granted is listed under the avatar and can be revoked on its own.
-- Goals that outlive the chat. The agent breaks a goal into steps, updates them as it works, and can keep advancing goals on a timer while the app is closed, posting updates to the main chat.
-- Ideas: suggested next actions based on your goals, memory and recent conversations.
-- Memory you can read and edit. Durable facts about you are saved by the agent and shown in a tab; anything can be forgotten with one tap. When a fact changes, the line is updated rather than doubled, and a periodic tidy-up merges what says the same thing and drops what was never a fact — every change listed with an undo. Recall is by keyword and, with any OpenAI-compatible embedding endpoint (Ollama's `qwen3-embedding` next to DeepSeek, say), by meaning — "写邮件给房东" brings up "the landlord is Bob Li".
-- A Sentinel, a credential vault, taint tracking and an append-only audit log. See [Sentinel](#sentinel).
-- Skills: how a job is done, written down once. Five ship with it (a weekly review, a trip plan, an inbox triage, a comparison, a meeting prep); the agent picks one when a request fits, or you type `/trip-plan Kyoto in November`. After a job went well, "save this as a skill" writes the steps down — with your approval. The [Agent Skills](https://agentskills.io) `SKILL.md` format, so skills written for other agents work here.
-- Tools: files, shell, Python, web search (DuckDuckGo out of the box; Brave, Tavily or your own SearXNG when you want searches that always work) and fetch, email (with one-time codes scrubbed before the model sees them), your calendar (read from its private `.ics` link; events it proposes arrive as a card you add with a tap), your contacts (a `.vcf` export or the people you mention in chat — it looks up who is who instead of guessing an address), an optional Playwright browser, and any [MCP](https://modelcontextprotocol.io) server.
-- Runs on any OpenAI-compatible model. DeepSeek, OpenAI, OpenRouter, Ollama, vLLM, or a company gateway with custom headers.
+- research, write pages and documents, run shell commands and Python, send mail, read your calendar and your contacts, browse the web
+- stop and ask before anything hard to undo, with an approval you scope (once, this task, always) and can revoke
+- work on goals over weeks while the app is closed, check in on a schedule, and start work when mail arrives, an event is near or a webhook fires
+- write you a feed: short posts from what it knows about you and what you asked it to follow
+- remember you in a memory you can read, edit and forget, and recall it by meaning
+- follow skills in the [Agent Skills](https://agentskills.io) format and use any [MCP](https://modelcontextprotocol.io) server
+- run on any OpenAI-compatible model: DeepSeek, OpenAI, OpenRouter, Ollama, vLLM, a gateway with its own headers
 
-## Why OpenMuse
+## 💡 Why OpenMuse
 
-- **It is a Muse, not a bot framework.** One agent with a name and a face, a phone app with Chat / Feed / Ideas / Goals / Library tabs, approval cards, background work. If you want a bot in Telegram or Discord, see [Related projects](#related-projects).
-- **Safety is the architecture, not a setting.** The agent never touches tools directly. A separate `Sentinel` decides allow / ask / deny per call, resolves `{{vault:NAME}}` placeholders so secrets never reach the model, tracks taint (private data read → new destinations need approval), and logs everything.
-- **Bring your own model.** Chat Completions or Responses API, streaming, `<think>` handling, native or prompt-based tool calling.
-- **Small enough to read.** About 7k lines of typed Python and 3k lines of TypeScript. No orchestration framework underneath.
+- **The Muse shape, in the open**: chat, feed, ideas, goals and library on a phone; a plush avatar that moves while it works; one agent, not a bot framework.
+- **Safety is the architecture**: the agent never touches a tool directly. A `Sentinel` decides allow / ask / deny per call, keeps secrets out of the model, tracks where private data goes, and logs everything. On Linux every command runs in its own [bubblewrap](https://github.com/containers/bubblewrap) sandbox.
+- **Your machine, your model**: runs on a laptop, a home server or in Docker. Chat Completions or the Responses API, streaming, native or prompt-based tool calling, local models included.
+- **Small enough to read**: about 18k lines of typed Python, 11k of TypeScript and 800 of Kotlin. No orchestration framework underneath. About 240 tests.
 
-## Install
+## 📦 Install
 
-Python 3.11 or newer. The phone app is pre-built and included in the package; Node is only needed if you change `web/`.
+Python 3.11 or newer, on Linux, macOS or Windows. The phone app ships inside the package; Node is only needed to change `web/`. The Android app is a separate download, see [Android](#-android).
+
+| Track | Install with | Update with |
+|---|---|---|
+| Stable | `uv tool install openmuse` or `pip install openmuse` | the same tool, `--upgrade` |
+| Latest | `uv tool install git+https://github.com/OpenMuseAgent/OpenMuse.git` | run it again |
+| Source | `git clone` + `uv pip install -e ".[dev]"` | `git pull` |
 
 ```bash
 uv tool install openmuse
-# or: pip install openmuse
-```
-
-Latest from git: `uv tool install git+https://github.com/OpenMuseAgent/OpenMuse.git`. From a checkout, for development:
-
-```bash
-git clone https://github.com/OpenMuseAgent/OpenMuse.git && cd OpenMuse
-uv venv && source .venv/bin/activate
-uv pip install -e ".[dev]"
+openmuse version
 ```
 
 Optional: `openmuse[browser]` adds the Playwright browser tool (then `playwright install chromium`).
 
-## Quick start
+## 🚀 Quick Start
 
 ```bash
 openmuse config init                 # writes config/config.toml
@@ -92,56 +85,64 @@ export DEEPSEEK_API_KEY=sk-...       # the default config uses DeepSeek; see Mod
 openmuse serve --host 0.0.0.0        # prints a URL and a QR code
 ```
 
-Scan the QR code with your phone (same Wi-Fi), or open the URL on this machine. The link carries a one-time access token; add the page to your home screen and it behaves like an app. Then try:
+Scan the QR code with your phone on the same Wi-Fi, or open the URL here. The link carries the access token. Setup runs the first time: your name, the agent's name and face, the model. Then try:
 
-- *"Compare the Sony WH-1000XM6 and Bose QuietComfort Ultra for long flights and save a short comparison to headphones.md"*
-- *"Check how much free disk space this machine has"* — this one produces an approval card.
-- *"Set up a goal: conversational Japanese before my Kyoto trip in December, 30 minutes a day"* — then open the Goals tab.
+1. *"Compare the Sony WH-1000XM6 and Bose QuietComfort Ultra for long flights and save a short comparison to headphones.md"*
+2. *"Check how much free disk space this machine has"*, which stops on an approval card
+3. *"Set up a goal: conversational Japanese before my Kyoto trip in December, 30 minutes a day"*, then open Goals
 
-Prefer a terminal? `openmuse chat` gives you the same agent with approvals in the console, and `openmuse run "task"` runs one task and exits. Something off? `openmuse doctor` checks the config, the model and the connectors and says what to fix. See [docs/cli.md](docs/cli.md).
+Prefer the terminal? `openmuse chat` is the same agent with approvals in the console; `openmuse run "task"` does one task and exits. Something off? `openmuse doctor` checks the config, the model and the connectors and says what to fix.
 
-## The app
+## 📱 Android
 
-`openmuse serve` starts an always-on agent and serves a mobile-first web app from the same process (FastAPI + a WebSocket for live events; React on the client, bundled into the Python package).
+[**Download openmuse.apk**](https://github.com/OpenMuseAgent/OpenMuse/releases/latest/download/openmuse.apk) from the latest release and open it on the phone. Android 8.0 or newer, any CPU. It is not from a store, so Android asks once to allow the install.
 
-<p align="center">
-  <img src="docs/screenshots/chat-research.png" width="24%" alt="Research with tool chips and a file artifact">
-  <img src="docs/screenshots/skills.png" width="24%" alt="Skills: the built-in ones and yours">
-  <img src="docs/screenshots/memory.png" width="24%" alt="Memory tab">
-  <img src="docs/screenshots/calendar-event.png" width="24%" alt="An event the agent drafted, ready to add to the calendar">
-</p>
+Then `openmuse serve --host 0.0.0.0` on your computer, tap **Scan QR code** in the app and point the camera at the terminal. Same Wi-Fi, a VPN such as Tailscale, or your server behind TLS all work.
+
+What the app adds over the browser tab:
+
+- notifications while the app is closed: approvals, questions and the last word of background work, each opening the right chat
+- connect by QR code, plain `http://` on the LAN
+- the file picker for attachments, downloads to the phone, links in the real browser
+
+No Android? Add the web app to the home screen instead; it installs as a PWA and gets Web Push over `https://`. Build the APK yourself or read how it works in [docs/android.md](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/android.md).
+
+## ☁️ Deploy
+
+```bash
+docker run -d --name openmuse -p 8787:8787 -e DEEPSEEK_API_KEY=sk-... \
+  -v openmuse-data:/data -v "$PWD/workspace:/workspace" \
+  ghcr.io/openmuseagent/openmuse:latest
+docker logs openmuse            # the URL with the access token
+```
+
+The image is linux/amd64 and linux/arm64; `:latest-browser` bundles Chromium for the browser tool. From a checkout, `docker compose up -d app` does the same and `docker compose up -d daemon` advances goals with no UI. To reach it from outside your network, put it behind Tailscale or a reverse proxy with TLS rather than opening the port. Details, including a systemd unit: [docs/deployment.md](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/deployment.md).
+
+## 🌐 The app
+
+`openmuse serve` runs the agent and serves the app from one process: FastAPI with a WebSocket for live events, React on the phone, built into the package.
 
 | Screen | What you get |
 |---|---|
-| Chat | Message-style conversation, streaming replies, tool chips with output, file artifacts (a file named in a reply opens on tap), approval and question cards, side chats. You can keep typing while the agent works; new messages are folded into the running turn. When it browses, a live browser card shows the page after every step — tap it to watch, *take over* to sign in or fix something yourself, hand it back and the agent continues. |
-| Feed | What happened while you were away: the result of each background pass, files it made, and every card still waiting for you, from any chat. *Next up* says what runs next. |
-| Ideas | Five suggested actions, regenerated on demand. Tap one to send it as a message. |
-| Goals | Goals by area of life (health, finance, career, learning…), each with a plan, step status and notes, a target date and an optional check-in cadence — a short message at that time, nothing more. When what the agent learns no longer fits the plan it proposes a change and you accept or keep yours. A proactivity dial (Off / Low / Default / High) and quiet hours decide how often it works on goals while you are away and when it speaks up — a pass with nothing to report stays a one-liner instead of a message. |
-| Reminders | "Remind me at six to call mum" — one message at that time, in the chat you said it in. "Every weekday at 07:30, a one-line weather check for my ride" — a routine: the agent does the work then and reports. Kept whatever the proactivity level or quiet hours; listed under *Upcoming* and in the terminal. |
-| Skills | Recipes the agent follows: the built-in five, the ones you write or paste a link to, and the ones it saves after a job went well (it asks first). Type `/` in the chat to pick one; switch any off; your copy of a built-in replaces it. |
-| Triggers | Work that starts from the world, not the clock. "When the landlord writes back, summarise it and draft a reply" (new mail), "half an hour before any review, brief me" (calendar), "when my deploy script calls you, check the site" (a webhook URL any program can `POST` to). The mail, event or request is the agent's context — treated as data, never as instructions — and the result lands in the Feed. |
-| Library | Everything the agent made — pages, documents, trackers, images — opened in the app. Pages render in a sandbox that cannot reach your token or the API. |
-| Avatar | The menu: the approvals queue across all chats, the activity log, permissions you granted (revoke any one), what is upcoming (background work, check-ins, reminders, triggers), memory, skills, connections, and settings (name, avatar, personality, Sentinel mode, background work, language). |
-| Connections | Plug things in from the phone: the model (provider presets, key straight into the vault, one-tap test), your mailbox (read and send, with a sign-in check), your calendar (the private `.ics` link of Google / Outlook / iCloud / Fastmail, kept in the vault; today's events show in the Feed), your contacts (upload a `.vcf` export; the agent looks people up before writing to them and the approval card names the recipient), the browser, MCP servers, and the vault itself. Keys and passwords never reach the model. |
+| Chat | One main conversation and side chats. Replies stream in; tool calls show as chips you can open; files it writes open in the app. Approval and question cards appear inline. Attach photos and files; watch it browse and take over for a sign-in. |
+| Feed | *Feed instructions* in your words, and posts the agent writes from them once a day or on demand. Below, what happened while you were away and every card still waiting for you. |
+| Ideas | Things to ask next, from your goals, memory and recent conversation, grouped by area. Tap one to send it. |
+| Goals | *Tracking*: checked on a schedule. *Goals*: done step by step. Each with a plan, a target date, notes, and a proposal when the plan no longer fits. A proactivity dial and quiet hours set how much it does on its own. |
+| Library | Everything it made, newest first, with previews. Pages render in a sandbox that cannot reach your token. |
+| Avatar | Tap it: the status and a *Stop* button, approvals across all chats, the activity log, permissions you granted, what is upcoming, memory, skills, connections, settings. |
 
-The first time you open it, a short setup runs instead: your name, your Muse's name and style, the model and key, optionally your mail, calendar and contacts. Skip it if `config.toml` already says it all.
+Reminders ("remind me at six to call mum"), routines ("every weekday at 07:30, a one-line weather check") and triggers (new mail, a calendar event, a webhook) are set from the chat and listed under *Upcoming*. Everything the app does goes through a REST + WebSocket API, documented in [docs/app.md](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/app.md), so another front-end can drive the same agent.
 
-Add it to the home screen and turn on notifications (Settings): the phone buzzes when the agent needs an approval, has a question, finished something in the background, or a reminder or check-in is due — standard Web Push through the browser, no account with anyone — and the icon shows how many cards are waiting. Needs `https://` or `localhost`; see [deployment](docs/deployment.md).
+## 🛡️ Sentinel
 
-The app talks to a small REST + WebSocket API, documented in [docs/app.md](docs/app.md), so other front-ends can be built on the same server.
-
-To see it the way Muse is meant to be seen — an app among other apps, coming through the notification shade when it needs you — [demo/mobilegym](demo/mobilegym/README.md) installs OpenMuse as a native app on [MobileGym](https://github.com/Purewhiter/mobilegym), a browser-hosted Android simulator. One browser tab, no device.
-
-## Sentinel
-
-Every tool call goes through `Sentinel` before it runs. Tools declare a risk level (`safe` / `moderate` / `sensitive`) and can escalate a specific call (`shell` on `rm -rf`, `python_execute` when the code reaches the network or the environment, `web_fetch` on a private IP — including through redirects). Evaluation order, first match wins:
+Every tool call goes through `Sentinel` before it runs. Tools declare a risk level and can raise it for a specific call (`shell` on `rm -rf`, `web_fetch` on a private address). First match wins:
 
 1. `deny_tools` → deny
-2. `[[sentinel.rules]]` matching glob patterns on the arguments → the rule's action
+2. `[[sentinel.rules]]` matching the arguments → the rule's action
 3. `always_allow_tools` / `always_ask_tools`
-4. Taint: the session has read private data (email, memories, files outside the workspace) **and** this call sends data to a host outside `egress_allowlist` → ask
-5. Risk × mode: `ask` asks for sensitive calls, `strict` also for moderate ones, `auto` allows everything not denied
-6. A call with a warning (`sudo`, `curl | sh`, code that deletes files) asks regardless of mode; only an explicit rule can allow it
+4. Taint: private data was read this session **and** this call sends data outside `egress_allowlist` → ask
+5. Risk × mode: `ask` asks for sensitive calls, `strict` also for moderate ones, `auto` allows what is not denied
+6. A call with a warning (`sudo`, `curl | sh`, code that deletes files) asks whatever the mode
 
 ```toml
 [sentinel]
@@ -155,11 +156,11 @@ match  = { command = "*rm -rf*" }
 action = "deny"
 ```
 
-Secrets live in a Fernet-encrypted vault (`openmuse vault set EMAIL_PASSWORD`, or the Connections screen). Config and tool arguments reference them as `{{vault:EMAIL_PASSWORD}}`; Sentinel substitutes the value right before execution and redacts it from tool output, so the model never sees it. Shell commands and Python scripts run with credential-looking environment variables stripped. Every decision is appended to `~/.openmuse/audit.jsonl`. Details, and an honest list of what is *not* covered, in [docs/sentinel.md](docs/sentinel.md); reporting in [SECURITY.md](SECURITY.md).
+Secrets live in an encrypted vault (`openmuse vault set EMAIL_PASSWORD`, or the Connections screen) and are referenced as `{{vault:EMAIL_PASSWORD}}`; Sentinel fills them in right before a call and redacts them from the output, so the model never sees one. Every decision goes to `audit.jsonl`. What is and is not covered: [docs/sentinel.md](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/sentinel.md); reporting: [SECURITY.md](https://github.com/OpenMuseAgent/OpenMuse/blob/main/SECURITY.md).
 
-## Models
+## 🧠 Models
 
-Edit `[llm]` in `config/config.toml`. Any OpenAI-compatible endpoint works:
+Any OpenAI-compatible endpoint. Edit `[llm]` in `config/config.toml`, or pick a preset under *Connections* on the phone:
 
 ```toml
 [llm]
@@ -172,20 +173,18 @@ api_key  = "${DEEPSEEK_API_KEY}"
 # Ollama:      model = "qwen3:8b"     base_url = "http://localhost:11434/v1"   api_key = "ollama"
 # OpenRouter:  model = "deepseek/deepseek-flash"  base_url = "https://openrouter.ai/api/v1"
 # A gateway that needs headers:  extra_headers = { "X-End-User-Id" = "openmuse" }
-# An endpoint that silently ignores `tools`:  tool_mode = "prompt"   (rejections are handled by the default "auto")
+# An endpoint that ignores `tools`:  tool_mode = "prompt"
 ```
 
-The same settings can be set with `OPENMUSE_LLM_MODEL`, `OPENMUSE_LLM_BASE_URL`, `OPENMUSE_LLM_API_KEY`, `OPENMUSE_LLM_PROVIDER`. Full reference: [docs/configuration.md](docs/configuration.md).
-
-Local models work: `qwen3:8b` on Ollama passes the [provider check](scripts/provider_check.py) (five everyday tasks) with native tool calling, `gemma3:4b` through the prompt fallback. Results and settings in [docs/configuration.md → Local models](docs/configuration.md#local-models); `python scripts/provider_check.py` tells you about yours in a minute.
+Or `OPENMUSE_LLM_MODEL`, `OPENMUSE_LLM_BASE_URL`, `OPENMUSE_LLM_API_KEY`, `OPENMUSE_LLM_PROVIDER`. Local models work: `qwen3:8b` on Ollama passes the [provider check](https://github.com/OpenMuseAgent/OpenMuse/blob/main/scripts/provider_check.py) with native tool calling, `gemma3:4b` through the prompt fallback. Full reference: [docs/configuration.md](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/configuration.md).
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    P([Phone / browser]) <-- WebSocket + REST --> S[MuseService<br/>threads, scheduler, ideas]
+    P([Phone / browser / Android]) <-- WebSocket + REST --> S[MuseService<br/>threads, scheduler, feed]
     C([Terminal]) <--> A
-    S <--> A[MuseAgent loop]
+    S <--> A[Agent loop]
     A <--> LLM[(any OpenAI-compatible model)]
     A --> G{{Sentinel}}
     G -- allow --> T[Tools]
@@ -203,75 +202,89 @@ flowchart LR
 | Area | Files |
 |---|---|
 | Agent loop, system prompt, context window | `openmuse/agent/core.py`, `openmuse/prompts.py` |
-| Sentinel: policy, approvals, taint, audit | `openmuse/sentinel/` |
+| Sentinel: policy, approvals, taint, audit; the sandbox | `openmuse/sentinel/`, `openmuse/sandbox.py` |
 | Credential vault | `openmuse/vault/` |
-| Tools and MCP adapter | `openmuse/tools/` |
+| Tools and the MCP adapter | `openmuse/tools/` |
 | LLM providers, `<think>` filter, prompt-based tool calling | `openmuse/llm/` |
-| Memory and goals (SQLite) | `openmuse/memory/`, `openmuse/goals/` |
+| Memory, goals, skills | `openmuse/memory/`, `openmuse/goals/`, `openmuse/skills/` |
 | App server: service, REST/WebSocket API, timeline | `openmuse/server/` |
 | Phone app (React, Vite, Tailwind) | `web/` → built into `openmuse/server/static/` |
+| Android app (Kotlin, WebView, notification service) | `android/` |
 | Terminal UI and CLI | `openmuse/console.py`, `openmuse/cli.py` |
 
-More in [docs/architecture.md](docs/architecture.md).
+More in [docs/architecture.md](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/architecture.md).
 
 ## OpenMuse and Meta Muse
 
 | Meta Muse | OpenMuse |
 |---|---|
-| Runs in a per-user Secure VM | Runs on your machine or in Docker; on Linux every `shell` / Python call gets its own [bubblewrap](https://github.com/containers/bubblewrap) namespace — workspace-only writes, no home directory, no network unless the call needs it |
-| Sentinel approves sensitive actions | `Sentinel` policy engine: allow / ask / deny, rules, taint tracking, egress allowlist |
-| Credentials never reach the model | Encrypted vault with `{{vault:NAME}}` placeholders and output redaction |
-| Remembers you | SQLite memory the agent maintains and you can edit |
-| Works on goals in the background | Goals with steps; scheduler advances them and reports to the chat |
-| Mobile app with chat, goals, approvals | Mobile-first web app served by `openmuse serve`, installable to the home screen |
+| Runs in a per-user secure VM | Runs on your machine or in Docker; on Linux each `shell` / Python call gets its own bubblewrap namespace |
+| Sentinel approves sensitive actions | `Sentinel`: allow / ask / deny, rules, taint tracking, egress allowlist, scoped approvals |
+| Credentials never reach the model | Encrypted vault, `{{vault:NAME}}` placeholders, output redaction |
+| Remembers you | SQLite memory the agent keeps tidy and you can edit, recalled by keyword and by meaning |
+| Works on goals in the background | Goals with steps; a scheduler advances them and reports to the chat |
+| A feed written for you | Posts from your instructions and what it knows, once a day or on demand |
+| iOS and Android apps | A web app installable to the home screen, and an Android app |
 | Meta's models | Any OpenAI-compatible model |
 | Closed | MIT |
 
 ## Docs
 
-- [Configuration](docs/configuration.md): every setting, environment overrides, connectors, MCP
-- [Sentinel](docs/sentinel.md): policy order, rules, taint tracking, vault, audit
-- [The app and its API](docs/app.md): phone access, tokens, threads, approvals, endpoints
-- [CLI](docs/cli.md): `chat`, `run`, `serve`, `daemon`, `goals`, `memory`, `vault`, `audit`, `config`
-- [Architecture](docs/architecture.md): source map and extension points
-- [Deployment](docs/deployment.md): Docker, Compose, keeping it running
-- [Troubleshooting](docs/troubleshooting.md)
+- [Configuration](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/configuration.md): every setting, environment overrides, connectors, MCP, local models
+- [Sentinel](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/sentinel.md): policy order, rules, taint tracking, vault, audit, the sandbox
+- [The app and its API](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/app.md): screens, phone access, tokens, every endpoint
+- [Android](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/android.md): install, notifications, building and signing
+- [CLI](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/cli.md): `chat`, `run`, `serve`, `daemon`, `goals`, `memory`, `skills`, `vault`, `audit`, `doctor`
+- [Architecture](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/architecture.md): source map and extension points
+- [Deployment](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/deployment.md): Docker, Compose, systemd, TLS
+- [Troubleshooting](https://github.com/OpenMuseAgent/OpenMuse/blob/main/docs/troubleshooting.md)
+- [A simulated phone](https://github.com/OpenMuseAgent/OpenMuse/blob/main/demo/mobilegym/README.md): OpenMuse as a native app on MobileGym, notifications included, in one browser tab
+
+## Releases
+
+**Latest release: [v0.6.0](https://github.com/OpenMuseAgent/OpenMuse/releases/tag/v0.6.0)**
+
+v0.6.0 is the app as Meta Muse looks, and the Android app.
+
+- The look after Muse: plush avatars that move, one blue accent, the floating tab bar, Figtree.
+- A feed written for you from your instructions, a stop button, live previews in the Library.
+- The Android app: connect by QR code, notifications while the app is closed. `openmuse.apk` on every release.
+- Sandboxed commands work from a relative workspace path (they failed with "Can't chdir" before).
+
+Every version: [CHANGELOG.md](https://github.com/OpenMuseAgent/OpenMuse/blob/main/CHANGELOG.md) · [GitHub releases](https://github.com/OpenMuseAgent/OpenMuse/releases)
+
+## Recent Updates
+
+- **v0.6.0** 🧸 The Muse look, plush avatars, feed posts, a stop button, the Android app.
+- **v0.5.0** 📎 Attachments from the phone, recall by meaning through any `/embeddings`, Brave / Tavily / SearXNG search.
+- **v0.4.0** 🧩 Skills in the `SKILL.md` format, triggers (mail, calendar, webhooks), contacts, a sandbox for every command.
+- **v0.3.0** 📅 Calendar connector, memory that stays tidy with undo.
+- **v0.2.0** 📱 Scoped approvals, the phone app shell, artifacts, connections from the phone, proactivity, push notifications, browser view, 简体中文.
 
 ## Roadmap
 
-- [x] Agent loop, Sentinel, vault, audit, memory, goals, tools, MCP, CLI
-- [x] Mobile-first app: Chat · Feed · Ideas · Goals · Library, approvals as scoped grants, side chats, background goal work
-- [x] Push notifications when an approval is waiting or a goal posts an update
-- [x] Browser view: watch the agent browse live, take over for sign-ins
-- [x] Local models (Ollama) with automatic prompt-mode fallback
-- [x] Triggers: new mail, calendar events and webhooks start work; routines cover cron
-- [x] Calendar connector: any private `.ics` link or file; agenda, free time, drafted events as *Add to calendar* cards
-- [x] Contacts connector: `.vcf` exports and links, the agent's own book, recipients named on approval cards
-- [x] Memory that stays tidy: rare-word recall, updates instead of duplicates, a periodic tidy-up with undo
-- [x] Recall by meaning: memories embedded once through any OpenAI-compatible `/embeddings`, fused with keyword recall
-- [x] Per-call sandboxes for `shell` and `python_execute` (bubblewrap on Linux)
-- [x] Skills: reusable task recipes in the Agent Skills `SKILL.md` format — built in, yours, or saved by the agent
-- [x] The app in 简体中文 (Settings → App language); more languages welcome — one dictionary file each
-- [x] Attachments: photos and files from the phone; pictures go to models that take images, with a text-only fallback for those that do not
-- [x] Web search providers: DuckDuckGo out of the box, Brave, Tavily or your own SearXNG, with a fallback
 - [ ] Voice: speak a message and see it as text before it goes, through any OpenAI-compatible `/audio/transcriptions`
 - [ ] Evals: a small set of everyday tasks with pass rates per model, so a model choice is a measured one
+- [ ] iOS: the same shell as the Android app
 
-## Contributing
+## 🤝 Contribute
 
-Use it for a real task, report what broke, then pick something focused. [CONTRIBUTING.md](CONTRIBUTING.md) has the development setup; CI runs `ruff`, `pytest` and the web build.
+Use OpenMuse for a real task, report what broke, then pick something focused.
+
+- [CONTRIBUTING.md](https://github.com/OpenMuseAgent/OpenMuse/blob/main/CONTRIBUTING.md) has the development setup; CI runs `ruff`, `pytest`, the web build and the Android build.
+- [Open issues](https://github.com/OpenMuseAgent/OpenMuse/issues) for problems to look into.
+- A [pull request](https://github.com/OpenMuseAgent/OpenMuse/pulls) for a focused fix. Another language for the app is one dictionary file in `web/src/i18n/`.
 
 ## Related projects
 
-- [nanobot](https://github.com/HKUDS/nanobot): a lightweight personal assistant framework that lives in chat apps (Telegram, Discord, Slack, WeChat...). Pick it if you want a bot in the channels you already use. OpenMuse is one agent with Muse's product shape and safety model; it does not try to be a channel framework.
+- [nanobot](https://github.com/HKUDS/nanobot): a personal assistant framework that lives in chat apps (Telegram, Discord, Slack, WeChat). Pick it for a bot in the channels you already use; OpenMuse is one agent with Muse's product shape and safety model.
 - [OpenClaw](https://github.com/openclaw/openclaw): the always-on gateway approach many assistant projects follow.
 - [browser-use](https://github.com/browser-use/browser-use): the element-annotation idea behind the browser tool.
-- [Model Context Protocol](https://modelcontextprotocol.io): how OpenMuse gets connectors without writing each one.
 
 ## Disclaimer
 
-OpenMuse is an independent community project. It is not affiliated with, endorsed by, or derived from Meta Platforms, Inc. or its Muse product.
+OpenMuse is an independent community project. It is not affiliated with, endorsed by, or derived from Meta Platforms, Inc. or its Muse product. The plush avatars are the project's own; the name and the design ideas are used for comparison.
 
 ## License
 
-[MIT](LICENSE)
+[MIT](https://github.com/OpenMuseAgent/OpenMuse/blob/main/LICENSE)
