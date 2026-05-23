@@ -227,7 +227,9 @@ def test_feed_posts_written_for_the_user(server):
     )
     data = client.post("/api/feed/posts/refresh").json()
     assert [p["title"] for p in data["posts"]] == ["Ride before the rain", "Rust 1.90"]
-    assert data["posts"][0]["area"] == "health" and data["posts"][0]["prompt"] == "Plan a 40 km loop"
+    assert (
+        data["posts"][0]["area"] == "health" and data["posts"][0]["prompt"] == "Plan a 40 km loop"
+    )
     assert data["posts"][1]["prompt"] == ""
     assert data["generated_at"] and not service.feed_posts_due()  # fresh: not due for a day
 
@@ -238,7 +240,9 @@ def test_feed_posts_written_for_the_user(server):
     post_id = data["posts"][1]["id"]
     assert client.delete(f"/api/feed/posts/{post_id}").status_code == 200
     assert client.delete(f"/api/feed/posts/{post_id}").status_code == 404
-    assert [p["title"] for p in client.get("/api/feed/posts").json()["posts"]] == ["Ride before the rain"]
+    assert [p["title"] for p in client.get("/api/feed/posts").json()["posts"]] == [
+        "Ride before the rain"
+    ]
 
 
 def test_ask_user_question_is_answered_by_next_message(server):
@@ -979,7 +983,8 @@ def test_reminders_fire_in_their_chat_and_are_pushed_once(server, monkeypatch):
     assert said["final"] is True and "call mum" in said["text"]
     assert [p["kind"] for p in pushed] == ["background"]
     assert (
-        pushed[-1]["title"] == "OpenMuse · reminder" and pushed[-1]["url"] == f"/?thread={side['id']}"
+        pushed[-1]["title"] == "OpenMuse · reminder"
+        and pushed[-1]["url"] == f"/?thread={side['id']}"
     )
     # the main chat was not touched
     assert not [e for e in events_of(client, "main") if e["type"] != "notice" or e.get("source")]

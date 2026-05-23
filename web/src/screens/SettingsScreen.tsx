@@ -89,7 +89,7 @@ export function SettingsScreen() {
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 pb-8 space-y-5">
-        {/* Your Muse */}
+        {/* Your OpenMuse */}
         <Section title={t("Your OpenMuse")}>
           <div className="flex items-center gap-4">
             <Avatar profile={preview} size={64} />

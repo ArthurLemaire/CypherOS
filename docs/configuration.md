@@ -93,7 +93,7 @@ Models that emit `<think>…</think>` inside the content are handled: the reason
 
 ```toml
 [agent]
-name                 = "Muse"          # what the agent calls itself (the app's profile overrides this)
+name                 = "OpenMuse"      # what the agent calls itself (the app's profile overrides this)
 max_steps            = 30              # tool calls per turn before it must wrap up
 workspace            = "./workspace"   # the only directory the files tool can touch
 language             = "auto"          # or a fixed language: "English", "中文", ...

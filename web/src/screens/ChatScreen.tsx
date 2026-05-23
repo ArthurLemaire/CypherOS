@@ -55,14 +55,18 @@ export function ChatScreen() {
   };
 
   const queued = state.pendingApprovals.length;
+  const waitingHere = state.pendingApprovals.filter((a) => a.thread === activeThread).length;
+  // The status under the name is about this chat; other chats show on the avatar badge.
   const statusLine = useMemo(() => {
-    if (queued > 0 && status.state !== "working") {
-      return queued > 1 ? t("{n} approvals waiting for you", { n: queued }) : t("1 approval waiting for you");
+    const here = !status.thread || status.thread === activeThread;
+    if (waitingHere > 0 && !(here && status.state === "working")) {
+      return waitingHere > 1 ? t("{n} approvals waiting for you", { n: waitingHere }) : t("1 approval waiting for you");
     }
+    if (!here) return thread?.busy ? t("Working…") : t("Idle · tap the avatar for activity");
     if (status.state === "idle" && !thread?.busy) return t("Idle · tap the avatar for activity");
     if (status.detail) return status.detail;
     return status.state === "waiting" ? t("Waiting for you") : t("Working…");
-  }, [status, thread, queued, t]);
+  }, [status, thread, activeThread, waitingHere, t]);
 
   const pendingApprovals = events.filter((e) => e.type === "approval" && e.status === "pending").length;
   // files made in this chat: a reply that names one ("saved to `plan.md`") opens it on tap
@@ -104,7 +108,9 @@ export function ChatScreen() {
                 status.state === "idle" && !thread?.busy ? "text-muted" : "text-accent",
               )}
             >
-              {(status.state === "working" || thread?.busy) && queued === 0 && <Loader2 size={11} className="shrink-0 animate-spin" />}
+              {((status.state === "working" && status.thread === activeThread) || thread?.busy) && waitingHere === 0 && (
+                <Loader2 size={11} className="shrink-0 animate-spin" />
+              )}
               <span className="truncate">{statusLine}</span>
             </span>
             {thread && thread.id !== "main" && (

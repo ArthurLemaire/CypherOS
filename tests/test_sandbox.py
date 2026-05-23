@@ -76,6 +76,11 @@ def test_wrap_builds_the_box(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     with_net = box.wrap(["/bin/true"], network=True, cwd=ws)
     assert "--unshare-net" not in with_net
     assert len(with_net) == len(argv) - 1 - 2  # minus the flag and the two extra argv words
+    # a relative workspace (the config default is "./workspace") is made absolute: bwrap
+    # changes directory after pivoting to the new root, where "workspace" does not exist
+    monkeypatch.chdir(tmp_path)
+    relative = box.wrap(["/bin/true"], network=True, cwd=Path("ws"))
+    assert relative[relative.index("--chdir") + 1] == str(ws)
 
 
 def test_data_dir_outside_the_roots_needs_no_mask(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

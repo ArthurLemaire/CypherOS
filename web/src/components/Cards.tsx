@@ -180,7 +180,9 @@ export function ApprovalCard({
   const pending = event.status === "pending";
   const sensitive = event.risk === "sensitive";
   const standing = (event.grant_options ?? ["once"]).filter((s) => s !== "once");
-  const host = event.target || event.egress_target;
+  // "at example.com" for the web, "to alice@…" for mail; a program name (shell) is in the summary already
+  const host = event.egress_target || (["web_fetch", "browser", "web_search"].includes(event.tool) ? event.target : null);
+  const recipient = event.tool === "send_email" ? event.target : null;
   // Expanding the card near the bottom of the chat must not hide the new buttons under the tab bar.
   useEffect(() => {
     if (more || showArgs) cardRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
@@ -200,11 +202,15 @@ export function ApprovalCard({
           <div className="min-w-0 flex-1">
             <div className="text-[12.5px] font-medium text-muted">{t("{name} wants to", { name })}</div>
             <div className="mt-0.5 break-words text-[15.5px] font-semibold leading-snug">{event.summary}</div>
-            {host && (
+            {host ? (
               <div className="mt-1 flex items-center gap-1 text-[13px] text-muted">
                 <Globe size={12} /> <span className="truncate">{t("at {host}", { host })}</span>
               </div>
-            )}
+            ) : recipient ? (
+              <div className="mt-1 flex items-center gap-1 text-[13px] text-muted">
+                <Mail size={12} /> <span className="truncate">{t("to {recipient}", { recipient })}</span>
+              </div>
+            ) : null}
             {event.purpose && <div className="mt-1.5 break-words text-[13px] leading-snug text-muted line-clamp-2">{event.purpose}</div>}
             {sensitive && (
               <div className="mt-1.5">

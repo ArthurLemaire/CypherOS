@@ -9,23 +9,13 @@ openmuse serve --port 9000 --no-qr
 ```
 
 <p align="center">
-  <img src="screenshots/chat-research.png" width="24%" alt="Research">
-  <img src="screenshots/chat-approval.png" width="24%" alt="Approval">
-  <img src="screenshots/feed.png" width="24%" alt="Feed with today's calendar">
-  <img src="screenshots/goal-detail.png" width="24%" alt="Goal">
+  <img src="screenshots/chat-approval.png" width="24%" alt="Chat: an approval card">
+  <img src="screenshots/feed.png" width="24%" alt="Feed: posts written for you">
+  <img src="screenshots/goals.png" width="24%" alt="Goals: tracking and one-off">
+  <img src="screenshots/library.png" width="24%" alt="Library: pages with live previews">
 </p>
-<p align="center">
-  <img src="screenshots/ideas.png" width="24%" alt="Ideas">
-  <img src="screenshots/calendar-event.png" width="24%" alt="A drafted event">
-  <img src="screenshots/skills.png" width="24%" alt="Skills: built in and yours">
-  <img src="screenshots/skill-picker.png" width="24%" alt="Typing / in the chat offers the skills">
-</p>
-<p align="center">
-  <img src="screenshots/connections.png" width="24%" alt="Connections: the address book">
-  <img src="screenshots/memory.png" width="24%" alt="Memory">
-  <img src="screenshots/settings.png" width="24%" alt="Settings: Sentinel and the sandbox">
-  <img src="screenshots/upcoming-triggers.png" width="24%" alt="Upcoming: triggers">
-</p>
+
+The look follows Meta Muse: near-white and near-black surfaces, one blue accent, grey bubbles for the agent and light blue for you, a plush avatar at the top of the chat that moves while it works, and a floating bar with five icons. The font is [Figtree](https://github.com/erikdkennedy/figtree) (OFL), bundled.
 
 ## Getting it onto your phone
 
@@ -49,15 +39,15 @@ Five tabs — Chat, Feed, Ideas, Goals, Library — and a menu behind the avatar
 
 *Browser view.* When the agent uses the browser tool, a browser card appears with what it is looking at: a picture of the page after every action, the page title, where it is, and what it just did ("Opened example.com", "Clicked 'Sign in'"). The card is LIVE while the run goes on and stays in the chat afterwards. Tap it for the full view; *Take over* puts you at the controls — tap the picture to click there, type into the focused field, press Enter, open a URL — and *Hand back* returns the page to the agent, which is told what you did and continues from there. That is how a login happens: the agent stops at the form and asks, you sign in, it carries on. Passwords you type go to the website, never through the model. Frames are kept in memory on the server for the current session only (the last dozen per chat); after a restart old cards show a placeholder. Needs the browser tool (`pip install "openmuse[browser]" && playwright install chromium`, or the `-browser` Docker image).
 
-**Feed.** What happened without you asking: one entry per background pass (its final word, and any file it made), plus every approval or question still waiting for you, in any chat. A *Next up* card says when the next pass runs and which goal is in line. Unseen entries are counted on the tab.
+**Feed.** Two things. At the top, *Feed instructions*: tell it what you want to read about ("keep me up to date on cycling and Rust, one recipe a week"), and once a day — or when you tap *New posts* — the agent writes three short posts for you from those instructions, your goals and what it remembers. Each post has *Ask {name}*, which starts a conversation about it. Below that, *While you were away*: one entry per background pass (its final word, and any file it made), every approval or question still waiting for you in any chat, today's calendar, and a *Next up* card that says when the next pass runs and which goal is in line. Unseen entries are counted on the tab.
 
-**Ideas.** Five suggestions generated from your goals, memory and recent conversation. Tap one to send it as a message; *Refresh* regenerates.
+**Ideas.** Suggestions generated from your goals, memory and recent conversation, grouped by area — planning, research, goals, money, health, home, learning, people, files, fun. Tap one to send it as a message; *Refresh* regenerates.
 
-**Goals.** Goals created by the agent or by you (the `+` button), filed under an area of life — health, finance, career, learning, relationships, family, home, travel, creative — with an optional target date and an optional check-in cadence. Filter chips at the top show one area at a time. Each goal has a plan; steps are pending, in progress, done or blocked, with notes. *Work on it now* runs one background pass on that goal and posts the result to the main chat; *Check in with me now* sends the reminder message right away.
+**Goals.** Two lists. *Tracking* is what gets checked on a schedule (a goal with a check-in cadence); *Goals* is the rest, done step by step. Each row has a check circle that fills as the plan progresses, one line of status (next check-in, last update, due date) and the count of steps done. Goals are created by the agent or by you (the `+` button), filed under an area of life — health, finance, career, learning, relationships, family, home, travel, creative — with an optional target date and an optional check-in cadence. Each goal has a plan; steps are pending, in progress, done or blocked, with notes. *Work on it now* runs one background pass on that goal and posts the result to the main chat; *Check in with me now* sends the reminder message right away.
 
 - *Target date.* Cards say "Due in 5 days" / "Was due Sep 12"; overdue goals go first when the background pass picks what to work on, and the agent is told about them.
 - *Check-ins.* "Every day at 08:00", "Weekdays at 07:30", "Mondays at 09:00", "Monthly on the 1st": at that time the agent sends one short message — what the goal is about, what the next small step is, how is it going — and does no work. Check-ins arrive at any proactivity level (you asked for them) but wait out quiet hours. The *Upcoming* view lists the next ones.
-- *Plan changes.* When the agent learns the plan no longer fits, it does not edit it; it proposes a revised set of remaining steps with a reason. The proposal shows as a card at the top of Goals and inside the goal — *Use Muse's plan* keeps the finished steps and swaps the rest, *Keep my plan* leaves everything as it is. Either way a note lands on the goal.
+- *Plan changes.* When the agent learns the plan no longer fits, it does not edit it; it proposes a revised set of remaining steps with a reason. The proposal shows as a card at the top of Goals and inside the goal — *Use OpenMuse's plan* keeps the finished steps and swaps the rest, *Keep my plan* leaves everything as it is. Either way a note lands on the goal.
 
 **Reminders and routines.** Say it in chat — "remind me at six to call mum", "every weekday at 07:30 give me a one-line weather check" — or add one under *Upcoming*. A *reminder* is one short message at the time you named, in the chat you set it from, and nothing else; a *routine* is a task the agent does at that time with its tools (read the inbox, check a page, run a script) and then reports on. Cadences are the check-in grammar: `daily 08:00`, `weekdays 07:30`, `weekly mon 09:00`, `monthly 1 09:00`. A time you named is kept whatever the proactivity level or the quiet hours; if the chat is busy the message queues behind the conversation rather than being skipped. Fired items stay listed for a week under *finished recently*. The same list is available from the terminal: `openmuse reminders list | add | cancel`.
 
@@ -65,7 +55,7 @@ Five tabs — Chat, Feed, Ideas, Goals, Library — and a menu behind the avatar
 
 **Library.** Every file in the agent's workspace, newest first, filtered by kind (pages, documents, images, data, code) and searchable. Files open in the app: pages render live, Markdown is formatted, CSV becomes a table, images and PDFs display inline. A page the agent wrote runs in a sandboxed frame with an opaque origin — it cannot read the access token or call the API — and the server sends `Content-Security-Policy: sandbox` with every HTML file for the same reason.
 
-**Avatar.** The dot shows the state (idle, working, waiting for you); a badge counts approvals waiting anywhere. Tap it for the menu:
+**Avatar.** The plush avatar sits at the top of the chat with a status line under it — what the agent is doing right now in this chat, or that it is waiting for you — and moves while it works; the chat tab carries a badge with the approvals waiting anywhere. Tap the avatar for the status sheet: the avatar large, the same status line, a *Stop* button while something runs (the run ends, pending cards in that chat close, and the conversation stays usable), the model and the Sentinel mode, then:
 
 - *Approvals* — the queue of cards waiting for you across all chats, answerable right there. Opens first when something is pending.
 - *Activity* — the audit trail: every tool call, decision and approval, including refused ones.
@@ -88,7 +78,7 @@ Three ways to get a new one. Write it in *Skills → New* (a template appears on
 
 ### Notifications
 
-*Settings → Notifications → Let Muse notify this device.* Standard Web Push through the browser's own push service, no account with anyone: the server generates a VAPID key pair once (`<data_dir>/push-vapid.json`) and keeps the subscriptions of your devices (`push-subscriptions.json`). You get a notification when the agent needs your approval, asks a question, finished a background pass that had something to report, or it is check-in time on a goal. Quiet passes and step-by-step narration never leave the app, and nothing is shown while the app is on screen — the card is already there. Tapping a notification opens the right chat. On a phone with the app on the home screen, the icon carries a badge with the number of cards waiting for you.
+*Settings → Notifications → Let OpenMuse notify this device.* Standard Web Push through the browser's own push service, no account with anyone: the server generates a VAPID key pair once (`<data_dir>/push-vapid.json`) and keeps the subscriptions of your devices (`push-subscriptions.json`). You get a notification when the agent needs your approval, asks a question, finished a background pass that had something to report, or it is check-in time on a goal. Quiet passes and step-by-step narration never leave the app, and nothing is shown while the app is on screen — the card is already there. Tapping a notification opens the right chat. On a phone with the app on the home screen, the icon carries a badge with the number of cards waiting for you.
 
 Push needs a secure context: `https://` or `localhost`. Over plain `http://` on your LAN the rest of the app works and the toggle explains why this part is off — see [deployment](deployment.md#reaching-it-from-outside-your-network) for a TLS setup. Embedded browsers (the kind inside another app) usually have no push service at all; use Chrome, Edge, Firefox or Safari 16.4+ (iOS: home-screen apps only).
 
@@ -96,7 +86,7 @@ Non-secret choices made in Connections are stored in `<data_dir>/app-settings.js
 
 ## Background work
 
-Muse "does things on its own, but not too much". The *Proactivity* dial in Settings sets how much:
+Meta Muse "does things on its own, but not too much". The *Proactivity* dial in Settings sets how much:
 
 | Level | Passes | Reaches out |
 |---|---|---|
@@ -105,7 +95,7 @@ Muse "does things on its own, but not too much". The *Proactivity* dial in Setti
 | Default | every interval | when there is real progress or something you would want to know |
 | High | every ½ interval | always, including "still on track" |
 
-On each pass the service picks one active goal with a pending step, runs it in the main chat with the Sentinel in `auto` mode (explicit deny rules and dangerous-call warnings still apply — those turn into cards in the Feed), and lets the model decide whether the result is worth your attention. A pass with nothing to say begins its summary with `[quiet]`: the chat shows one muted line ("Checked on *goal* — nothing new", tap to expand), the Feed lists it as a one-liner, and nothing is badged. Anything else is a normal message from your Muse.
+On each pass the service picks one active goal with a pending step, runs it in the main chat with the Sentinel in `auto` mode (explicit deny rules and dangerous-call warnings still apply — those turn into cards in the Feed), and lets the model decide whether the result is worth your attention. A pass with nothing to say begins its summary with `[quiet]`: the chat shows one muted line ("Checked on *goal* — nothing new", tap to expand), the Feed lists it as a one-liner, and nothing is badged. Anything else is a normal message from your OpenMuse.
 
 *Quiet hours* ("22:00–08:00", server local time) hold background work; a pass that would fall inside the window runs when it ends. The *Upcoming* view and the Feed's *Next up* card show the level, the effective interval and the next pass time, or the end of the current quiet window.
 
@@ -124,6 +114,7 @@ Everything the app does goes through this API, so another front-end (a Telegram 
 | POST | `/api/threads/{id}/clear` | clear the conversation |
 | GET | `/api/threads/{id}/events?limit=&before=` | timeline events |
 | POST | `/api/threads/{id}/send` `{text, files?}` | queue a message; returns immediately. `files`: workspace paths from the upload below, ten at most; text may be empty when there are files |
+| POST | `/api/threads/{id}/stop` | stop the run in that chat: the queue is dropped, pending approval and question cards there expire, the conversation stays usable. `{ok: false}` when nothing was running |
 | POST | `/api/files/upload?name=` (body: the bytes) | a file to attach: lands in `attachments/<date>/` under a safe version of `name`; returns `{path, name, size, kind, mime}` for `files`. 413 above `server.max_upload_mb` |
 | POST | `/api/approvals/{id}` `{approved, scope, reason}` | answer a card; `scope` is one of the card's `grant_options` (`once`, `task`, `session`, `24h`, `always`) |
 | DELETE | `/api/approvals` | forget every granted permission |
@@ -139,7 +130,11 @@ Everything the app does goes through this API, so another front-end (a Telegram 
 | GET | `/api/memory/changes` · POST `/api/memory/changes/{id}/restore` | the log of merges, drops and updates, newest first; undo one |
 | GET | `/api/ideas?refresh=1` | cached or regenerated suggestions |
 | GET | `/api/activity` | audit tail, granted permissions (`grants[]` with `key`, `tool`, `target`, `scope`, `expires_at`), taint flag |
-| GET | `/api/feed?limit=` | the Feed: `{id, ts, kind (background · artifact · approval · question), title, text, thread, thread_title, path}` newest first |
+| GET | `/api/feed?limit=` | *While you were away*: `{id, ts, kind (background · artifact · approval · question), title, text, thread, thread_title, path}` newest first |
+| GET | `/api/feed/posts` | the posts written for you: `{instructions, generated_at, posts[{id, ts, title, body, area, prompt}], error?}` |
+| PUT | `/api/feed/instructions` `{instructions}` | what the posts should be about (≤ 2000 characters) |
+| POST | `/api/feed/posts/refresh` | write new posts now; `error` says why not when the model refused |
+| DELETE | `/api/feed/posts/{id}` | remove one post |
 | GET | `/api/upcoming` | `{proactivity, proactive, interval_minutes, effective_interval_minutes, quiet_hours, quiet_until, next_pass_at, queue[{goal_id, title, category, due, overdue, next_step, progress}], check_ins[{goal_id, title, at, cadence}], reminders[], triggers{items[], available{mail, event, hook}, mail_checked_at, mail_error, mail_poll_minutes}, busy}` |
 | GET / POST | `/api/reminders[?all=1]` | active (or all recent) reminders / create `{text, at ("YYYY-MM-DD HH:MM") or repeat ("daily 08:00", …), kind (remind · task), thread}` |
 | POST / DELETE | `/api/reminders/{id}/fire`, `/api/reminders/{id}` | deliver it now in its chat / cancel |
@@ -192,7 +187,7 @@ On connect the server sends `{"kind": "hello", "state": …}` (the same payload 
 | `stream_start` / `delta` / `stream_end` | the assistant reply being generated; `stream_end` carries `discard: true` when what streamed turned out not to be a reply (a prompt-mode tool call, a quiet background pass) |
 | `status` | idle / working / waiting, with a short detail line |
 | `thread`, `thread_cleared`, `thread_deleted` | thread list changes |
-| `goals`, `memory`, `ideas`, `profile`, `settings`, `connections`, `skills`, `approvals_reset` | refresh hints for the tabs |
+| `goals`, `memory`, `ideas`, `feed_posts`, `profile`, `settings`, `connections`, `skills`, `approvals_reset` | refresh hints for the tabs |
 | `error`, `pong` | replies to client messages |
 
 Client → server: `{"kind": "send", "thread": "main", "text": "…"}`, `{"kind": "approval", "id": "…", "approved": true, "scope": "once"}`, `{"kind": "ping"}`.

@@ -1,4 +1,4 @@
-"""HTTP + WebSocket API for the OpenMuse app (and anything else that wants to talk to your Muse).
+"""HTTP + WebSocket API for the OpenMuse app (and anything else that wants to talk to your OpenMuse).
 
     GET  /api/state                      snapshot: profile, status, threads, goals, settings
     GET  /api/threads                    list threads          POST /api/threads {title}

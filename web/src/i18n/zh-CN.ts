@@ -73,6 +73,7 @@ const zhCN: Record<string, string> = {
   Allow: "允许",
   "{name} wants to": "{name} 想要",
   "at {host}": "站点：{host}",
+  "to {recipient}": "收件人：{recipient}",
   "Allow {subject} for longer…": "更长时间允许 {subject}…",
   "For this task": "本次任务",
   "Until restart": "直到重启",

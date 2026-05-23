@@ -311,8 +311,10 @@ class Sandbox:
             "--setenv",
             "OPENMUSE_SANDBOX",
             "bwrap",
+            # bwrap changes directory after it has pivoted to the new root, so a relative
+            # workspace ("./workspace" in the config) has to be made absolute out here
             "--chdir",
-            str(cwd),
+            str(Path(cwd).resolve()),
             "--",
             *argv,
         ]
