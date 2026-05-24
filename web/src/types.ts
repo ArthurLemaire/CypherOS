@@ -246,6 +246,24 @@ export interface Idea {
   area?: string;
 }
 
+export interface FeedPost {
+  id: string;
+  ts: string;
+  title: string;
+  /** Markdown, a short read. */
+  body: string;
+  area: string;
+  /** A follow-up the user could send, or "". */
+  prompt: string;
+}
+
+export interface FeedPostsData {
+  instructions: string;
+  generated_at: string | null;
+  posts: FeedPost[];
+  error?: string;
+}
+
 export interface IdeasData {
   generated_at: string | null;
   source: string;
@@ -656,6 +674,7 @@ export type WsMessage =
   | { kind: "reminders" }
   | { kind: "triggers" }
   | { kind: "calendar"; calendar: CalendarData }
+  | { kind: "feed_posts" }
   | { kind: "ideas"; ideas: IdeasData }
   | { kind: "profile"; profile: Profile }
   | { kind: "settings"; settings: SettingsView }

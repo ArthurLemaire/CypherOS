@@ -48,7 +48,31 @@ What you know:
 
 Answer with a JSON array only, no prose. Each item: {{"title": "<short title, max 8 words>", "detail": "<one sentence on what you would do and why it helps>", "prompt": "<the exact request the user could send you to start>", "area": "<one of: planning, research, goals, money, health, home, learning, people, files, fun>"}}. Write in the user's language ({language})."""
 
-IDEA_AREAS = ("planning", "research", "goals", "money", "health", "home", "learning", "people", "files", "fun")
+IDEA_AREAS = (
+    "planning",
+    "research",
+    "goals",
+    "money",
+    "health",
+    "home",
+    "learning",
+    "people",
+    "files",
+    "fun",
+)
+
+FEED_PROMPT = """You are {name}, the user's personal agent, writing their personal feed: a few short posts made just for them, to read when they open the app. Think of a thoughtful friend who knows what they care about: a nudge on a goal, something worth knowing about a topic they follow, a small plan for the day, a question worth thinking about, a summary of something you noticed. Be specific to this person; never generic filler.
+
+The user's feed instructions (what they want to read here, how often, in what tone):
+{instructions}
+
+What you know about them:
+{context}
+
+Write {n} posts. Answer with a JSON array only, no prose. Each item: {{"title": "<max 10 words>", "body": "<60-160 words of Markdown; short paragraphs or a list; no heading>", "area": "<one of: planning, research, goals, money, health, home, learning, people, files, fun>", "prompt": "<a request the user could send you to follow up, or empty>"}}. Write in the user's language ({language})."""
+
+FEED_EVERY_HOURS = 24
+FEED_KEEP = 200
 
 STARTER_IDEAS = [
     {
@@ -249,6 +273,7 @@ class MuseService:
         self.token = self._load_token()
         self._scheduler: asyncio.Task[None] | None = None
         self._tidying = False
+        self._writing_feed = False
         self._started = False
         self.started_at = now_iso()
         self.next_goal_pass_at: datetime | None = None
@@ -505,7 +530,9 @@ class MuseService:
             msgs.pop()
         if msgs and msgs[-1].role == Role.ASSISTANT and msgs[-1].tool_calls:
             for tc in msgs[-1].tool_calls:
-                msgs.append(Message.tool("Stopped by the user before this ran.", tc.id, tc.function.name))
+                msgs.append(
+                    Message.tool("Stopped by the user before this ran.", tc.id, tc.function.name)
+                )
         agent.state = agent.state.__class__.IDLE
         agent._save_session()
         thread.stopping = False
@@ -1152,6 +1179,9 @@ class MuseService:
                     # housekeeping takes this tick; the goal pass is next time
                     await self.tidy_memory()
                     continue
+                if self.feed_posts_due():
+                    await self.write_feed_posts()
+                    continue
                 goal = self._pick_goal_for_pass()
                 if goal is not None:
                     self.advance_goal(goal.id)  # one goal per tick keeps the chat readable
@@ -1358,6 +1388,137 @@ class MuseService:
         self._ideas_file().write_text(json.dumps(data, ensure_ascii=False), "utf-8")
         self.bus.publish({"kind": "ideas", "ideas": data})
         return data
+
+    # ------------------------------------------------------------------ feed posts
+    def _feed_file(self) -> Path:
+        return self.data_dir / "feed_posts.json"
+
+    def feed_posts(self) -> dict[str, Any]:
+        """The posts written for the user so far, newest first, and their feed instructions."""
+        path = self._feed_file()
+        if path.exists():
+            try:
+                data = json.loads(path.read_text("utf-8"))
+                if isinstance(data, dict):
+                    data.setdefault("instructions", "")
+                    data.setdefault("generated_at", None)
+                    data.setdefault("posts", [])
+                    return data
+            except (OSError, json.JSONDecodeError):
+                pass
+        return {"instructions": "", "generated_at": None, "posts": []}
+
+    def _save_feed(self, data: dict[str, Any]) -> None:
+        data["posts"] = data["posts"][:FEED_KEEP]
+        self._feed_file().write_text(json.dumps(data, ensure_ascii=False), "utf-8")
+
+    def set_feed_instructions(self, text: str) -> dict[str, Any]:
+        data = self.feed_posts()
+        data["instructions"] = text.strip()[:2000]
+        self._save_feed(data)
+        self.bus.publish({"kind": "feed_posts"})
+        return data
+
+    def delete_feed_post(self, post_id: str) -> bool:
+        data = self.feed_posts()
+        before = len(data["posts"])
+        data["posts"] = [p for p in data["posts"] if p.get("id") != post_id]
+        if len(data["posts"]) == before:
+            return False
+        self._save_feed(data)
+        self.bus.publish({"kind": "feed_posts"})
+        return True
+
+    def feed_posts_due(self) -> bool:
+        """New posts are due once a day while background work is on — and only once there
+        is something to write from (memory, a goal, or instructions from the user)."""
+        if self._writing_feed:
+            return False
+        data = self.feed_posts()
+        known = bool(data["instructions"]) or bool(self.app.goals.list("active"))
+        if not known and self.app.memory is not None:
+            known = self.app.memory.count() >= 5
+        if not known:
+            return False
+        last = data.get("generated_at")
+        if not last:
+            return True
+        try:
+            age = datetime.now(UTC) - datetime.fromisoformat(last)
+        except ValueError:
+            return True
+        return age >= timedelta(hours=FEED_EVERY_HOURS)
+
+    def _feed_context(self) -> list[str]:
+        lines: list[str] = []
+        if self.settings.agent.user_profile.strip():
+            lines.append(f"- profile: {self.settings.agent.user_profile.strip()[:500]}")
+        if self.profile.user_name:
+            lines.append(f"- the user's name: {self.profile.user_name}")
+        if self.app.memory is not None:
+            for m in self.app.memory.all(limit=40):
+                lines.append(f"- memory ({m.category}): {m.content}")
+        for g in self.app.goals.list("active")[:8]:
+            nxt = g.next_step
+            lines.append(
+                f"- goal: {g.title} (progress {g.progress}"
+                + (f", next: {nxt.title}" if nxt else "")
+                + ")"
+            )
+        cal = self.app.calendar
+        if cal.configured:
+            today = datetime.now().astimezone().date()
+            if agenda := cal.agenda(today)[:8]:
+                lines.append("- today on the calendar:\n" + cal.render(agenda, today))
+        main = self.threads.get(MAIN_THREAD)
+        if main is not None:
+            recent = [e for e in main.timeline.events if e.get("type") in ("user", "assistant")][
+                -6:
+            ]
+            for e in recent:
+                lines.append(f"- recent {e['type']}: {str(e.get('text', ''))[:200]}")
+        lines.append(f"- today's date: {datetime.now().strftime('%A %d %B %Y')}")
+        return lines
+
+    async def write_feed_posts(self, n: int = 3) -> dict[str, Any]:
+        """Write a fresh batch of posts and notify the phone once about the first."""
+        if self._writing_feed:
+            return self.feed_posts()
+        self._writing_feed = True
+        try:
+            data = self.feed_posts()
+            language = self.settings.agent.language
+            prompt = FEED_PROMPT.format(
+                name=self.profile.name,
+                n=n,
+                instructions=data["instructions"]
+                or "(none yet — write what a good personal agent would)",
+                context="\n".join(self._feed_context()),
+                language="the same language as the context above"
+                if language in ("", "auto")
+                else language,
+            )
+            response = await self.app.llm.ask_complete([Message.user(prompt)], tools=None)
+            posts = _parse_posts(response.content or "")
+            now = now_iso()
+            for p in posts:
+                p["id"] = new_id("post")
+                p["ts"] = now
+            data["posts"] = [*posts, *data["posts"]]
+            data["generated_at"] = now
+            self._save_feed(data)
+            self.bus.publish({"kind": "feed_posts"})
+            if posts:
+                self.push.notify(
+                    f"{self.profile.name} · {posts[0]['title']}",
+                    _first_lines(posts[0]["body"]),
+                    tag="feed-posts",
+                    url=self._push_url(MAIN_THREAD).split("?")[0] + "?tab=feed",
+                    kind="background",
+                )
+            return data
+        finally:
+            self._writing_feed = False
 
     # ------------------------------------------------------------------ files / artifacts
     def workspace(self) -> Path:
@@ -1752,6 +1913,26 @@ def _parse_ideas(text: str) -> list[dict[str, str]]:
                 }
             )
     return ideas[:8]
+
+
+def _parse_posts(text: str) -> list[dict[str, str]]:
+    posts: list[dict[str, str]] = []
+    for item in _idea_objects(text):
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title", "")).strip()
+        body = str(item.get("body", "")).strip()
+        if title and body:
+            area = str(item.get("area", "")).strip().lower()
+            posts.append(
+                {
+                    "title": title[:120],
+                    "body": body[:2000],
+                    "area": area if area in IDEA_AREAS else "fun",
+                    "prompt": str(item.get("prompt", "")).strip()[:1000],
+                }
+            )
+    return posts[:6]
 
 
 __all__ = ["MuseService", "Profile", "Thread", "goal_to_dict", "new_id"]

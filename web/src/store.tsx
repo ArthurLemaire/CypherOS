@@ -299,6 +299,8 @@ function applyWs(state: AppState, msg: WsMessage): AppState {
       return { ...state, remindersVersion: state.remindersVersion + 1 };
     case "calendar":
       return { ...state, calendarVersion: state.calendarVersion + 1 };
+    case "feed_posts":
+      return { ...state, feedVersion: state.feedVersion + 1 };
     case "profile":
       return {
         ...state,

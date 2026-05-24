@@ -135,6 +135,20 @@ const zhCN: Record<string, string> = {
 
   // ── Feed ──────────────────────────────────────────────────────────────────────────
   "What {name} did while you were away, and what it is waiting on.": "你离开期间 {name} 做了什么，以及它在等你做什么。",
+  "Written for you by {name}, from what it knows — plus what it did while you were away.":
+    "{name} 根据对你的了解为你写的内容，以及你离开期间它做了什么。",
+  "Feed instructions": "动态偏好",
+  "Write my feed": "开始写动态",
+  "New posts": "写几条新的",
+  "Writing…": "正在写…",
+  "Write instructions": "写下你的偏好",
+  "Read more": "展开阅读",
+  "While you were away": "你离开期间",
+  "Could not write posts: {error}": "无法生成动态：{error}",
+  "Tell {name} what you would like to read here — topics to follow, nudges on your goals, a morning plan, the tone. It writes a few posts a day from that and what it knows about you.":
+    "告诉 {name} 你想在这里读到什么——关注的话题、目标提醒、每日计划、语气风格。它会据此和对你的了解，每天写几条。",
+  "e.g. Keep me up to date on cycling and Rust. A nudge on my goals every morning. Short posts, no fluff.":
+    "例如：帮我跟进骑行和 Rust 的动态。每天早上提醒一下我的目标。短一点，别啰嗦。",
   "Nothing yet. Once {name} works on a goal in the background or needs your approval, it shows up here.":
     "暂时还没有内容。当 {name} 在后台推进目标或需要你批准时，会显示在这里。",
   "Next up": "接下来",
