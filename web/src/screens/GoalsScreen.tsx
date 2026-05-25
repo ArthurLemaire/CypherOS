@@ -3,6 +3,8 @@ import {
   BellRing,
   Briefcase,
   CalendarDays,
+  Check,
+  ChevronRight,
   CheckCircle2,
   Circle,
   CircleDashed,
@@ -154,6 +156,8 @@ export function GoalsScreen() {
   const shown = filter === "all" ? state.goals : state.goals.filter((g) => g.category === filter);
   const proposals = shown.filter((g) => g.proposal && g.status !== "cancelled");
   const active = shown.filter((g) => g.status === "active");
+  const tracking = active.filter((g) => !!g.check_in);
+  const oneOff = active.filter((g) => !g.check_in);
   const paused = shown.filter((g) => g.status === "paused");
   const finished = shown.filter((g) => g.status === "done" || g.status === "cancelled");
   const goal = state.goals.find((g) => g.id === selected) ?? null;
@@ -228,9 +232,10 @@ export function GoalsScreen() {
             </div>
           </section>
         )}
-        <GoalGroup title={t("Active")} goals={active} onOpen={setSelected} onAdvance={advance} />
-        <GoalGroup title={t("Paused")} goals={paused} onOpen={setSelected} />
-        <GoalGroup title={t("Finished")} goals={finished} onOpen={setSelected} />
+        <GoalGroup title={t("Tracking")} hint={t("Checked on a schedule")} goals={tracking} onOpen={setSelected} />
+        <GoalGroup title={t("Goals")} hint={t("Step by step, until done")} goals={oneOff} onOpen={setSelected} />
+        <GoalGroup title={t("Paused")} goals={paused} onOpen={setSelected} limit={2} />
+        <GoalGroup title={t("Finished")} goals={finished} onOpen={setSelected} limit={2} />
       </div>
 
       <GoalDetail goal={goal} onClose={() => setSelected(null)} onAdvance={advance} onChanged={refreshGoals} />
@@ -273,73 +278,96 @@ function CategoryBadge({ id, size = "sm" }: { id: GoalCategory; size?: "sm" | "m
 
 function GoalGroup({
   title,
+  hint,
   goals,
   onOpen,
-  onAdvance,
+  limit = 4,
 }: {
   title: string;
+  hint?: string;
   goals: Goal[];
   onOpen: (id: string) => void;
-  onAdvance?: (g: Goal) => void;
+  limit?: number;
 }) {
+  const [all, setAll] = useState(false);
+  const t = useT();
   if (!goals.length) return null;
+  const shown = all ? goals : goals.slice(0, limit);
+  const hidden = goals.length - shown.length;
   return (
     <section>
-      <div className="px-1 mb-2 text-[12px] font-semibold uppercase tracking-wide text-muted">{title}</div>
-      <div className="space-y-2.5">
-        {goals.map((g) => (
-          <GoalCard key={g.id} goal={g} onOpen={() => onOpen(g.id)} onAdvance={onAdvance ? () => onAdvance(g) : undefined} />
-        ))}
+      <div className="mb-1.5 flex items-baseline gap-2 px-1">
+        <h2 className="text-[17px] font-semibold tracking-tight">{title}</h2>
+        {hint && <span className="text-[12.5px] text-muted">{hint}</span>}
       </div>
+      <ul className="overflow-hidden rounded-[22px] bg-surface border border-border/70">
+        {shown.map((g) => (
+          <li key={g.id} className="border-b border-border/60 last:border-b-0">
+            <GoalRow goal={g} onOpen={() => onOpen(g.id)} />
+          </li>
+        ))}
+        {hidden > 0 && (
+          <li>
+            <button type="button" onClick={() => setAll(true)} className="w-full px-4 py-2.5 text-left text-[13.5px] font-medium text-accent">
+              {t("Show {n} more", { n: hidden })}
+            </button>
+          </li>
+        )}
+      </ul>
     </section>
   );
 }
 
-function GoalCard({ goal, onOpen, onAdvance }: { goal: Goal; onOpen: () => void; onAdvance?: () => void }) {
+/** One line per goal, the way Muse lists them: a check, the title, and what is happening with it. */
+function GoalRow({ goal, onOpen }: { goal: Goal; onOpen: () => void }) {
   const t = useT();
-  const pct = goal.progress.total ? Math.round((goal.progress.done / goal.progress.total) * 100) : 0;
+  const done = goal.status === "done";
+  const pct = goal.progress.total ? goal.progress.done / goal.progress.total : 0;
   const due = dueLabel(goal.due, goal.overdue);
+  const status =
+    goal.status === "active"
+      ? goal.next_step
+        ? t("Next: {step}", { step: goal.next_step })
+        : goal.check_in
+          ? describeCadence(goal.check_in)
+          : t("Updated {when}", { when: relativeTime(goal.updated_at) })
+      : goal.status === "paused"
+        ? t("Paused")
+        : goal.status === "cancelled"
+          ? t("Cancelled")
+          : t("Done");
   return (
-    <div className="rounded-3xl bg-surface border border-border/70 shadow-sm overflow-hidden">
-      <button type="button" onClick={onOpen} className="w-full text-left px-4 pt-3.5 pb-3">
-        <div className="flex items-start gap-3">
-          <div className="flex-1 min-w-0">
-            <div className="font-semibold text-[15.5px] leading-snug">{goal.title}</div>
-            {goal.next_step && goal.status === "active" && (
-              <div className="mt-1 text-[13px] text-muted truncate">{t("Next: {step}", { step: goal.next_step })}</div>
-            )}
-            {goal.status !== "active" && <div className="mt-1 text-[13px] text-muted capitalize">{t(goal.status)}</div>}
-          </div>
-          <div className="text-[13px] text-muted whitespace-nowrap">
-            {goal.progress.done}/{goal.progress.total}
-          </div>
-        </div>
-        <div className="mt-3 h-1.5 rounded-full bg-surface-2 overflow-hidden">
-          <div className={cx("h-full rounded-full transition-all", goal.overdue ? "bg-rose-500" : "bg-accent")} style={{ width: `${pct}%` }} />
-        </div>
-        <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11.5px] text-muted">
-          <CategoryBadge id={goal.category} />
-          {due && (
-            <span className={cx("inline-flex items-center gap-1 rounded-full px-2 py-0.5", goal.overdue ? "bg-rose-500/12 text-rose-600 dark:text-rose-300 font-medium" : "bg-surface-2")}>
-              <CalendarDays size={11} /> {due}
-            </span>
-          )}
-          {goal.check_in && goal.status === "active" && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2 py-0.5">
-              <Bell size={11} /> {describeCadence(goal.check_in)}
-            </span>
-          )}
-          <span className="ml-auto">{t("Updated {when}", { when: relativeTime(goal.updated_at) })}</span>
-        </div>
-      </button>
-      {onAdvance && goal.next_step && (
-        <div className="border-t border-border/70 px-3 py-2 flex justify-end">
-          <button type="button" onClick={onAdvance} className="flex items-center gap-1.5 rounded-full bg-accent/12 text-accent px-3 py-1.5 text-[13px] font-medium">
-            <Play size={14} /> {t("Work on it now")}
-          </button>
-        </div>
-      )}
-    </div>
+    <button type="button" onClick={onOpen} className="flex w-full items-center gap-3 px-4 py-3 text-left transition active:bg-surface-2/70">
+      <span
+        className={cx(
+          "relative flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2",
+          done ? "border-accent bg-accent text-accent-fg" : goal.overdue ? "border-rose-400" : "border-border",
+        )}
+        aria-hidden
+      >
+        {done ? (
+          <Check size={14} strokeWidth={3} />
+        ) : (
+          pct > 0 && (
+            <span
+              className="absolute inset-[-2px] rounded-full"
+              style={{ background: `conic-gradient(var(--om-accent) ${Math.round(pct * 360)}deg, transparent 0)`, mask: "radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2px))" }}
+            />
+          )
+        )}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className={cx("block truncate text-[15px] font-medium leading-snug", done && "text-muted line-through decoration-border")}>{goal.title}</span>
+        <span className="mt-0.5 block truncate text-[12.5px] text-muted">
+          {status}
+          {due && goal.status === "active" ? ` · ${due}` : ""}
+        </span>
+      </span>
+      <span className="shrink-0 text-[12.5px] text-muted">
+        {goal.progress.total > 0 && !done ? `${goal.progress.done}/${goal.progress.total}` : ""}
+      </span>
+      <ChevronRight size={16} className="shrink-0 text-muted/70" />
+    </button>
   );
 }
 

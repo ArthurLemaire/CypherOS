@@ -242,6 +242,8 @@ export interface Idea {
   title: string;
   detail: string;
   prompt: string;
+  /** planning | goals | research | money | health | home | learning | people | files | fun */
+  area?: string;
 }
 
 export interface IdeasData {

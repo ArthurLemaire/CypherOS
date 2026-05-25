@@ -3,6 +3,7 @@ import {
   Ban,
   Bell,
   Brain,
+  Square,
   CalendarClock,
   Check,
   ChevronLeft,
@@ -47,7 +48,7 @@ import { describeCadence } from "./GoalsScreen";
 type View = "menu" | "activity" | "approvals" | "permissions" | "upcoming";
 
 /**
- * Tap the avatar: the menu behind your Muse. What it has been doing (activity log),
+ * Tap the avatar: the menu behind your OpenMuse. What it has been doing (activity log),
  * what is waiting for you (approvals queue, across every chat), what it is allowed to do
  * (permissions), what it will do next (upcoming), plus its memory and settings.
  */
@@ -69,7 +70,7 @@ export function MuseSheet({ open, onClose }: { open: boolean; onClose: () => voi
   };
 
   const titles: Record<View, string> = {
-    menu: name,
+    menu: "",
     activity: t("Activity"),
     approvals: t("Approvals"),
     permissions: t("Permissions"),
@@ -88,11 +89,6 @@ export function MuseSheet({ open, onClose }: { open: boolean; onClose: () => voi
             </button>
           )}
           <span>{titles[view]}</span>
-          {view === "menu" && (
-            <span className="text-[12px] font-normal text-muted">
-              {state.status.state === "idle" ? t("idle") : state.status.detail || t(state.status.state)}
-            </span>
-          )}
         </div>
       }
     >
@@ -133,28 +129,55 @@ function Menu({
   onConnections: () => void;
   onSettings: () => void;
 }) {
-  const { state } = useStore();
+  const { state, toast } = useStore();
   const t = useT();
+  const [stopping, setStopping] = useState(false);
   const mode = state.settings?.sentinel.mode;
   const c = state.settings?.connectors;
   const connected = [c?.email && t("email"), c?.calendar && t("calendar"), c?.browser && t("browser"), c?.mcp.length ? `${c.mcp.length} MCP` : null].filter(Boolean);
+  const working = state.status.state === "working";
+  const statusLine =
+    state.status.state === "idle" ? t("Idle — nothing running right now") : state.status.detail || t(state.status.state);
+  const stop = async () => {
+    setStopping(true);
+    try {
+      const r = await api.stopThread(state.status.thread || "main");
+      if (!r.ok) toast(t("Nothing to stop"));
+    } catch (e) {
+      toast((e as Error).message);
+    } finally {
+      setStopping(false);
+    }
+  };
   return (
     <div className="pb-2">
-      <div className="flex items-center gap-3 rounded-3xl bg-surface-2/70 px-4 py-3">
-        <Avatar profile={state.profile} status={state.status} size={48} />
-        <div className="min-w-0 flex-1">
-          <div className="font-semibold text-[16px] truncate">{name}</div>
-          <div className="text-[12.5px] text-muted truncate">
-            {state.settings?.llm.model ?? "—"} · {mode === "ask" ? t("balanced") : mode === "strict" ? t("cautious") : mode === "auto" ? t("hands-off") : ""}
-          </div>
+      <div className="flex flex-col items-center px-4 pt-1 pb-3 text-center">
+        <Avatar profile={state.profile} status={state.status} size={84} />
+        <div className="mt-2.5 text-[20px] font-semibold tracking-tight">{name}</div>
+        <div className={cx("mt-0.5 flex items-center gap-1.5 text-[13px]", working ? "text-fg" : "text-muted")}>
+          {working && <Loader2 size={13} className="animate-spin text-accent" />}
+          <span className="line-clamp-2">{statusLine}</span>
+        </div>
+        {(working || state.status.state === "waiting") && (
+          <button
+            type="button"
+            onClick={() => void stop()}
+            disabled={stopping}
+            className="mt-2.5 inline-flex items-center gap-1.5 rounded-full bg-fg px-4 py-1.5 text-[13.5px] font-semibold text-bg transition active:scale-95 disabled:opacity-60"
+          >
+            <Square size={12} fill="currentColor" /> {t("Stop")}
+          </button>
+        )}
+        <div className="mt-1.5 text-[12px] text-muted">
+          {state.settings?.llm.model ?? "—"} · {mode === "ask" ? t("balanced") : mode === "strict" ? t("cautious") : mode === "auto" ? t("hands-off") : ""}
         </div>
       </div>
-      <ul className="mt-3 divide-y divide-border/70 rounded-3xl border border-border/70 overflow-hidden">
-        <MenuRow icon={<ShieldAlert size={19} />} label={t("Approvals")} hint={pending ? t("{n} waiting for you", { n: pending }) : t("Nothing waiting")} badge={pending} onClick={() => onPick("approvals")} />
-        <MenuRow icon={<ClipboardList size={19} />} label={t("Activity")} hint={t("Every action, including refused ones")} onClick={() => onPick("activity")} />
-        <MenuRow icon={<ShieldCheck size={19} />} label={t("Permissions")} hint={t("What you allowed, revoke any time")} onClick={() => onPick("permissions")} />
-        <MenuRow icon={<Bell size={19} />} label={t("Upcoming")} hint={state.profile?.proactive ? t("Background work is on") : t("Background work is off")} onClick={() => onPick("upcoming")} />
-      </ul>
+      <div className="grid grid-cols-4 gap-1 rounded-[22px] bg-surface-2/70 p-1.5">
+        <SegmentButton icon={<ShieldAlert size={20} />} label={t("Approvals")} badge={pending} onClick={() => onPick("approvals")} />
+        <SegmentButton icon={<ClipboardList size={20} />} label={t("Activity")} onClick={() => onPick("activity")} />
+        <SegmentButton icon={<ShieldCheck size={20} />} label={t("Permissions")} onClick={() => onPick("permissions")} />
+        <SegmentButton icon={<Bell size={20} />} label={t("Upcoming")} dot={!!state.profile?.proactive} onClick={() => onPick("upcoming")} />
+      </div>
       <ul className="mt-3 divide-y divide-border/70 rounded-3xl border border-border/70 overflow-hidden">
         <MenuRow icon={<Brain size={19} />} label={t("Memory")} hint={t("What {name} remembers about you", { name })} onClick={onMemory} />
         {state.settings?.skills?.enabled !== false && (
@@ -178,6 +201,24 @@ function Menu({
         <MenuRow icon={<SlidersHorizontal size={19} />} label={t("Settings")} hint={t("Name, style, how careful it is")} onClick={onSettings} />
       </ul>
     </div>
+  );
+}
+
+function SegmentButton({ icon, label, badge, dot, onClick }: { icon: ReactNode; label: string; badge?: number; dot?: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="relative flex flex-col items-center gap-1 rounded-2xl bg-surface px-1 py-2.5 text-fg shadow-sm transition active:scale-95"
+    >
+      <span className="text-fg/80">{icon}</span>
+      <span className="text-[11px] font-medium leading-none">{label}</span>
+      {badge ? (
+        <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-rose-500 px-1 text-[10.5px] font-bold text-white">{badge}</span>
+      ) : dot ? (
+        <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-accent" />
+      ) : null}
+    </button>
   );
 }
 
