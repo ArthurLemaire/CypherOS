@@ -140,6 +140,8 @@ export interface Status {
 
 export interface Profile {
   name: string;
+  /** One of the plush dolls (see avatars.ts), or "" for the emoji on a colour. */
+  avatar: string;
   emoji: string;
   color: string;
   style: string;

@@ -12,9 +12,9 @@ const zhCN: Record<string, string> = {
   Library: "文件库",
   "Main chat": "主对话",
   "Side chat": "侧边对话",
-  "Reconnecting to your Muse…": "正在重新连接你的 Muse…",
+  "Reconnecting to your OpenMuse…": "正在重新连接你的 OpenMuse…",
   "Reconnecting…": "重新连接中…",
-  "Connect to your Muse": "连接到你的 Muse",
+  "Connect to your OpenMuse": "连接到你的 OpenMuse",
   "This app talks to the OpenMuse server you run yourself. Scan the QR code printed by":
     "这个应用连接的是你自己运行的 OpenMuse 服务器。扫描下面命令打印的二维码",
   ", or paste the access token below.": "，或在下方粘贴访问令牌。",
@@ -162,6 +162,9 @@ const zhCN: Record<string, string> = {
   "Open chat": "打开对话",
   Today: "今天",
   Yesterday: "昨天",
+  Menu: "菜单",
+  Message: "发消息",
+  "An emoji instead": "改用表情符号",
 
   // ── Ideas ─────────────────────────────────────────────────────────────────────────
   "Things {name} could do for you, based on your goals, memory and recent conversations.":
@@ -319,8 +322,8 @@ const zhCN: Record<string, string> = {
   Activity: "活动",
   "Every action, including refused ones": "每一次操作，包括被拒绝的",
   Approvals: "审批",
-  "Actions your Muse wants to take but cannot without you. Each one shows what will run and why; a permission you grant is bound to that exact tool and target.":
-    "你的 Muse 想执行但没有你就无法进行的操作。每一项都会显示将要运行什么以及原因；你授予的权限只绑定到那个具体的工具和目标。",
+  "Actions your OpenMuse wants to take but cannot without you. Each one shows what will run and why; a permission you grant is bound to that exact tool and target.":
+    "你的 OpenMuse 想执行但没有你就无法进行的操作。每一项都会显示将要运行什么以及原因；你授予的权限只绑定到那个具体的工具和目标。",
   "Nothing waiting": "没有待处理项",
   "{n} waiting for you": "{n} 项等待你处理",
   Permissions: "权限",
@@ -367,7 +370,7 @@ const zhCN: Record<string, string> = {
   "Revoke {what}": "撤销 {what}",
   "Revoked: {subject}": "已撤销：{subject}",
   "Reset all granted permissions": "重置所有已授予的权限",
-  "Forget every permission you granted? Your Muse will ask again next time.": "忘掉你授予的所有权限？下次你的 Muse 会重新询问。",
+  "Forget every permission you granted? Your OpenMuse will ask again next time.": "忘掉你授予的所有权限？下次你的 OpenMuse 会重新询问。",
   "Permissions reset": "权限已重置",
   "Always ask (from config)": "始终询问（来自配置）",
   "Tools: {tools}.": "工具：{tools}。",
@@ -450,7 +453,7 @@ const zhCN: Record<string, string> = {
 
   // ── Settings ──────────────────────────────────────────────────────────────────────
   You: "你",
-  "Your Muse": "你的 Muse",
+  "Your OpenMuse": "你的 OpenMuse",
   "Make it yours, and decide how careful it should be.": "把它变成你的，并决定它应该多谨慎。",
   Name: "名字",
   Avatar: "头像",
@@ -665,7 +668,7 @@ const zhCN: Record<string, string> = {
 
   // ── Onboarding ────────────────────────────────────────────────────────────────────
   "Skip setup": "跳过设置",
-  "Meet your Muse": "认识你的 Muse",
+  "Meet your OpenMuse": "认识你的 OpenMuse",
   "A personal agent that does the work: it searches, browses, writes files and code, reads and sends mail, and keeps going on long goals while you are away.":
     "一个真正干活的个人助手：它搜索、浏览网页、编写文件和代码、收发邮件，并在你离开时继续推进长期目标。",
   "Yours, on your machine": "属于你，运行在你的机器上",
@@ -676,7 +679,7 @@ const zhCN: Record<string, string> = {
   "Your name": "你的名字",
   "Anything else it should know about you — where you live, what you do, what you like — you can just tell it in the chat. It remembers.":
     "其他它应该了解的事——你住在哪里、做什么工作、喜欢什么——直接在对话里告诉它就行。它会记住。",
-  "Now, your Muse": "接下来，你的 Muse",
+  "Now, your OpenMuse": "接下来，你的 OpenMuse",
   "Give it a name, a look and a way of talking.": "给它一个名字、一个形象和一种说话方式。",
   "Warm and concise": "温暖而简洁",
   "Direct, no small talk": "直接，不闲聊",

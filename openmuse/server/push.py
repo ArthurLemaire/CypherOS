@@ -1,4 +1,4 @@
-"""Web Push: the phone buzzes when your Muse needs you or has something to say.
+"""Web Push: the phone buzzes when your OpenMuse needs you or has something to say.
 
 Standard Web Push (VAPID + RFC 8291 payload encryption, via ``pywebpush``), so it works
 with the browser's own push service — no account, no third party of ours. The VAPID key
@@ -201,14 +201,14 @@ class PushService:
             self.subscriptions = [s for s in self.subscriptions if s["endpoint"] not in gone]
             self._save_subscriptions()
 
-    async def test(self, name: str = "Muse") -> dict[str, Any]:
+    async def test(self, name: str = "OpenMuse") -> dict[str, Any]:
         if not self.enabled:
             return {"ok": False, "error": "push is not available on this server"}
         if not self.subscriptions:
             return {"ok": False, "error": "no device has turned notifications on"}
         payload = {
             "title": f"{name} can reach you here",
-            "body": "This is what a notification from your Muse looks like.",
+            "body": f"This is what a notification from {name} looks like.",
             "tag": "test",
             "url": "/",
             "kind": "test",

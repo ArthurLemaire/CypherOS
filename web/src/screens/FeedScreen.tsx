@@ -16,7 +16,7 @@ export function FeedScreen() {
   const [items, setItems] = useState<FeedItem[] | null>(null);
   const [upcoming, setUpcoming] = useState<UpcomingData | null>(null);
   const [calendar, setCalendar] = useState<CalendarData | null>(null);
-  const name = state.profile?.name ?? "Muse";
+  const name = state.profile?.name ?? "OpenMuse";
   const t = useT();
   const locale = useLocale();
 

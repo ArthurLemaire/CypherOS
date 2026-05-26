@@ -54,8 +54,8 @@ function threadRoute(thread: string): string {
 
 /** Same titles the server uses for its Web Push notifications. */
 function backgroundTitle(about: string): string {
-  if (about.startsWith('Check-in: ')) return 'Muse · check-in';
-  return about.replace('Working on your goal: ', '') || 'Muse';
+  if (about.startsWith('Check-in: ')) return 'OpenMuse · check-in';
+  return about.replace('Working on your goal: ', '') || 'OpenMuse';
 }
 
 function firstLine(text: string, max = 140): string {
@@ -203,7 +203,7 @@ class MuseBridge {
     const body = isApproval ? [ev.summary, ev.purpose && `For: ${ev.purpose}`].filter(Boolean).join(' — ') : ev.text ?? '';
     const item = NotificationService.push({
       appId: manifest.id,
-      title: isApproval ? 'Muse needs your approval' : 'Muse has a question',
+      title: isApproval ? 'OpenMuse needs your approval' : 'OpenMuse has a question',
       body: firstLine(body, 200),
       route: threadRoute(ev.thread),
       importance: 'high',
