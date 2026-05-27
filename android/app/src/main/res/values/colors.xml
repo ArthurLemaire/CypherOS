@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- the same palette as the web app -->
+    <color name="bg">#FCFCFC</color>
+    <color name="text">#111112</color>
+    <color name="text_secondary">#6B6B70</color>
+    <color name="accent">#0064D4</color>
+    <color name="accent_soft">#E7F0FB</color>
+    <color name="border">#E5E5E7</color>
+    <color name="icon_bg">#0064D4</color>
+</resources>

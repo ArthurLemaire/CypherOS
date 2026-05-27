@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">OpenMuse</string>
+
+    <!-- Connect screen -->
+    <string name="connect_title">Connect to your OpenMuse</string>
+    <string name="connect_body">Run <b>openmuse serve --host 0.0.0.0</b> on your computer and scan the QR code it prints, or type the address.</string>
+    <string name="connect_scan">Scan QR code</string>
+    <string name="connect_or">or</string>
+    <string name="connect_url_hint">http://192.168.1.20:8787/?token=…</string>
+    <string name="connect_button">Connect</string>
+    <string name="connect_checking">Connecting…</string>
+    <string name="connect_bad_url">That is not a server address. It looks like http://host:8787/?token=…</string>
+    <string name="connect_no_token">The address has no token. Use the link openmuse serve prints (it ends in ?token=…).</string>
+    <string name="connect_unreachable">Could not reach %1$s. Is the server running, and is this phone on the same network?</string>
+    <string name="connect_unauthorized">The server refused the token. Copy the current link from openmuse serve.</string>
+    <string name="connect_scan_prompt">Point the camera at the QR code printed by openmuse serve</string>
+
+    <!-- Notifications -->
+    <string name="channel_attention">Needs your attention</string>
+    <string name="channel_attention_desc">Approvals and questions from your agent</string>
+    <string name="channel_updates">Updates</string>
+    <string name="channel_updates_desc">Results of work done in the background</string>
+    <string name="channel_link">Connection</string>
+    <string name="channel_link_desc">Keeps the app connected to your server</string>
+    <string name="link_online">Connected to %1$s</string>
+    <string name="link_connecting">Connecting to %1$s…</string>
+    <string name="link_offline">Server unreachable, retrying…</string>
+    <string name="link_unauthorized">Server refused the token. Open the app to reconnect.</string>
+    <string name="notify_approval_title">%1$s needs your approval</string>
+    <string name="notify_question_title">%1$s has a question</string>
+    <string name="notify_for">For: %1$s</string>
+    <string name="notify_checkin">%1$s · check-in</string>
+
+    <!-- Offline screen -->
+    <string name="offline_title">Can\'t reach your OpenMuse</string>
+    <string name="offline_body">%1$s did not answer. Check that the server is running and that this phone is on the same network.</string>
+    <string name="retry">Try again</string>
+    <string name="change_server">Change server</string>
+</resources>

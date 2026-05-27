@@ -490,6 +490,11 @@ const zhCN: Record<string, string> = {
   "When it needs your approval, has a question, finished something in the background, or it is check-in time. Nothing is shown while the app is on screen.":
     "当它需要你的批准、有问题、在后台完成了某件事或到了跟进时间时通知你。应用在前台时不会显示。",
   "Let {name} notify this device": "让 {name} 通知这台设备",
+  "Let {name} notify this phone": "让 {name} 通知这台手机",
+  "The app stays connected to your server in the background. Approvals, questions and finished background work arrive as notifications and open the right chat.":
+    "应用在后台保持与服务器的连接。审批、提问和后台完成的工作会以通知送达，并打开对应的对话。",
+  "OpenMuse for Android {version}": "OpenMuse Android 版 {version}",
+  "Disconnect from this server": "断开此服务器",
   "This device only": "仅这台设备",
   "1 device subscribed": "1 台设备已订阅",
   "{n} devices subscribed": "{n} 台设备已订阅",
