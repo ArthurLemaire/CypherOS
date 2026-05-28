@@ -252,6 +252,10 @@ More in [docs/architecture.md](docs/architecture.md).
 - [x] Per-call sandboxes for `shell` and `python_execute` (bubblewrap on Linux)
 - [x] Skills: reusable task recipes in the Agent Skills `SKILL.md` format — built in, yours, or saved by the agent
 - [x] The app in 简体中文 (Settings → App language); more languages welcome — one dictionary file each
+- [x] Attachments: photos and files from the phone; pictures go to models that take images, with a text-only fallback for those that do not
+- [x] Web search providers: DuckDuckGo out of the box, Brave, Tavily or your own SearXNG, with a fallback
+- [ ] Voice: speak a message and see it as text before it goes, through any OpenAI-compatible `/audio/transcriptions`
+- [ ] Evals: a small set of everyday tasks with pass rates per model, so a model choice is a measured one
 
 ## Contributing
 

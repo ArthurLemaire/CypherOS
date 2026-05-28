@@ -252,6 +252,10 @@ flowchart LR
 - [x] `shell` 与 `python_execute` 每次调用独立沙箱（Linux 上用 bubblewrap）
 - [x] Skills：Agent Skills `SKILL.md` 格式的可复用任务配方——内置的、你写的、Agent 自己存下来的
 - [x] App 简体中文界面（设置 → 应用语言）；欢迎补充更多语言——每种语言一个字典文件
+- [x] 附件：从手机发照片和文件；图片交给能看图的模型，看不了图的模型自动退回纯文本
+- [x] 网页搜索服务商：开箱即用 DuckDuckGo，可换 Brave、Tavily 或自建 SearXNG，失败时自动回退
+- [ ] 语音：说一段话，发送前先看到文字，走任意 OpenAI 兼容的 `/audio/transcriptions`
+- [ ] 评测：一小组日常任务，按模型给出通过率，让选模型有据可依
 
 ## 参与
 
