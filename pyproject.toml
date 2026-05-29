@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "openmuse"
-version = "0.4.0"
+version = "0.5.0"
 description = "Open-source version of Meta's Muse: a personal agent with a phone app, a Sentinel gatekeeper, a credential vault, memory and goals. Bring your own model."
 readme = "README.md"
 license = { text = "MIT" }
