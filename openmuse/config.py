@@ -193,10 +193,23 @@ class ContactsSettings(BaseModel):
     sources: list[ContactSourceSettings] = Field(default_factory=list)
 
 
+class SearchSettings(BaseModel):
+    """Who answers ``web_search``. DuckDuckGo needs nothing and is the default; Brave and
+    Tavily want a key, SearXNG wants the URL of an instance. A failed search falls back
+    to DuckDuckGo once, with a note, so a lapsed key does not stop a task."""
+
+    provider: Literal["duckduckgo", "brave", "tavily", "searxng"] = "duckduckgo"
+    # Brave / Tavily. May be a vault placeholder — the app stores it as {{vault:SEARCH_API_KEY}}.
+    api_key: str = ""
+    # SearXNG: your instance, e.g. "http://127.0.0.1:8080".
+    base_url: str = ""
+
+
 class ConnectorSettings(BaseModel):
     email: EmailSettings = Field(default_factory=EmailSettings)
     calendar: CalendarSettings = Field(default_factory=CalendarSettings)
     contacts: ContactsSettings = Field(default_factory=ContactsSettings)
+    search: SearchSettings = Field(default_factory=SearchSettings)
 
 
 class SkillsSettings(BaseModel):
@@ -401,6 +414,13 @@ def _apply_env_overrides(raw: dict[str, Any]) -> None:
         raw.setdefault("sentinel", {})["mode"] = val
     if val := os.environ.get("OPENMUSE_LOG_LEVEL"):
         raw["log_level"] = val
+    for env, key in (
+        ("OPENMUSE_SEARCH_PROVIDER", "provider"),
+        ("OPENMUSE_SEARCH_API_KEY", "api_key"),
+        ("OPENMUSE_SEARCH_BASE_URL", "base_url"),
+    ):
+        if val := os.environ.get(env):
+            raw.setdefault("connectors", {}).setdefault("search", {})[key] = val
     server = raw.setdefault("server", {})
     if val := os.environ.get("OPENMUSE_SERVER_HOST"):
         server["host"] = val
@@ -460,6 +480,13 @@ def apply_app_settings(settings: Settings, data: dict[str, Any]) -> None:
             # "" is meaningful here: back to the default (the model's endpoint and key)
             if key in emb and emb[key] is not None:
                 setattr(m, f"embedding_{key}", str(emb[key]).strip().rstrip("/"))
+    if search := data.get("search"):
+        web = settings.connectors.search
+        if search.get("provider") in ("duckduckgo", "brave", "tavily", "searxng"):
+            web.provider = search["provider"]
+        for key in ("api_key", "base_url"):
+            if key in search and search[key] is not None:
+                setattr(web, key, str(search[key]).strip().rstrip("/"))
     if email := data.get("email"):
         for key in ("enabled", "imap_host", "imap_port", "smtp_host", "smtp_port", "smtp_starttls"):
             if key in email and email[key] is not None:

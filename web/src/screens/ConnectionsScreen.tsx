@@ -71,6 +71,7 @@ export function ConnectionsScreen() {
           <>
             <ModelCard data={data} onChange={load} />
             {data.embeddings.memory_enabled && <RecallCard data={data} onChange={load} />}
+            <SearchCard data={data} onChange={load} />
             <EmailCard data={data} onChange={load} />
             <CalendarCard data={data} onChange={load} />
             <ContactsCard data={data} onChange={load} />
@@ -361,6 +362,123 @@ export function RecallCard({ data, onChange }: { data: ConnectionsData; onChange
           okText={t("{model} · {dims} dims · {n} memories indexed · {ms} ms", { model: test.model ?? "", dims: test.dims ?? 0, n: test.indexed ?? 0, ms: test.ms ?? 0 })}
         />
       )}
+    </Card>
+  );
+}
+
+// ------------------------------------------------------------------ web search
+/**
+ * Who answers `web_search`. DuckDuckGo needs nothing and is the default but is scraped, so it
+ * rate-limits now and then; Brave and Tavily take a key, SearXNG the URL of an instance you run.
+ * Whatever is picked, a failed search falls back to DuckDuckGo once, with a note.
+ */
+export function SearchCard({ data, onChange }: { data: ConnectionsData; onChange: () => void }) {
+  const { toast } = useStore();
+  const t = useT();
+  const s = data.search;
+  const [open, setOpen] = useState(false);
+  const [provider, setProvider] = useState(s.provider);
+  const [baseUrl, setBaseUrl] = useState(s.base_url);
+  const [key, setKey] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [test, setTest] = useState<TestResult | null>(null);
+  const [testing, setTesting] = useState(false);
+
+  useEffect(() => {
+    setProvider(s.provider);
+    setBaseUrl(s.base_url);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.search]);
+
+  const info = s.providers.find((p) => p.id === s.provider);
+  const chosen = s.providers.find((p) => p.id === provider);
+  const needsKey = !!chosen?.needs_key;
+  const status = s.configured ? { text: t("On"), tone: "ok" } : { text: t("Not set up"), tone: "warn" };
+  const summary = s.configured
+    ? s.provider === "searxng"
+      ? t("{provider} at {host}", { provider: info?.label ?? s.provider, host: hostOf(s.base_url) })
+      : info?.label ?? s.provider
+    : t("{provider} needs {what} — searches use DuckDuckGo until then", {
+        provider: info?.label ?? s.provider,
+        what: info?.needs_key ? t("a key") : t("an instance URL"),
+      });
+
+  const save = async () => {
+    setSaving(true);
+    setTest(null);
+    try {
+      await api.setSearch({
+        provider,
+        base_url: provider === "searxng" ? baseUrl.trim() : "",
+        api_key: needsKey ? (key ? key : undefined) : "",
+      });
+      setKey("");
+      toast(t("Saved"));
+      onChange();
+    } catch (err) {
+      toast((err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+  const runTest = async () => {
+    setTesting(true);
+    try {
+      setTest(await api.testSearch());
+    } catch (err) {
+      setTest({ ok: false, error: (err as Error).message });
+    } finally {
+      setTesting(false);
+    }
+  };
+  const chip = (on: boolean) => cx("rounded-full px-3 py-1.5 text-[13px] border", on ? "border-accent bg-accent/10 text-accent font-medium" : "border-border text-muted");
+  const canSave = provider !== "searxng" || /^https?:\/\//.test(baseUrl.trim());
+
+  return (
+    <Card icon={<Search size={19} />} title={t("Web search")} summary={summary} status={status} open={open} onToggle={() => setOpen(!open)}>
+      <p className="text-[12.5px] text-muted leading-snug">
+        {t("DuckDuckGo needs nothing, but it is scraped and rate-limits now and then. For searches that always work, use a provider with an API. Whichever you pick, a failed search falls back to DuckDuckGo with a note.")}
+      </p>
+      <Field label={t("Provider")}>
+        <div className="flex flex-wrap gap-1.5">
+          {s.providers.map((p) => (
+            <button key={p.id} type="button" onClick={() => setProvider(p.id as typeof provider)} className={chip(provider === p.id)}>
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </Field>
+      {needsKey && (
+        <Field
+          label={t("API key")}
+          hint={
+            s.key_source === "vault" && s.provider === provider
+              ? t("A key is in the vault. Leave blank to keep it.")
+              : t("Stored encrypted in the vault as SEARCH_API_KEY.")
+          }
+        >
+          <input type="password" value={key} onChange={(ev) => setKey(ev.target.value)} className={inputCls} placeholder={s.key_source === "vault" && s.provider === provider ? "••••••••" : "…"} autoComplete="off" />
+          {chosen?.keys_url && (
+            <a href={chosen.keys_url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-[12px] text-accent">
+              {t("Get a key from {label}", { label: chosen.label })}
+            </a>
+          )}
+        </Field>
+      )}
+      {provider === "searxng" && (
+        <Field label={t("Instance URL")} hint={t("A SearXNG you run, with the JSON format enabled in its settings.")}>
+          <input value={baseUrl} onChange={(ev) => setBaseUrl(ev.target.value)} className={inputCls} placeholder="http://127.0.0.1:8080" inputMode="url" />
+        </Field>
+      )}
+      <div className="flex gap-2 pt-1">
+        <button type="button" disabled={saving || !canSave} onClick={() => void save()} className={primaryBtn}>
+          {saving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} {t("Save")}
+        </button>
+        <button type="button" disabled={testing} onClick={() => void runTest()} className={secondaryBtn}>
+          {testing ? <Loader2 size={16} className="animate-spin" /> : <Plug size={16} />} {t("Test")}
+        </button>
+      </div>
+      {test && <TestLine result={test} okText={t("{provider} · {n} results · {ms} ms", { provider: test.provider ?? "", n: test.results ?? 0, ms: test.ms ?? 0 })} />}
     </Card>
   );
 }

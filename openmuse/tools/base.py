@@ -35,6 +35,9 @@ class CallAssessment(BaseModel):
     # Network destination (hostname) if known, e.g. "example.com". ``None`` with
     # ``egress=True`` means "unknown destination" (shell, python...).
     egress_target: str | None = None
+    # The destination was set by the owner in the settings (the search provider, the
+    # mail server), not chosen by the model: taint tracking treats it like the allowlist.
+    egress_configured: bool = False
     # What a standing approval for this call should be bound to: a host, a recipient, a
     # program name. Defaults to ``egress_target``; ``None`` means "the whole tool".
     target: str | None = None

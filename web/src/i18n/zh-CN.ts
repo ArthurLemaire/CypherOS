@@ -754,6 +754,21 @@ const zhCN: Record<string, string> = {
   "Say what to do with it…": "说说要拿它做什么……",
   "Upload failed": "上传失败",
 
+  // web search providers
+  "Web search": "网页搜索",
+  "Not set up": "未设置",
+  "{provider} at {host}": "{provider}（{host}）",
+  "{provider} needs {what} — searches use DuckDuckGo until then": "{provider}还需要{what}——在此之前搜索走 DuckDuckGo",
+  "a key": "一个密钥",
+  "an instance URL": "实例地址",
+  "DuckDuckGo needs nothing, but it is scraped and rate-limits now and then. For searches that always work, use a provider with an API. Whichever you pick, a failed search falls back to DuckDuckGo with a note.":
+    "DuckDuckGo 无需任何配置，但它是抓取来的结果，偶尔会被限流。想让搜索始终可用，选一个带 API 的服务。无论选哪个，搜索失败时都会退回 DuckDuckGo 并附上说明。",
+  "Stored encrypted in the vault as SEARCH_API_KEY.": "加密存入保险库，名为 SEARCH_API_KEY。",
+  "Get a key from {label}": "到 {label} 获取密钥",
+  "Instance URL": "实例地址",
+  "A SearXNG you run, with the JSON format enabled in its settings.": "你自己运行的 SearXNG，需在其设置中启用 JSON 格式。",
+  "{provider} · {n} results · {ms} ms": "{provider} · {n} 条结果 · {ms} 毫秒",
+
   // recall by meaning (embeddings)
   "Recall by meaning": "按含义召回",
   "Keyword recall only": "仅按关键词召回",

@@ -357,6 +357,16 @@ export interface ConnectionsData {
     total: number;
     status: string;
   };
+  search: {
+    provider: "duckduckgo" | "brave" | "tavily" | "searxng";
+    /** SearXNG instance */
+    base_url: string;
+    key_source: "none" | "vault" | "config" | "missing";
+    /** what the provider needs is there (a key, or an instance URL) */
+    configured: boolean;
+    from_app: boolean;
+    providers: Array<{ id: string; label: string; needs_key: boolean; keys_url: string }>;
+  };
   email: {
     enabled: boolean;
     configured: boolean;
@@ -477,6 +487,10 @@ export interface TestResult {
   model?: string;
   dims?: number;
   indexed?: number;
+  /** search test */
+  provider?: string;
+  results?: number;
+  first?: string;
 }
 
 export interface StateSnapshot {

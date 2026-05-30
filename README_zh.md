@@ -55,7 +55,7 @@ Meta 的 Muse 不是聊天机器人，而是一个动手的 Agent：查资料、
 - 你能看、能改的记忆。Agent 记下的关于你的长期事实在页签里一览无余，点一下就能让它忘掉。事实变了就更新原条目而不是再加一条；定期整理会合并意思相同的条目、去掉并非事实的内容——每处改动都列出来，可一键撤销。召回既按关键词，也可按含义——接上任意 OpenAI 兼容的向量接口（比如 DeepSeek 旁边跑一个 Ollama 的 `qwen3-embedding`），“写邮件给房东”就能找到 “the landlord is Bob Li”。
 - Sentinel 守门人、凭据保险库、污点追踪和只追加的审计日志。见 [Sentinel](#sentinel)。
 - Skills（技能）：把一件事怎么做写下来，一次就够。内置五个（每周回顾、旅行计划、收件箱分拣、多选项对比、会议准备）；请求对得上时 Agent 自己会选，你也可以直接输入 `/trip-plan 十一月去京都`。一件事做顺了，说一句“把这个存成技能”，它就把步骤写下来——先经你同意。用的是 [Agent Skills](https://agentskills.io) 的 `SKILL.md` 格式，给其他智能体写的技能在这里同样能用。
-- 工具：文件、shell、Python、网页搜索与抓取、邮件（一次性验证码在模型看到之前就被抹掉）、日历（通过私密 `.ics` 链接读取；它提议的日程会变成一张卡片，点一下加入日历）、通讯录（导入 `.vcf` 或在聊天里告诉它——写信前先查人，不猜地址）、可选的 Playwright 浏览器，以及任何 [MCP](https://modelcontextprotocol.io) 服务器。
+- 工具：文件、shell、Python、网页搜索（开箱即用 DuckDuckGo；想要始终可用的搜索，可换成 Brave、Tavily 或你自己的 SearXNG）与抓取、邮件（一次性验证码在模型看到之前就被抹掉）、日历（通过私密 `.ics` 链接读取；它提议的日程会变成一张卡片，点一下加入日历）、通讯录（导入 `.vcf` 或在聊天里告诉它——写信前先查人，不猜地址）、可选的 Playwright 浏览器，以及任何 [MCP](https://modelcontextprotocol.io) 服务器。
 - 任何 OpenAI 兼容模型都能跑：DeepSeek、OpenAI、OpenRouter、Ollama、vLLM，或者带自定义请求头的公司网关。
 
 ## 为什么是 OpenMuse

@@ -19,6 +19,7 @@ from openmuse.logger import logger, setup_logging
 from openmuse.memory import Embedder, MemoryIndex, MemoryStore
 from openmuse.reminders import ReminderStore
 from openmuse.sandbox import Sandbox
+from openmuse.search import WebSearchProvider
 from openmuse.sentinel import AuditLog, Sentinel
 from openmuse.skills import SkillLibrary
 from openmuse.tools import (
@@ -167,7 +168,7 @@ class OpenMuseApp:
             Files(workspace=ws, extra_roots=list(s.agent.extra_roots)),
             Shell(workspace=ws, sandbox=self.sandbox),
             PythonExecute(workspace=ws, sandbox=self.sandbox),
-            WebSearch(),
+            WebSearch(provider=WebSearchProvider(s.connectors.search, vault=self.vault)),
             WebFetch(),
             Goals(store=self.goals),
             Reminders(store=self.reminders),

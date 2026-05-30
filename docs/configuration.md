@@ -23,6 +23,7 @@ These win over the file. They cover the settings people change most often and wh
 | `OPENMUSE_DATA_DIR` | `data_dir` (default `~/.openmuse`) |
 | `OPENMUSE_WORKSPACE` | `agent.workspace` (default `./workspace`) |
 | `OPENMUSE_SENTINEL_MODE` | `sentinel.mode` |
+| `OPENMUSE_SEARCH_PROVIDER`, `OPENMUSE_SEARCH_API_KEY`, `OPENMUSE_SEARCH_BASE_URL` | `[connectors.search]` |
 | `OPENMUSE_SERVER_HOST`, `OPENMUSE_SERVER_PORT`, `OPENMUSE_SERVER_TOKEN` | `[server]` |
 | `OPENMUSE_BROWSER_ENABLED=1` | `browser.enabled = true` (only ever turns it on; the browser Docker image sets it) |
 | `OPENMUSE_VAULT_KEY` | Fernet key for the vault (default: `<data_dir>/vault.key`) |
@@ -221,6 +222,19 @@ url  = "{{vault:CONTACTS_NEXTCLOUD}}"   # a link, kept in the vault: openmuse va
 ```
 
 Besides the sources there is always *My contacts*, `<data_dir>/contacts.vcf`: the people the agent was told about in chat ("the landlord is Bob Li, bob@example.com") through `contacts` action=add — the only book it writes to, and the only one it can remove people from. The `contacts` tool searches by name, nickname, company, email or phone (every word must match, prefixes count, a character inside a Chinese name counts); a look-up is private data and taints the session. `openmuse contacts search | list | add | sources | add-source | remove-source` from the CLI.
+
+### Web search
+
+Who answers `web_search`. DuckDuckGo needs nothing and is the default, but it is scraped rather than served: it rate-limits and breaks now and then. For searches that always work, name a provider with an API — [Brave Search](https://brave.com/search/api/) or [Tavily](https://app.tavily.com/) with a key, or a [SearXNG](https://docs.searxng.org/) instance you run yourself (with `json` among its `search.formats`). The same choice is on the phone under *Connections → Web search*, where the key goes to the vault as `SEARCH_API_KEY` and *Test* runs one search.
+
+```toml
+[connectors.search]
+provider = "duckduckgo"          # duckduckgo | brave | tavily | searxng
+api_key  = "{{vault:SEARCH_API_KEY}}"   # brave / tavily: openmuse vault set SEARCH_API_KEY
+base_url = ""                    # searxng: your instance, e.g. "http://127.0.0.1:8080"
+```
+
+Whichever is picked, a search that fails — a lapsed key, a rate limit, an instance that is down — is answered by DuckDuckGo instead, once, with a note on top of the results saying so, so the task goes on; `openmuse doctor` reports a provider that is missing what it needs. The `region` argument of the tool (`cn-zh`, `us-en`) is passed to every provider in its own terms. The provider's host is a destination you chose, so a search after private data was read does not need approval the way an unknown host would (see [taint tracking](sentinel.md#taint-tracking)); `web_fetch` of a result still does.
 
 ## `[triggers]`
 

@@ -163,6 +163,15 @@ def test_taint_escalates_egress():
         "shell", {}, CallAssessment(risk=RiskLevel.SAFE, egress=True), tainted=True
     )
     assert unknown.decision == Decision.ASK
+    # a destination the owner set in the settings (the search provider) is not one the model
+    # picked: it counts like the allowlist
+    configured = policy.evaluate(
+        "web_search",
+        {},
+        CallAssessment(egress=True, egress_target="api.search.brave.com", egress_configured=True),
+        tainted=True,
+    )
+    assert configured.decision == Decision.ALLOW
 
 
 # ----------------------------------------------------------------------------- gate
