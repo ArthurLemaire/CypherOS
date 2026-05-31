@@ -1,6 +1,6 @@
-import { ArrowUp, ChevronDown, MessageSquarePlus, Moon, MoreHorizontal, Plus, Trash2, Wand2, X } from "lucide-react";
+import { ArrowUp, ChevronDown, FileText, Loader2, MessageSquarePlus, Moon, MoreHorizontal, Paperclip, Plus, Table2, Trash2, Wand2, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { api } from "../api";
+import { api, fileUrl } from "../api";
 import { Avatar } from "../components/Avatar";
 import { BrowserViewer } from "../components/BrowserViewer";
 import { ApprovalCard, ArtifactCard, BrowserCard, Notice, QuestionCard, ToolChip } from "../components/Cards";
@@ -8,7 +8,7 @@ import { Markdown } from "../components/Markdown";
 import { Sheet } from "../components/Sheet";
 import { localLabel, useT } from "../i18n";
 import { useStore } from "../store";
-import type { SkillInfo, ThreadMeta, TimelineEvent, UserEvent } from "../types";
+import type { AttachmentInfo, SkillInfo, ThreadMeta, TimelineEvent, UserEvent } from "../types";
 import { cx, timeShort } from "../util";
 import { MuseSheet } from "./MuseSheet";
 
@@ -156,7 +156,7 @@ export function ChatScreen() {
         name={name}
         busy={!!thread?.busy && pendingApprovals === 0}
         waiting={events.some((e) => e.type === "question" && e.status === "pending")}
-        onSend={(text) => send(activeThread, text).catch((e: Error) => toast(e.message || t("Could not send")))}
+        onSend={(text, files) => send(activeThread, text, files).catch((e: Error) => toast(e.message || t("Could not send")))}
       />
 
       <MuseSheet open={activityOpen} onClose={() => setActivityOpen(false)} />
@@ -231,7 +231,7 @@ function EventView({
 }) {
   switch (event.type) {
     case "user":
-      return <UserBubble event={event} showTime={!prev || prev.type !== "user"} />;
+      return <UserBubble event={event} showTime={!prev || prev.type !== "user"} onOpenFile={onOpenFile} />;
     case "assistant":
       if (event.quiet) return <QuietLine text={event.text} about={event.about} ts={event.ts} />;
       return (
@@ -261,16 +261,72 @@ function EventView({
   }
 }
 
-function UserBubble({ event, showTime }: { event: UserEvent; showTime: boolean }) {
+function UserBubble({ event, showTime, onOpenFile }: { event: UserEvent; showTime: boolean; onOpenFile: (path: string) => void }) {
+  const files = event.files ?? [];
+  const pictures = files.filter((f) => f.kind === "image");
+  const others = files.filter((f) => f.kind !== "image");
   return (
     <div className="rise flex flex-col items-end pl-12">
-      <div className="bubble-user max-w-full rounded-3xl rounded-br-lg bg-accent text-accent-fg px-4 py-2.5 shadow-sm">
-        <div className="md text-[15px] leading-[1.45] whitespace-pre-wrap break-words">{event.text}</div>
-      </div>
+      {pictures.length > 0 && (
+        <div className="mb-1 flex max-w-full flex-wrap justify-end gap-1.5">
+          {pictures.map((f) => (
+            <button
+              key={f.path}
+              type="button"
+              onClick={() => onOpenFile(f.path)}
+              aria-label={f.name}
+              className={cx("overflow-hidden rounded-2xl border border-border/60 bg-surface-2 shadow-sm active:scale-[0.98] transition", pictures.length === 1 ? "max-h-64 max-w-[240px]" : "h-28 w-28")}
+            >
+              <img src={fileUrl(f.path)} alt={f.name} loading="lazy" className={cx("object-cover", pictures.length === 1 ? "max-h-64 w-auto max-w-full" : "h-full w-full")} />
+            </button>
+          ))}
+        </div>
+      )}
+      {others.map((f) => (
+        <button
+          key={f.path}
+          type="button"
+          onClick={() => onOpenFile(f.path)}
+          className="mb-1 flex max-w-full items-center gap-2.5 rounded-2xl border border-border bg-surface px-3 py-2 text-left shadow-sm hover:bg-surface-2 active:scale-[0.98] transition"
+        >
+          <span className="rounded-xl bg-accent/12 p-2 text-accent">{f.kind === "data" ? <Table2 size={17} /> : <FileText size={17} />}</span>
+          <span className="min-w-0">
+            <span className="block truncate text-[14px] font-medium">{f.name}</span>
+            <span className="block text-[11.5px] text-muted">{fileSize(f.size)}</span>
+          </span>
+        </button>
+      ))}
+      {event.text && (
+        <div className="bubble-user max-w-full rounded-3xl rounded-br-lg bg-accent text-accent-fg px-4 py-2.5 shadow-sm">
+          <div className="md text-[15px] leading-[1.45] whitespace-pre-wrap break-words">{event.text}</div>
+        </div>
+      )}
       {showTime && <div className="mt-1 mr-1 text-[11px] text-muted">{timeShort(event.ts)}</div>}
     </div>
   );
 }
+
+function fileSize(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** A file picked in the composer: uploading, uploaded, or failed. */
+interface Pending {
+  key: string;
+  file: File;
+  preview: string | null;
+  info: AttachmentInfo | null;
+  error: string | null;
+}
+
+function chipKind(name: string): "data" | "other" {
+  const ext = name.toLowerCase().split(".").pop() ?? "";
+  return ["csv", "tsv", "json", "xlsx", "xls"].includes(ext) ? "data" : "other";
+}
+
+const ACCEPT = "image/*,.pdf,.txt,.md,.csv,.tsv,.json,.log,.html,.xml,.yaml,.yml,.toml,.ics,.vcf,.xlsx,.xls,.docx";
 
 function AssistantBubble({
   text,
@@ -385,13 +441,42 @@ function Composer({
   name: string;
   busy: boolean;
   waiting: boolean;
-  onSend: (text: string) => void;
+  onSend: (text: string, files: string[]) => void;
 }) {
-  const { state, draft } = useStore();
+  const { state, draft, toast } = useStore();
   const [text, setText] = useState("");
   const [skills, setSkills] = useState<SkillInfo[]>([]);
+  const [pending, setPending] = useState<Pending[]>([]);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const t = useT();
+
+  // previews are object URLs; let them go when the chip goes
+  useEffect(() => () => pending.forEach((p) => p.preview && URL.revokeObjectURL(p.preview)), [pending]);
+
+  const addFiles = (list: FileList | File[]) => {
+    const files = Array.from(list).slice(0, Math.max(0, 10 - pending.length));
+    if (files.length === 0) return;
+    const items: Pending[] = files.map((file) => ({
+      key: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2, 7)}`,
+      file,
+      preview: file.type.startsWith("image/") ? URL.createObjectURL(file) : null,
+      info: null,
+      error: null,
+    }));
+    setPending((cur) => [...cur, ...items]);
+    for (const item of items) {
+      api.upload(item.file)
+        .then((info) => setPending((cur) => cur.map((p) => (p.key === item.key ? { ...p, info } : p))))
+        .catch((e: Error) => {
+          setPending((cur) => cur.map((p) => (p.key === item.key ? { ...p, error: e.message || t("Upload failed") } : p)));
+          toast(e.message || t("Upload failed"));
+        });
+    }
+  };
+  const remove = (key: string) => setPending((cur) => cur.filter((p) => p.key !== key));
+  const uploading = pending.some((p) => !p.info && !p.error);
+  const attached = pending.filter((p) => p.info).map((p) => p.info!.path);
 
   useEffect(() => {
     const el = ref.current;
@@ -431,9 +516,10 @@ function Composer({
   const submit = (e?: FormEvent) => {
     e?.preventDefault();
     const trimmed = text.trim();
-    if (!trimmed) return;
-    onSend(trimmed);
+    if ((!trimmed && attached.length === 0) || uploading) return;
+    onSend(trimmed, attached);
     setText("");
+    setPending([]);
     ref.current?.focus();
   };
 
@@ -457,11 +543,69 @@ function Composer({
           ))}
         </ul>
       )}
+      {pending.length > 0 && (
+        <div className="mb-1 flex gap-2.5 overflow-x-auto px-1 pt-2.5 pb-1 pr-3" role="list" aria-label={t("Attachments")}>
+          {pending.map((p) => (
+            <div key={p.key} role="listitem" className={cx("relative shrink-0 rounded-2xl border bg-surface-2", p.error ? "border-danger/60" : "border-border/70")}>
+              {p.preview ? (
+                <img src={p.preview} alt={p.file.name} className="h-16 w-16 rounded-2xl object-cover" />
+              ) : (
+                <div className="flex h-16 w-40 items-center gap-2 px-2.5">
+                  <span className="rounded-xl bg-accent/12 p-1.5 text-accent">{chipKind(p.file.name) === "data" ? <Table2 size={16} /> : <FileText size={16} />}</span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-[12.5px] font-medium">{p.file.name}</span>
+                    <span className="block text-[11px] text-muted">{p.error ? t("Upload failed") : fileSize(p.file.size)}</span>
+                  </span>
+                </div>
+              )}
+              {!p.info && !p.error && (
+                <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-bg/50">
+                  <Loader2 size={18} className="animate-spin text-accent" />
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => remove(p.key)}
+                aria-label={t("Remove")}
+                className="absolute -right-1.5 -top-1.5 flex h-6 w-6 items-center justify-center rounded-full border border-border bg-surface text-muted shadow-sm"
+              >
+                <X size={13} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="flex items-end gap-2">
+        <input
+          ref={fileRef}
+          type="file"
+          multiple
+          accept={ACCEPT}
+          className="hidden"
+          onChange={(e) => {
+            if (e.target.files) addFiles(e.target.files);
+            e.target.value = "";
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          aria-label={t("Attach a file")}
+          className="mb-0.5 h-10 w-10 shrink-0 rounded-full text-muted flex items-center justify-center hover:bg-surface-2 active:scale-95 transition"
+        >
+          <Paperclip size={20} />
+        </button>
         <textarea
           ref={ref}
           value={text}
           onChange={(e) => setText(e.target.value)}
+          onPaste={(e) => {
+            const files = Array.from(e.clipboardData?.files ?? []);
+            if (files.length > 0) {
+              e.preventDefault();
+              addFiles(files);
+            }
+          }}
           onKeyDown={(e) => {
             if (e.key === "Tab" && matches.length > 0 && matches[0]) {
               e.preventDefault();
@@ -474,12 +618,12 @@ function Composer({
             }
           }}
           rows={1}
-          placeholder={waiting ? t("Answer {name}…", { name }) : t("Message {name}", { name })}
+          placeholder={waiting ? t("Answer {name}…", { name }) : pending.length > 0 ? t("Say what to do with it…") : t("Message {name}", { name })}
           className="flex-1 resize-none rounded-3xl bg-surface-2 px-4 py-2.5 text-[15px] leading-[1.4] outline-none placeholder:text-muted focus:ring-2 focus:ring-accent/40"
         />
         <button
           type="submit"
-          disabled={!text.trim()}
+          disabled={(!text.trim() && attached.length === 0) || uploading}
           aria-label={t("Send")}
           className="mb-0.5 h-10 w-10 shrink-0 rounded-full bg-accent text-accent-fg flex items-center justify-center disabled:opacity-40 active:scale-95 transition"
         >

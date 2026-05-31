@@ -94,6 +94,9 @@ class Message(BaseModel):
     tool_calls: list[ToolCall] | None = None
     tool_call_id: str | None = None
     reasoning: str | None = None
+    # Pictures attached to a user message: absolute paths of image files in the workspace.
+    # Providers send them as image content when the model can take images (llm.vision).
+    images: list[str] | None = None
     # Free-form metadata that never reaches the model (timestamps, step ids...)
     meta: dict[str, Any] = Field(default_factory=dict)
 
@@ -103,8 +106,8 @@ class Message(BaseModel):
         return cls(role=Role.SYSTEM, content=content)
 
     @classmethod
-    def user(cls, content: str) -> Message:
-        return cls(role=Role.USER, content=content)
+    def user(cls, content: str, images: list[str] | None = None) -> Message:
+        return cls(role=Role.USER, content=content, images=images or None)
 
     @classmethod
     def assistant(
@@ -187,8 +190,64 @@ class ToolResult(BaseModel):
         return cls(error=error)
 
 
+class Attachment(BaseModel):
+    """A file the user attached to a message — in the workspace, under ``attachments/``."""
+
+    path: str  # workspace-relative, forward slashes
+    name: str
+    size: int = 0
+    kind: str = "other"  # image | pdf | text | data | other
+    mime: str = ""
+
+    @staticmethod
+    def kind_of(name: str) -> str:
+        ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+        if ext in ("png", "jpg", "jpeg", "gif", "webp"):
+            return "image"
+        if ext == "pdf":
+            return "pdf"
+        if ext in ("csv", "tsv", "json", "xlsx", "xls"):
+            return "data"
+        if ext in (
+            "txt",
+            "md",
+            "markdown",
+            "log",
+            "rtf",
+            "html",
+            "htm",
+            "xml",
+            "yaml",
+            "yml",
+            "toml",
+            "py",
+            "js",
+            "ts",
+            "sh",
+            "ics",
+            "vcf",
+        ):
+            return "text"
+        return "other"
+
+    def describe(self) -> str:
+        size = self.size
+        human = (
+            f"{size} B"
+            if size < 1024
+            else f"{size / 1024:.0f} KB"
+            if size < 1024 * 1024
+            else f"{size / (1024 * 1024):.1f} MB"
+        )
+        what = {"image": "image", "pdf": "PDF", "data": "data file", "text": "text file"}.get(
+            self.kind, self.mime or "file"
+        )
+        return f"{what}, {human}"
+
+
 __all__ = [
     "AgentState",
+    "Attachment",
     "Function",
     "LLMResponse",
     "Message",

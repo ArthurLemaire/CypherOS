@@ -16,7 +16,7 @@
     GET  /api/feed                        what happened without you asking
     GET  /api/upcoming                    next background pass and the goals in line
     GET  /api/calendar (?days&refresh=1)  today's and tomorrow's events from the calendar feeds
-    GET  /api/files  GET /api/files/{path}
+    GET  /api/files  GET /api/files/{path}  POST /api/files/upload?name=  (body: the bytes)
     GET|PUT /api/settings
     GET  /api/connections                 model, email, browser, MCP servers, vault names
     PUT  /api/connections/llm|embeddings|email|browser|calendar   POST /api/connections/llm|embeddings|email|calendar/test
@@ -60,7 +60,9 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 # ----------------------------------------------------------------------------- request models
 class SendBody(BaseModel):
-    text: str = Field(min_length=1, max_length=20_000)
+    text: str = Field("", max_length=20_000)
+    # workspace paths from POST /api/files/upload; a message may be attachments alone
+    files: list[str] = Field(default_factory=list, max_length=10)
 
 
 class ThreadBody(BaseModel):
@@ -343,8 +345,8 @@ def create_app(settings: Settings, service: MuseService | None = None) -> FastAP
     async def send_message(thread_id: str, body: SendBody) -> dict[str, Any]:
         thread = _thread_or_404(thread_id)
         try:
-            event = svc.send(thread.id, body.text)
-        except ValueError as exc:
+            event = svc.send(thread.id, body.text, files=body.files)
+        except (ValueError, PermissionError) as exc:
             raise HTTPException(400, str(exc)) from exc
         return {"event": event, "thread": thread.meta()}
 
@@ -925,6 +927,35 @@ def create_app(settings: Settings, service: MuseService | None = None) -> FastAP
     async def list_files(limit: int = Query(200, ge=1, le=2000)) -> list[dict[str, Any]]:
         return svc.list_files(limit)
 
+    @app.post("/api/files/upload", dependencies=dep)
+    async def upload_file(
+        request: Request, name: str = Query(..., min_length=1, max_length=255)
+    ) -> dict[str, Any]:
+        """A file to attach to a message: the bytes as the request body (no multipart),
+        the file name in ``name``. Lands in ``attachments/<date>/`` in the workspace;
+        the reply is what to put in ``files`` when sending."""
+        limit = svc.settings.server.max_upload_mb * 1024 * 1024
+        declared = request.headers.get("content-length")
+        if declared and declared.isdigit() and int(declared) > limit:
+            raise HTTPException(
+                413, f"the file is larger than {svc.settings.server.max_upload_mb} MB"
+            )
+        chunks: list[bytes] = []
+        total = 0
+        async for chunk in request.stream():
+            total += len(chunk)
+            if total > limit:
+                raise HTTPException(
+                    413, f"the file is larger than {svc.settings.server.max_upload_mb} MB"
+                )
+            chunks.append(chunk)
+        if total == 0:
+            raise HTTPException(400, "empty file")
+        try:
+            return svc.save_upload(name, b"".join(chunks)).model_dump()
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
     @app.get("/api/files/{path:path}", dependencies=dep)
     async def get_file(path: str, download: bool = False) -> Response:
         try:
@@ -1028,7 +1059,12 @@ async def _handle_ws_message(svc: MuseService, ws: WebSocket, data: dict[str, An
     kind = data.get("kind") or data.get("type")
     try:
         if kind == "send":
-            svc.send(str(data.get("thread") or MAIN_THREAD), str(data.get("text", "")))
+            files = data.get("files")
+            svc.send(
+                str(data.get("thread") or MAIN_THREAD),
+                str(data.get("text", "")),
+                files=[str(f) for f in files][:10] if isinstance(files, list) else None,
+            )
         elif kind == "approval":
             ok = svc.decide(
                 str(data.get("id", "")),
@@ -1042,7 +1078,7 @@ async def _handle_ws_message(svc: MuseService, ws: WebSocket, data: dict[str, An
             await ws.send_json({"kind": "pong", "status": svc.ui.overall_status()})
         else:
             await ws.send_json({"kind": "error", "error": f"unknown message kind: {kind}"})
-    except ValueError as exc:
+    except (ValueError, PermissionError) as exc:
         await ws.send_json({"kind": "error", "error": str(exc)})
 
 

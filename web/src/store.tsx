@@ -333,7 +333,7 @@ function pickOverall(prev: Status, incoming: Status): Status {
 interface StoreValue {
   state: AppState;
   dispatch: (a: Action) => void;
-  send: (thread: string, text: string) => Promise<void>;
+  send: (thread: string, text: string, files?: string[]) => Promise<void>;
   decide: (id: string, approved: boolean, scope?: string) => Promise<void>;
   loadEvents: (thread: string, before?: string) => Promise<void>;
   refreshGoals: () => Promise<void>;
@@ -454,10 +454,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     () => ({
       state,
       dispatch,
-      send: async (thread, text) => {
-        if (!text.trim()) return;
-        if (!wsRef.current?.send({ kind: "send", thread, text })) {
-          await api.send(thread, text);
+      send: async (thread, text, files = []) => {
+        if (!text.trim() && files.length === 0) return;
+        // attachments go over REST so a failure (a path gone, a full disk) comes back as an error
+        if (files.length > 0 || !wsRef.current?.send({ kind: "send", thread, text })) {
+          await api.send(thread, text, files);
         }
       },
       decide: async (id, approved, scope = "once") => {

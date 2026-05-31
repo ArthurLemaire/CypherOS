@@ -42,6 +42,10 @@ class BaseLLM(ABC):
 
     name: str = "base"
     supports_native_tools: bool = True
+    # Whether the model takes images: None until a message with pictures has been sent,
+    # False once the endpoint refused image content (``llm.vision = "auto"`` then sends
+    # text only, with a note in place of each picture).
+    vision_available: bool | None = None
 
     @abstractmethod
     async def ask(

@@ -39,6 +39,8 @@ dependencies = [
   "qrcode>=7.4",
   "pywebpush>=2.0",
   "python-dateutil>=2.9",
+  "pillow>=10",
+  "pypdf>=4",
   # Windows has no system time-zone database; zoneinfo (the calendar, quiet hours) needs this one
   "tzdata>=2024.1; platform_system == 'Windows'",
 ]

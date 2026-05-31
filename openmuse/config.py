@@ -50,6 +50,12 @@ class LLMSettings(BaseModel):
     # "prompt": describe tools in the prompt and parse <tool_call> blocks — works with
     #           any chat model, including endpoints that silently ignore `tools`.
     tool_mode: Literal["auto", "native", "prompt"] = "auto"
+    # Pictures the user attaches in chat go to the model as images.
+    # "auto": send them; if the endpoint rejects image content (DeepSeek, most text-only
+    #         models) send the text only from then on and tell the user once.
+    # "on":   always send them (the call fails when the model cannot take images).
+    # "off":  never — the model gets the file names and can read text files with `files`.
+    vision: Literal["auto", "on", "off"] = "auto"
     # Send `reasoning_content` back with assistant messages (DeepSeek thinking-mode
     # tool calling wants this on some endpoints).
     pass_reasoning: bool = False
@@ -259,6 +265,8 @@ class ServerSettings(BaseModel):
     approval_timeout: float = 3600.0
     # Extra origins allowed to call the API (only needed for the Vite dev server).
     cors_origins: list[str] = Field(default_factory=list)
+    # Largest file the app may attach to a message (photos from a phone run 3–12 MB).
+    max_upload_mb: int = 25
 
 
 class Settings(BaseModel):
@@ -375,6 +383,7 @@ def _apply_env_overrides(raw: dict[str, Any]) -> None:
         "OPENMUSE_LLM_BASE_URL": "base_url",
         "OPENMUSE_LLM_API_KEY": "api_key",
         "OPENMUSE_LLM_TOOL_MODE": "tool_mode",
+        "OPENMUSE_LLM_VISION": "vision",
     }
     for env, key in mapping.items():
         if (val := os.environ.get(env)) not in (None, ""):
@@ -438,7 +447,7 @@ def save_app_settings(data_dir: Path, data: dict[str, Any]) -> None:
 def apply_app_settings(settings: Settings, data: dict[str, Any]) -> None:
     """Layer app-managed settings over ``settings`` in place."""
     if llm := data.get("llm"):
-        for key in ("provider", "model", "base_url", "api_key", "tool_mode"):
+        for key in ("provider", "model", "base_url", "api_key", "tool_mode", "vision"):
             if key in llm and llm[key] not in (None, ""):
                 setattr(settings.llm, key, llm[key])
         if settings.llm.base_url:

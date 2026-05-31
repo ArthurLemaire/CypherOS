@@ -223,6 +223,14 @@ class PromptToolAdapter(BaseLLM):
         """The wrapped provider's settings (model, base_url, …)."""
         return getattr(self.inner, "settings", None)
 
+    @property
+    def vision_available(self) -> bool | None:  # type: ignore[override]
+        return self.inner.vision_available
+
+    @vision_available.setter
+    def vision_available(self, value: bool | None) -> None:
+        self.inner.vision_available = value
+
     async def ask(
         self,
         messages: list[Message],
