@@ -52,7 +52,7 @@ Meta's Muse is an agent that does things rather than answering questions: it res
 - Approval cards. Anything hard to undo (a shell command, an email, a network call after reading private data) stops and waits for a tap. An approval is scoped — once, this task, until restart, 24 hours, always — and bound to what it was for: `git` commands, email to one address, one website. Every permission you granted is listed under the avatar and can be revoked on its own.
 - Goals that outlive the chat. The agent breaks a goal into steps, updates them as it works, and can keep advancing goals on a timer while the app is closed, posting updates to the main chat.
 - Ideas: suggested next actions based on your goals, memory and recent conversations.
-- Memory you can read and edit. Durable facts about you are saved by the agent and shown in a tab; anything can be forgotten with one tap. When a fact changes, the line is updated rather than doubled, and a periodic tidy-up merges what says the same thing and drops what was never a fact — every change listed with an undo.
+- Memory you can read and edit. Durable facts about you are saved by the agent and shown in a tab; anything can be forgotten with one tap. When a fact changes, the line is updated rather than doubled, and a periodic tidy-up merges what says the same thing and drops what was never a fact — every change listed with an undo. Recall is by keyword and, with any OpenAI-compatible embedding endpoint (Ollama's `qwen3-embedding` next to DeepSeek, say), by meaning — "写邮件给房东" brings up "the landlord is Bob Li".
 - A Sentinel, a credential vault, taint tracking and an append-only audit log. See [Sentinel](#sentinel).
 - Skills: how a job is done, written down once. Five ship with it (a weekly review, a trip plan, an inbox triage, a comparison, a meeting prep); the agent picks one when a request fits, or you type `/trip-plan Kyoto in November`. After a job went well, "save this as a skill" writes the steps down — with your approval. The [Agent Skills](https://agentskills.io) `SKILL.md` format, so skills written for other agents work here.
 - Tools: files, shell, Python, web search and fetch, email (with one-time codes scrubbed before the model sees them), your calendar (read from its private `.ics` link; events it proposes arrive as a card you add with a tap), your contacts (a `.vcf` export or the people you mention in chat — it looks up who is who instead of guessing an address), an optional Playwright browser, and any [MCP](https://modelcontextprotocol.io) server.
@@ -248,7 +248,7 @@ More in [docs/architecture.md](docs/architecture.md).
 - [x] Calendar connector: any private `.ics` link or file; agenda, free time, drafted events as *Add to calendar* cards
 - [x] Contacts connector: `.vcf` exports and links, the agent's own book, recipients named on approval cards
 - [x] Memory that stays tidy: rare-word recall, updates instead of duplicates, a periodic tidy-up with undo
-- [ ] Memory recall with embeddings
+- [x] Recall by meaning: memories embedded once through any OpenAI-compatible `/embeddings`, fused with keyword recall
 - [x] Per-call sandboxes for `shell` and `python_execute` (bubblewrap on Linux)
 - [x] Skills: reusable task recipes in the Agent Skills `SKILL.md` format — built in, yours, or saved by the agent
 - [x] The app in 简体中文 (Settings → App language); more languages welcome — one dictionary file each

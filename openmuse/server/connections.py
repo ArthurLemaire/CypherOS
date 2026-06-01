@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     from openmuse.server.service import MuseService
 
 LLM_KEY = "LLM_API_KEY"
+EMBEDDINGS_KEY = "EMBEDDINGS_API_KEY"
 EMAIL_ADDRESS = "EMAIL_ADDRESS"
 EMAIL_PASSWORD = "EMAIL_PASSWORD"
 
@@ -151,6 +152,7 @@ class Connections:
                 "from_app": bool(self.data.get("llm")),
             },
             "providers": PROVIDERS,
+            "embeddings": self._embeddings_view(),
             "email": {
                 "enabled": email.enabled,
                 "configured": configured,
@@ -264,6 +266,98 @@ class Connections:
         logger.info(
             "model switched to {} @ {}", self.settings.llm.model, self.settings.llm.base_url
         )
+        # embeddings that ride on the model's endpoint follow it
+        if not self.settings.memory.embedding_base_url:
+            self.svc.app.attach_embedder()
+
+    # ------------------------------------------------------------------ embeddings
+    def _embeddings_view(self) -> dict[str, Any]:
+        from openmuse.memory.embeddings import default_model
+
+        m = self.settings.memory
+        app_ = self.svc.app
+        key = m.embedding_api_key
+        if not key:
+            key_source = "model"  # the model's key, on the model's endpoint
+        elif self.vault.has_placeholders(key):
+            key_source = (
+                "vault"
+                if not self.vault.has_placeholders(self.vault.resolve(key, strict=False))
+                else "missing"
+            )
+        else:
+            key_source = "config"
+        base_url = m.embedding_base_url or self.settings.llm.base_url or ""
+        status = app_.memory.index.status() if app_.memory and app_.memory.index else None
+        return {
+            "mode": m.embeddings,
+            "model": m.embedding_model,
+            "default_model": default_model(base_url),
+            "base_url": m.embedding_base_url,
+            "effective_base_url": base_url,
+            "key_source": key_source,
+            "from_app": bool(self.data.get("embeddings")),
+            "memory_enabled": app_.memory is not None,
+            "available": status["available"] if status else None,
+            "reason": status["reason"] if status else "",
+            "dims": status["dims"] if status else 0,
+            "indexed": status["indexed"] if status else 0,
+            "total": status["total"] if status else (app_.memory.count() if app_.memory else 0),
+            "status": status["status"] if status else "off",
+        }
+
+    def set_embeddings(self, body: dict[str, Any]) -> dict[str, Any]:
+        """Recall by meaning: the mode, and where the vectors come from — the model's own
+        endpoint (the default) or another one, Ollama next to DeepSeek for one."""
+        emb = dict(self.data.get("embeddings") or {})
+        if body.get("mode") is not None:
+            if body["mode"] not in ("auto", "on", "off"):
+                raise ValueError("mode must be 'auto', 'on' or 'off'")
+            emb["mode"] = body["mode"]
+        for key in ("model", "base_url"):
+            if body.get(key) is not None:
+                emb[key] = str(body[key]).strip()
+        if emb.get("base_url") and not re.match(r"^https?://", emb["base_url"]):
+            raise ValueError("base_url must start with http:// or https://")
+        api_key = body.get("api_key")
+        if api_key:
+            self.vault.set(EMBEDDINGS_KEY, str(api_key).strip())
+            emb["api_key"] = "{{vault:" + EMBEDDINGS_KEY + "}}"
+        elif api_key == "":
+            self.vault.delete(EMBEDDINGS_KEY)
+            emb["api_key"] = ""
+        self.data["embeddings"] = emb
+        self._save()
+        apply_app_settings(self.settings, {"embeddings": emb})
+        self.svc.app.attach_embedder()
+        self._publish()
+        return self._embeddings_view()
+
+    async def test_embeddings(self) -> dict[str, Any]:
+        """One embeddings call; on success every memory is indexed right away."""
+        app_ = self.svc.app
+        emb = app_.embedder
+        if app_.memory is None:
+            return {"ok": False, "error": "memory is off"}
+        if emb is None or not emb.enabled:
+            return {"ok": False, "error": "recall by meaning is off"}
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        emb.reset()  # a test always tries
+        vectors = await emb.embed(["a short probe"])
+        if vectors is None:
+            return {"ok": False, "error": emb.reason[:400]}
+        indexed = 0
+        if app_.memory.index is not None and await app_.memory.index.ensure(app_.memory.all()):
+            indexed = app_.memory.index.status()["indexed"]
+        self._publish()
+        return {
+            "ok": True,
+            "model": emb.model,
+            "dims": emb.dims,
+            "indexed": indexed,
+            "ms": int((loop.time() - started) * 1000),
+        }
 
     async def test_llm(self) -> dict[str, Any]:
         loop = asyncio.get_running_loop()

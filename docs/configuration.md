@@ -134,9 +134,17 @@ On Linux with [bubblewrap](https://github.com/containers/bubblewrap) installed (
 
 ```toml
 [memory]
-enabled    = true
-max_inject = 20        # memories injected into the system prompt per turn (keyword-ranked)
+enabled            = true
+max_inject         = 20        # memories injected into the system prompt per turn
+embeddings         = "auto"    # recall by meaning: auto | on | off
+embedding_model    = ""        # empty → the endpoint's default (see below)
+embedding_base_url = ""        # empty → the model's endpoint and key (llm.base_url / llm.api_key)
+embedding_api_key  = ""        # a key of its own, "{{vault:EMBEDDINGS_API_KEY}}" from the app
 ```
+
+Recall is by keyword — rare words weigh more, Chinese is matched by character pairs — and, with an embedding endpoint, by meaning too: every memory is embedded once (the vector is kept in `memory.db` next to a hash of the text, so a changed line is embedded again and a switch back to a model is free), the message is embedded per turn, and the memories closest in meaning are fused with the keyword ranking, so "写邮件给房东" recalls "the landlord is Bob Li" though they share no word. Any OpenAI-compatible `/embeddings` works: OpenAI (`text-embedding-3-small` is the default there and on most gateways), [Ollama](https://ollama.com) with an embedding model pulled (`ollama pull qwen3-embedding:0.6b` — the default on `:11434`, small, reads Chinese and English), OpenRouter (`openai/text-embedding-3-small`). DeepSeek has none, so with it point `embedding_base_url` somewhere that has — Ollama next to DeepSeek is the usual pairing — or leave recall by keyword.
+
+`auto` tries the endpoint once per start and falls back to keyword recall when the call fails, saying why in the log — one failed call, not one per turn; an endpoint that was unreachable is tried again after five minutes. `on` insists: recall still falls back, but the failure is a warning and `openmuse doctor` fails on it. `off` never embeds. `embedding_api_key` empty means the model's own key on its own endpoint; set from the app it is a `{{vault:EMBEDDINGS_API_KEY}}` reference. The gateway headers in `llm.extra_headers` go to the model's endpoint only, not to another one named here. *Connections → Recall by meaning* in the app sets all of this and tests it; `openmuse memory recall "…"` shows what would be recalled, with each memory's closeness.
 
 ## `[skills]`
 

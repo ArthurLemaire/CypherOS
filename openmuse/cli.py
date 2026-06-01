@@ -914,6 +914,54 @@ def memory_add(content: str, config: ConfigOpt = None, category: str = "profile"
     console.print(item.render())
 
 
+@memory_app.command("recall")
+def memory_recall(query: str, config: ConfigOpt = None, limit: int = 10) -> None:
+    """What the agent would recall for a message: keyword hits and, when an embedding
+    endpoint is set up, hits by meaning, fused — with each memory's closeness shown."""
+    from openmuse.app import OpenMuseApp
+    from openmuse.console import ConsoleUI
+
+    s = _settings(config)
+    app_ = OpenMuseApp(s, ConsoleUI(console))
+
+    async def go() -> None:
+        try:
+            store = app_.memory
+            if store is None:
+                console.print("[dim]memory is off[/dim]")
+                return
+            hits = await store.search_async(query, limit=limit)
+            closeness: dict[str, float] = {}
+            if store.index is not None:
+                closeness = {
+                    m.id: score for score, m in await store.index.closest(query, limit=1000)
+                }
+                console.print(
+                    f"[dim]by meaning: {app_.embedder.status if app_.embedder else 'off'}[/dim]"
+                )
+            else:
+                console.print("[dim]by keyword only (memory.embeddings = off)[/dim]")
+            if not hits:
+                console.print("[dim]nothing recalled[/dim]")
+                return
+            table = Table(title=f"Recalled for {query!r}")
+            table.add_column("id", style="cyan")
+            table.add_column("category")
+            table.add_column("content")
+            if closeness:
+                table.add_column("closeness", justify="right", style="dim")
+            for m in hits:
+                row = [m.id, m.category, m.content]
+                if closeness:
+                    row.append(f"{closeness.get(m.id, 0.0):.2f}")
+                table.add_row(*row)
+            console.print(table)
+        finally:
+            await app_.close()
+
+    asyncio.run(go())
+
+
 @memory_app.command("forget")
 def memory_forget(target: str, config: ConfigOpt = None) -> None:
     """Forget by id (m_xxx) or by matching text."""
@@ -1378,6 +1426,25 @@ async def _doctor(settings: Settings, check_model: bool) -> None:
         None,
         f"sentinel: {settings.sentinel.mode} mode · taint tracking {'on' if settings.sentinel.taint_tracking else 'off'}",
     )
+    if app_ is not None and app_.memory is not None:
+        emb = app_.embedder
+        if emb is None or not emb.enabled:
+            line(None, "recall by meaning: off (memory.embeddings = off) · keyword recall only")
+        else:
+            emb.reset()
+            if emb.usable:
+                await emb.embed(["probe"])
+            st = app_.memory.index.status() if app_.memory.index else {}
+            line(
+                True if emb.available else (False if settings.memory.embeddings == "on" else None),
+                f"recall by meaning: {emb.status}"
+                + (
+                    f" · {st.get('indexed', 0)}/{st.get('total', 0)} memories indexed"
+                    if emb.available
+                    else ""
+                ),
+                "memory.embeddings = on, but the embeddings endpoint cannot be used",
+            )
     if app_ is not None:
         box = app_.sandbox
         line(

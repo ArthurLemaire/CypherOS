@@ -112,6 +112,14 @@ reason = "writing dotenv files"
 [memory]
 enabled = true
 max_inject = 20          # memories injected into the system prompt
+# Recall by meaning, on top of keyword recall: memories are embedded once through an
+# OpenAI-compatible /embeddings endpoint and a message finds the ones that mean the same
+# thing, in any language. auto: use the model's endpoint when it has embeddings, keyword
+# recall when it does not (DeepSeek has none). on: insist, doctor fails otherwise. off.
+embeddings = "auto"
+# embedding_base_url = "http://127.0.0.1:11434/v1"   # Ollama next to DeepSeek, say
+# embedding_model = "qwen3-embedding:0.6b"           # empty → the endpoint's default
+# embedding_api_key = "{{vault:EMBEDDINGS_API_KEY}}"  # empty → the model's key
 
 # ------------------------------------------------------------------------------
 # Connectors

@@ -747,6 +747,32 @@ const zhCN: Record<string, string> = {
   "A raw SKILL.md link, or a GitHub folder or file page.": "SKILL.md 的原始文件链接，或 GitHub 上的文件夹/文件页面。",
   "Pick a name first; a template appears here.": "先起个名字，这里会出现一份模板。",
   "{n} ways of doing a job, {yours} of them yours": "{n} 项技能，其中 {yours} 项是你的",
+
+  // recall by meaning (embeddings)
+  "Recall by meaning": "按含义召回",
+  "Keyword recall only": "仅按关键词召回",
+  "By keyword": "按关键词",
+  "Not reachable": "连不上",
+  "Not tried yet": "尚未尝试",
+  Mode: "模式",
+  Endpoint: "接口",
+  "Embedding model": "向量模型",
+  "Same as the model": "与模型相同",
+  "Another endpoint": "另一个接口",
+  "{model} at {host}": "{model}（{host}）",
+  "{model} · {n} of {total} memories indexed": "{model} · 已索引 {n}/{total} 条记忆",
+  "{model} · {dims} dims · {n} memories indexed · {ms} ms": "{model} · {dims} 维 · 已索引 {n} 条记忆 · {ms} 毫秒",
+  "Memories are embedded once and a message finds the ones that mean the same thing, in any language — “写邮件给房东” finds “the landlord is Bob Li”. Keyword recall stays; the two are fused.":
+    "每条记忆只做一次向量化，一句话就能找到含义相同的记忆，不分语言——“写邮件给房东”能找到“the landlord is Bob Li”。关键词召回仍然保留，两者合并排序。",
+  "Auto uses the model's endpoint when it has embeddings and falls back to keywords when it does not. On insists and warns. Off: keywords only.":
+    "自动：模型接口支持向量化就用，不支持就退回关键词。开：坚持使用，失败时给出警告。关：只用关键词。",
+  "Any OpenAI-compatible /embeddings: Ollama with an embedding model pulled, OpenAI, a gateway.":
+    "任何 OpenAI 兼容的 /embeddings 接口：拉取了向量模型的 Ollama、OpenAI、网关。",
+  "The model's endpoint and key. DeepSeek has no embeddings — pick another endpoint.":
+    "使用模型自己的接口和密钥。DeepSeek 没有向量化接口——请选另一个接口。",
+  "Stored encrypted in the vault as EMBEDDINGS_API_KEY. Ollama needs none.": "加密存在保险库里，名为 EMBEDDINGS_API_KEY。Ollama 不需要密钥。",
+  "Blank uses the endpoint's default: {model}. On Ollama: ollama pull qwen3-embedding:0.6b (reads Chinese and English).":
+    "留空则用该接口的默认模型：{model}。Ollama 上：ollama pull qwen3-embedding:0.6b（中英文都能读）。",
 };
 
 export default zhCN;

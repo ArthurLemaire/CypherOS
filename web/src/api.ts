@@ -173,6 +173,9 @@ export const api = {
   setLLM: (body: Record<string, unknown>) =>
     request<ConnectionsData["llm"]>("/api/connections/llm", { method: "PUT", body: JSON.stringify(body) }),
   testLLM: () => request<TestResult>("/api/connections/llm/test", { method: "POST" }),
+  setEmbeddings: (body: Record<string, unknown>) =>
+    request<ConnectionsData["embeddings"]>("/api/connections/embeddings", { method: "PUT", body: JSON.stringify(body) }),
+  testEmbeddings: () => request<TestResult>("/api/connections/embeddings/test", { method: "POST" }),
   setEmail: (body: Record<string, unknown>) =>
     request<ConnectionsData["email"]>("/api/connections/email", { method: "PUT", body: JSON.stringify(body) }),
   disconnectEmail: () => request<ConnectionsData["email"]>("/api/connections/email", { method: "DELETE" }),

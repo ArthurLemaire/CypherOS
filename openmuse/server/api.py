@@ -19,7 +19,7 @@
     GET  /api/files  GET /api/files/{path}
     GET|PUT /api/settings
     GET  /api/connections                 model, email, browser, MCP servers, vault names
-    PUT  /api/connections/llm|email|browser|calendar   POST /api/connections/llm|email|calendar/test
+    PUT  /api/connections/llm|embeddings|email|browser|calendar   POST /api/connections/llm|embeddings|email|calendar/test
     POST /api/connections/calendar/feeds {name,url}  DELETE /api/connections/calendar/feeds/{name}
     PUT  /api/connections/contacts {enabled}  POST /api/connections/contacts/sources {name,url}
     POST /api/connections/contacts/import?name= (body: the .vcf text)  DELETE /api/connections/contacts/sources/{name}
@@ -135,6 +135,13 @@ class LLMBody(BaseModel):
     tool_mode: str | None = None
     # a new key goes straight into the vault; "" removes the key; None keeps it
     api_key: str | None = None
+
+
+class EmbeddingsBody(BaseModel):
+    mode: str | None = None  # auto | on | off
+    model: str | None = None  # "" → the default for the endpoint
+    base_url: str | None = None  # "" → the model's endpoint
+    api_key: str | None = None  # into the vault; "" → the model's key; None keeps it
 
 
 class EmailBody(BaseModel):
@@ -667,6 +674,17 @@ def create_app(settings: Settings, service: MuseService | None = None) -> FastAP
     @app.post("/api/connections/llm/test", dependencies=dep)
     async def test_llm() -> dict[str, Any]:
         return await conn.test_llm()
+
+    @app.put("/api/connections/embeddings", dependencies=dep)
+    async def put_embeddings(body: EmbeddingsBody) -> dict[str, Any]:
+        try:
+            return conn.set_embeddings(body.model_dump(exclude_none=True))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/api/connections/embeddings/test", dependencies=dep)
+    async def test_embeddings() -> dict[str, Any]:
+        return await conn.test_embeddings()
 
     @app.put("/api/connections/email", dependencies=dep)
     async def put_email(body: EmailBody) -> dict[str, Any]:
