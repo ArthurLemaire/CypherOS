@@ -106,7 +106,7 @@ openmuse serve --host 0.0.0.0        # 打印链接和二维码
 
 <p align="center">
   <img src="docs/screenshots/chat-research.png" width="24%" alt="带工具小块和文件产物的调研">
-  <img src="docs/screenshots/chat-approval.png" width="24%" alt="审批卡片">
+  <img src="docs/screenshots/skills.png" width="24%" alt="技能：内置的和你自己的">
   <img src="docs/screenshots/memory.png" width="24%" alt="Memory 页签">
   <img src="docs/screenshots/calendar-event.png" width="24%" alt="Agent 起草的日程，点一下加入日历">
 </p>
