@@ -102,6 +102,21 @@ openmuse contacts remove-source Google
 
 The agent has the same view through its `contacts` tool; `doctor` reports how many people it knows and from where.
 
+## Skills
+
+```bash
+openmuse skills list                                    # built-in and yours, on or off
+openmuse skills show trip-plan                          # the SKILL.md, as the model reads it
+openmuse skills new standup-notes                       # a SKILL.md to fill in, printed with its path
+openmuse skills add ./my-skill/                         # a folder or a SKILL.md file …
+openmuse skills add https://github.com/anthropics/skills/tree/main/skills/pdf   # … or a raw link / GitHub folder page
+openmuse skills disable inbox-triage                    # out of the model's list; the folder stays
+openmuse skills enable inbox-triage
+openmuse skills remove standup-notes                    # one of yours (built-in ones are disabled, not removed)
+```
+
+Skills are folders with a `SKILL.md` in the [Agent Skills](https://agentskills.io) format; yours live in `<data_dir>/skills/` and one with the same name as a built-in replaces it. In chat, `/name` at the start of a message runs one; `doctor` lists what is loaded and any folder it could not read.
+
 ## Memory
 
 ```bash

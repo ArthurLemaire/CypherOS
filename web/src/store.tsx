@@ -23,8 +23,8 @@ import type {
 } from "./types";
 
 /** Tab bar: chat · feed · ideas · goals · library. Memory, connections and settings live behind the avatar. */
-export type Tab = "chat" | "feed" | "ideas" | "goals" | "library" | "memory" | "connections" | "you";
-const TAB_NAMES: Tab[] = ["chat", "feed", "ideas", "goals", "library", "memory", "connections", "you"];
+export type Tab = "chat" | "feed" | "ideas" | "goals" | "library" | "memory" | "connections" | "skills" | "you";
+const TAB_NAMES: Tab[] = ["chat", "feed", "ideas", "goals", "library", "memory", "connections", "skills", "you"];
 
 const FEED_SEEN_KEY = "openmuse_feed_seen";
 
@@ -62,8 +62,12 @@ export interface AppState {
   feedSeenAt: string;
   /** Path of the workspace file open in the viewer, if any. */
   viewer: string | null;
+  /** Text to put in the chat composer next time it shows (e.g. "/weekly-review "). */
+  draft: string | null;
   /** Bumps when a connection (model, email, browser, MCP) changes on the server. */
   connectionsVersion: number;
+  /** Bumps when a skill is added, changed, switched or removed on the server. */
+  skillsVersion: number;
   /** First-run setup dismissed for this session (the server remembers a finished one). */
   onboardingDismissed: boolean;
   tab: Tab;
@@ -83,6 +87,7 @@ type Action =
   | { type: "tab"; tab: Tab }
   | { type: "feedSeen"; at: string }
   | { type: "viewer"; path: string | null }
+  | { type: "draft"; text: string | null }
   | { type: "onboardingDismissed" }
   | { type: "toast"; toast: string | null };
 
@@ -109,7 +114,9 @@ const initial: AppState = {
   feedVersion: 0,
   feedSeenAt: localStorage.getItem(FEED_SEEN_KEY) ?? "",
   viewer: null,
+  draft: null,
   connectionsVersion: 0,
+  skillsVersion: 0,
   onboardingDismissed: false,
   tab: "chat",
   toast: null,
@@ -197,6 +204,8 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, feedSeenAt: action.at };
     case "viewer":
       return { ...state, viewer: action.path };
+    case "draft":
+      return { ...state, draft: action.text };
     case "onboardingDismissed":
       return { ...state, onboardingDismissed: true };
     case "toast":
@@ -300,6 +309,8 @@ function applyWs(state: AppState, msg: WsMessage): AppState {
       return { ...state, settings: msg.settings, profile: msg.settings.profile };
     case "connections":
       return { ...state, connectionsVersion: state.connectionsVersion + 1 };
+    case "skills":
+      return { ...state, skillsVersion: state.skillsVersion + 1 };
     case "error":
       return { ...state, toast: msg.error };
     case "pong":
@@ -331,6 +342,8 @@ interface StoreValue {
   openThread: (thread: string) => void;
   markFeedSeen: (at: string) => void;
   openFile: (path: string | null) => void;
+  /** Put text in the chat composer and switch to the chat (a skill's "Use", for one). */
+  draft: (text: string | null) => void;
   dismissOnboarding: () => void;
   toast: (text: string) => void;
 }
@@ -459,6 +472,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       openThread: (thread) => dispatch({ type: "activeThread", thread }),
       markFeedSeen: (at) => dispatch({ type: "feedSeen", at }),
       openFile: (path) => dispatch({ type: "viewer", path }),
+      draft: (text) => {
+        dispatch({ type: "draft", text });
+        if (text !== null) dispatch({ type: "tab", tab: "chat" });
+      },
       dismissOnboarding: () => dispatch({ type: "onboardingDismissed" }),
       toast: (text) => dispatch({ type: "toast", toast: text }),
     }),

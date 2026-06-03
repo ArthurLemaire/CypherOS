@@ -18,6 +18,7 @@ from openmuse.memory import MemoryStore
 from openmuse.reminders import ReminderStore
 from openmuse.sandbox import Sandbox
 from openmuse.sentinel import AuditLog, Sentinel
+from openmuse.skills import SkillLibrary
 from openmuse.tools import (
     AskUser,
     Browser,
@@ -34,6 +35,7 @@ from openmuse.tools import (
     Reminders,
     SendEmail,
     Shell,
+    Skills,
     Terminate,
     ToolCollection,
     Triggers,
@@ -72,6 +74,7 @@ class OpenMuseApp:
             own_file=settings.contacts_file,
             cache_file=settings.contacts_cache,
         )
+        self.skills = SkillLibrary(settings.skills, own_dir=settings.skills_dir)
         self.audit = AuditLog(settings.audit_file, session_id=self.session_id)
         self.sentinel = Sentinel(
             settings.sentinel,
@@ -94,6 +97,7 @@ class OpenMuseApp:
             goals=self.goals,
             calendar=self.calendar,
             contacts=self.contacts,
+            skills=self.skills,
             session_file=settings.data_dir / "sessions" / f"{self.session_id}.json",
         )
 
@@ -116,7 +120,12 @@ class OpenMuseApp:
         s = self.settings
         ws: Path = s.agent.workspace
         self.sandbox = Sandbox(
-            s.sandbox, workspace=ws, extra_roots=list(s.agent.extra_roots), data_dir=s.data_dir
+            s.sandbox,
+            workspace=ws,
+            extra_roots=list(s.agent.extra_roots),
+            data_dir=s.data_dir,
+            # a skill's scripts and references are readable from inside the box
+            ro_roots=[self.skills.own_dir, self.skills.builtin_dir] if s.skills.enabled else [],
         )
         tools = ToolCollection(
             Terminate(),
@@ -143,6 +152,8 @@ class OpenMuseApp:
             tools.add(Calendar(feeds=self.calendar, workspace=ws))
         if s.connectors.contacts.enabled:
             tools.add(Contacts(book=self.contacts))
+        if s.skills.enabled:
+            tools.add(Skills(library=self.skills))
         if s.browser.enabled:
             if playwright_available():
                 tools.add(

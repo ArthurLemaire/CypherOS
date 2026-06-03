@@ -407,6 +407,7 @@ class MuseService:
             goals=self.app.goals,
             calendar=self.app.calendar,
             contacts=self.app.contacts,
+            skills=self.app.skills,
             session_file=session_file,
         )
         if session_file.exists():
@@ -1075,6 +1076,51 @@ class MuseService:
         if cal.fetched_at != before:
             self.bus.publish({"kind": "calendar", "calendar": self.calendar_view()})
 
+    # ------------------------------------------------------------------ skills
+    def skills_view(self) -> dict[str, Any]:
+        lib = self.app.skills
+        return {**lib.status(), "skills": [s.to_dict() for s in lib.all()]}
+
+    def skill_view(self, name: str) -> dict[str, Any] | None:
+        skill = self.app.skills.get(name)
+        return skill.to_dict(body=True) if skill else None
+
+    def save_skill(self, content: str, name: str = "") -> dict[str, Any]:
+        """A skill from the text of a SKILL.md, written or pasted in the app."""
+        skill = self.app.skills.save_text(content, name=name)
+        self._publish_skills()
+        return skill.to_dict(body=True)
+
+    async def import_skill(self, url: str) -> dict[str, Any]:
+        """A skill from a link to a SKILL.md — a raw file link, or a GitHub folder or file
+        page, which is turned into one."""
+        from openmuse.skills import fetch_skill_text
+
+        skill = self.app.skills.save_text(await fetch_skill_text(url))
+        self._publish_skills()
+        return skill.to_dict(body=True)
+
+    def remove_skill(self, name: str) -> bool:
+        ok = self.app.skills.remove(name)
+        if ok:
+            self._publish_skills()
+        return ok
+
+    def set_skill_enabled(self, name: str, enabled: bool) -> dict[str, Any] | None:
+        skill = self.app.skills.set_enabled(name, enabled)
+        if skill is None:
+            return None
+        data = self.connections.data
+        data["skills"] = {"disabled": list(self.settings.skills.disabled)}
+        self.connections._save()
+        self._publish_skills()
+        return skill.to_dict()
+
+    def _publish_skills(self) -> None:
+        self.bus.publish({"kind": "skills", "skills": self.skills_view()})
+        # the avatar menu shows the counts from the settings view
+        self.bus.publish({"kind": "settings", "settings": self.settings_view()})
+
     def calendar_view(self, days: int = 2) -> dict[str, Any]:
         """Today's and tomorrow's events with the feeds' status, for the app."""
         cal = self.app.calendar
@@ -1398,6 +1444,7 @@ class MuseService:
 
     def settings_view(self) -> dict[str, Any]:
         s = self.settings
+        skills = self.app.skills.status()
         return {
             "version": __version__,
             "profile": self.profile.to_dict(),
@@ -1433,6 +1480,11 @@ class MuseService:
                 for t in self.app.tools
             ],
             "memory_enabled": s.memory.enabled,
+            "skills": {
+                "enabled": s.skills.enabled,
+                "count": skills["count"],
+                "yours": skills["yours"],
+            },
             "data_dir": str(self.data_dir),
             "started_at": self.started_at,
             "onboarded": bool(self.connections.data.get("onboarded")),

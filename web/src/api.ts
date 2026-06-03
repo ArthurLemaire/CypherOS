@@ -16,6 +16,9 @@ import type {
   TriggerKind,
   TriggersData,
   SettingsView,
+  SkillDetail,
+  SkillInfo,
+  SkillsData,
   StateSnapshot,
   TestResult,
   ThreadMeta,
@@ -197,6 +200,15 @@ export const api = {
   removeContactsSource: (name: string) =>
     request<ConnectionsData["contacts"]>(`/api/connections/contacts/sources/${encodeURIComponent(name)}`, { method: "DELETE" }),
   testContacts: () => request<TestResult>("/api/connections/contacts/test", { method: "POST" }),
+  // skills
+  skills: () => request<SkillsData>("/api/skills"),
+  skill: (name: string) => request<SkillDetail>(`/api/skills/${encodeURIComponent(name)}`),
+  saveSkill: (name: string, content: string) =>
+    request<SkillDetail>(`/api/skills/${encodeURIComponent(name)}`, { method: "PUT", body: JSON.stringify({ content }) }),
+  deleteSkill: (name: string) => request<SkillsData>(`/api/skills/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  setSkillEnabled: (name: string, enabled: boolean) =>
+    request<SkillInfo>(`/api/skills/${encodeURIComponent(name)}/enabled`, json({ enabled })),
+  importSkill: (url: string) => request<SkillDetail>("/api/skills/import", json({ url })),
   setBrowser: (enabled: boolean) =>
     request<ConnectionsData["browser"]>("/api/connections/browser", { method: "PUT", body: JSON.stringify({ enabled }) }),
   addMCP: (body: Record<string, unknown>) => request<ConnectionsData>("/api/connections/mcp", json(body)),

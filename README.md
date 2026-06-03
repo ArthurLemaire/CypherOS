@@ -54,6 +54,7 @@ Meta's Muse is an agent that does things rather than answering questions: it res
 - Ideas: suggested next actions based on your goals, memory and recent conversations.
 - Memory you can read and edit. Durable facts about you are saved by the agent and shown in a tab; anything can be forgotten with one tap. When a fact changes, the line is updated rather than doubled, and a periodic tidy-up merges what says the same thing and drops what was never a fact — every change listed with an undo.
 - A Sentinel, a credential vault, taint tracking and an append-only audit log. See [Sentinel](#sentinel).
+- Skills: how a job is done, written down once. Five ship with it (a weekly review, a trip plan, an inbox triage, a comparison, a meeting prep); the agent picks one when a request fits, or you type `/trip-plan Kyoto in November`. After a job went well, "save this as a skill" writes the steps down — with your approval. The [Agent Skills](https://agentskills.io) `SKILL.md` format, so skills written for other agents work here.
 - Tools: files, shell, Python, web search and fetch, email (with one-time codes scrubbed before the model sees them), your calendar (read from its private `.ics` link; events it proposes arrive as a card you add with a tap), your contacts (a `.vcf` export or the people you mention in chat — it looks up who is who instead of guessing an address), an optional Playwright browser, and any [MCP](https://modelcontextprotocol.io) server.
 - Runs on any OpenAI-compatible model. DeepSeek, OpenAI, OpenRouter, Ollama, vLLM, or a company gateway with custom headers.
 
@@ -117,9 +118,10 @@ Prefer a terminal? `openmuse chat` gives you the same agent with approvals in th
 | Ideas | Five suggested actions, regenerated on demand. Tap one to send it as a message. |
 | Goals | Goals by area of life (health, finance, career, learning…), each with a plan, step status and notes, a target date and an optional check-in cadence — a short message at that time, nothing more. When what the agent learns no longer fits the plan it proposes a change and you accept or keep yours. A proactivity dial (Off / Low / Default / High) and quiet hours decide how often it works on goals while you are away and when it speaks up — a pass with nothing to report stays a one-liner instead of a message. |
 | Reminders | "Remind me at six to call mum" — one message at that time, in the chat you said it in. "Every weekday at 07:30, a one-line weather check for my ride" — a routine: the agent does the work then and reports. Kept whatever the proactivity level or quiet hours; listed under *Upcoming* and in the terminal. |
+| Skills | Recipes the agent follows: the built-in five, the ones you write or paste a link to, and the ones it saves after a job went well (it asks first). Type `/` in the chat to pick one; switch any off; your copy of a built-in replaces it. |
 | Triggers | Work that starts from the world, not the clock. "When the landlord writes back, summarise it and draft a reply" (new mail), "half an hour before any review, brief me" (calendar), "when my deploy script calls you, check the site" (a webhook URL any program can `POST` to). The mail, event or request is the agent's context — treated as data, never as instructions — and the result lands in the Feed. |
 | Library | Everything the agent made — pages, documents, trackers, images — opened in the app. Pages render in a sandbox that cannot reach your token or the API. |
-| Avatar | The menu: the approvals queue across all chats, the activity log, permissions you granted (revoke any one), what is upcoming (background work, check-ins, reminders, triggers), memory, connections, and settings (name, avatar, personality, Sentinel mode, background work, language). |
+| Avatar | The menu: the approvals queue across all chats, the activity log, permissions you granted (revoke any one), what is upcoming (background work, check-ins, reminders, triggers), memory, skills, connections, and settings (name, avatar, personality, Sentinel mode, background work, language). |
 | Connections | Plug things in from the phone: the model (provider presets, key straight into the vault, one-tap test), your mailbox (read and send, with a sign-in check), your calendar (the private `.ics` link of Google / Outlook / iCloud / Fastmail, kept in the vault; today's events show in the Feed), your contacts (upload a `.vcf` export; the agent looks people up before writing to them and the approval card names the recipient), the browser, MCP servers, and the vault itself. Keys and passwords never reach the model. |
 
 The first time you open it, a short setup runs instead: your name, your Muse's name and style, the model and key, optionally your mail, calendar and contacts. Skip it if `config.toml` already says it all.
@@ -248,7 +250,7 @@ More in [docs/architecture.md](docs/architecture.md).
 - [x] Memory that stays tidy: rare-word recall, updates instead of duplicates, a periodic tidy-up with undo
 - [ ] Memory recall with embeddings
 - [x] Per-call sandboxes for `shell` and `python_execute` (bubblewrap on Linux)
-- [ ] Skills: reusable task recipes
+- [x] Skills: reusable task recipes in the Agent Skills `SKILL.md` format — built in, yours, or saved by the agent
 - [x] The app in 简体中文 (Settings → App language); more languages welcome — one dictionary file each
 
 ## Contributing

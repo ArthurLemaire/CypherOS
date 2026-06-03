@@ -18,6 +18,7 @@ import {
   ShieldCheck,
   ShieldOff,
   SlidersHorizontal,
+  Wand2,
   Webhook,
   X,
 } from "lucide-react";
@@ -62,7 +63,7 @@ export function MuseSheet({ open, onClose }: { open: boolean; onClose: () => voi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const go = (tab: "memory" | "connections" | "you") => {
+  const go = (tab: "memory" | "skills" | "connections" | "you") => {
     onClose();
     setTab(tab);
   };
@@ -101,6 +102,7 @@ export function MuseSheet({ open, onClose }: { open: boolean; onClose: () => voi
           pending={pending}
           onPick={(v) => setView(v)}
           onMemory={() => go("memory")}
+          onSkills={() => go("skills")}
           onConnections={() => go("connections")}
           onSettings={() => go("you")}
         />
@@ -119,6 +121,7 @@ function Menu({
   pending,
   onPick,
   onMemory,
+  onSkills,
   onConnections,
   onSettings,
 }: {
@@ -126,6 +129,7 @@ function Menu({
   pending: number;
   onPick: (v: View) => void;
   onMemory: () => void;
+  onSkills: () => void;
   onConnections: () => void;
   onSettings: () => void;
 }) {
@@ -153,6 +157,18 @@ function Menu({
       </ul>
       <ul className="mt-3 divide-y divide-border/70 rounded-3xl border border-border/70 overflow-hidden">
         <MenuRow icon={<Brain size={19} />} label={t("Memory")} hint={t("What {name} remembers about you", { name })} onClick={onMemory} />
+        {state.settings?.skills?.enabled !== false && (
+          <MenuRow
+            icon={<Wand2 size={19} />}
+            label={t("Skills")}
+            hint={
+              state.settings?.skills
+                ? t("{n} ways of doing a job, {yours} of them yours", { n: state.settings.skills.count, yours: state.settings.skills.yours })
+                : t("How {name} does a job, written down once", { name })
+            }
+            onClick={onSkills}
+          />
+        )}
         <MenuRow
           icon={<Plug size={19} />}
           label={t("Connections")}

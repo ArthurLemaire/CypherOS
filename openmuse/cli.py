@@ -37,6 +37,9 @@ calendar_app = typer.Typer(
 contacts_app = typer.Typer(
     help="The address book: look people up, connect .vcf exports.", no_args_is_help=True
 )
+skills_app = typer.Typer(
+    help="Skills: how a job is done, written down (SKILL.md folders).", no_args_is_help=True
+)
 vault_app = typer.Typer(help="Store credentials the model never sees.", no_args_is_help=True)
 config_app = typer.Typer(help="Configuration helpers.", no_args_is_help=True)
 app.add_typer(goals_app, name="goals")
@@ -45,6 +48,7 @@ app.add_typer(triggers_app, name="triggers")
 app.add_typer(memory_app, name="memory")
 app.add_typer(calendar_app, name="calendar")
 app.add_typer(contacts_app, name="contacts")
+app.add_typer(skills_app, name="skills")
 app.add_typer(vault_app, name="vault")
 app.add_typer(config_app, name="config")
 
@@ -1014,6 +1018,147 @@ def memory_clear(config: ConfigOpt = None, yes: bool = typer.Option(False, "--ye
     console.print(f"deleted {MemoryStore(s.memory_db).clear()} memories")
 
 
+# ============================================================================ skills
+def _skills(config: Path | None):  # noqa: ANN202
+    from openmuse.skills import SkillLibrary
+
+    s = _settings(config)
+    return s, SkillLibrary(s.skills, own_dir=s.skills_dir)
+
+
+@skills_app.command("list")
+def skills_list(config: ConfigOpt = None) -> None:
+    """Every skill: the built-in ones and yours (<data_dir>/skills)."""
+    s, lib = _skills(config)
+    table = Table(title=f"Skills · {len(lib)} on" + ("" if s.skills.enabled else " (skills off)"))
+    table.add_column("name", style="cyan")
+    table.add_column("from")
+    table.add_column("on")
+    table.add_column("description")
+    for skill in lib.all():
+        table.add_row(
+            skill.name,
+            skill.source,
+            "yes" if skill.enabled else "no",
+            skill.description[:100] + ("…" if len(skill.description) > 100 else ""),
+        )
+    console.print(table)
+    for name, err in lib.errors.items():
+        console.print(f"[yellow]{name}: {err}[/yellow]")
+    console.print(f"[dim]yours live in {lib.own_dir}; start one in chat with /name[/dim]")
+
+
+@skills_app.command("show")
+def skills_show(name: str, config: ConfigOpt = None) -> None:
+    """A skill's SKILL.md, as the model reads it."""
+    _, lib = _skills(config)
+    skill = lib.get(name)
+    if skill is None:
+        console.print(f"[red]no skill named '{name}'[/red]")
+        raise typer.Exit(1)
+    console.print(f"[dim]{skill.path / 'SKILL.md'} ({skill.source})[/dim]")
+    console.print(skill.render(), markup=False)
+    if skill.files:
+        console.print("[dim]files:[/dim] " + ", ".join(str(f) for f in skill.files))
+
+
+@skills_app.command("add")
+def skills_add(source: str, config: ConfigOpt = None) -> None:
+    """Add a skill from a SKILL.md file, a skill folder, or an https link (a raw file, or a
+    GitHub folder/file page)."""
+    _, lib = _skills(config)
+    try:
+        if source.startswith("https://"):
+            from openmuse.skills import fetch_skill_text
+
+            name = lib.save_text(asyncio.run(fetch_skill_text(source))).name
+        else:
+            path = Path(source).expanduser()
+            file = path / "SKILL.md" if path.is_dir() else path
+            if not file.is_file():
+                console.print(f"[red]{file} is not a file[/red]")
+                raise typer.Exit(1)
+            skill = lib.save_text(file.read_text("utf-8"), name=file.parent.name)
+            # scripts/, references/, assets/ next to the file come along
+            for sub in ("scripts", "references", "assets"):
+                src = file.parent / sub
+                if src.is_dir() and src.resolve() != (skill.path / sub).resolve():
+                    import shutil
+
+                    shutil.copytree(src, skill.path / sub, dirs_exist_ok=True)
+            name = skill.name
+    except (ValueError, OSError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    console.print(f"[green]added {name}[/green] → {lib.own_dir / name}")
+
+
+@skills_app.command("new")
+def skills_new(name: str, config: ConfigOpt = None) -> None:
+    """Start a skill of your own: a SKILL.md to fill in, printed with its path."""
+    from openmuse.skills import NAME_RE, render_skill
+
+    _, lib = _skills(config)
+    name = name.strip().lower()
+    if not NAME_RE.match(name):
+        console.print("[red]a skill name is lowercase letters, digits and hyphens[/red]")
+        raise typer.Exit(1)
+    folder = lib.own_dir / name
+    if (folder / "SKILL.md").exists():
+        console.print(f"[red]{folder / 'SKILL.md'} exists[/red]")
+        raise typer.Exit(1)
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "SKILL.md").write_text(
+        render_skill(
+            name,
+            "What this does, and when to use it — the model picks the skill from this line.",
+            "# " + name.replace("-", " ").capitalize() + "\n\n"
+            "## Gather\n\n- What to read first, with which tools.\n\n"
+            "## Do\n\n1. The steps, in order.\n2. What to produce (a file in the workspace?).\n\n"
+            "## Finish\n\n- What to say in chat; what to ask; what never to do.\n",
+        ),
+        "utf-8",
+    )
+    console.print(
+        f"[green]{folder / 'SKILL.md'}[/green] — edit it; the agent sees it on its next turn"
+    )
+
+
+@skills_app.command("remove")
+def skills_remove(name: str, config: ConfigOpt = None) -> None:
+    """Delete one of your skills (built-in ones are switched off with `disable`)."""
+    _, lib = _skills(config)
+    if not lib.remove(name):
+        console.print(f"[red]no skill of yours named '{name}'[/red]")
+        raise typer.Exit(1)
+    console.print(f"[green]removed {name}[/green]")
+
+
+def _set_skill(name: str, enabled: bool, config: Path | None) -> None:
+    from openmuse.config import load_app_settings, save_app_settings
+
+    s, lib = _skills(config)
+    if lib.set_enabled(name, enabled) is None:
+        console.print(f"[red]no skill named '{name}'[/red]")
+        raise typer.Exit(1)
+    data = load_app_settings(s.data_dir)
+    data["skills"] = {"disabled": list(s.skills.disabled)}
+    save_app_settings(s.data_dir, data)
+    console.print(f"[green]{name} is {'on' if enabled else 'off'}[/green]")
+
+
+@skills_app.command("enable")
+def skills_enable(name: str, config: ConfigOpt = None) -> None:
+    """Switch a skill on."""
+    _set_skill(name, True, config)
+
+
+@skills_app.command("disable")
+def skills_disable(name: str, config: ConfigOpt = None) -> None:
+    """Switch a skill off (it leaves the model's list; the folder stays)."""
+    _set_skill(name, False, config)
+
+
 # ============================================================================ vault
 @vault_app.command("set")
 def vault_set(
@@ -1298,6 +1443,20 @@ async def _doctor(settings: Settings, check_model: bool) -> None:
             )
         else:
             line(None, "contacts: off")
+        if settings.skills.enabled:
+            sk = app_.skills.status()
+            line(
+                not sk["errors"],
+                f"skills: {sk['count']} on · {sk['built_in']} built-in, {sk['yours']} yours"
+                + (
+                    " · " + "; ".join(f"{n}: {e}" for n, e in sk["errors"].items())
+                    if sk["errors"]
+                    else ""
+                ),
+                "a skill folder could not be read",
+            )
+        else:
+            line(None, "skills: off")
         triggers = app_.triggers.list("active")
         kinds = app_.trigger_kinds()
         orphans = [tr for tr in triggers if not kinds.get(tr.kind, True)]

@@ -263,12 +263,46 @@ export interface SettingsView {
   connectors: { email: boolean; calendar: boolean; contacts: boolean; browser: boolean; mcp: string[] };
   tools: ToolInfo[];
   memory_enabled: boolean;
+  /** Skills: recipes for jobs (SKILL.md folders); count = the ones switched on. */
+  skills: { enabled: boolean; count: number; yours: number };
   data_dir: string;
   started_at: string;
   /** First-run setup finished (or skipped) in the app. */
   onboarded: boolean;
   /** A model is configured with a key (or a local endpoint that needs none). */
   llm_ready: boolean;
+}
+
+// ----------------------------------------------------------------------------- skills
+/** A skill: how a job is done, written down as a SKILL.md folder. */
+export interface SkillInfo {
+  name: string;
+  description: string;
+  /** "built-in" ships with the app; "yours" lives in <data_dir>/skills (and replaces a built-in of the same name). */
+  source: "built-in" | "yours";
+  enabled: boolean;
+  path: string;
+  /** scripts/, references/, assets/ that come with it. */
+  files: string[];
+  allowed_tools: string[];
+  metadata: Record<string, string>;
+  updated_at: string | null;
+}
+
+export interface SkillDetail extends SkillInfo {
+  /** The instructions (Markdown after the front matter). */
+  body: string;
+  /** The whole SKILL.md, for editing. */
+  content: string;
+}
+
+export interface SkillsData {
+  count: number;
+  built_in: number;
+  yours: number;
+  dir: string;
+  errors: Record<string, string>;
+  skills: SkillInfo[];
 }
 
 // ----------------------------------------------------------------------------- connections
@@ -573,6 +607,7 @@ export type WsMessage =
   | { kind: "profile"; profile: Profile }
   | { kind: "settings"; settings: SettingsView }
   | { kind: "connections"; connections: ConnectionsData }
+  | { kind: "skills"; skills: SkillsData }
   | { kind: "approvals_reset" }
   | { kind: "error"; error: string }
   | { kind: "pong"; status: Status };

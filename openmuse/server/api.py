@@ -24,6 +24,8 @@
     PUT  /api/connections/contacts {enabled}  POST /api/connections/contacts/sources {name,url}
     POST /api/connections/contacts/import?name= (body: the .vcf text)  DELETE /api/connections/contacts/sources/{name}
     POST /api/connections/contacts/test      GET /api/contacts?q=&limit=   look people up
+    GET  /api/skills  GET /api/skills/{name}  PUT /api/skills/{name} {content}  DELETE /api/skills/{name}
+    POST /api/skills/{name}/enabled {enabled}  POST /api/skills/import {url}
     POST /api/connections/mcp  DELETE /api/connections/mcp/{name}
     GET  /api/vault  PUT|DELETE /api/vault/{name}   (names only ever come back)
     POST /api/onboarded
@@ -162,6 +164,18 @@ class ContactsSourceBody(BaseModel):
 
 class ContactsBody(BaseModel):
     enabled: bool | None = None
+
+
+class SkillBody(BaseModel):
+    content: str = Field(max_length=70_000)  # the SKILL.md text
+
+
+class SkillEnabledBody(BaseModel):
+    enabled: bool
+
+
+class SkillImportBody(BaseModel):
+    url: str = Field(max_length=2000)
 
 
 class CalendarBody(BaseModel):
@@ -750,6 +764,53 @@ def create_app(settings: Settings, service: MuseService | None = None) -> FastAP
             else sorted(book.contacts, key=lambda c: c.name.lower())[:limit]
         )
         return {"count": len(book), "people": [c.to_dict() for c in people]}
+
+    # ------------------------------------------------------------------ skills
+    @app.get("/api/skills", dependencies=dep)
+    async def skills() -> dict[str, Any]:
+        return svc.skills_view()
+
+    @app.get("/api/skills/{name}", dependencies=dep)
+    async def skill(name: str) -> dict[str, Any]:
+        view = svc.skill_view(name)
+        if view is None:
+            raise HTTPException(404, "no such skill")
+        return view
+
+    @app.put("/api/skills/{name}", dependencies=dep)
+    async def put_skill(name: str, body: SkillBody) -> dict[str, Any]:
+        """Write one of your skills from the text of its SKILL.md (a built-in of the same
+        name is replaced by it)."""
+        try:
+            return svc.save_skill(body.content, name=name)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(500, f"could not write the skill: {exc}") from exc
+
+    @app.delete("/api/skills/{name}", dependencies=dep)
+    async def delete_skill(name: str) -> dict[str, Any]:
+        if not svc.remove_skill(name):
+            raise HTTPException(
+                404, "no such skill of yours (built-in skills are switched off, not removed)"
+            )
+        return svc.skills_view()
+
+    @app.post("/api/skills/{name}/enabled", dependencies=dep)
+    async def skill_enabled(name: str, body: SkillEnabledBody) -> dict[str, Any]:
+        view = svc.set_skill_enabled(name, body.enabled)
+        if view is None:
+            raise HTTPException(404, "no such skill")
+        return view
+
+    @app.post("/api/skills/import", dependencies=dep)
+    async def import_skill(body: SkillImportBody) -> dict[str, Any]:
+        try:
+            return await svc.import_skill(body.url)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001 — a network error, reported as such
+            raise HTTPException(502, f"could not fetch the skill: {exc}") from exc
 
     @app.post("/api/connections/mcp", dependencies=dep)
     async def add_mcp(body: MCPBody) -> dict[str, Any]:

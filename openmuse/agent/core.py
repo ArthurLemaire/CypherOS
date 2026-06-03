@@ -18,6 +18,7 @@ from openmuse.logger import logger
 from openmuse.memory import MemoryStore
 from openmuse.schema import AgentState, Message, Role, ToolResult
 from openmuse.sentinel import AuditLog, Sentinel
+from openmuse.skills import SkillLibrary
 from openmuse.tools.base import ToolCollection
 from openmuse.ui import UI
 
@@ -35,6 +36,7 @@ class MuseAgent:
         goals: GoalStore | None = None,
         calendar: CalendarFeeds | None = None,
         contacts: ContactBook | None = None,
+        skills: SkillLibrary | None = None,
         session_file: Path | None = None,
     ):
         self.settings = settings
@@ -47,6 +49,7 @@ class MuseAgent:
         self.goals = goals
         self.calendar = calendar
         self.contacts = contacts
+        self.skills = skills
         self.session_file = session_file
         self.messages: list[Message] = []
         self.state = AgentState.IDLE
@@ -76,13 +79,24 @@ class MuseAgent:
         shell = self.tools.get("shell")
         box = getattr(shell, "sandbox", None)
         if box is not None and box.active:
-            return (
-                "Commands (shell, python_execute) run in a sandbox: only the workspace is "
-                "writable, the home directory and the rest of the machine are not there, and "
-                "there is no network unless the command needs it (curl, pip, git, a URL, a "
-                "script that imports requests… are recognised; otherwise pass network=true)."
-            )
+            note = box.describe().replace("Commands run", "Commands (shell, python_execute) run")
+            if box.blocks_network:
+                note += (
+                    " Commands that need the network say so by what they run (curl, pip, git, a "
+                    "URL, a script that imports requests …); otherwise pass network=true."
+                )
+            return note
         return "Commands (shell, python_execute) run in the workspace with a scrubbed environment."
+
+    def skills_section(self) -> str:
+        """The index of skills — names and descriptions; the tool has the instructions."""
+        lib = self.skills
+        if lib is None or "skills" not in self.tools:
+            return ""
+        index = lib.index()
+        if not index:
+            return ""
+        return prompts.SKILLS_SECTION.format(items=index)
 
     def contacts_note(self) -> str:
         """One line on the address book, when there is one (the tool does the looking up)."""
@@ -158,7 +172,7 @@ class MuseAgent:
             tool_names=", ".join(t.name for t in self.tools),
             user_profile=profile,
             memories=memories,
-            goals=goals + calendar,
+            goals=goals + calendar + self.skills_section(),
             extra=extra,
         )
 
@@ -197,6 +211,9 @@ class MuseAgent:
             raise RuntimeError("agent is already running")
         self.state = AgentState.RUNNING
         self.turns += 1
+        if self.skills is not None and "skills" in self.tools:
+            # "/weekly-review …" — the skill's instructions ride along with the message
+            user_input = self.skills.expand(user_input)
         self.messages.append(Message.user(user_input))
         self.audit.record("user_message", content=user_input)
         system_prompt = self.build_system_prompt(user_input)

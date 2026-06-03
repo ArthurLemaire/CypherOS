@@ -15,9 +15,9 @@ Every tool declares a static `risk`:
 
 | Level | Meaning | Examples |
 |---|---|---|
-| `safe` | reversible, local | `files` (inside the workspace), `web_search`, `remember`, `goals`, `contacts` |
+| `safe` | reversible, local | `files` (inside the workspace), `web_search`, `remember`, `goals`, `contacts`, `skills` (list, use) |
 | `moderate` | reaches outside or changes state | `web_fetch`, `python_execute`, `read_emails`, `browser`, `forget` |
-| `sensitive` | hard to undo or externally visible | `shell`, `send_email` |
+| `sensitive` | hard to undo or externally visible | `shell`, `send_email`, `skills` (save, remove — a skill is standing instructions the model will follow later, so writing one always asks) |
 
 A tool can raise the level for a particular call in `assess()`: `shell` attaches a warning on patterns such as `rm -rf`, `sudo`, `curl | sh`; `python_execute` is `moderate` for plain computation and files in the workspace but `sensitive` — with the reason on the card — when the code reaches the network, starts other programs, reads environment variables, deletes files or touches paths outside the workspace; `web_fetch` refuses private and loopback addresses outright, on every redirect hop. Tools also declare `reads_private_data` (taints the session) and `egress` with an optional `egress_target` (the host a call sends data to; unknown for `shell` and `python_execute`), used by taint tracking.
 
@@ -28,7 +28,7 @@ Subprocesses started by `shell` and `python_execute` get a scrubbed environment:
 Muse gives each user's agent a VM of its own. OpenMuse runs on your machine, so it does the next best thing on Linux: every `shell` and `python_execute` call runs in its own namespace, made with [bubblewrap](https://github.com/containers/bubblewrap) (the tool behind Flatpak; unprivileged, `apt install bubblewrap` / `dnf install bubblewrap`). Inside the box:
 
 - the workspace (and `agent.extra_roots`) are the only writable places — `/usr`, `/etc`, `/opt`, `/var` are read-only, `/tmp` is private to the call, `/proc` and `/dev` are fresh;
-- your home directory does not exist, and with it the vault, the data directory, ssh keys, cloud credentials and browser profiles. The only exception is the directory the running Python lives in (a venv or a `uv`-managed interpreter is often under home), read-only, so `python_execute` runs with the same interpreter and packages as OpenMuse. A data directory that sits inside the workspace is masked;
+- your home directory does not exist, and with it the vault, the data directory, ssh keys, cloud credentials and browser profiles. The only exceptions are the directory the running Python lives in (a venv or a `uv`-managed interpreter is often under home), read-only, so `python_execute` runs with the same interpreter and packages as OpenMuse, and the skill folders (built-in and yours), read-only, so a skill's scripts and reference files can be run and read from inside. A data directory that sits inside the workspace is masked;
 - there is **no network** unless the call was assessed as needing it: a `shell` command that runs a network program (`curl`, `wget`, `pip`, `git`, `ssh`, `npm`, `docker` …) or contains a URL or hostname, or says `network=true`; a `python_execute` script that imports a network module (`requests`, `httpx`, `socket`, `urllib` …) or starts other programs. Everything else runs with only the loopback interface. A command that fails for want of the network gets a note in its result saying so, and the model can run it again with `network=true` — which is then an egress call and goes through the same review as any other;
 - the process tree, IPC, UTS and cgroup namespaces are separate; `HOME` and `TMPDIR` point into the private `/tmp`; `OPENMUSE_SANDBOX=bwrap` is set so a script can tell.
 
