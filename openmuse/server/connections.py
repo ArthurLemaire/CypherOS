@@ -78,6 +78,13 @@ def _vault_name(feed_name: str, prefix: str = "CALENDAR_") -> str:
     return prefix + (re.sub(r"[^A-Z0-9]+", "_", feed_name.upper()).strip("_") or "FEED")
 
 
+def _link_or_path(url: str) -> bool:
+    """An http(s)/file link, or a path: absolute, ``~``, or a Windows drive letter."""
+    return url.startswith(("http://", "https://", "file://", "/", "~")) or bool(
+        re.match(r"^[A-Za-z]:[\\/]", url)
+    )
+
+
 class Connections:
     def __init__(self, svc: MuseService):
         self.svc = svc
@@ -403,7 +410,7 @@ class Connections:
             raise ValueError("the calendar needs a name")
         if not url:
             raise ValueError("paste the calendar's .ics link (or a path to an .ics file)")
-        if not url.startswith(("http://", "https://", "file://", "/", "~")):
+        if not _link_or_path(url):
             raise ValueError("the link must start with https:// (or be a path to an .ics file)")
         secret = _vault_name(name)
         self.vault.set(secret, url)
@@ -504,7 +511,7 @@ class Connections:
             raise ValueError(f"{OWN!r} is the agent's own book; pick another name")
         if not url:
             raise ValueError("paste a link to the .vcf file, or a path to one")
-        if not url.startswith(("http://", "https://", "file://", "/", "~")):
+        if not _link_or_path(url):
             raise ValueError("the link must start with https:// (or be a path to a .vcf file)")
         if url.startswith(("http://", "https://")):
             secret = _vault_name(name, "CONTACTS_")

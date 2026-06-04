@@ -189,7 +189,7 @@ class Calendar(BaseTool):
         folder.mkdir(parents=True, exist_ok=True)
         path = folder / f"{start:%Y-%m-%d}-{_slug(title)}.ics"
         path.write_text(ics, encoding="utf-8")
-        rel = path.relative_to(self.workspace)
+        rel = path.relative_to(self.workspace).as_posix()
         when = f"{start:%a %Y-%m-%d}" if all_day else f"{start:%a %Y-%m-%d %H:%M}–{end:%H:%M}"
         return ToolResult(
             output=f"Drafted “{title}” ({when}) as {rel}. The user adds it to their calendar by "
