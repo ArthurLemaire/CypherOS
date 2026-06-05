@@ -141,7 +141,7 @@ def test_a_box_that_cannot_take_the_network_away(tmp_path: Path, monkeypatch: py
     assert shell.assess({"command": "ls -la"}).egress
     assert shell.assess({"command": "ls -la"}).summary == "shell: ls -la"
 
-    # any other failure: no box
+    # any other failure: no box — and, under Ubuntu's restriction, a pointer to the profile
     def fake_run_fail(argv, **_kw):
         if argv[1:] == ["--version"]:
             return subprocess.CompletedProcess(argv, 0, stdout="bubblewrap 0.9.0\n", stderr="")
@@ -149,8 +149,13 @@ def test_a_box_that_cannot_take_the_network_away(tmp_path: Path, monkeypatch: py
         return subprocess.CompletedProcess(argv, 1, stdout="", stderr=err)
 
     monkeypatch.setattr("openmuse.sandbox.subprocess.run", fake_run_fail)
+    monkeypatch.setattr("openmuse.sandbox.userns_restricted", lambda: False)
     box = Sandbox(SandboxSettings(), workspace=tmp_path)
     assert not box.active and box.reason.endswith("(bwrap: setting up uid map: Permission denied)")
+    monkeypatch.setattr("openmuse.sandbox.userns_restricted", lambda: True)
+    box = Sandbox(SandboxSettings(), workspace=tmp_path)
+    assert not box.active and "apparmor_restrict_unprivileged_userns=1" in box.reason
+    assert box.reason.endswith("see docs/sentinel.md → The sandbox")
 
 
 def _probe() -> Sandbox | None:
