@@ -28,7 +28,7 @@
   <img src="docs/screenshots/chat-approval.png" width="24%" alt="Chat with an approval card">
   <img src="docs/screenshots/goal-detail.png" width="24%" alt="A goal with its plan">
   <img src="docs/screenshots/ideas.png" width="24%" alt="Ideas tab">
-  <img src="docs/screenshots/settings.png" width="24%" alt="Sentinel settings">
+  <img src="docs/screenshots/settings.png" width="24%" alt="Sentinel settings and the sandbox">
 </p>
 
 ## Start here

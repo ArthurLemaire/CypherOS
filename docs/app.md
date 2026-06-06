@@ -17,9 +17,9 @@ openmuse serve --port 9000 --no-qr
 </p>
 <p align="center">
   <img src="screenshots/calendar-event.png" width="19%" alt="A drafted event">
-  <img src="screenshots/connections.png" width="19%" alt="Connections">
+  <img src="screenshots/connections.png" width="19%" alt="Connections: the address book">
   <img src="screenshots/memory.png" width="19%" alt="Memory">
-  <img src="screenshots/settings.png" width="19%" alt="Settings">
+  <img src="screenshots/settings.png" width="19%" alt="Settings: Sentinel and the sandbox">
   <img src="screenshots/upcoming-triggers.png" width="19%" alt="Upcoming: triggers">
 </p>
 
