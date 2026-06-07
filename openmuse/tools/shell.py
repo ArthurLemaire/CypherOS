@@ -160,6 +160,8 @@ async def _run(
 ) -> ToolResult:
     env = scrubbed_env()
     boxed = sandbox is not None and sandbox.active
+    # a box that cannot take the network away never ran the command without it
+    without_network = boxed and sandbox is not None and sandbox.blocks_network and not network
     if boxed:
         assert sandbox is not None
         argv = ["/bin/sh", "-c", cmd] if isinstance(cmd, str) else list(cmd)
@@ -197,7 +199,7 @@ async def _run(
         text += ("\n" if text else "") + f"[stderr]\n{stderr}"
     text += f"\n[exit code {proc.returncode}]"
     if proc.returncode != 0:
-        if boxed and not network and _NO_NETWORK.search(stderr + stdout):
+        if without_network and _NO_NETWORK.search(stderr + stdout):
             text += (
                 "\n[sandbox: this command ran without network access. Commands that reach the "
                 "network say so by what they run (curl, pip, git …) or by a URL in them; if this "
@@ -253,7 +255,9 @@ class Shell(BaseTool):
     def assess(self, args: dict[str, Any]) -> CallAssessment:
         command = str(args.get("command", ""))
         warnings = [label for pattern, label in _DANGEROUS if pattern.search(command)]
-        boxed = self.sandbox is not None and self.sandbox.active
+        # a box that takes the network away decides which commands get it; one that
+        # cannot (see Sandbox.blocks_network), like no box, leaves every command able to
+        boxed = self.sandbox is not None and self.sandbox.active and self.sandbox.blocks_network
         network = self._network(args)
         return CallAssessment(
             risk=RiskLevel.SENSITIVE,
