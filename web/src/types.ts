@@ -260,7 +260,7 @@ export interface SettingsView {
   sandbox: { mode: "auto" | "bwrap" | "off"; active: boolean; status: string };
   llm: { provider: string; model: string; stream: boolean };
   agent: { language: string; max_steps: number; show_thinking: boolean; workspace: string };
-  connectors: { email: boolean; calendar: boolean; browser: boolean; mcp: string[] };
+  connectors: { email: boolean; calendar: boolean; contacts: boolean; browser: boolean; mcp: string[] };
   tools: ToolInfo[];
   memory_enabled: boolean;
   data_dir: string;
@@ -313,6 +313,15 @@ export interface ConnectionsData {
     day_end: string;
     feeds: CalendarFeed[];
   };
+  contacts: {
+    enabled: boolean;
+    /** Anyone to look up: a source, or people the agent was told about. */
+    configured: boolean;
+    count: number;
+    /** People in the agent's own book ("My contacts"). */
+    own: number;
+    sources: ContactSource[];
+  };
   mcp: Array<{
     name: string;
     command: string | null;
@@ -334,6 +343,35 @@ export interface CalendarFeed {
   events: number;
   fetched_at: string | null;
   error: string;
+}
+
+/** One connected address book: a .vcf file (uploaded or on disk) or a link kept in the vault. */
+export interface ContactSource {
+  name: string;
+  from_app: boolean;
+  file: boolean;
+  contacts: number;
+  fetched_at: string | null;
+  error: string;
+}
+
+/** One person, as GET /api/contacts returns them. */
+export interface Contact {
+  id: string;
+  name: string;
+  first: string;
+  last: string;
+  nickname: string;
+  /** "alice@example.com" or "alice@example.com (work)". */
+  emails: string[];
+  phones: string[];
+  org: string;
+  title: string;
+  birthday: string;
+  addresses: string[];
+  urls: string[];
+  note: string;
+  source: string;
 }
 
 export interface CalendarEvent {
@@ -367,6 +405,9 @@ export interface TestResult {
   /** calendar test: events across the feeds */
   events?: number;
   feeds?: number;
+  /** contacts test: people across the sources */
+  contacts?: number;
+  sources?: number;
 }
 
 export interface StateSnapshot {

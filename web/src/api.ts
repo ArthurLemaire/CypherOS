@@ -2,6 +2,7 @@ import type {
   ActivityData,
   CalendarData,
   ConnectionsData,
+  Contact,
   FeedItem,
   FileInfo,
   Goal,
@@ -181,6 +182,21 @@ export const api = {
   removeCalendarFeed: (name: string) =>
     request<ConnectionsData["calendar"]>(`/api/connections/calendar/feeds/${encodeURIComponent(name)}`, { method: "DELETE" }),
   testCalendar: () => request<TestResult>("/api/connections/calendar/test", { method: "POST" }),
+  contacts: (q = "", limit = 8) =>
+    request<{ count: number; people: Contact[] }>(`/api/contacts?q=${encodeURIComponent(q)}&limit=${limit}`),
+  setContacts: (body: Record<string, unknown>) =>
+    request<ConnectionsData["contacts"]>("/api/connections/contacts", { method: "PUT", body: JSON.stringify(body) }),
+  addContactsSource: (name: string, url: string) =>
+    request<ConnectionsData["contacts"] & { error?: string }>("/api/connections/contacts/sources", json({ name, url })),
+  importContacts: (name: string, text: string) =>
+    request<ConnectionsData["contacts"] & { error?: string }>(`/api/connections/contacts/import?name=${encodeURIComponent(name)}`, {
+      method: "POST",
+      headers: { "Content-Type": "text/vcard; charset=utf-8" },
+      body: text,
+    }),
+  removeContactsSource: (name: string) =>
+    request<ConnectionsData["contacts"]>(`/api/connections/contacts/sources/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  testContacts: () => request<TestResult>("/api/connections/contacts/test", { method: "POST" }),
   setBrowser: (enabled: boolean) =>
     request<ConnectionsData["browser"]>("/api/connections/browser", { method: "PUT", body: JSON.stringify({ enabled }) }),
   addMCP: (body: Record<string, unknown>) => request<ConnectionsData>("/api/connections/mcp", json(body)),

@@ -406,6 +406,7 @@ class MuseService:
             memory=self.app.memory,
             goals=self.app.goals,
             calendar=self.app.calendar,
+            contacts=self.app.contacts,
             session_file=session_file,
         )
         if session_file.exists():
@@ -1423,6 +1424,7 @@ class MuseService:
             "connectors": {
                 "email": s.connectors.email.enabled,
                 "calendar": s.connectors.calendar.enabled and bool(s.connectors.calendar.feeds),
+                "contacts": s.connectors.contacts.enabled and self.app.contacts.configured,
                 "browser": s.browser.enabled,
                 "mcp": [m.name for m in s.mcp.servers],
             },

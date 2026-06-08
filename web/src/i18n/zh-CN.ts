@@ -550,6 +550,28 @@ const zhCN: Record<string, string> = {
   "Stored encrypted in the vault as CALENDAR_{name}.": "加密保存在保险库中，名为 CALENDAR_{name}。",
   "Add a calendar": "添加日历",
   "Added, but it could not be read: {error}": "已添加，但读取失败：{error}",
+  // contacts
+  "Contacts": "通讯录",
+  "1 person": "1 人",
+  "{n} people": "{n} 人",
+  "Address book connected": "通讯录已连接",
+  "Who is who, so it never guesses an address": "知道谁是谁，从不猜地址",
+  "told to it in chat": "在聊天中告诉它的",
+  "{n} address books": "{n} 个通讯录",
+  "Import a .vcf export from Google Contacts, iCloud, Outlook or your phone, or paste a link to one. People you mention in chat go into its own book. It looks people up before writing to them and warns when an address is unknown.":
+    "导入 Google 通讯录、iCloud、Outlook 或手机导出的 .vcf 文件，或粘贴一个链接。你在聊天中提到的人会记进它自己的名册。写信前它会先查人，地址不认识时会提醒。",
+  "My contacts": "我的联系人",
+  "added in chat": "聊天中添加",
+  "iPhone": "iPhone",
+  "A .vcf file from your phone or computer": "手机或电脑上的 .vcf 文件",
+  "Google Contacts: Export → vCard. iPhone: Contacts → select all → Share → Save to Files. Outlook: People → Manage → Export.":
+    "Google 通讯录：导出 → vCard。iPhone：通讯录 → 全选 → 共享 → 存储到“文件”。Outlook：人员 → 管理 → 导出。",
+  "Choose a .vcf file": "选择 .vcf 文件",
+  "Or a link / path to one": "或一个链接 / 路径",
+  "A link is stored encrypted in the vault as CONTACTS_{name}.": "链接会加密保存在保险库中，名为 CONTACTS_{name}。",
+  "Add an address book": "添加通讯录",
+  "Find someone, as the agent would": "像 Agent 那样查一个人",
+  "No one matches.": "没有匹配的人。",
   "Working hours": "工作时间",
   "Free time is looked for inside these hours.": "空闲时间只在这个时段内查找。",
   "Read again": "重新读取",
@@ -660,9 +682,9 @@ const zhCN: Record<string, string> = {
   "A model is already set up on the server. Keep it, or switch here.": "服务器上已经配置了模型。可以保留，也可以在这里切换。",
   "Pick a provider and paste a key. It is stored encrypted in the vault on the server, never shown to the model.":
     "选择一个服务商并粘贴密钥。它会加密存储在服务器的保险库中，绝不会展示给模型。",
-  "Connect your mail and calendar": "连接你的邮箱和日历",
-  "Optional. With a mailbox connected it can read what came in and draft replies; it will always ask before sending. With a calendar it knows your day and finds free time. The browser and MCP servers are under Connections later.":
-    "可选。连接邮箱后它可以读取新邮件并起草回复；发送前总会先询问你。连接日历后它知道你这一天的安排，也能找出空闲时间。浏览器和 MCP 服务器稍后可在“连接”中设置。",
+  "Connect your mail, calendar and contacts": "连接你的邮箱、日历和通讯录",
+  "Optional. With a mailbox connected it can read what came in and draft replies; it will always ask before sending. With a calendar it knows your day and finds free time. With your contacts it knows who is who. The browser and MCP servers are under Connections later.":
+    "可选。连接邮箱后它可以读取新邮件并起草回复；发送前总会先询问你。连接日历后它知道你这一天的安排，也能找出空闲时间。连接通讯录后它知道谁是谁。浏览器和 MCP 服务器稍后可在“连接”中设置。",
   "Ready, {name}.": "准备好了，{name}。",
   "Ready.": "准备好了。",
   "A few things people do in their first days.": "大家在最初几天常做的几件事。",

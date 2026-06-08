@@ -15,7 +15,7 @@ Every tool declares a static `risk`:
 
 | Level | Meaning | Examples |
 |---|---|---|
-| `safe` | reversible, local | `files` (inside the workspace), `web_search`, `remember`, `goals` |
+| `safe` | reversible, local | `files` (inside the workspace), `web_search`, `remember`, `goals`, `contacts` |
 | `moderate` | reaches outside or changes state | `web_fetch`, `python_execute`, `read_emails`, `browser`, `forget` |
 | `sensitive` | hard to undo or externally visible | `shell`, `send_email` |
 
@@ -77,7 +77,7 @@ In the app an unanswered card times out after `server.approval_timeout` seconds 
 
 ## Taint tracking
 
-Reading private data (`read_emails`, `recall`, files outside the workspace, MCP servers marked `reads_private_data`) marks the session as tainted. From then on, any call that sends data to a host outside `egress_allowlist` needs approval, whatever its risk level. This is the practical defence against prompt injection: a web page cannot instruct the agent to post your inbox somewhere without you seeing the destination first.
+Reading private data (`read_emails`, `recall`, `contacts`, files outside the workspace, MCP servers marked `reads_private_data`) marks the session as tainted. From then on, any call that sends data to a host outside `egress_allowlist` needs approval, whatever its risk level. This is the practical defence against prompt injection: a web page cannot instruct the agent to post your inbox somewhere without you seeing the destination first.
 
 `openmuse chat` shows the state with `/tainted`; `/reset` clears it with the conversation. The default allowlist covers search, Wikipedia, GitHub and PyPI; edit `egress_allowlist` to fit your own connectors.
 

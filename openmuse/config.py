@@ -152,9 +152,25 @@ class CalendarSettings(BaseModel):
     day_end: str = "18:00"
 
 
+class ContactSourceSettings(BaseModel):
+    """A ``.vcf`` export or link: Google Contacts, iCloud, Outlook, Nextcloud … all export one."""
+
+    name: str
+    # a path, or a URL — a "{{vault:NAME}}" placeholder when the link is a secret
+    url: str
+
+
+class ContactsSettings(BaseModel):
+    # On by default: even without a source the agent keeps its own book of the people
+    # you tell it about ("Alice's address is …"), in <data_dir>/contacts.vcf.
+    enabled: bool = True
+    sources: list[ContactSourceSettings] = Field(default_factory=list)
+
+
 class ConnectorSettings(BaseModel):
     email: EmailSettings = Field(default_factory=EmailSettings)
     calendar: CalendarSettings = Field(default_factory=CalendarSettings)
+    contacts: ContactsSettings = Field(default_factory=ContactsSettings)
 
 
 class SandboxSettings(BaseModel):
@@ -248,6 +264,20 @@ class Settings(BaseModel):
     @property
     def calendar_cache(self) -> Path:
         return self.data_dir / "calendar-cache.json"
+
+    @property
+    def contacts_file(self) -> Path:
+        """The agent's own address book (the only contacts source it writes to)."""
+        return self.data_dir / "contacts.vcf"
+
+    @property
+    def contacts_cache(self) -> Path:
+        return self.data_dir / "contacts-cache.json"
+
+    @property
+    def contacts_dir(self) -> Path:
+        """Where ``.vcf`` files uploaded in the app are kept."""
+        return self.data_dir / "contacts"
 
     @property
     def vault_file(self) -> Path:
@@ -392,6 +422,19 @@ def apply_app_settings(settings: Settings, data: dict[str, Any]) -> None:
             # feeds added in the app come after the ones in config.toml; same name → app wins
             names = {f.name for f in feeds}
             cal.feeds = [f for f in cal.feeds if f.name not in names] + feeds
+    if contacts := data.get("contacts"):
+        book = settings.connectors.contacts
+        if "enabled" in contacts and contacts["enabled"] is not None:
+            book.enabled = bool(contacts["enabled"])
+        if isinstance(contacts.get("sources"), list):
+            sources = []
+            for raw_source in contacts["sources"]:
+                try:
+                    sources.append(ContactSourceSettings.model_validate(raw_source))
+                except ValueError:
+                    continue
+            names = {c.name for c in sources}
+            book.sources = [c for c in book.sources if c.name not in names] + sources
     if browser := data.get("browser"):
         if "enabled" in browser:
             settings.browser.enabled = bool(browser["enabled"])
@@ -428,6 +471,8 @@ __all__ = [
     "BrowserSettings",
     "CalendarFeedSettings",
     "CalendarSettings",
+    "ContactSourceSettings",
+    "ContactsSettings",
     "ConnectorSettings",
     "DEFAULT_DATA_DIR",
     "EmailSettings",

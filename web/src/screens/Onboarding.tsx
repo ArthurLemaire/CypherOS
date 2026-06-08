@@ -6,7 +6,7 @@ import { useT } from "../i18n";
 import { useStore } from "../store";
 import type { ConnectionsData } from "../types";
 import { cx } from "../util";
-import { CalendarCard, EmailCard, ModelCard, inputCls, primaryBtn, secondaryBtn } from "./ConnectionsScreen";
+import { CalendarCard, ContactsCard, EmailCard, ModelCard, inputCls, primaryBtn, secondaryBtn } from "./ConnectionsScreen";
 
 const EMOJI = ["✨", "🌙", "🪐", "🌿", "🔥", "🌊", "🦉", "🦊", "🐙", "🎯", "🧭", "💎", "🍀", "🎈", "🤖", "🧠"];
 const COLORS = ["#7c3aed", "#2563eb", "#0891b2", "#059669", "#d97706", "#dc2626", "#db2777", "#4b5563"];
@@ -210,15 +210,16 @@ export function Onboarding() {
         {step === "connect" && (
           <div className="pt-6 space-y-4">
             <div>
-              <h1 className="text-[26px] font-bold tracking-tight">{t("Connect your mail and calendar")}</h1>
+              <h1 className="text-[26px] font-bold tracking-tight">{t("Connect your mail, calendar and contacts")}</h1>
               <p className="mt-1 text-[14px] text-muted">
-                {t("Optional. With a mailbox connected it can read what came in and draft replies; it will always ask before sending. With a calendar it knows your day and finds free time. The browser and MCP servers are under Connections later.")}
+                {t("Optional. With a mailbox connected it can read what came in and draft replies; it will always ask before sending. With a calendar it knows your day and finds free time. With your contacts it knows who is who. The browser and MCP servers are under Connections later.")}
               </p>
             </div>
             {conn ? (
               <>
                 <EmailCard data={conn} onChange={() => void loadConn()} compact />
                 <CalendarCard data={conn} onChange={() => void loadConn()} compact />
+                <ContactsCard data={conn} onChange={() => void loadConn()} compact />
               </>
             ) : (
               <div className="flex justify-center py-8 text-muted">

@@ -89,6 +89,19 @@ openmuse calendar remove Family
 
 Feeds are re-read every `refresh_minutes` by the running server; `agenda --refresh` fetches now. The agent has the same view through its `calendar` tool, plus `draft`, which writes an `.ics` the app shows as an *Add to calendar* card — it never writes to your calendar directly.
 
+## Contacts
+
+```bash
+openmuse contacts search "ali"                          # by name, nickname, company, email or phone
+openmuse contacts list -n 20                            # the first people alphabetically
+openmuse contacts add "Bob Li" -e bob@example.com --note landlord   # into the agent's own book
+openmuse contacts sources                               # each address book: people, last read, error
+openmuse contacts add-source Google ~/Downloads/contacts.vcf         # a .vcf file, or a link (→ vault CONTACTS_GOOGLE)
+openmuse contacts remove-source Google
+```
+
+The agent has the same view through its `contacts` tool; `doctor` reports how many people it knows and from where.
+
 ## Memory
 
 ```bash
@@ -123,4 +136,4 @@ openmuse doctor [--no-model]           # config, data dir, model, connectors —
 openmuse version                       # also: openmuse --version / -V
 ```
 
-`openmuse doctor` is the first thing to run when something is off, and what to paste into a bug report: which config file is in use, where the data lives, which model and endpoint are configured and whether a key is set, whether commands run in the sandbox (and why not, if not), the tools the agent has, connector state, and a one-line call to the model with its latency (`--no-model` skips that). It exits non-zero when something needs fixing and says what.
+`openmuse doctor` is the first thing to run when something is off, and what to paste into a bug report: which config file is in use, where the data lives, which model and endpoint are configured and whether a key is set, whether commands run in the sandbox (and why not, if not), the tools the agent has, connector state (mailbox, calendar feeds, address books), and a one-line call to the model with its latency (`--no-model` skips that). It exits non-zero when something needs fixing and says what.

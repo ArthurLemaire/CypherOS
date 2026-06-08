@@ -4,6 +4,7 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  Contact as ContactIcon,
   Globe,
   KeyRound,
   Loader2,
@@ -11,15 +12,17 @@ import {
   Plug,
   Plus,
   RefreshCw,
+  Search,
   Trash2,
   Unplug,
+  Upload,
 } from "lucide-react";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "../api";
 import { BackBar } from "../components/BackBar";
 import { useT } from "../i18n";
 import { useStore } from "../store";
-import type { ConnectionsData, TestResult } from "../types";
+import type { Contact, ConnectionsData, TestResult } from "../types";
 import { cx, relativeTime } from "../util";
 
 /**
@@ -68,6 +71,7 @@ export function ConnectionsScreen() {
             <ModelCard data={data} onChange={load} />
             <EmailCard data={data} onChange={load} />
             <CalendarCard data={data} onChange={load} />
+            <ContactsCard data={data} onChange={load} />
             <BrowserCard data={data} onChange={load} />
             <MCPCard data={data} onChange={load} />
             <VaultCard data={data} onChange={load} />
@@ -548,6 +552,221 @@ export function CalendarCard({ data, onChange, compact }: { data: ConnectionsDat
             {busy === "test" ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />} {t("Read again")}
           </button>
           {test && <TestLine result={test} okText={c.feeds.length === 1 ? evs(test.events ?? 0) : `${evs(test.events ?? 0)} · ${t("{n} calendars", { n: c.feeds.length })}`} />}
+        </>
+      )}
+    </Card>
+  );
+}
+
+// ------------------------------------------------------------------ contacts
+export function ContactsCard({ data, onChange, compact }: { data: ConnectionsData; onChange: () => void; compact?: boolean }) {
+  const { toast } = useStore();
+  const t = useT();
+  const c = data.contacts;
+  const [open, setOpen] = useState(!!compact);
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState("");
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [test, setTest] = useState<TestResult | null>(null);
+  const [query, setQuery] = useState("");
+  const [hits, setHits] = useState<Contact[] | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  const people = (n: number) => (n === 1 ? t("1 person") : t("{n} people", { n }));
+
+  const finish = (view: ConnectionsData["contacts"] & { error?: string }, added: string) => {
+    if (view.error) {
+      toast(t("Added, but it could not be read: {error}", { error: view.error }));
+    } else {
+      const src = view.sources.find((x) => x.name === added);
+      toast(`${t("Address book connected")} · ${people(src?.contacts ?? 0)}`);
+      setName("");
+      setUrl("");
+      setAdding(false);
+    }
+    onChange();
+  };
+
+  const add = async () => {
+    setBusy("add");
+    setTest(null);
+    try {
+      finish(await api.addContactsSource(name.trim(), url.trim()), name.trim());
+    } catch (e) {
+      toast((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const upload = async (file: File) => {
+    setBusy("upload");
+    setTest(null);
+    try {
+      const label = (name.trim() || file.name.replace(/\.vcf$/i, "") || "Imported").slice(0, 40);
+      finish(await api.importContacts(label, await file.text()), label);
+    } catch (e) {
+      toast((e as Error).message);
+    } finally {
+      setBusy(null);
+      if (fileInput.current) fileInput.current.value = "";
+    }
+  };
+
+  const remove = async (n: string) => {
+    setBusy(n);
+    try {
+      await api.removeContactsSource(n);
+      onChange();
+    } catch (e) {
+      toast((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const runTest = async () => {
+    setBusy("test");
+    try {
+      setTest(await api.testContacts());
+      onChange();
+    } catch (e) {
+      toast((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  useEffect(() => {
+    if (!query.trim()) {
+      setHits(null);
+      return;
+    }
+    const handle = setTimeout(() => {
+      api
+        .contacts(query.trim(), 5)
+        .then((r) => setHits(r.people))
+        .catch(() => setHits([]));
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [query]);
+
+  const broken = c.sources.filter((f) => f.error).length;
+  const status = !c.enabled
+    ? { text: t("Off"), tone: "off" }
+    : c.configured
+      ? broken
+        ? { text: t("{n} not reading", { n: broken }), tone: "warn" }
+        : { text: t("Connected"), tone: "ok" }
+      : { text: t("Not connected"), tone: "off" };
+
+  return (
+    <Card
+      icon={<ContactIcon size={19} />}
+      title={t("Contacts")}
+      summary={
+        !c.configured
+          ? t("Who is who, so it never guesses an address")
+          : c.sources.length === 0
+            ? `${people(c.count)} · ${t("told to it in chat")}`
+            : `${people(c.count)} · ${c.sources.length === 1 ? c.sources[0].name : t("{n} address books", { n: c.sources.length })}`
+      }
+      status={status}
+      open={open}
+      onToggle={compact ? undefined : () => setOpen(!open)}
+    >
+      <p className="text-[12.5px] text-muted -mt-1">
+        {t("Import a .vcf export from Google Contacts, iCloud, Outlook or your phone, or paste a link to one. People you mention in chat go into its own book. It looks people up before writing to them and warns when an address is unknown.")}
+      </p>
+      {(c.sources.length > 0 || c.own > 0) && (
+        <ul className="space-y-1.5">
+          {c.own > 0 && (
+            <li className="flex items-center gap-2.5 rounded-2xl bg-surface-2/60 px-3 py-2">
+              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              <div className="min-w-0 flex-1">
+                <div className="text-[13.5px] font-medium truncate">{t("My contacts")}</div>
+                <div className="text-[11.5px] text-muted truncate">{`${people(c.own)} · ${t("added in chat")}`}</div>
+              </div>
+            </li>
+          )}
+          {c.sources.map((f) => (
+            <li key={f.name} className="flex items-center gap-2.5 rounded-2xl bg-surface-2/60 px-3 py-2">
+              <span className={cx("h-2 w-2 rounded-full", f.error ? "bg-rose-500" : f.fetched_at ? "bg-emerald-500" : "bg-amber-500")} />
+              <div className="min-w-0 flex-1">
+                <div className="text-[13.5px] font-medium truncate">{f.name}</div>
+                <div className="text-[11.5px] text-muted truncate">
+                  {f.error
+                    ? f.error
+                    : f.fetched_at
+                      ? `${people(f.contacts)} · ${t("read {when}", { when: relativeTime(f.fetched_at) })}`
+                      : t("not read yet")}
+                  {!f.from_app && ` · ${t("from config.toml")}`}
+                </div>
+              </div>
+              {f.from_app && (
+                <button type="button" aria-label={t("Remove")} disabled={busy === f.name} onClick={() => void remove(f.name)} className="p-1.5 rounded-full text-muted hover:bg-surface-2">
+                  {busy === f.name ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {adding ? (
+        <div className="space-y-2.5 rounded-2xl border border-border/70 p-3">
+          <Field label={t("Name")}>
+            <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} placeholder={t("iPhone")} />
+          </Field>
+          <Field label={t("A .vcf file from your phone or computer")} hint={t("Google Contacts: Export → vCard. iPhone: Contacts → select all → Share → Save to Files. Outlook: People → Manage → Export.")}>
+            <input ref={fileInput} type="file" accept=".vcf,text/vcard,text/x-vcard" className="hidden" onChange={(e) => e.target.files?.[0] && void upload(e.target.files[0])} />
+            <button type="button" disabled={busy === "upload"} onClick={() => fileInput.current?.click()} className={secondaryBtn}>
+              {busy === "upload" ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />} {t("Choose a .vcf file")}
+            </button>
+          </Field>
+          <Field label={t("Or a link / path to one")} hint={t("A link is stored encrypted in the vault as CONTACTS_{name}.", { name: name.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "NAME" })}>
+            <input value={url} onChange={(e) => setUrl(e.target.value)} className={inputCls} placeholder="https://… /contacts.vcf" inputMode="url" autoComplete="off" />
+          </Field>
+          <div className="flex gap-2">
+            <button type="button" disabled={busy === "add" || !name.trim() || !url.trim()} onClick={() => void add()} className={primaryBtn}>
+              {busy === "add" ? <Loader2 size={16} className="animate-spin" /> : <Plug size={16} />} {t("Connect")}
+            </button>
+            <button type="button" onClick={() => setAdding(false)} className={secondaryBtn}>
+              {t("Cancel")}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button type="button" onClick={() => setAdding(true)} className={secondaryBtn}>
+          <Plus size={16} /> {t("Add an address book")}
+        </button>
+      )}
+      {c.configured && (
+        <>
+          <div className="relative">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+            <input value={query} onChange={(e) => setQuery(e.target.value)} className={cx(inputCls, "pl-9")} placeholder={t("Find someone, as the agent would")} autoComplete="off" />
+          </div>
+          {hits !== null && (
+            <ul className="space-y-1">
+              {hits.length === 0 && <li className="text-[12.5px] text-muted px-1">{t("No one matches.")}</li>}
+              {hits.map((p) => (
+                <li key={p.id} className="rounded-2xl bg-surface-2/60 px-3 py-2">
+                  <div className="text-[13.5px] font-medium">
+                    {p.name}
+                    {p.org && <span className="text-muted font-normal"> · {p.org}</span>}
+                  </div>
+                  <div className="text-[12px] text-muted break-words">{[...p.emails, ...p.phones].join(" · ")}</div>
+                </li>
+              ))}
+            </ul>
+          )}
+          {c.sources.length > 0 && (
+            <button type="button" disabled={busy === "test"} onClick={() => void runTest()} className={secondaryBtn}>
+              {busy === "test" ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />} {t("Read again")}
+            </button>
+          )}
+          {test && <TestLine result={test} okText={people(test.contacts ?? 0)} />}
         </>
       )}
     </Card>
