@@ -211,7 +211,9 @@ export function SettingsScreen() {
                 <div className="text-muted mt-0.5">
                   {s.sandbox.active
                     ? t("Each shell or Python call gets its own namespace: only the workspace is writable, your home directory is not there, and there is no network unless the command needs it.")
-                    : t("Each shell or Python call runs in the workspace with a scrubbed environment. On Linux, installing bubblewrap gives each one its own namespace.")}
+                    : s.sandbox.status.includes("container")
+                      ? t("Each shell or Python call runs in the workspace with a scrubbed environment; the container is the boundary.")
+                      : t("Each shell or Python call runs in the workspace with a scrubbed environment. On Linux, installing bubblewrap gives each one its own namespace.")}
                 </div>
               </div>
             </div>

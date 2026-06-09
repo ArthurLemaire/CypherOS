@@ -81,6 +81,16 @@ def needs_network(command: str, programs: str | None) -> bool:
     return bool(names & NETWORK_PROGRAMS) or bool(_URL.search(command))
 
 
+def in_container() -> bool:
+    """Inside Docker / Podman? (``/.dockerenv``, ``/run/.containerenv``, or the image's own
+    marker.)"""
+    return (
+        os.environ.get("OPENMUSE_IN_CONTAINER") == "1"
+        or Path("/.dockerenv").exists()
+        or Path("/run/.containerenv").exists()
+    )
+
+
 def interpreter_roots() -> list[Path]:
     """The directories that hold this Python: ``sys.prefix``, ``sys.base_prefix`` and, for
     an executable that is a chain of symlinks (a venv → a uv install → a patch version),
@@ -132,6 +142,9 @@ class Sandbox:
             self.reason = "sandbox.mode = off"
         elif platform.system() != "Linux":
             self.reason = f"bubblewrap is Linux-only (this is {platform.system()})"
+        elif not self.bwrap and in_container():
+            # the image does not ship bubblewrap: the container is the box
+            self.reason = "in a container, which is the box"
         elif not self.bwrap:
             self.reason = (
                 "bubblewrap is not installed (apt install bubblewrap / dnf install bubblewrap)"
@@ -243,4 +256,11 @@ class Sandbox:
         return args
 
 
-__all__ = ["NETWORK_PROGRAMS", "Sandbox", "SandboxSettings", "needs_network"]
+__all__ = [
+    "NETWORK_PROGRAMS",
+    "Sandbox",
+    "SandboxSettings",
+    "in_container",
+    "interpreter_roots",
+    "needs_network",
+]
