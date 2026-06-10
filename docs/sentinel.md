@@ -23,6 +23,19 @@ A tool can raise the level for a particular call in `assess()`: `shell` attaches
 
 Subprocesses started by `shell` and `python_execute` get a scrubbed environment: variables whose names look like credentials (`*KEY*`, `*TOKEN*`, `*SECRET*`, `*PASSW*`, `*CREDENTIAL*`, `*AUTH*`, `*COOKIE*`, `*SESSION*`), everything under `OPENMUSE_`, `AWS_`, `AZURE_`, `GOOGLE_`, `GH_`, `GITHUB_`, `NPM_`, plus `SSH_AUTH_SOCK`, are removed before the child starts, so code the model wrote cannot read the model's own API key or the vault key out of `os.environ`. A command that needs a secret gets it as a `{{vault:NAME}}` argument instead.
 
+## The sandbox
+
+Muse gives each user's agent a VM of its own. OpenMuse runs on your machine, so it does the next best thing on Linux: every `shell` and `python_execute` call runs in its own namespace, made with [bubblewrap](https://github.com/containers/bubblewrap) (the tool behind Flatpak; unprivileged, `apt install bubblewrap` / `dnf install bubblewrap`). Inside the box:
+
+- the workspace (and `agent.extra_roots`) are the only writable places — `/usr`, `/etc`, `/opt`, `/var` are read-only, `/tmp` is private to the call, `/proc` and `/dev` are fresh;
+- your home directory does not exist, and with it the vault, the data directory, ssh keys, cloud credentials and browser profiles. The only exception is the directory the running Python lives in (a venv or a `uv`-managed interpreter is often under home), read-only, so `python_execute` runs with the same interpreter and packages as OpenMuse. A data directory that sits inside the workspace is masked;
+- there is **no network** unless the call was assessed as needing it: a `shell` command that runs a network program (`curl`, `wget`, `pip`, `git`, `ssh`, `npm`, `docker` …) or contains a URL or hostname, or says `network=true`; a `python_execute` script that imports a network module (`requests`, `httpx`, `socket`, `urllib` …) or starts other programs. Everything else runs with only the loopback interface. A command that fails for want of the network gets a note in its result saying so, and the model can run it again with `network=true` — which is then an egress call and goes through the same review as any other;
+- the process tree, IPC, UTS and cgroup namespaces are separate; `HOME` and `TMPDIR` point into the private `/tmp`; `OPENMUSE_SANDBOX=bwrap` is set so a script can tell.
+
+This changes what *egress* means for `shell`: without a sandbox every shell command is treated as one that may reach the network (and after private data has been read, asks); with one, only commands that have the network are. A boxed `ls` after reading mail cannot send anything anywhere, so it does not ask on that ground — it is still `sensitive` and still asks in `ask` mode, as every shell command does.
+
+`[sandbox] mode` is `auto` (the default: use bubblewrap when it is installed and can create a namespace here), `bwrap` (insist — `openmuse doctor` fails and the log says why when it cannot) or `off`. Where it does not work — macOS, Windows, most Docker containers (the default seccomp profile blocks unprivileged user namespaces, which is fine: the container is the box) — commands run as before, with the scrubbed environment and the workspace as working directory, and *Settings → Safety* says so. `openmuse doctor` prints the sandbox line; the settings API has it under `sandbox`.
+
 ## Decision order
 
 For each call, the first matching step decides:
@@ -97,12 +110,12 @@ Muse runs each user's agent in its own cloud VM with the Sentinel outside it. Op
 
 - *The model acting beyond what you asked.* Every tool call goes through the policy; sensitive and dangerous calls stop for a decision; permissions are scoped to a tool and a target and can be revoked.
 - *Prompt injection that tries to exfiltrate.* Once private data has been read, egress to any host not on the allowlist asks first, with the destination on the card. `web_fetch` cannot be pointed at loopback, link-local, private or cloud-metadata addresses, including through redirects.
-- *The model seeing your secrets.* Keys and passwords live in the encrypted vault and enter tool calls as placeholders; they are substituted after approval and redacted from results. Subprocesses do not inherit credential-looking environment variables. The model never sees the access token of the app.
+- *The model seeing your secrets.* Keys and passwords live in the encrypted vault and enter tool calls as placeholders; they are substituted after approval and redacted from results. Subprocesses do not inherit credential-looking environment variables, and in the sandbox cannot read the vault, the data directory or anything else under your home. The model never sees the access token of the app.
 - *Not knowing what happened.* Everything is in `audit.jsonl` and the Activity view.
 
 **Not covered — know this before you run it**
 
-- *OS-level isolation.* `shell` and `python_execute` run as you. A command you approve can do anything you can. The pattern checks are a tripwire, not a sandbox; an adversarial script can evade them. Run OpenMuse in a container or a dedicated user account if the workspace touches anything you would miss (the Docker image is one such setup).
+- *OS-level isolation, where the sandbox does not run.* On Linux with bubblewrap a boxed command sees only the workspace, cannot reach your home directory and has no network unless the call says so (see [The sandbox](#the-sandbox)); a bubblewrap namespace is not a VM, and a kernel vulnerability or a `network=true` call you approve is still what it is. Everywhere else `shell` and `python_execute` run as you: a command you approve can do anything you can, and the pattern checks are a tripwire an adversarial script can evade. Run OpenMuse in a container or a dedicated user account there if the workspace touches anything you would miss (the Docker image is one such setup).
 - *The vault key on disk.* By default the Fernet key sits next to the vault (`vault.key`, mode 600). Anyone who can read your data directory can decrypt the vault. Set `OPENMUSE_VAULT_KEY` from a secret manager if that matters to you.
 - *DNS rebinding.* `web_fetch` checks the resolved address before the request; a hostile DNS server answering differently a moment later can still point the request at an internal address. The taint rule and the allowlist limit what such a fetch could be combined with.
 - *Bad grants.* "Always allow `shell:curl`" is exactly as strong as it sounds. Warnings still ask, but the destination of a `curl` is not inspected.

@@ -351,6 +351,12 @@ const zhCN: Record<string, string> = {
   "Always asks for: {tools}.": "始终询问：{tools}。",
   "Private data was read this session: network calls to new destinations need approval.":
     "本次会话已读取过私密数据：访问新的网络目标需要批准。",
+  "Commands run in a sandbox": "命令在沙箱中运行",
+  "Commands run without a sandbox": "命令未在沙箱中运行",
+  "Each shell or Python call gets its own namespace: only the workspace is writable, your home directory is not there, and there is no network unless the command needs it.":
+    "每次 shell 或 Python 调用都有独立的命名空间：只有工作区可写，你的主目录不在其中，命令不需要网络就没有网络。",
+  "Each shell or Python call runs in the workspace with a scrubbed environment. On Linux, installing bubblewrap gives each one its own namespace.":
+    "每次 shell 或 Python 调用都在工作区中以清洗过的环境运行。在 Linux 上安装 bubblewrap 后，每次调用会有独立的命名空间。",
   "After reading private data, new network destinations need approval.": "读取私密数据之后，访问新的网络目标需要批准。",
   "Permissions you granted": "你授予的权限",
   "None. Approvals you give “once” are not kept.": "无。你“允许一次”的批准不会保留。",

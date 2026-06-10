@@ -157,6 +157,14 @@ class ConnectorSettings(BaseModel):
     calendar: CalendarSettings = Field(default_factory=CalendarSettings)
 
 
+class SandboxSettings(BaseModel):
+    """Each ``shell`` / ``python_execute`` call in its own bubblewrap namespace (Linux)."""
+
+    # "auto": bubblewrap when it is installed and works here; "bwrap": insist (a startup
+    # error otherwise); "off": commands run unboxed, with the scrubbed environment only.
+    mode: str = "auto"
+
+
 class TriggerSettings(BaseModel):
     """Triggers start work from the world: new mail, an event about to start, a webhook."""
 
@@ -210,6 +218,7 @@ class Settings(BaseModel):
     memory: MemorySettings = Field(default_factory=MemorySettings)
     connectors: ConnectorSettings = Field(default_factory=ConnectorSettings)
     triggers: TriggerSettings = Field(default_factory=TriggerSettings)
+    sandbox: SandboxSettings = Field(default_factory=SandboxSettings)
     browser: BrowserSettings = Field(default_factory=BrowserSettings)
     mcp: MCPSettings = Field(default_factory=MCPSettings)
     server: ServerSettings = Field(default_factory=ServerSettings)

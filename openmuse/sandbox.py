@@ -1,0 +1,246 @@
+"""A small box for every command the agent runs.
+
+Muse gives each user's agent a VM of its own. OpenMuse runs on your machine, so the next
+best thing is to give each ``shell`` and ``python_execute`` call its own namespace with
+`bubblewrap <https://github.com/containers/bubblewrap>`_ (Linux, unprivileged):
+
+- the workspace (and ``agent.extra_roots``) are the only writable places;
+- ``/usr``, ``/etc``, ``/opt`` … are read-only; the Python the agent runs with is visible;
+- your home directory does not exist inside — and with it the vault, the data
+  directory, ssh keys, cloud credentials, browser profiles; ``/tmp`` is private;
+- there is no network unless the call was assessed as needing it (``curl``, ``pip``,
+  ``git`` …, a script that imports ``requests``), which is also what makes the Sentinel
+  treat it as egress.
+
+``sandbox.mode`` is ``auto`` (use bubblewrap when it works here), ``bwrap`` (insist) or
+``off``. Without it — macOS, Windows, a Docker container without user namespaces — the
+commands run as before: scrubbed environment, workspace as cwd, and the container or the
+machine is the box.
+"""
+
+from __future__ import annotations
+
+import os
+import platform
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+from openmuse.config import SandboxSettings
+from openmuse.logger import logger
+
+# Programs whose job is the network. A command running one of these gets the network
+# and counts as egress for the Sentinel; everything else runs without.
+NETWORK_PROGRAMS = frozenset(
+    {
+        "apt",
+        "apt-get",
+        "brew",
+        "cargo",
+        "conda",
+        "curl",
+        "dig",
+        "docker",
+        "gem",
+        "gh",
+        "git",
+        "go",
+        "host",
+        "nc",
+        "ncat",
+        "nslookup",
+        "npm",
+        "npx",
+        "nmap",
+        "ping",
+        "pip",
+        "pip3",
+        "pipx",
+        "pnpm",
+        "poetry",
+        "rsync",
+        "scp",
+        "sftp",
+        "ssh",
+        "telnet",
+        "traceroute",
+        "uv",
+        "uvx",
+        "wget",
+        "yarn",
+    }
+)
+_URL = re.compile(r"https?://|\bwww\.|\b[a-z0-9-]+\.(com|org|net|io|dev|cn|ai)\b", re.IGNORECASE)
+
+
+def needs_network(command: str, programs: str | None) -> bool:
+    """Does this shell command reach the network? By the programs it runs, or a URL in it."""
+    names = set(programs.split(",")) if programs else set()
+    return bool(names & NETWORK_PROGRAMS) or bool(_URL.search(command))
+
+
+def interpreter_roots() -> list[Path]:
+    """The directories that hold this Python: ``sys.prefix``, ``sys.base_prefix`` and, for
+    an executable that is a chain of symlinks (a venv → a uv install → a patch version),
+    the prefix each link points into — as written, since that is the path the next link
+    names. Paths under ``/usr`` or ``/opt`` are already read-only in the box."""
+    roots: list[Path] = []
+
+    def add(p: Path) -> None:
+        if str(p).startswith(("/usr/", "/opt/")) or p in (Path("/usr"), Path("/opt"), Path("/")):
+            return
+        if p not in roots:
+            roots.append(p)
+
+    add(Path(sys.prefix))
+    add(Path(sys.base_prefix))
+    add(Path(sys.base_prefix).resolve())
+    link = Path(sys.executable)
+    for _ in range(10):
+        if not link.is_symlink():
+            break
+        target = Path(os.readlink(link))
+        if not target.is_absolute():
+            target = link.parent / target
+        add(target.parent.parent)  # <prefix>/bin/python → <prefix>
+        link = target
+    return roots
+
+
+class Sandbox:
+    def __init__(
+        self,
+        settings: SandboxSettings,
+        workspace: Path,
+        extra_roots: list[Path] | None = None,
+        data_dir: Path | None = None,
+        probe: bool = True,
+    ):
+        self.settings = settings
+        self.workspace = workspace.resolve()
+        self.extra_roots = [p.resolve() for p in (extra_roots or [])]
+        self.data_dir = data_dir.resolve() if data_dir else None
+        self.bwrap = shutil.which("bwrap")
+        self.version = ""
+        self.reason = ""
+        self.active = False
+        if settings.mode not in ("auto", "bwrap", "off"):
+            raise ValueError("sandbox.mode must be auto, bwrap or off")
+        if settings.mode == "off":
+            self.reason = "sandbox.mode = off"
+        elif platform.system() != "Linux":
+            self.reason = f"bubblewrap is Linux-only (this is {platform.system()})"
+        elif not self.bwrap:
+            self.reason = (
+                "bubblewrap is not installed (apt install bubblewrap / dnf install bubblewrap)"
+            )
+        elif probe:
+            self.active, self.reason = self._probe()
+        else:
+            self.active = True
+        if not self.active and settings.mode == "bwrap":
+            logger.error("sandbox.mode = bwrap but the sandbox does not work: {}", self.reason)
+        elif not self.active:
+            logger.info("commands run unboxed: {}", self.reason)
+
+    def _probe(self) -> tuple[bool, str]:
+        """Can bubblewrap make a namespace here? (Not in most Docker containers.)"""
+        assert self.bwrap
+        try:
+            version = subprocess.run(
+                [self.bwrap, "--version"], capture_output=True, text=True, timeout=5
+            ).stdout.strip()
+            self.version = version.replace("bubblewrap", "").strip()
+            run = subprocess.run(
+                self.wrap(["/bin/true"], network=False, cwd=Path("/")),
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            return False, f"bubblewrap failed to start: {exc}"
+        if run.returncode != 0:
+            err = (run.stderr or run.stdout).strip().splitlines()
+            return False, "bubblewrap cannot create a namespace here" + (
+                f" ({err[-1]})" if err else ""
+            )
+        return True, ""
+
+    @property
+    def status(self) -> str:
+        if self.active:
+            return f"bubblewrap {self.version}".strip()
+        return f"off — {self.reason}"
+
+    def describe(self) -> str:
+        """One line for the model and the app."""
+        if not self.active:
+            return "Commands run in the workspace with a scrubbed environment (no sandbox)."
+        return (
+            "Commands run in a sandbox: only the workspace is writable, the home directory "
+            "is not there, /tmp is private, and there is no network unless the command needs it."
+        )
+
+    # ------------------------------------------------------------------ wrapping
+    def wrap(self, argv: list[str], network: bool, cwd: Path) -> list[str]:
+        """The ``bwrap`` command line that runs ``argv`` boxed. Call only when active
+        (the probe uses it too)."""
+        assert self.bwrap
+        args = [
+            self.bwrap,
+            "--die-with-parent",
+            "--new-session",
+            "--unshare-user-try",
+            "--unshare-pid",
+            "--unshare-ipc",
+            "--unshare-uts",
+            "--unshare-cgroup-try",
+        ]
+        if not network:
+            args.append("--unshare-net")
+        for path in ("/usr", "/etc", "/opt", "/var", "/snap", "/nix", "/run/systemd/resolve"):
+            args += ["--ro-bind-try", path, path]
+        # merged-/usr distributions have these as symlinks; the others have real directories
+        for path in ("/bin", "/sbin", "/lib", "/lib32", "/lib64", "/libx32"):
+            if Path(path).is_symlink():
+                args += ["--symlink", str(Path(path).resolve().relative_to("/")), path]
+            elif Path(path).is_dir():
+                args += ["--ro-bind", path, path]
+        args += ["--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp"]
+        # hardware and device info, as Flatpak exposes it (nproc, psutil, torch read these)
+        for path in ("/sys/block", "/sys/bus", "/sys/class", "/sys/dev", "/sys/devices"):
+            args += ["--ro-bind-try", path, path]
+        # the interpreter the agent runs with (a venv, a uv- or pyenv-managed Python) usually
+        # lives outside /usr — often under the hidden home; only those directories come in
+        for prefix in interpreter_roots():
+            args += ["--ro-bind-try", str(prefix), str(prefix)]
+        roots = [self.workspace, *self.extra_roots]
+        for root in roots:
+            args += ["--bind-try", str(root), str(root)]
+        if self.data_dir and any(self.data_dir.is_relative_to(r) for r in roots):
+            # the data dir (vault, sessions, tokens) inside a bound root: mask it
+            args += ["--tmpfs", str(self.data_dir)]
+        home = "/tmp/home"
+        args += [
+            "--dir",
+            home,
+            "--setenv",
+            "HOME",
+            home,
+            "--setenv",
+            "TMPDIR",
+            "/tmp",
+            "--setenv",
+            "OPENMUSE_SANDBOX",
+            "bwrap",
+            "--chdir",
+            str(cwd),
+            "--",
+            *argv,
+        ]
+        return args
+
+
+__all__ = ["NETWORK_PROGRAMS", "Sandbox", "SandboxSettings", "needs_network"]

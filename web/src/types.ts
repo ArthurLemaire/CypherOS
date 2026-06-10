@@ -256,6 +256,8 @@ export interface SettingsView {
     taint_tracking: boolean;
     egress_allowlist: string[];
   };
+  /** Each shell / python call in its own bubblewrap namespace (Linux); status says why not. */
+  sandbox: { mode: "auto" | "bwrap" | "off"; active: boolean; status: string };
   llm: { provider: string; model: string; stream: boolean };
   agent: { language: string; max_steps: number; show_thinking: boolean; workspace: string };
   connectors: { email: boolean; calendar: boolean; browser: boolean; mcp: string[] };

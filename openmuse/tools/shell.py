@@ -6,6 +6,10 @@ removed before the child starts, so a script the model wrote cannot read the mod
 own API key, the vault key or the app token out of ``os.environ``. Secrets a command
 really needs go in as ``{{vault:NAME}}`` arguments instead, which Sentinel fills in
 after approval.
+
+With a working sandbox (``openmuse.sandbox``, bubblewrap on Linux) each call also gets
+its own namespace: the workspace is the only writable place, the home directory is not
+there, and there is no network unless the call was assessed as needing it.
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from openmuse.sandbox import Sandbox, needs_network
 from openmuse.schema import RiskLevel, ToolResult
 from openmuse.tools.base import BaseTool, CallAssessment
 
@@ -145,8 +150,21 @@ def programs_of(command: str) -> str | None:
     return ",".join(sorted(names)) if names else None
 
 
-async def _run(cmd: list[str] | str, cwd: Path, timeout: float, shell: bool) -> ToolResult:
+async def _run(
+    cmd: list[str] | str,
+    cwd: Path,
+    timeout: float,
+    shell: bool,
+    sandbox: Sandbox | None = None,
+    network: bool = True,
+) -> ToolResult:
     env = scrubbed_env()
+    boxed = sandbox is not None and sandbox.active
+    if boxed:
+        assert sandbox is not None
+        argv = ["/bin/sh", "-c", cmd] if isinstance(cmd, str) else list(cmd)
+        cmd = sandbox.wrap(argv, network=network, cwd=cwd)
+        shell = False
     try:
         if shell:
             proc = await asyncio.create_subprocess_shell(
@@ -179,8 +197,23 @@ async def _run(cmd: list[str] | str, cwd: Path, timeout: float, shell: bool) -> 
         text += ("\n" if text else "") + f"[stderr]\n{stderr}"
     text += f"\n[exit code {proc.returncode}]"
     if proc.returncode != 0:
+        if boxed and not network and _NO_NETWORK.search(stderr + stdout):
+            text += (
+                "\n[sandbox: this command ran without network access. Commands that reach the "
+                "network say so by what they run (curl, pip, git …) or by a URL in them; if this "
+                "one needs the network, run it again with network=true.]"
+            )
         return ToolResult(output=text.strip(), error=f"exit code {proc.returncode}")
     return ToolResult(output=text.strip())
+
+
+# what a command says when it wanted the network and the box had none
+_NO_NETWORK = re.compile(
+    r"Could not resolve|Name or service not known|Temporary failure in name resolution|"
+    r"Network is unreachable|getaddrinfo|nodename nor servname|No address associated|"
+    r"NameResolutionError|ConnectError|Failed to connect",
+    re.IGNORECASE,
+)
 
 
 class Shell(BaseTool):
@@ -195,31 +228,58 @@ class Shell(BaseTool):
         "properties": {
             "command": {"type": "string"},
             "timeout": {"type": "number", "description": "Seconds (default 60, max 600)."},
+            "network": {
+                "type": "boolean",
+                "description": (
+                    "Set when the command needs the network and that is not obvious from "
+                    "what it runs (curl, pip, git … and URLs are recognised on their own)."
+                ),
+            },
         },
         "required": ["command"],
     }
     risk: RiskLevel = RiskLevel.SENSITIVE
     egress: bool = True  # a shell can reach the network
     workspace: Path
+    # With a working sandbox the command gets the network only when it says so, and
+    # only then does the Sentinel treat it as egress. Without one, every shell command
+    # may reach the network and is treated that way.
+    sandbox: Sandbox | None = None
+
+    def _network(self, args: dict[str, Any]) -> bool:
+        command = str(args.get("command", ""))
+        return bool(args.get("network")) or needs_network(command, programs_of(command))
 
     def assess(self, args: dict[str, Any]) -> CallAssessment:
         command = str(args.get("command", ""))
         warnings = [label for pattern, label in _DANGEROUS if pattern.search(command)]
+        boxed = self.sandbox is not None and self.sandbox.active
+        network = self._network(args)
         return CallAssessment(
             risk=RiskLevel.SENSITIVE,
-            egress=True,
+            egress=network if boxed else True,
             egress_target=None,
             target=programs_of(command),
-            summary=f"shell: {command[:160]}",
+            # in the box the card says when a command gets the network; unboxed, all do
+            summary=f"shell{' (network)' if boxed and network else ''}: {command[:160]}",
             warnings=[f"command looks dangerous: {w}" for w in warnings],
         )
 
-    async def execute(self, command: str = "", timeout: float = 60, **_: Any) -> ToolResult:
+    async def execute(
+        self, command: str = "", timeout: float = 60, network: bool = False, **_: Any
+    ) -> ToolResult:
         if not command.strip():
             return ToolResult.fail("empty command")
         timeout = max(1.0, min(float(timeout or 60), 600.0))
         self.workspace.mkdir(parents=True, exist_ok=True)
-        return await _run(command, self.workspace, timeout, shell=True)
+        return await _run(
+            command,
+            self.workspace,
+            timeout,
+            shell=True,
+            sandbox=self.sandbox,
+            network=self._network({"command": command, "network": network}),
+        )
 
 
 class PythonExecute(BaseTool):
@@ -239,6 +299,9 @@ class PythonExecute(BaseTool):
     risk: RiskLevel = RiskLevel.MODERATE
     egress: bool = True
     workspace: Path
+    # In the sandbox a script gets the network only when it imports something that uses
+    # it (or starts programs, which could); see ``code_reach``.
+    sandbox: Sandbox | None = None
 
     def assess(self, args: dict[str, Any]) -> CallAssessment:
         """Plain computation and files in the workspace are moderate (auto-allowed in the
@@ -271,10 +334,18 @@ class PythonExecute(BaseTool):
         ) as fh:
             fh.write(code)
             script = Path(fh.name)
+        reach = code_reach(code, self.workspace)
         try:
-            return await _run([sys.executable, str(script)], self.workspace, timeout, shell=False)
+            return await _run(
+                [sys.executable, str(script)],
+                self.workspace,
+                timeout,
+                shell=False,
+                sandbox=self.sandbox,
+                network=bool(reach.get("network")) or bool(reach.get("processes")),
+            )
         finally:
             script.unlink(missing_ok=True)
 
 
-__all__ = ["PythonExecute", "Shell", "code_reach", "programs_of", "scrubbed_env"]
+__all__ = ["PythonExecute", "Shell", "code_reach", "needs_network", "programs_of", "scrubbed_env"]

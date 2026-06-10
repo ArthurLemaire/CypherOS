@@ -216,7 +216,7 @@ More in [docs/architecture.md](docs/architecture.md).
 
 | Meta Muse | OpenMuse |
 |---|---|
-| Runs in a per-user Secure VM | Runs on your machine or in Docker; the workspace and data directory are the boundary |
+| Runs in a per-user Secure VM | Runs on your machine or in Docker; on Linux every `shell` / Python call gets its own [bubblewrap](https://github.com/containers/bubblewrap) namespace — workspace-only writes, no home directory, no network unless the call needs it |
 | Sentinel approves sensitive actions | `Sentinel` policy engine: allow / ask / deny, rules, taint tracking, egress allowlist |
 | Credentials never reach the model | Encrypted vault with `{{vault:NAME}}` placeholders and output redaction |
 | Remembers you | SQLite memory the agent maintains and you can edit |
@@ -247,7 +247,7 @@ More in [docs/architecture.md](docs/architecture.md).
 - [ ] Contacts connector
 - [x] Memory that stays tidy: rare-word recall, updates instead of duplicates, a periodic tidy-up with undo
 - [ ] Memory recall with embeddings
-- [ ] Per-tool sandboxes for `shell` and `python_execute`
+- [x] Per-call sandboxes for `shell` and `python_execute` (bubblewrap on Linux)
 - [ ] Skills: reusable task recipes
 - [x] The app in 简体中文 (Settings → App language); more languages welcome — one dictionary file each
 

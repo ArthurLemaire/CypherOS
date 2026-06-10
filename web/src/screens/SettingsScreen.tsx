@@ -1,4 +1,4 @@
-import { Check, ChevronRight, LogOut, Moon, Shield, ShieldAlert, ShieldCheck } from "lucide-react";
+import { Box, Check, ChevronRight, LogOut, Moon, Shield, ShieldAlert, ShieldCheck } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { api, setToken } from "../api";
 import { Avatar } from "../components/Avatar";
@@ -198,6 +198,22 @@ export function SettingsScreen() {
             <div className="text-[12.5px] text-muted leading-relaxed">
               {t("Always asks for: {tools}.", { tools: s.sentinel.always_ask_tools.join(", ") || "—" })}{" "}
               {s.sentinel.taint_tracking && t("After reading private data, new network destinations need approval.")}
+            </div>
+          )}
+          {s?.sandbox && (
+            <div className="flex items-start gap-2.5 rounded-2xl bg-surface-2/60 px-3.5 py-2.5 text-[12.5px] leading-snug">
+              <Box size={15} className={cx("shrink-0 mt-[2px]", s.sandbox.active ? "text-emerald-500" : "text-muted")} />
+              <div>
+                <div className="font-medium text-fg">
+                  {s.sandbox.active ? t("Commands run in a sandbox") : t("Commands run without a sandbox")}
+                  <span className="text-muted font-normal"> · {s.sandbox.status}</span>
+                </div>
+                <div className="text-muted mt-0.5">
+                  {s.sandbox.active
+                    ? t("Each shell or Python call gets its own namespace: only the workspace is writable, your home directory is not there, and there is no network unless the command needs it.")
+                    : t("Each shell or Python call runs in the workspace with a scrubbed environment. On Linux, installing bubblewrap gives each one its own namespace.")}
+                </div>
+              </div>
             </div>
           )}
         </Section>

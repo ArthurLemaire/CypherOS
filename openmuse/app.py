@@ -15,6 +15,7 @@ from openmuse.llm import BaseLLM, create_llm
 from openmuse.logger import logger, setup_logging
 from openmuse.memory import MemoryStore
 from openmuse.reminders import ReminderStore
+from openmuse.sandbox import Sandbox
 from openmuse.sentinel import AuditLog, Sentinel
 from openmuse.tools import (
     AskUser,
@@ -105,12 +106,15 @@ class OpenMuseApp:
     def _build_tools(self) -> ToolCollection:
         s = self.settings
         ws: Path = s.agent.workspace
+        self.sandbox = Sandbox(
+            s.sandbox, workspace=ws, extra_roots=list(s.agent.extra_roots), data_dir=s.data_dir
+        )
         tools = ToolCollection(
             Terminate(),
             AskUser(ui=self.ui),
             Files(workspace=ws, extra_roots=list(s.agent.extra_roots)),
-            Shell(workspace=ws),
-            PythonExecute(workspace=ws),
+            Shell(workspace=ws, sandbox=self.sandbox),
+            PythonExecute(workspace=ws, sandbox=self.sandbox),
             WebSearch(),
             WebFetch(),
             Goals(store=self.goals),

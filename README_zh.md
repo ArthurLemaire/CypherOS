@@ -216,7 +216,7 @@ flowchart LR
 
 | Meta Muse | OpenMuse |
 |---|---|
-| 每个用户一台 Secure VM | 跑在你的机器或 Docker 里；工作区和数据目录就是边界 |
+| 每个用户一台 Secure VM | 跑在你的机器或 Docker 里；Linux 上每次 `shell` / Python 调用都有独立的 [bubblewrap](https://github.com/containers/bubblewrap) 命名空间——只能写工作区、看不到主目录、不需要网络就没有网络 |
 | Sentinel 审批敏感动作 | `Sentinel` 策略引擎：allow / ask / deny、规则、污点追踪、出站白名单 |
 | 凭据不进模型 | 加密保险库 + `{{vault:NAME}}` 占位符 + 输出脱敏 |
 | 记得你 | Agent 维护、你可编辑的 SQLite 记忆 |
@@ -247,7 +247,7 @@ flowchart LR
 - [ ] 联系人连接器
 - [x] 记忆保持整洁：按稀有词召回、更新而非重复、定期整理并可撤销
 - [ ] 基于向量的记忆召回
-- [ ] `shell` 与 `python_execute` 的独立沙箱
+- [x] `shell` 与 `python_execute` 每次调用独立沙箱（Linux 上用 bubblewrap）
 - [ ] Skills：可复用的任务配方
 - [x] App 简体中文界面（设置 → 应用语言）；欢迎补充更多语言——每种语言一个字典文件
 

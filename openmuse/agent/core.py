@@ -68,6 +68,19 @@ class MuseAgent:
         return count
 
     # ------------------------------------------------------------------ prompt
+    def sandbox_note(self) -> str:
+        """How commands run, from the shell tool's sandbox (the tools own it)."""
+        shell = self.tools.get("shell")
+        box = getattr(shell, "sandbox", None)
+        if box is not None and box.active:
+            return (
+                "Commands (shell, python_execute) run in a sandbox: only the workspace is "
+                "writable, the home directory and the rest of the machine are not there, and "
+                "there is no network unless the command needs it (curl, pip, git, a URL, a "
+                "script that imports requests… are recognised; otherwise pass network=true)."
+            )
+        return "Commands (shell, python_execute) run in the workspace with a scrubbed environment."
+
     def build_system_prompt(self, user_input: str) -> str:
         a = self.settings.agent
         language_rule = (
@@ -126,6 +139,7 @@ class MuseAgent:
             now=datetime.now().astimezone().strftime("%Y-%m-%d %H:%M (%A, UTC%z)"),
             workspace=str(a.workspace.resolve()),
             sentinel_mode=self.settings.sentinel.mode,
+            sandbox=self.sandbox_note(),
             tool_names=", ".join(t.name for t in self.tools),
             user_profile=profile,
             memories=memories,

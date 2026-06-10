@@ -1079,6 +1079,17 @@ async def _doctor(settings: Settings, check_model: bool) -> None:
         None,
         f"sentinel: {settings.sentinel.mode} mode · taint tracking {'on' if settings.sentinel.taint_tracking else 'off'}",
     )
+    if app_ is not None:
+        box = app_.sandbox
+        line(
+            True if box.active else (False if settings.sandbox.mode == "bwrap" else None),
+            f"sandbox: {box.status}",
+            (
+                "sandbox.mode = bwrap, but bubblewrap does not work here"
+                if settings.sandbox.mode == "bwrap"
+                else "commands run unboxed — on Linux, `apt install bubblewrap` gives each one its own namespace"
+            ),
+        )
 
     if app_ is None:
         _doctor_summary(problems)

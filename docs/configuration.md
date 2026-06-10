@@ -121,6 +121,15 @@ reason = "recursive deletes are not allowed"
 
 How the pieces combine is described in [sentinel.md](sentinel.md).
 
+## `[sandbox]`
+
+```toml
+[sandbox]
+mode = "auto"                        # auto | bwrap | off
+```
+
+On Linux with [bubblewrap](https://github.com/containers/bubblewrap) installed (`apt install bubblewrap`, `dnf install bubblewrap`), every `shell` and `python_execute` call runs in its own namespace: the workspace and `agent.extra_roots` are the only writable places, your home directory is not there, `/tmp` is private, and there is no network unless the call was assessed as needing it. `auto` uses it when it works here and says so in the log when it does not; `bwrap` insists (`openmuse doctor` fails otherwise); `off` runs commands unboxed, with the scrubbed environment only. Details and what changes for the Sentinel in [sentinel.md → The sandbox](sentinel.md#the-sandbox).
+
 ## `[memory]`
 
 ```toml
