@@ -242,7 +242,7 @@ More in [docs/architecture.md](docs/architecture.md).
 - [x] Push notifications when an approval is waiting or a goal posts an update
 - [x] Browser view: watch the agent browse live, take over for sign-ins
 - [x] Local models (Ollama) with automatic prompt-mode fallback
-- [ ] Triggers for goals: cron, webhooks, new mail
+- [x] Triggers: new mail, calendar events and webhooks start work; routines cover cron
 - [x] Calendar connector: any private `.ics` link or file; agenda, free time, drafted events as *Add to calendar* cards
 - [ ] Contacts connector
 - [x] Memory that stays tidy: rare-word recall, updates instead of duplicates, a periodic tidy-up with undo
