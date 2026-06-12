@@ -20,6 +20,7 @@ openmuse serve --port 9000 --no-qr
   <img src="screenshots/connections.png" width="19%" alt="Connections">
   <img src="screenshots/memory.png" width="19%" alt="Memory">
   <img src="screenshots/settings.png" width="19%" alt="Settings">
+  <img src="screenshots/upcoming-triggers.png" width="19%" alt="Upcoming: triggers">
 </p>
 
 ## Getting it onto your phone
