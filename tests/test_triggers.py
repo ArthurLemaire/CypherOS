@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import imaplib
+import socket
+import threading
 from pathlib import Path
 
 import pytest
@@ -115,3 +118,130 @@ def test_triggers_tool(tmp_path: Path):
     ).summary
     assert summary == "triggers create: mail “landlord” — draft a reply"
     store.close()
+
+
+# ----------------------------------------------------------------------------- IMAP watcher
+class _TinyImap(threading.Thread):
+    """Just enough IMAP for the watcher: greeting, CAPABILITY, LOGIN, EXAMINE, UID SEARCH,
+    UID FETCH (RFC822), LOGOUT. Messages are ``{uid: raw_bytes}``."""
+
+    def __init__(self, messages: dict[int, bytes]):
+        super().__init__(daemon=True)
+        self.messages = messages
+        self.sock = socket.socket()
+        self.sock.bind(("127.0.0.1", 0))
+        self.sock.listen(1)
+        self.port = self.sock.getsockname()[1]
+        self.commands: list[str] = []
+
+    def run(self) -> None:
+        conn, _ = self.sock.accept()
+        f = conn.makefile("rwb")
+
+        def send(line: str) -> None:
+            f.write(line.encode() + b"\r\n")
+            f.flush()
+
+        send("* OK tiny ready")
+        while True:
+            raw = f.readline()
+            if not raw:
+                break
+            line = raw.decode().rstrip("\r\n")
+            self.commands.append(line)
+            tag, _, rest = line.partition(" ")
+            cmd = rest.upper()
+            if cmd.startswith("CAPABILITY"):
+                send("* CAPABILITY IMAP4rev1")
+                send(f"{tag} OK done")
+            elif cmd.startswith("LOGIN"):
+                send(f"{tag} OK logged in" if "me@example.com" in rest else f"{tag} NO bad")
+            elif cmd.startswith(("EXAMINE", "SELECT")):
+                send(f"* {len(self.messages)} EXISTS")
+                send(f"{tag} OK [READ-ONLY] done")
+            elif cmd.startswith("UID SEARCH"):
+                send("* SEARCH " + " ".join(str(u) for u in sorted(self.messages)))
+                send(f"{tag} OK done")
+            elif cmd.startswith("UID FETCH"):
+                uid = int(rest.split()[2])
+                body = self.messages[uid]
+                f.write(
+                    f"* 1 FETCH (UID {uid} RFC822 {{{len(body)}}}\r\n".encode() + body + b")\r\n"
+                )
+                f.flush()
+                send(f"{tag} OK done")
+            elif cmd.startswith("LOGOUT"):
+                send("* BYE")
+                send(f"{tag} OK bye")
+                break
+            else:
+                send(f"{tag} BAD what")
+        conn.close()
+
+
+def _mail(sender: str, subject: str, body: str) -> bytes:
+    return (
+        f"From: {sender}\r\nTo: me@example.com\r\nSubject: {subject}\r\n"
+        f"Date: Tue, 22 Sep 2026 10:00:00 +0800\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{body}\r\n"
+    ).encode()
+
+
+async def test_mail_watcher_reads_new_messages_by_uid(monkeypatch: pytest.MonkeyPatch):
+    from openmuse.config import EmailSettings
+    from openmuse.triggers.mail import MailWatcher
+
+    messages = {
+        40: _mail("Old <old@example.com>", "Before you connected", "not replayed"),
+        41: _mail(
+            "The Landlord <l@example.com>",
+            "=?utf-8?b?5oi/56ef?= from October",
+            "Hi, the rent goes up by 3%.\r\nYour verification code is 123456.",
+        ),
+        42: _mail("Newsletter <n@example.com>", "This week in tea", "..."),
+    }
+    server = _TinyImap(messages)
+    server.start()
+    monkeypatch.setattr(imaplib, "IMAP4_SSL", lambda host, port: imaplib.IMAP4(host, port))
+    settings = EmailSettings(
+        enabled=True,
+        imap_host="127.0.0.1",
+        imap_port=server.port,
+        address="me@example.com",
+        password="pw",
+    )
+    watcher = MailWatcher(settings)
+    assert watcher.configured
+
+    # first look: only the high-water mark
+    fresh, mark = await watcher.look(0)
+    assert fresh == [] and mark == 42
+    assert any(c.upper().endswith("EXAMINE INBOX") for c in server.commands)  # read-only
+    assert not any("FETCH" in c.upper() for c in server.commands)
+
+    server = _TinyImap(messages)
+    server.start()
+    settings.imap_port = server.port
+    fresh, mark = await watcher.look(40)
+    assert mark == 42 and [m.uid for m in fresh] == [41, 42]
+    landlord = fresh[0]
+    assert (
+        landlord.sender == "The Landlord <l@example.com>"
+        and landlord.subject == "房租 from October"
+    )
+    assert "rent goes up by 3%" in landlord.body and "123456" not in landlord.body  # scrubbed
+    assert landlord.key == "uid:41" and landlord.render().startswith("From: The Landlord")
+
+    # a bad login is an error the poller can show, not a crash
+    server = _TinyImap(messages)
+    server.start()
+    settings.imap_port = server.port
+    settings.address = "someone@else.com"
+    with pytest.raises(RuntimeError, match="IMAP error"):
+        await watcher.look(40)
+    # no credentials at all
+    with pytest.raises(RuntimeError, match="not set"):
+        await MailWatcher(
+            EmailSettings(
+                enabled=True, imap_host="x", address="{{vault:EMAIL_ADDRESS}}", password="pw"
+            )
+        ).look(0)
