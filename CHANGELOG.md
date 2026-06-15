@@ -4,6 +4,10 @@ All notable changes to OpenMuse. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+### Added
+
+- **Triggers: work that starts when something happens.** Reminders fire at a time; a trigger fires on an event in the world. Three kinds, set in chat ("when the landlord writes back, summarise it and draft a reply") or under *Upcoming → When something happens*: **new mail** — the inbox is looked at every five minutes while a mail trigger exists, by IMAP UID, so connecting a mailbox never replays old mail and nothing fires twice; **before an event** — *N* minutes before a calendar event whose title or place contains the words you named; **webhook** — a URL with a key that any program can `POST` to (`/api/hooks/<id>?key=…`, body ≤ 64 KB, JSON pretty-printed, 429 when deliveries come too close, a wrong key indistinguishable from a wrong URL). Each firing is a background run in the chat the trigger was set from, with the mail, event or request as context — marked as data, never instructions — and shows in the Feed as *New mail: …*, *Coming up: …* or *Webhook: …*, pushed once. Mail and events taint the session like any private data. A `triggers` tool, `openmuse triggers list | add | cancel`, `GET/POST /api/triggers`, `[triggers]` settings (`mail_poll_minutes`, `hook_min_seconds`); `openmuse doctor` counts them and flags ones whose connector is missing.
+
 ## [0.3.0] — 2026-09-23
 
 Your calendar, and a memory that stays tidy. The agent reads any calendar with a private `.ics` link, knows what is on today, finds free time and proposes events as cards you add with a tap; memories are updated instead of duplicated and tidied up periodically, every change with an undo. Plus fixes for reasoning models that think past their token budget and for cut-off tool calls.

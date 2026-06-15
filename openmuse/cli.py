@@ -26,6 +26,10 @@ app = typer.Typer(
 )
 goals_app = typer.Typer(help="Manage long-term goals.", no_args_is_help=True)
 reminders_app = typer.Typer(help="Reminders and routines.", no_args_is_help=True)
+triggers_app = typer.Typer(
+    help="Triggers: work that starts from new mail, a calendar event or a webhook.",
+    no_args_is_help=True,
+)
 memory_app = typer.Typer(help="Inspect or edit long-term memory.", no_args_is_help=True)
 calendar_app = typer.Typer(
     help="The calendar feeds: agenda, free time, links.", no_args_is_help=True
@@ -34,6 +38,7 @@ vault_app = typer.Typer(help="Store credentials the model never sees.", no_args_
 config_app = typer.Typer(help="Configuration helpers.", no_args_is_help=True)
 app.add_typer(goals_app, name="goals")
 app.add_typer(reminders_app, name="reminders")
+app.add_typer(triggers_app, name="triggers")
 app.add_typer(memory_app, name="memory")
 app.add_typer(calendar_app, name="calendar")
 app.add_typer(vault_app, name="vault")
@@ -632,6 +637,91 @@ def reminders_cancel(reminder_id: str, config: ConfigOpt = None) -> None:
     console.print(item.render(), markup=False)
 
 
+# ============================================================================ triggers
+def _hook_url(s: Settings, tr: Any) -> str:
+    """The webhook address as the running server would give it (the app shows the same)."""
+    from openmuse.server import lan_ip
+
+    host = (
+        s.server.host if s.server.host not in ("", "0.0.0.0", "::") else (lan_ip() or "127.0.0.1")
+    )
+    return f"http://{host}:{s.server.port}/api/hooks/{tr.id}?key={tr.secret}"
+
+
+@triggers_app.command("list")
+def triggers_list(
+    config: ConfigOpt = None,
+    all: Annotated[bool, typer.Option("--all", help="Include cancelled ones")] = False,  # noqa: A002
+) -> None:
+    """List triggers."""
+    from openmuse.triggers import TriggerStore
+
+    s = _settings(config)
+    items = TriggerStore(s.triggers_db).list(None if all else "active")
+    if not items:
+        console.print("[dim]no triggers[/dim]")
+        return
+    table = Table(title="Triggers")
+    table.add_column("id", style="cyan")
+    table.add_column("when")
+    table.add_column("do")
+    table.add_column("fired", justify="right")
+    table.add_column("status")
+    for tr in items:
+        table.add_row(tr.id, tr.describe(), tr.text, str(tr.fired), tr.status)
+    console.print(table)
+    for tr in items:
+        if tr.kind == "hook" and tr.status == "active":
+            console.print(f"{tr.id}  POST {_hook_url(s, tr)}", markup=False, highlight=False)
+
+
+@triggers_app.command("add")
+def triggers_add(
+    kind: Annotated[str, typer.Argument(help="mail | event | hook")],
+    text: Annotated[str, typer.Argument(help="What to do each time it fires")],
+    config: ConfigOpt = None,
+    match: Annotated[
+        str,
+        typer.Option(
+            help="Words that must all appear in the sender/subject (mail) or title/place "
+            "(event); a name for a hook. Empty: anything."
+        ),
+    ] = "",
+    lead: Annotated[int, typer.Option(help="event: minutes before the start")] = 30,
+) -> None:
+    """Add a trigger. Mail triggers need the email connector, event triggers a calendar."""
+    from openmuse.triggers import TriggerStore
+
+    s = _settings(config)
+    if kind == "mail" and not (s.connectors.email.enabled and s.connectors.email.imap_host):
+        console.print("[red]the email connector is not set up (connectors.email)[/red]")
+        raise typer.Exit(1)
+    if kind == "event" and not (s.connectors.calendar.enabled and s.connectors.calendar.feeds):
+        console.print("[red]no calendar feed is set up (connectors.calendar)[/red]")
+        raise typer.Exit(1)
+    try:
+        item = TriggerStore(s.triggers_db).create(kind, text, match=match, lead_minutes=lead)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from None
+    console.print(item.render(), markup=False)
+    if item.kind == "hook":
+        console.print(f"POST {_hook_url(s, item)}", markup=False, highlight=False)
+
+
+@triggers_app.command("cancel")
+def triggers_cancel(trigger_id: str, config: ConfigOpt = None) -> None:
+    """Cancel a trigger."""
+    from openmuse.triggers import TriggerStore
+
+    s = _settings(config)
+    item = TriggerStore(s.triggers_db).cancel(trigger_id)
+    if item is None:
+        console.print(f"[red]no active trigger {trigger_id}[/red]")
+        raise typer.Exit(1)
+    console.print(item.render(), markup=False)
+
+
 # ============================================================================ memory
 def _print_memories(items) -> None:  # noqa: ANN001
     if not items:
@@ -1025,6 +1115,25 @@ async def _doctor(settings: Settings, check_model: bool) -> None:
             )
         else:
             line(None, "calendar: off")
+        triggers = app_.triggers.list("active")
+        kinds = app_.trigger_kinds()
+        orphans = [tr for tr in triggers if not kinds.get(tr.kind, True)]
+        line(
+            not orphans,
+            f"triggers: {len(triggers)} active"
+            + (
+                " · "
+                + ", ".join(
+                    f"{k}: {sum(1 for t in triggers if t.kind == k)}"
+                    for k in ("mail", "event", "hook")
+                    if any(t.kind == k for t in triggers)
+                )
+                if triggers
+                else ""
+            )
+            + (f" · {len(orphans)} without their connector" if orphans else ""),
+            "a mail/event trigger needs its connector (email / calendar) to fire",
+        )
         if settings.browser.enabled:
             line(
                 playwright_available(),

@@ -107,6 +107,9 @@ export function localLabel(label: string): string {
   if (label.startsWith("Check-in: ")) return t("Check-in: {title}", rest("Check-in: "));
   if (label.startsWith("Reminder: ")) return t("Reminder: {title}", rest("Reminder: "));
   if (label.startsWith("Routine: ")) return t("Routine: {title}", rest("Routine: "));
+  if (label.startsWith("New mail: ")) return t("New mail: {title}", rest("New mail: "));
+  if (label.startsWith("Coming up: ")) return t("Coming up: {title}", rest("Coming up: "));
+  if (label.startsWith("Webhook: ")) return t("Webhook: {title}", rest("Webhook: "));
   return label === "Tidied memory" ? t("Tidied memory") : label;
 }
 

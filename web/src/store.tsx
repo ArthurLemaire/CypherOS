@@ -286,6 +286,7 @@ function applyWs(state: AppState, msg: WsMessage): AppState {
     case "memory":
       return { ...state, memoryVersion: state.memoryVersion + 1 };
     case "reminders":
+    case "triggers":
       return { ...state, remindersVersion: state.remindersVersion + 1 };
     case "calendar":
       return { ...state, calendarVersion: state.calendarVersion + 1 };

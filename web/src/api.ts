@@ -11,6 +11,9 @@ import type {
   PushInfo,
   Reminder,
   ReminderKind,
+  Trigger,
+  TriggerKind,
+  TriggersData,
   SettingsView,
   StateSnapshot,
   TestResult,
@@ -142,6 +145,11 @@ export const api = {
     request<Reminder>("/api/reminders", { method: "POST", body: JSON.stringify(body) }),
   fireReminder: (id: string) => request<Reminder>(`/api/reminders/${id}/fire`, { method: "POST" }),
   cancelReminder: (id: string) => request<Reminder>(`/api/reminders/${id}`, { method: "DELETE" }),
+  triggers: () => request<TriggersData>("/api/triggers"),
+  createTrigger: (body: { kind: TriggerKind; text: string; match?: string; lead_minutes?: number; thread?: string }) =>
+    request<Trigger>("/api/triggers", { method: "POST", body: JSON.stringify(body) }),
+  fireTrigger: (id: string) => request<Trigger>(`/api/triggers/${id}/fire`, { method: "POST" }),
+  cancelTrigger: (id: string) => request<Trigger>(`/api/triggers/${id}`, { method: "DELETE" }),
   files: (limit = 300) => request<FileInfo[]>(`/api/files?limit=${limit}`),
   /** Raw contents of a workspace file, fetched with the token in a header (never in a URL). */
   fileText: async (path: string): Promise<string> => {

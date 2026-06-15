@@ -53,3 +53,44 @@ def test_doctor_reports_the_setup_without_calling_the_model(tmp_path, monkeypatc
     out = plain(result.output)
     assert result.exit_code == 1, out
     assert "no usable API key" in out
+
+
+def test_triggers_commands(tmp_path, monkeypatch):
+    for var in ("DEEPSEEK_API_KEY", "OPENAI_API_KEY", "OPENMUSE_CONFIG"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(config_module, "DEFAULT_DATA_DIR", tmp_path / "home")
+    monkeypatch.setenv("OPENMUSE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("OPENMUSE_WORKSPACE", str(tmp_path / "ws"))
+    (tmp_path / "ws").mkdir()
+
+    assert "no triggers" in plain(runner.invoke(app, ["triggers", "list"]).output)
+    # mail and event triggers need their connector
+    result = runner.invoke(app, ["triggers", "add", "mail", "summarise it", "--match", "landlord"])
+    assert result.exit_code == 1 and "email connector" in plain(result.output)
+    result = runner.invoke(app, ["triggers", "add", "event", "brief me", "--match", "review"])
+    assert result.exit_code == 1 and "calendar" in plain(result.output)
+    result = runner.invoke(app, ["triggers", "add", "sms", "x"])
+    assert result.exit_code == 1 and "kind must be" in plain(result.output)
+
+    result = runner.invoke(
+        app, ["triggers", "add", "hook", "check that the site is up", "--match", "deploy"]
+    )
+    out = plain(result.output)
+    assert result.exit_code == 0, out
+    assert "when webhook “deploy” → check that the site is up" in out
+    assert "POST http://" in out and "/api/hooks/t_" in out and "?key=" in out
+    trigger_id = re.search(r"\[(t_[0-9a-f]+)\]", out).group(1)
+
+    out = plain(runner.invoke(app, ["triggers", "list"]).output)
+    assert (
+        trigger_id in out and "webhook “deploy”" in out and f"/api/hooks/{trigger_id}?key=" in out
+    )
+    out = plain(runner.invoke(app, ["doctor", "--no-model"]).output)
+    assert "triggers: 1 active · hook: 1" in out
+
+    result = runner.invoke(app, ["triggers", "cancel", trigger_id])
+    assert result.exit_code == 0 and "(cancelled" in plain(result.output)
+    assert runner.invoke(app, ["triggers", "cancel", trigger_id]).exit_code == 1
+    assert "no triggers" in plain(runner.invoke(app, ["triggers", "list"]).output)
+    assert trigger_id in plain(runner.invoke(app, ["triggers", "list", "--all"]).output)

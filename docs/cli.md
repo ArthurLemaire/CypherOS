@@ -64,6 +64,18 @@ openmuse reminders cancel r_1a2b3c
 
 A reminder says one thing at the time you named; a routine (`--task`) is work the agent does at that time with its tools. Both fire from the running `openmuse serve` — those set from the terminal land in the main chat, those set in a side chat stay there. Cadence grammar as for goal check-ins: `daily HH:MM`, `weekdays HH:MM`, `weekly <mon…sun> HH:MM`, `monthly <day> HH:MM`.
 
+## Triggers
+
+```bash
+openmuse triggers list [--all]                                                   # --all includes cancelled ones
+openmuse triggers add mail  "Summarise it and draft a reply" --match "landlord"   # a new mail whose sender/subject has every word
+openmuse triggers add event "Put together a one-page brief"  --match "review" --lead 30   # 30 min before a matching event
+openmuse triggers add hook  "Check that the site is up"      --match "deploy"    # prints the URL to POST to
+openmuse triggers cancel t_1a2b3c
+```
+
+A trigger fires when something happens rather than at a time: `mail` needs the email connector (the running server looks at the inbox every `triggers.mail_poll_minutes`, by IMAP UID, so nothing is replayed and nothing fires twice), `event` needs a calendar feed, `hook` is a URL with a key that any program can `POST` to — the body becomes the agent's context. Each firing is a background run in the chat the trigger was set from, shown in the Feed as *New mail: …*, *Coming up: …* or *Webhook: …*. The mail or the request is handed to the model as data, with the instruction that only your standing text says what to do.
+
 ## Calendar
 
 ```bash
