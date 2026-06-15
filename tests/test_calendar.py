@@ -175,7 +175,10 @@ async def test_feeds_read_files_cache_and_answer_from_the_cache(tmp_path: Path):
         text.startswith("Wed 2026-09-23 (today)") and "11:00–11:30" in text and "@ Zoom" not in text
     )
 
-    assert [o.summary for o in feeds.search("li, wei", date(2026, 9, 22))] == ["Lunch with Li, Wei"]
+    lunch = feeds.search("li, wei", date(2026, 9, 22))
+    assert [o.summary for o in lunch] == ["Lunch with Li, Wei"]
+    # a UTC DTSTART comes out in the user's zone, in the app (to_dict) as in the text
+    assert lunch[0].start.tzinfo is TZ and lunch[0].to_dict()["start"] == "2026-09-22T12:00+08:00"
     slots = feeds.free_slots(date(2026, 9, 23), 30, "09:00", "18:00")
     assert [(s.start.strftime("%H:%M"), s.end.strftime("%H:%M")) for s in slots] == [
         ("09:00", "11:00"),

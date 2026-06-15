@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -201,7 +201,14 @@ class CalendarFeeds:
         all_events: list[Event] = []
         for state in self.states.values():
             all_events.extend(state.events)
-        return expand(all_events, start, end)
+        # in the user's zone, so the app and the model read the same clock as the user
+        # (a Google feed hands out UTC; an all-day occurrence has no zone to convert)
+        return [
+            o
+            if o.all_day
+            else replace(o, start=o.start.astimezone(self.tz), end=o.end.astimezone(self.tz))
+            for o in expand(all_events, start, end)
+        ]
 
     def agenda(self, day: date, days: int = 1) -> list[Occurrence]:
         start, _ = day_bounds(day, self.tz)
