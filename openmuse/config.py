@@ -157,6 +157,15 @@ class ConnectorSettings(BaseModel):
     calendar: CalendarSettings = Field(default_factory=CalendarSettings)
 
 
+class TriggerSettings(BaseModel):
+    """Triggers start work from the world: new mail, an event about to start, a webhook."""
+
+    # How often the inbox is looked at while a mail trigger is active.
+    mail_poll_minutes: int = 5
+    # Deliveries to one webhook closer together than this are refused (HTTP 429).
+    hook_min_seconds: int = 10
+
+
 class BrowserSettings(BaseModel):
     enabled: bool = False
     headless: bool = True
@@ -200,6 +209,7 @@ class Settings(BaseModel):
     sentinel: SentinelSettings = Field(default_factory=SentinelSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
     connectors: ConnectorSettings = Field(default_factory=ConnectorSettings)
+    triggers: TriggerSettings = Field(default_factory=TriggerSettings)
     browser: BrowserSettings = Field(default_factory=BrowserSettings)
     mcp: MCPSettings = Field(default_factory=MCPSettings)
     server: ServerSettings = Field(default_factory=ServerSettings)
@@ -221,6 +231,10 @@ class Settings(BaseModel):
     @property
     def reminders_db(self) -> Path:
         return self.data_dir / "reminders.db"
+
+    @property
+    def triggers_db(self) -> Path:
+        return self.data_dir / "triggers.db"
 
     @property
     def calendar_cache(self) -> Path:

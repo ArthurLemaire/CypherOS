@@ -12,6 +12,7 @@ import asyncio
 import json
 import re
 import secrets
+import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -35,6 +36,8 @@ from openmuse.server.push import PushService
 from openmuse.server.webui import WebUI, current_thread
 from openmuse.tools.browser import Browser
 from openmuse.tools.reminder_tools import Reminders
+from openmuse.tools.trigger_tools import Triggers
+from openmuse.triggers import MailWatcher, Trigger, matches
 
 IDEAS_PROMPT = """You are {name}, the user's personal agent. Based on what you know about them, propose {n} concrete, genuinely useful things you could do for them right now. Prefer tasks you can actually complete with your tools (research, comparisons, planning, drafting, tracking, reminders, organising files, advancing their goals).
 
@@ -220,6 +223,10 @@ class MuseService:
         self.app = OpenMuseApp(settings, ui=self.ui, llm=llm, session_id="app")
         self.watch_browser()
         self._watch_reminders()
+        self._mail_polled_at: float | None = None
+        self.mail_checked_at: str | None = None
+        self.mail_watch_error = ""
+        self._watch_triggers()
         self.connections = Connections(self)
         self.token = self._load_token()
         self._scheduler: asyncio.Task[None] | None = None
@@ -666,6 +673,8 @@ class MuseService:
             title = f"{name} · reminder"
         elif about.startswith("Routine: "):
             title = about[len("Routine: ") :] or name
+        elif about.startswith(("New mail: ", "Coming up: ", "Webhook: ")):
+            title = f"{name} · {about.split(': ', 1)[0].lower()}"
         self.push.notify(
             title,
             _first_lines(str(event["text"])),
@@ -799,6 +808,202 @@ class MuseService:
             except (KeyError, ValueError):  # pragma: no cover - raced with a cancel
                 continue
 
+    # ------------------------------------------------------------------ triggers
+    def _watch_triggers(self) -> None:
+        """Triggers set from the chat belong to that chat; the app and the inbox watcher
+        learn about a new one right away."""
+        tool = self.app.tools.get("triggers")
+        if isinstance(tool, Triggers):
+            tool.thread_of = current_thread.get
+            tool.on_change = self._triggers_changed
+            tool.available = self.app.trigger_kinds
+            tool.base_url = self.base_url()
+
+    def _triggers_changed(self) -> None:
+        self._mail_polled_at = None  # look at the inbox on the next tick
+        self.bus.publish({"kind": "triggers"})
+
+    def base_url(self) -> str:
+        """Where this server is reached — the address a webhook is given."""
+        from openmuse.server import lan_ip  # here: the package imports this module
+
+        s = self.settings.server
+        host = s.host if s.host not in ("", "0.0.0.0", "::") else (lan_ip() or "127.0.0.1")
+        return f"http://{host}:{s.port}"
+
+    def hook_url(self, trigger: Trigger) -> str:
+        return f"{self.base_url()}/api/hooks/{trigger.id}?key={trigger.secret}"
+
+    def create_trigger(
+        self, kind: str, text: str, match: str = "", lead_minutes: int = 30, thread: str = ""
+    ) -> Trigger:
+        have = self.app.trigger_kinds()
+        if not have.get(kind, True):
+            raise ValueError(
+                "connect a mailbox first" if kind == "mail" else "add a calendar first"
+            )
+        item = self.app.triggers.create(
+            kind, text, match=match, lead_minutes=lead_minutes, thread=thread or MAIN_THREAD
+        )
+        self._triggers_changed()
+        return item
+
+    def cancel_trigger(self, trigger_id: str) -> Trigger | None:
+        item = self.app.triggers.cancel(trigger_id)
+        if item is not None:
+            self.bus.publish({"kind": "triggers"})
+        return item
+
+    def fire_trigger(
+        self, trigger_id: str, what: str, context: str = "", key: str = "", title: str = ""
+    ) -> Trigger | None:
+        """Hand a trigger to the agent now, with what happened as context, in the chat it
+        was set from. ``key`` names the occurrence (a mail's UID, an event's start, a
+        delivery id): the same key never fires twice, so this returns None the second time.
+        ``title`` is the short form for the Feed (the subject, the event, the hook's name)."""
+        item = self.app.triggers.get(trigger_id)
+        if item is None:
+            raise KeyError(trigger_id)
+        if item.status != "active":
+            raise ValueError(f"trigger is {item.status}")
+        if not self.app.triggers.mark_fired(item.id, key or new_id()):
+            return None
+        thread = item.thread if item.thread in self.threads else MAIN_THREAD
+        now = datetime.now().astimezone().strftime("%A, %Y-%m-%d %H:%M")
+        prefix = {"mail": "New mail: ", "event": "Coming up: ", "hook": "Webhook: "}[item.kind]
+        context = context.strip()
+        block = f"```\n{context[:6000]}\n```\n\n" if context else ""
+        if item.kind != "hook":
+            # the mail or the event is the user's private data: from here on, sending
+            # anything to a host that is not allowlisted is an approval
+            self.app.sentinel.tainted = True
+        self.send(
+            thread,
+            prompts.TRIGGER_PROMPT.format(
+                now=now, what=what, context=block, text=item.text, quiet=prompts.QUIET_MARKER
+            ),
+            source="trigger",
+            label=prefix + _short(title or item.match or what),
+        )
+        self.bus.publish({"kind": "triggers"})
+        return self.app.triggers.get(item.id) or item
+
+    def deliver_hook(self, trigger_id: str, key: str, body: str, content_type: str = "") -> Trigger:
+        """A request to a trigger's webhook URL. Wrong id or key → KeyError (the caller
+        answers 404 for both, so the URL cannot be probed); too soon → RuntimeError."""
+        item = self.app.triggers.get(trigger_id)
+        if item is None or item.kind != "hook" or not secrets.compare_digest(item.secret, key):
+            raise KeyError(trigger_id)
+        if item.status != "active":
+            raise ValueError(f"trigger is {item.status}")
+        if item.last_fired_at:
+            since = datetime.now(UTC) - datetime.fromisoformat(item.last_fired_at)
+            if since.total_seconds() < self.settings.triggers.hook_min_seconds:
+                raise RuntimeError("too soon after the last delivery")
+        body = body.strip()
+        if content_type.startswith("application/json") and body:
+            try:
+                body = json.dumps(json.loads(body), indent=2, ensure_ascii=False)
+            except ValueError:
+                pass
+        name = item.match or item.id
+        what = f"Webhook “{name}” was called" + (" with:" if body else " (empty body).")
+        fired = self.fire_trigger(
+            item.id, what=what, context=body, key=f"hook:{new_id()}", title=name
+        )
+        return fired or item
+
+    def _mail_mark(self) -> str:
+        """The meta key of the inbox high-water mark — one per mailbox, so a changed
+        account starts fresh instead of replaying by UID."""
+        email = self.settings.connectors.email
+        account = self.app.vault.resolve(email.address, strict=False) or email.address
+        return f"mail_uid:{email.imap_host}:{account}"
+
+    async def _poll_mail(self) -> None:
+        """Look at the inbox for the mail triggers, every ``mail_poll_minutes`` while at
+        least one is active. Each new mail is offered to every mail trigger; a trigger
+        fires once per mail."""
+        triggers = self.app.triggers.active("mail")
+        if not triggers:
+            return
+        email = self.settings.connectors.email
+        watcher = MailWatcher(email, vault=self.app.vault)
+        if not watcher.configured:
+            return
+        now = time.monotonic()
+        every = max(1, self.settings.triggers.mail_poll_minutes) * 60
+        if self._mail_polled_at is not None and now - self._mail_polled_at < every:
+            return
+        self._mail_polled_at = now
+        store = self.app.triggers
+        mark = self._mail_mark()
+        last = int(store.get_meta(mark, "0") or 0)
+        try:
+            fresh, newest = await watcher.look(last)
+        except (RuntimeError, OSError) as exc:
+            self.mail_watch_error = str(exc)[:200]
+            logger.warning("mail triggers: {}", exc)
+            return
+        self.mail_watch_error = ""
+        self.mail_checked_at = now_iso()
+        store.set_meta(mark, str(newest))
+        for mail in fresh:
+            for trig in triggers:
+                if matches(trig.match, mail.sender, mail.subject):
+                    self.fire_trigger(
+                        trig.id,
+                        what=f"New mail from {mail.sender}: {mail.subject or '(no subject)'}",
+                        context=mail.render(),
+                        key=mail.key,
+                        title=mail.subject or mail.sender,
+                    )
+        self.bus.publish({"kind": "triggers"})
+
+    def _run_event_triggers(self) -> None:
+        """Fire event triggers ``lead_minutes`` before a matching event; an event that has
+        already begun is left alone (a late brief helps no one)."""
+        triggers = self.app.triggers.active("event")
+        cal = self.app.calendar
+        if not triggers or not cal.configured:
+            return
+        now = datetime.now(cal.tz)
+        for occ in cal.agenda(now.date(), 2):
+            start = occ.start.astimezone(cal.tz)
+            if start <= now:
+                continue
+            for trig in triggers:
+                if not matches(trig.match, occ.summary, occ.location):
+                    continue
+                if now < start - timedelta(minutes=trig.lead_minutes):
+                    continue
+                minutes = max(1, int((start - now).total_seconds() // 60))
+                when = "all day" if occ.all_day else f"{start:%H:%M}"
+                where = f" · {occ.location}" if occ.location else ""
+                self.fire_trigger(
+                    trig.id,
+                    what=f"Coming up: {occ.summary} — {start:%a %Y-%m-%d} {when}{where} (in {minutes} min)",
+                    context=cal.render([occ], now.date())
+                    + (f"\n\n{occ.description}" if occ.description else ""),
+                    key=f"{occ.uid}:{occ.start.isoformat()}",
+                    title=occ.summary,
+                )
+
+    def triggers_view(self) -> dict[str, Any]:
+        items = []
+        for t in self.app.triggers.list(None):
+            d = t.to_dict()
+            if t.kind == "hook":
+                d["url"] = self.hook_url(t) if t.status == "active" else ""
+            items.append(d)
+        return {
+            "items": items,
+            "available": self.app.trigger_kinds(),
+            "mail_checked_at": self.mail_checked_at,
+            "mail_error": self.mail_watch_error,
+            "mail_poll_minutes": self.settings.triggers.mail_poll_minutes,
+        }
+
     async def _goal_scheduler(self) -> None:
         self.schedule_next_pass()
         while True:
@@ -806,6 +1011,8 @@ class MuseService:
                 self._run_due_reminders()
                 self._run_due_check_ins()
                 await self._refresh_calendar()
+                self._run_event_triggers()
+                await self._poll_mail()
                 due = self.next_goal_pass_at or datetime.now(UTC)
                 remaining = (due - datetime.now(UTC)).total_seconds()
                 if remaining > 0:
@@ -1139,6 +1346,7 @@ class MuseService:
         return {
             "check_ins": check_ins,
             "reminders": [r.to_dict() for r in self.app.reminders.list(None)],
+            "triggers": self.triggers_view(),
             "proactive": self.profile.proactive,
             "proactivity": self.profile.proactivity,
             "interval_minutes": self.profile.goal_interval_minutes,

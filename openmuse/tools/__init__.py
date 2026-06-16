@@ -9,6 +9,7 @@ from openmuse.tools.memory_tools import Forget, Recall, Remember
 from openmuse.tools.reminder_tools import Reminders
 from openmuse.tools.shell import PythonExecute, Shell
 from openmuse.tools.terminate import AskUser, Terminate
+from openmuse.tools.trigger_tools import Triggers
 from openmuse.tools.web import WebFetch, WebSearch
 
 __all__ = [
@@ -27,6 +28,7 @@ __all__ = [
     "Recall",
     "Remember",
     "Reminders",
+    "Triggers",
     "SendEmail",
     "Shell",
     "Terminate",
