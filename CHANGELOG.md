@@ -4,6 +4,10 @@ All notable changes to OpenMuse. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-09-23
+
+Your calendar, and a memory that stays tidy. The agent reads any calendar with a private `.ics` link, knows what is on today, finds free time and proposes events as cards you add with a tap; memories are updated instead of duplicated and tidied up periodically, every change with an undo. Plus fixes for reasoning models that think past their token budget and for cut-off tool calls.
+
 ### Added
 
 - **Calendar connector.** Any calendar with a private iCalendar link — Google, Outlook, iCloud, Fastmail, Nextcloud — or an `.ics` file on disk, added from *Connections → Calendar* (the screen says where each provider hides the link) or `openmuse calendar add NAME URL`; the link is kept in the vault. Feeds are read on the spot and refreshed in the background; recurring events, exceptions and moved instances are expanded per RFC 5545. The agent gets a `calendar` tool — agenda, search, free time inside working hours — and *draft*: an event it proposes is written as an `.ics` file and shown as a card with *Add to calendar*; it never writes to the calendar itself. Today's and tomorrow's events are in the system prompt; the Feed shows them under *Today*. `openmuse calendar agenda | free | feeds | add | remove`; `openmuse doctor` reports the feeds.
@@ -75,6 +79,7 @@ First public release.
 - Mobile-first web app built with React, Vite and Tailwind, shipped inside the package.
 - Docker image and Compose file; GitHub Actions CI; PyPI publishing through Trusted Publishing.
 
-[Unreleased]: https://github.com/OpenMuseAgent/OpenMuse/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/OpenMuseAgent/OpenMuse/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/OpenMuseAgent/OpenMuse/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/OpenMuseAgent/OpenMuse/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/OpenMuseAgent/OpenMuse/releases/tag/v0.1.0
