@@ -107,6 +107,7 @@ class CalendarFeeds:
                     del existing[name]
             self.cache_file.parent.mkdir(parents=True, exist_ok=True)
             self.cache_file.write_text(json.dumps(existing), encoding="utf-8")
+            self.cache_file.chmod(0o600)  # someone's whole calendar; keep it to this user
         except OSError as exc:
             logger.warning("calendar cache not written: {}", exc)
 
@@ -128,7 +129,10 @@ class CalendarFeeds:
             url = self.vault.resolve(raw, strict=False)
         if "{{" in url:
             raise ValueError("the link is a vault placeholder that is not set")
-        return url.strip()
+        url = url.strip()
+        if url.lower().startswith("webcal://"):  # what iCloud and Outlook hand out
+            url = "https://" + url[len("webcal://") :]
+        return url
 
     async def _read(self, url: str) -> str:
         if url.startswith(("http://", "https://")):
