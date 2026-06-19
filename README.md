@@ -107,7 +107,7 @@ Prefer a terminal? `openmuse chat` gives you the same agent with approvals in th
   <img src="docs/screenshots/chat-research.png" width="24%" alt="Research with tool chips and a file artifact">
   <img src="docs/screenshots/chat-approval.png" width="24%" alt="Approval card">
   <img src="docs/screenshots/memory.png" width="24%" alt="Memory tab">
-  <img src="docs/screenshots/goal-detail.png" width="24%" alt="Goal plan">
+  <img src="docs/screenshots/calendar-event.png" width="24%" alt="An event the agent drafted, ready to add to the calendar">
 </p>
 
 | Screen | What you get |

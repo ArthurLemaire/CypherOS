@@ -11,9 +11,15 @@ openmuse serve --port 9000 --no-qr
 <p align="center">
   <img src="screenshots/chat-research.png" width="19%" alt="Research">
   <img src="screenshots/chat-approval.png" width="19%" alt="Approval">
+  <img src="screenshots/feed.png" width="19%" alt="Feed with today's calendar">
   <img src="screenshots/goal-detail.png" width="19%" alt="Goal">
   <img src="screenshots/ideas.png" width="19%" alt="Ideas">
+</p>
+<p align="center">
+  <img src="screenshots/calendar-event.png" width="19%" alt="A drafted event">
+  <img src="screenshots/connections.png" width="19%" alt="Connections">
   <img src="screenshots/memory.png" width="19%" alt="Memory">
+  <img src="screenshots/settings.png" width="19%" alt="Settings">
 </p>
 
 ## Getting it onto your phone
