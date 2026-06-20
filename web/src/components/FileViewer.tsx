@@ -1,7 +1,7 @@
-import { Download, ExternalLink, Loader2, X } from "lucide-react";
+import { CalendarDays, CalendarPlus, Download, ExternalLink, Loader2, MapPin, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, fileUrl } from "../api";
-import { useT } from "../i18n";
+import { intlLocale, t, useT } from "../i18n";
 import { fileKind } from "../util";
 import { Markdown } from "./Markdown";
 
@@ -69,6 +69,7 @@ function Body({ path, kind }: { path: string; kind: ReturnType<typeof fileKind> 
     return <iframe title={path} src={fileUrl(path)} className="h-full w-full bg-white" />;
   }
   if (kind === "html") return <HtmlBody path={path} />;
+  if (kind === "event") return <EventBody path={path} />;
   if (kind === "text" || kind === "code" || kind === "data") return <TextBody path={path} kind={kind} />;
   return (
     <div className="p-8 text-center text-muted text-[14px]">
@@ -110,6 +111,111 @@ function HtmlBody({ path }: { path: string }) {
       className="h-full w-full bg-white"
     />
   );
+}
+
+/** An .ics the agent drafted: the event as a card, and the file to add it with a tap. */
+function EventBody({ path }: { path: string }) {
+  const t = useT();
+  const { text, error } = useFileText(path);
+  if (error) return <Failed error={error} />;
+  if (text === null) return <Loading />;
+  const events = parseIcs(text);
+  return (
+    <div className="mx-auto max-w-[560px] px-5 py-6 space-y-4">
+      {events.length === 0 && <div className="text-center text-muted text-[14px]">{t("No event in this file.")}</div>}
+      {events.map((ev, i) => (
+        <div key={i} className="rounded-3xl border border-border/70 bg-surface shadow-sm p-5">
+          <div className="flex items-start gap-3">
+            <div className="rounded-2xl bg-accent/12 text-accent p-2.5">
+              <CalendarDays size={22} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[18px] font-semibold leading-snug">{ev.summary || t("Untitled event")}</div>
+              <div className="mt-1 text-[14px] text-muted">{eventWhen(ev)}</div>
+              {ev.location && (
+                <div className="mt-1 flex items-center gap-1 text-[14px] text-muted">
+                  <MapPin size={14} /> {ev.location}
+                </div>
+              )}
+            </div>
+          </div>
+          {ev.description && <div className="mt-4 whitespace-pre-wrap text-[14px] leading-relaxed">{ev.description}</div>}
+        </div>
+      ))}
+      <a href={fileUrl(path, true)} download className="flex items-center justify-center gap-2 rounded-2xl bg-accent text-accent-fg px-4 py-3 text-[15px] font-medium">
+        <CalendarPlus size={18} /> {t("Add to calendar")}
+      </a>
+      <p className="text-center text-[12.5px] text-muted">{t("Opens in your calendar app, which asks before it saves anything.")}</p>
+    </div>
+  );
+}
+
+interface IcsEvent {
+  summary: string;
+  location: string;
+  description: string;
+  start: Date | null;
+  end: Date | null;
+  allDay: boolean;
+}
+
+/** The VEVENTs of an iCalendar text — enough of RFC 5545 to show what the agent drafted. */
+export function parseIcs(text: string): IcsEvent[] {
+  const lines = text
+    .replace(/\r\n/g, "\n")
+    .replace(/\n[ \t]/g, "")
+    .split("\n");
+  const events: IcsEvent[] = [];
+  let cur: IcsEvent | null = null;
+  const unescape = (v: string) => v.replace(/\\n/gi, "\n").replace(/\\([,;\\])/g, "$1");
+  const when = (v: string, params: string): { at: Date | null; allDay: boolean } => {
+    if (/VALUE=DATE(?![-])/i.test(params) || /^\d{8}$/.test(v)) {
+      const m = /^(\d{4})(\d{2})(\d{2})/.exec(v);
+      return { at: m ? new Date(+m[1], +m[2] - 1, +m[3]) : null, allDay: true };
+    }
+    const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})?(Z?)$/.exec(v);
+    if (!m) return { at: null, allDay: false };
+    const parts = [+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] ?? 0)] as const;
+    // Z is UTC; a TZID or a floating time is shown as local time (the agent writes UTC)
+    return { at: m[7] ? new Date(Date.UTC(...parts)) : new Date(...parts), allDay: false };
+  };
+  for (const line of lines) {
+    if (line === "BEGIN:VEVENT") cur = { summary: "", location: "", description: "", start: null, end: null, allDay: false };
+    else if (line === "END:VEVENT" && cur) {
+      events.push(cur);
+      cur = null;
+    } else if (cur) {
+      const idx = line.indexOf(":");
+      if (idx < 0) continue;
+      const [key, ...params] = line.slice(0, idx).split(";");
+      const value = line.slice(idx + 1);
+      const p = params.join(";");
+      if (key === "SUMMARY") cur.summary = unescape(value);
+      else if (key === "LOCATION") cur.location = unescape(value);
+      else if (key === "DESCRIPTION") cur.description = unescape(value);
+      else if (key === "DTSTART") {
+        const w = when(value, p);
+        cur.start = w.at;
+        cur.allDay = w.allDay;
+      } else if (key === "DTEND") cur.end = when(value, p).at;
+    }
+  }
+  return events;
+}
+
+function eventWhen(ev: IcsEvent): string {
+  if (!ev.start) return "";
+  const locale = intlLocale();
+  const day = (d: Date) => d.toLocaleDateString(locale, { weekday: "short", year: "numeric", month: "short", day: "numeric" });
+  const time = (d: Date) => d.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
+  if (ev.allDay) {
+    // DTEND of an all-day event is the day after it ends
+    const last = ev.end ? new Date(ev.end.getTime() - 86400000) : ev.start;
+    return last > ev.start ? `${day(ev.start)} – ${day(last)}` : `${day(ev.start)} · ${t("all day")}`;
+  }
+  if (!ev.end) return `${day(ev.start)} ${time(ev.start)}`;
+  const sameDay = ev.start.toDateString() === ev.end.toDateString();
+  return sameDay ? `${day(ev.start)} ${time(ev.start)}–${time(ev.end)}` : `${day(ev.start)} ${time(ev.start)} – ${day(ev.end)} ${time(ev.end)}`;
 }
 
 function TextBody({ path, kind }: { path: string; kind: "text" | "code" | "data" }) {

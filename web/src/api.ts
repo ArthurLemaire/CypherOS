@@ -1,5 +1,6 @@
 import type {
   ActivityData,
+  CalendarData,
   ConnectionsData,
   FeedItem,
   FileInfo,
@@ -164,6 +165,14 @@ export const api = {
     request<ConnectionsData["email"]>("/api/connections/email", { method: "PUT", body: JSON.stringify(body) }),
   disconnectEmail: () => request<ConnectionsData["email"]>("/api/connections/email", { method: "DELETE" }),
   testEmail: () => request<TestResult>("/api/connections/email/test", { method: "POST" }),
+  calendar: () => request<CalendarData>("/api/calendar"),
+  setCalendar: (body: Record<string, unknown>) =>
+    request<ConnectionsData["calendar"]>("/api/connections/calendar", { method: "PUT", body: JSON.stringify(body) }),
+  addCalendarFeed: (name: string, url: string) =>
+    request<ConnectionsData["calendar"] & { error?: string }>("/api/connections/calendar/feeds", json({ name, url })),
+  removeCalendarFeed: (name: string) =>
+    request<ConnectionsData["calendar"]>(`/api/connections/calendar/feeds/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  testCalendar: () => request<TestResult>("/api/connections/calendar/test", { method: "POST" }),
   setBrowser: (enabled: boolean) =>
     request<ConnectionsData["browser"]>("/api/connections/browser", { method: "PUT", body: JSON.stringify({ enabled }) }),
   addMCP: (body: Record<string, unknown>) => request<ConnectionsData>("/api/connections/mcp", json(body)),

@@ -1186,6 +1186,7 @@ class MuseService:
             },
             "connectors": {
                 "email": s.connectors.email.enabled,
+                "calendar": s.connectors.calendar.enabled and bool(s.connectors.calendar.feeds),
                 "browser": s.browser.enabled,
                 "mcp": [m.name for m in s.mcp.servers],
             },

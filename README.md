@@ -39,7 +39,7 @@
 | Use it from the terminal instead | [CLI](docs/cli.md) |
 | Point it at DeepSeek, OpenAI, Ollama, or an internal gateway | [Models](#models) · [Configuration](docs/configuration.md) |
 | Understand what it will and won't do without asking | [Sentinel](#sentinel) · [docs/sentinel.md](docs/sentinel.md) |
-| Connect email, a browser, or MCP servers | [Configuration → Connectors](docs/configuration.md#connectors) |
+| Connect email, a calendar, a browser, or MCP servers | [Configuration → Connectors](docs/configuration.md#connectors) |
 | Read the code | [Architecture](#architecture) · [docs/architecture.md](docs/architecture.md) |
 | Run it in Docker | [Deployment](docs/deployment.md) |
 | See it as an app on a (simulated) phone, notifications included | [demo/mobilegym](demo/mobilegym/README.md) |
@@ -54,7 +54,7 @@ Meta's Muse is an agent that does things rather than answering questions: it res
 - Ideas: suggested next actions based on your goals, memory and recent conversations.
 - Memory you can read and edit. Durable facts about you are saved by the agent and shown in a tab; anything can be forgotten with one tap. When a fact changes, the line is updated rather than doubled, and a periodic tidy-up merges what says the same thing and drops what was never a fact — every change listed with an undo.
 - A Sentinel, a credential vault, taint tracking and an append-only audit log. See [Sentinel](#sentinel).
-- Tools: files, shell, Python, web search and fetch, email (with one-time codes scrubbed before the model sees them), an optional Playwright browser, and any [MCP](https://modelcontextprotocol.io) server.
+- Tools: files, shell, Python, web search and fetch, email (with one-time codes scrubbed before the model sees them), your calendar (read from its private `.ics` link; events it proposes arrive as a card you add with a tap), an optional Playwright browser, and any [MCP](https://modelcontextprotocol.io) server.
 - Runs on any OpenAI-compatible model. DeepSeek, OpenAI, OpenRouter, Ollama, vLLM, or a company gateway with custom headers.
 
 ## Why OpenMuse
@@ -119,9 +119,9 @@ Prefer a terminal? `openmuse chat` gives you the same agent with approvals in th
 | Reminders | "Remind me at six to call mum" — one message at that time, in the chat you said it in. "Every weekday at 07:30, a one-line weather check for my ride" — a routine: the agent does the work then and reports. Kept whatever the proactivity level or quiet hours; listed under *Upcoming* and in the terminal. |
 | Library | Everything the agent made — pages, documents, trackers, images — opened in the app. Pages render in a sandbox that cannot reach your token or the API. |
 | Avatar | The menu: the approvals queue across all chats, the activity log, permissions you granted (revoke any one), what is upcoming (background work, check-ins, reminders), memory, connections, and settings (name, avatar, personality, Sentinel mode, background work, language). |
-| Connections | Plug things in from the phone: the model (provider presets, key straight into the vault, one-tap test), your mailbox (read and send, with a sign-in check), the browser, MCP servers, and the vault itself. Keys and passwords never reach the model. |
+| Connections | Plug things in from the phone: the model (provider presets, key straight into the vault, one-tap test), your mailbox (read and send, with a sign-in check), your calendar (the private `.ics` link of Google / Outlook / iCloud / Fastmail, kept in the vault; today's events show in the Feed), the browser, MCP servers, and the vault itself. Keys and passwords never reach the model. |
 
-The first time you open it, a short setup runs instead: your name, your Muse's name and style, the model and key, optionally your mail. Skip it if `config.toml` already says it all.
+The first time you open it, a short setup runs instead: your name, your Muse's name and style, the model and key, optionally your mail and calendar. Skip it if `config.toml` already says it all.
 
 Add it to the home screen and turn on notifications (Settings): the phone buzzes when the agent needs an approval, has a question, finished something in the background, or a reminder or check-in is due — standard Web Push through the browser, no account with anyone — and the icon shows how many cards are waiting. Needs `https://` or `localhost`; see [deployment](docs/deployment.md).
 
@@ -191,7 +191,7 @@ flowchart LR
     G <--> V[(vault.enc)]
     T --> F[files · shell · python]
     T --> W[web_search · web_fetch · browser]
-    T --> E[email]
+    T --> E[email · calendar]
     T --> MCP[MCP servers]
     T <--> M[(memory.db)]
     T <--> GO[(goals.db)]
@@ -242,7 +242,8 @@ More in [docs/architecture.md](docs/architecture.md).
 - [x] Browser view: watch the agent browse live, take over for sign-ins
 - [x] Local models (Ollama) with automatic prompt-mode fallback
 - [ ] Triggers for goals: cron, webhooks, new mail
-- [ ] Calendar and contacts connectors (via MCP)
+- [x] Calendar connector: any private `.ics` link or file; agenda, free time, drafted events as *Add to calendar* cards
+- [ ] Contacts connector
 - [x] Memory that stays tidy: rare-word recall, updates instead of duplicates, a periodic tidy-up with undo
 - [ ] Memory recall with embeddings
 - [ ] Per-tool sandboxes for `shell` and `python_execute`

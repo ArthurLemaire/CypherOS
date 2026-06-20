@@ -263,6 +263,14 @@ async def test_calendar_tool(tmp_path: Path):
     [ev] = parse_ics((ws / "calendar" / "2026-10-01-trip.ics").read_text(), TZ)
     assert ev.all_day and ev.duration == timedelta(days=3), "an all-day range is inclusive"
 
+    # a model that HTML-escapes its arguments does not put "&amp;" on the calendar
+    result = await tool.execute(
+        action="draft", title="1:1 — Alex &amp; Alice", start="2026-10-04 14:00", location="3&#39;F"
+    )
+    assert result.ok and "Alex & Alice" in result.output
+    [ev] = parse_ics((ws / "calendar" / "2026-10-04-1-1-alex-alice.ics").read_text(), TZ)
+    assert ev.summary == "1:1 — Alex & Alice" and ev.location == "3'F"
+
     assert (await tool.execute(action="draft", title="", start="2026-10-01")).error
     assert (await tool.execute(action="agenda", day="not a day")).error
 

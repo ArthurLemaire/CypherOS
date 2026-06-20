@@ -47,8 +47,9 @@ export function truncate(text: string, n: number): string {
   return text.length > n ? `${text.slice(0, n - 1)}…` : text;
 }
 
-export function fileKind(name: string): "text" | "code" | "html" | "image" | "pdf" | "data" | "other" {
+export function fileKind(name: string): "text" | "code" | "html" | "image" | "pdf" | "data" | "event" | "other" {
   const ext = name.toLowerCase().split(".").pop() ?? "";
+  if (ext === "ics") return "event";
   if (["md", "txt", "log", "rtf"].includes(ext)) return "text";
   if (["py", "js", "ts", "tsx", "jsx", "sh", "toml", "yaml", "yml", "sql", "rs", "go", "java", "c", "cpp"].includes(ext))
     return "code";

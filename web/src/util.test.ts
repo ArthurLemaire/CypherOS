@@ -74,6 +74,7 @@ describe("fileKind", () => {
     expect(fileKind("photo.JPEG")).toBe("image");
     expect(fileKind("report.pdf")).toBe("pdf");
     expect(fileKind("budget.csv")).toBe("data");
+    expect(fileKind("2026-09-24-1-1.ics")).toBe("event");
     expect(fileKind("archive.zip")).toBe("other");
     expect(fileKind("Makefile")).toBe("other");
   });

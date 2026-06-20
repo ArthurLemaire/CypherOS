@@ -1,5 +1,6 @@
 import {
   Bot,
+  CalendarDays,
   Check,
   ChevronDown,
   ChevronUp,
@@ -9,6 +10,7 @@ import {
   Mail,
   Plug,
   Plus,
+  RefreshCw,
   Trash2,
   Unplug,
 } from "lucide-react";
@@ -18,10 +20,10 @@ import { BackBar } from "../components/BackBar";
 import { useT } from "../i18n";
 import { useStore } from "../store";
 import type { ConnectionsData, TestResult } from "../types";
-import { cx } from "../util";
+import { cx, relativeTime } from "../util";
 
 /**
- * Connections: the model, your mailbox, a browser, MCP servers — plugged in and out from the
+ * Connections: the model, your mailbox, your calendar, a browser, MCP servers — plugged in and out from the
  * phone. Anything secret is typed here and lands in the vault on the server; the model only
  * ever gets the tools that result, never the key or the password.
  */
@@ -65,6 +67,7 @@ export function ConnectionsScreen() {
           <>
             <ModelCard data={data} onChange={load} />
             <EmailCard data={data} onChange={load} />
+            <CalendarCard data={data} onChange={load} />
             <BrowserCard data={data} onChange={load} />
             <MCPCard data={data} onChange={load} />
             <VaultCard data={data} onChange={load} />
@@ -351,6 +354,195 @@ export function EmailCard({ data, onChange, compact }: { data: ConnectionsData; 
         )}
       </div>
       {test && <TestLine result={test} okText={t("Signed in · {n} messages in the inbox", { n: test.inbox ?? "?" })} />}
+    </Card>
+  );
+}
+
+// ------------------------------------------------------------------ calendar
+/** Where the private .ics link hides, per provider — the one thing people get stuck on. */
+const CALENDAR_HINTS: Array<{ id: string; label: string; hint: string }> = [
+  { id: "google", label: "Google", hint: "Settings → your calendar → Integrate calendar → Secret address in iCal format" },
+  { id: "outlook", label: "Outlook", hint: "Settings → Calendar → Shared calendars → Publish a calendar → ICS link" },
+  { id: "icloud", label: "iCloud", hint: "Share Calendar → Public Calendar → copy the webcal:// link" },
+  { id: "fastmail", label: "Fastmail", hint: "Settings → Calendars → Export → Calendar URL" },
+  { id: "file", label: ".ics file", hint: "A path on the machine where OpenMuse runs, for example ~/calendar.ics" },
+];
+
+export function CalendarCard({ data, onChange, compact }: { data: ConnectionsData; onChange: () => void; compact?: boolean }) {
+  const { toast } = useStore();
+  const t = useT();
+  const c = data.calendar;
+  const [open, setOpen] = useState(!!compact);
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState("");
+  const [url, setUrl] = useState("");
+  const [hint, setHint] = useState<string | null>(null);
+  const [dayStart, setDayStart] = useState(c.day_start);
+  const [dayEnd, setDayEnd] = useState(c.day_end);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [test, setTest] = useState<TestResult | null>(null);
+
+  useEffect(() => {
+    setDayStart(c.day_start);
+    setDayEnd(c.day_end);
+  }, [c.day_start, c.day_end]);
+
+  const add = async () => {
+    setBusy("add");
+    setTest(null);
+    try {
+      const view = await api.addCalendarFeed(name.trim(), url.trim());
+      if (view.error) {
+        toast(t("Added, but it could not be read: {error}", { error: view.error }));
+      } else {
+        const feed = view.feeds.find((f) => f.name === name.trim());
+        toast(t("Calendar connected · {n} events", { n: feed?.events ?? 0 }));
+        setName("");
+        setUrl("");
+        setAdding(false);
+      }
+      onChange();
+    } catch (e) {
+      toast((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const remove = async (n: string) => {
+    setBusy(n);
+    try {
+      await api.removeCalendarFeed(n);
+      onChange();
+    } catch (e) {
+      toast((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const saveHours = async () => {
+    setBusy("hours");
+    try {
+      await api.setCalendar({ day_start: dayStart, day_end: dayEnd });
+      toast(t("Saved"));
+      onChange();
+    } catch (e) {
+      toast((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const runTest = async () => {
+    setBusy("test");
+    try {
+      setTest(await api.testCalendar());
+      onChange();
+    } catch (e) {
+      toast((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const total = c.feeds.reduce((n, f) => n + f.events, 0);
+  const broken = c.feeds.filter((f) => f.error).length;
+  const status = c.configured
+    ? broken
+      ? { text: t("{n} not reading", { n: broken }), tone: "warn" }
+      : { text: t("Connected"), tone: "ok" }
+    : { text: t("Not connected"), tone: "off" };
+
+  return (
+    <Card
+      icon={<CalendarDays size={19} />}
+      title={t("Calendar")}
+      summary={c.configured ? t("{feeds} calendars · {n} events", { feeds: c.feeds.length, n: total }) : t("Your agenda, free time, and events it can draft")}
+      status={status}
+      open={open}
+      onToggle={compact ? undefined : () => setOpen(!open)}
+    >
+      <p className="text-[12.5px] text-muted -mt-1">
+        {t("Reads your calendar from its private .ics link — the link stays in the vault. It never changes your calendar; an event it proposes comes as a file you add with a tap.")}
+      </p>
+      {c.feeds.length > 0 && (
+        <ul className="space-y-1.5">
+          {c.feeds.map((f) => (
+            <li key={f.name} className="flex items-center gap-2.5 rounded-2xl bg-surface-2/60 px-3 py-2">
+              <span className={cx("h-2 w-2 rounded-full", f.error ? "bg-rose-500" : f.fetched_at ? "bg-emerald-500" : "bg-amber-500")} />
+              <div className="min-w-0 flex-1">
+                <div className="text-[13.5px] font-medium truncate">{f.name}</div>
+                <div className="text-[11.5px] text-muted truncate">
+                  {f.error
+                    ? f.error
+                    : f.fetched_at
+                      ? t("{n} events · read {when}", { n: f.events, when: relativeTime(f.fetched_at) })
+                      : t("not read yet")}
+                  {!f.from_app && ` · ${t("from config.toml")}`}
+                </div>
+              </div>
+              {f.from_app && (
+                <button type="button" aria-label={t("Remove")} disabled={busy === f.name} onClick={() => void remove(f.name)} className="p-1.5 rounded-full text-muted hover:bg-surface-2">
+                  {busy === f.name ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {adding ? (
+        <div className="space-y-2.5 rounded-2xl border border-border/70 p-3">
+          <Field label={t("Where is the link?")}>
+            <div className="flex flex-wrap gap-1.5">
+              {CALENDAR_HINTS.map((h) => (
+                <button key={h.id} type="button" onClick={() => setHint(hint === h.id ? null : h.id)} className={cx("rounded-full px-3 py-1.5 text-[13px] border", hint === h.id ? "border-accent bg-accent/10 text-accent font-medium" : "border-border text-muted")}>
+                  {h.label}
+                </button>
+              ))}
+            </div>
+            {hint && <div className="mt-1.5 text-[11.5px] text-muted leading-snug">{t(CALENDAR_HINTS.find((h) => h.id === hint)!.hint)}</div>}
+          </Field>
+          <Field label={t("Name")}>
+            <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} placeholder={t("Work")} />
+          </Field>
+          <Field label={t("Private .ics link or file path")} hint={t("Stored encrypted in the vault as CALENDAR_{name}.", { name: name.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "NAME" })}>
+            <input value={url} onChange={(e) => setUrl(e.target.value)} className={inputCls} placeholder="https://calendar.google.com/calendar/ical/…/basic.ics" inputMode="url" autoComplete="off" />
+          </Field>
+          <div className="flex gap-2">
+            <button type="button" disabled={busy === "add" || !name.trim() || !url.trim()} onClick={() => void add()} className={primaryBtn}>
+              {busy === "add" ? <Loader2 size={16} className="animate-spin" /> : <Plug size={16} />} {t("Connect")}
+            </button>
+            <button type="button" onClick={() => setAdding(false)} className={secondaryBtn}>
+              {t("Cancel")}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button type="button" onClick={() => setAdding(true)} className={secondaryBtn}>
+          <Plus size={16} /> {t("Add a calendar")}
+        </button>
+      )}
+      {c.configured && (
+        <>
+          <Field label={t("Working hours")} hint={t("Free time is looked for inside these hours.")}>
+            <div className="flex items-center gap-2">
+              <input type="time" value={dayStart} onChange={(e) => setDayStart(e.target.value)} className={cx(inputCls, "w-auto")} />
+              <span className="text-muted">–</span>
+              <input type="time" value={dayEnd} onChange={(e) => setDayEnd(e.target.value)} className={cx(inputCls, "w-auto")} />
+              {(dayStart !== c.day_start || dayEnd !== c.day_end) && (
+                <button type="button" disabled={busy === "hours"} onClick={() => void saveHours()} className={cx(primaryBtn, "px-3")} aria-label={t("Save")}>
+                  {busy === "hours" ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+                </button>
+              )}
+            </div>
+          </Field>
+          <button type="button" disabled={busy === "test"} onClick={() => void runTest()} className={secondaryBtn}>
+            {busy === "test" ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />} {t("Read again")}
+          </button>
+          {test && <TestLine result={test} okText={t("{n} events across {feeds} calendars", { n: test.events ?? 0, feeds: c.feeds.length })} />}
+        </>
+      )}
     </Card>
   );
 }

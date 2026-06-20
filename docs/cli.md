@@ -64,6 +64,19 @@ openmuse reminders cancel r_1a2b3c
 
 A reminder says one thing at the time you named; a routine (`--task`) is work the agent does at that time with its tools. Both fire from the running `openmuse serve` — those set from the terminal land in the main chat, those set in a side chat stay there. Cadence grammar as for goal check-ins: `daily HH:MM`, `weekdays HH:MM`, `weekly <mon…sun> HH:MM`, `monthly <day> HH:MM`.
 
+## Calendar
+
+```bash
+openmuse calendar add Work "https://calendar.google.com/calendar/ical/…/basic.ics"   # link goes to the vault as CALENDAR_WORK
+openmuse calendar add Family ~/family.ics                                            # or an .ics file on disk
+openmuse calendar agenda --days 7                                                    # what is on, grouped by day
+openmuse calendar free --day tomorrow --minutes 45                                   # gaps in the working hours
+openmuse calendar feeds                                                              # each feed: events, last read, error
+openmuse calendar remove Family
+```
+
+Feeds are re-read every `refresh_minutes` by the running server; `agenda --refresh` fetches now. The agent has the same view through its `calendar` tool, plus `draft`, which writes an `.ics` the app shows as an *Add to calendar* card — it never writes to your calendar directly.
+
 ## Memory
 
 ```bash

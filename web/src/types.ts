@@ -258,7 +258,7 @@ export interface SettingsView {
   };
   llm: { provider: string; model: string; stream: boolean };
   agent: { language: string; max_steps: number; show_thinking: boolean; workspace: string };
-  connectors: { email: boolean; browser: boolean; mcp: string[] };
+  connectors: { email: boolean; calendar: boolean; browser: boolean; mcp: string[] };
   tools: ToolInfo[];
   memory_enabled: boolean;
   data_dir: string;
@@ -302,6 +302,15 @@ export interface ConnectionsData {
     password_set: boolean;
   };
   browser: { enabled: boolean; available: boolean };
+  calendar: {
+    enabled: boolean;
+    configured: boolean;
+    refresh_minutes: number;
+    /** Working hours, "HH:MM", for "when am I free". */
+    day_start: string;
+    day_end: string;
+    feeds: CalendarFeed[];
+  };
   mcp: Array<{
     name: string;
     command: string | null;
@@ -316,12 +325,46 @@ export interface ConnectionsData {
   onboarded: boolean;
 }
 
+/** One connected calendar: a private .ics link (kept in the vault) or a file. */
+export interface CalendarFeed {
+  name: string;
+  from_app: boolean;
+  events: number;
+  fetched_at: string | null;
+  error: string;
+}
+
+export interface CalendarEvent {
+  uid: string;
+  summary: string;
+  start: string;
+  end: string;
+  all_day: boolean;
+  location: string;
+  description: string;
+  calendar: string;
+}
+
+/** GET /api/calendar: today's and tomorrow's events with the feeds' status. */
+export interface CalendarData {
+  enabled: boolean;
+  configured: boolean;
+  today: string;
+  events: CalendarEvent[];
+  feeds: Array<{ name: string; events: number; fetched_at: string | null; error: string }>;
+  fetched_at: string | null;
+  stale: boolean;
+}
+
 export interface TestResult {
   ok: boolean;
   error?: string;
   reply?: string;
   ms?: number;
   inbox?: number | null;
+  /** calendar test: events across the feeds */
+  events?: number;
+  feeds?: number;
 }
 
 export interface StateSnapshot {
@@ -446,6 +489,7 @@ export type WsMessage =
   | { kind: "goals" }
   | { kind: "memory" }
   | { kind: "reminders" }
+  | { kind: "calendar"; calendar: CalendarData }
   | { kind: "ideas"; ideas: IdeasData }
   | { kind: "profile"; profile: Profile }
   | { kind: "settings"; settings: SettingsView }

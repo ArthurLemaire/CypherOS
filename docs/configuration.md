@@ -148,6 +148,28 @@ scrub_secrets = true   # remove one-time codes and reset links before the model 
 
 Store the values with `openmuse vault set EMAIL_ADDRESS` and `openmuse vault set EMAIL_PASSWORD`. `read_emails` marks the session as tainted; `send_email` is in `always_ask_tools` by default.
 
+### Calendar
+
+Any calendar that offers a private iCalendar link — Google (*Settings → Integrate calendar → Secret address in iCal format*), Outlook (*Shared calendars → Publish*), iCloud (*Share Calendar → Public Calendar*), Fastmail, Nextcloud — or an `.ics` file on disk.
+
+```toml
+[connectors.calendar]
+enabled         = true
+refresh_minutes = 30          # how often feeds are re-read in the background
+day_start       = "09:00"     # working hours, for "when am I free"
+day_end         = "18:00"
+
+[[connectors.calendar.feeds]]
+name = "Work"
+url  = "{{vault:CALENDAR_WORK}}"   # the link is the secret: openmuse vault set CALENDAR_WORK
+
+[[connectors.calendar.feeds]]
+name = "Family"
+url  = "~/family.ics"
+```
+
+The `calendar` tool reads (agenda, search, free time) and *drafts*: an event it proposes is written as `calendar/<date>-<title>.ics` in the workspace, and the app shows it as a card with an *Add to calendar* button. It never writes to your calendar itself. Today's and tomorrow's events are in the system prompt; the Feed shows them under *Today*. `openmuse calendar add NAME URL` does the same as the Connections screen.
+
 ### Browser
 
 ```toml

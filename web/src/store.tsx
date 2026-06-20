@@ -53,6 +53,7 @@ export interface AppState {
   memoryVersion: number;
   /** Bumped when a reminder or routine is set, fires or is cancelled. */
   remindersVersion: number;
+  calendarVersion: number;
   /** Cards waiting for you, across every thread — the approvals queue. */
   pendingApprovals: ApprovalEvent[];
   /** Bumps whenever something lands in the Feed (background work, cards, artifacts). */
@@ -103,6 +104,7 @@ const initial: AppState = {
   goalsVersion: 0,
   memoryVersion: 0,
   remindersVersion: 0,
+  calendarVersion: 0,
   pendingApprovals: [],
   feedVersion: 0,
   feedSeenAt: localStorage.getItem(FEED_SEEN_KEY) ?? "",
@@ -285,6 +287,8 @@ function applyWs(state: AppState, msg: WsMessage): AppState {
       return { ...state, memoryVersion: state.memoryVersion + 1 };
     case "reminders":
       return { ...state, remindersVersion: state.remindersVersion + 1 };
+    case "calendar":
+      return { ...state, calendarVersion: state.calendarVersion + 1 };
     case "profile":
       return {
         ...state,
