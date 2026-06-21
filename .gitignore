@@ -40,3 +40,6 @@ npm-debug.log*
 .idea/
 .DS_Store
 *.swp
+
+# uv lockfile: the project installs with `uv pip install -e .`, not `uv sync`
+uv.lock
