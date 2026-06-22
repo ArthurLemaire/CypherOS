@@ -38,11 +38,12 @@ dependencies = [
   "uvicorn[standard]>=0.29",
   "qrcode>=7.4",
   "pywebpush>=2.0",
+  "python-dateutil>=2.9",
 ]
 
 [project.optional-dependencies]
 browser = ["playwright>=1.45"]
-dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.5", "mypy>=1.10", "httpx>=0.27"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.5", "mypy>=1.10", "httpx>=0.27", "types-python-dateutil"]
 all = ["openmuse[browser,dev]"]
 
 [project.scripts]

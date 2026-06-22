@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from openmuse import prompts
+from openmuse.calendar import CalendarFeeds
 from openmuse.config import Settings
 from openmuse.goals import GoalStore
 from openmuse.llm.base import BaseLLM
@@ -31,6 +32,7 @@ class MuseAgent:
         audit: AuditLog,
         memory: MemoryStore | None = None,
         goals: GoalStore | None = None,
+        calendar: CalendarFeeds | None = None,
         session_file: Path | None = None,
     ):
         self.settings = settings
@@ -41,6 +43,7 @@ class MuseAgent:
         self.audit = audit
         self.memory = memory
         self.goals = goals
+        self.calendar = calendar
         self.session_file = session_file
         self.messages: list[Message] = []
         self.state = AgentState.IDLE
@@ -97,6 +100,16 @@ class MuseAgent:
                         bits.append("a plan change is awaiting the user's answer")
                     lines.append(f"- {g.id}: {g.title} ({', '.join(bits)})")
                 goals = prompts.GOALS_SECTION.format(items="\n".join(lines))
+        calendar = ""
+        if self.calendar is not None and self.calendar.configured:
+            # today and tomorrow, from the cache — the tool fetches when more is needed
+            today = datetime.now(self.calendar.tz).date()
+            events = self.calendar.agenda(today, 2)
+            calendar = prompts.CALENDAR_SECTION.format(
+                items=self.calendar.render(events, today)
+                if events
+                else "(nothing on the calendar today or tomorrow)"
+            )
         profile = (
             prompts.USER_PROFILE_SECTION.format(profile=a.user_profile.strip())
             if a.user_profile.strip()
@@ -116,7 +129,7 @@ class MuseAgent:
             tool_names=", ".join(t.name for t in self.tools),
             user_profile=profile,
             memories=memories,
-            goals=goals,
+            goals=goals + calendar,
             extra=extra,
         )
 

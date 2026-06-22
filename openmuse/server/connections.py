@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import asyncio
 import imaplib
+import re
 import smtplib
 from typing import TYPE_CHECKING, Any
 
 from openmuse.config import (
+    CalendarFeedSettings,
     MCPServerSettings,
     apply_app_settings,
     load_app_settings,
@@ -22,7 +24,7 @@ from openmuse.config import (
 )
 from openmuse.logger import logger
 from openmuse.schema import Message
-from openmuse.tools import MCPManager, ReadEmails, SendEmail, playwright_available
+from openmuse.tools import Calendar, MCPManager, ReadEmails, SendEmail, playwright_available
 from openmuse.tools.browser import Browser
 
 if TYPE_CHECKING:
@@ -62,12 +64,21 @@ PROVIDERS: dict[str, dict[str, Any]] = {
 }
 
 
+def _vault_name(feed_name: str) -> str:
+    return "CALENDAR_" + (re.sub(r"[^A-Z0-9]+", "_", feed_name.upper()).strip("_") or "FEED")
+
+
 class Connections:
     def __init__(self, svc: MuseService):
         self.svc = svc
         self.data = load_app_settings(svc.data_dir)
         # MCP servers added from the app, connected on demand: name -> manager
         self._mcp: dict[str, MCPManager] = {}
+        # calendar feeds that come from config.toml (the app cannot delete those, only its own)
+        app_feeds = {f.get("name") for f in (self.data.get("calendar") or {}).get("feeds") or []}
+        self._toml_feeds = [
+            f for f in svc.settings.connectors.calendar.feeds if f.name not in app_feeds
+        ]
 
     # ------------------------------------------------------------------ helpers
     @property
@@ -128,6 +139,7 @@ class Connections:
                 "smtp_starttls": email.smtp_starttls,
                 "password_set": bool(self.vault.get(EMAIL_PASSWORD)),
             },
+            "calendar": self._calendar_view(),
             "browser": {"enabled": s.browser.enabled, "available": playwright_available()},
             "mcp": [
                 {
@@ -144,6 +156,28 @@ class Connections:
             ],
             "vault": self.vault.names(),
             "onboarded": bool(self.data.get("onboarded")),
+        }
+
+    def _calendar_view(self) -> dict[str, Any]:
+        cal = self.settings.connectors.calendar
+        status = {f["name"]: f for f in self.svc.app.calendar.status()["feeds"]}
+        app_names = {f.get("name") for f in self._calendar_data().get("feeds") or []}
+        return {
+            "enabled": cal.enabled,
+            "configured": cal.enabled and bool(cal.feeds),
+            "refresh_minutes": cal.refresh_minutes,
+            "day_start": cal.day_start,
+            "day_end": cal.day_end,
+            "feeds": [
+                {
+                    "name": f.name,
+                    "from_app": f.name in app_names,
+                    "events": status.get(f.name, {}).get("events", 0),
+                    "fetched_at": status.get(f.name, {}).get("fetched_at"),
+                    "error": status.get(f.name, {}).get("error", ""),
+                }
+                for f in cal.feeds
+            ],
         }
 
     # ------------------------------------------------------------------ model
@@ -287,6 +321,107 @@ class Connections:
             return out
 
         return await asyncio.to_thread(probe)
+
+    # ------------------------------------------------------------------ calendar
+    def _calendar_data(self) -> dict[str, Any]:
+        return dict(self.data.get("calendar") or {})
+
+    def _apply_calendar(self, calendar: dict[str, Any]) -> None:
+        self.data["calendar"] = calendar
+        self._save()
+        settings = self.settings.connectors.calendar
+        # feeds from config.toml stay; the app's feeds come after them and win on a name clash
+        app_feeds = [CalendarFeedSettings.model_validate(f) for f in calendar.get("feeds") or []]
+        app_names = {f.name for f in app_feeds}
+        settings.feeds = [f for f in self._toml_feeds if f.name not in app_names] + app_feeds
+        settings.enabled = bool(calendar.get("enabled", bool(settings.feeds)))
+        for key in ("refresh_minutes", "day_start", "day_end"):
+            if calendar.get(key) not in (None, ""):
+                setattr(settings, key, calendar[key])
+        self._sync_calendar_tool()
+        self._publish()
+
+    def _sync_calendar_tool(self) -> None:
+        tools = self.svc.app.tools
+        enabled = self.settings.connectors.calendar.enabled
+        if enabled and "calendar" not in tools:
+            tools.add(
+                Calendar(feeds=self.svc.app.calendar, workspace=self.settings.agent.workspace)
+            )
+        elif not enabled:
+            tools.remove("calendar")
+
+    async def add_calendar_feed(self, body: dict[str, Any]) -> dict[str, Any]:
+        """Add (or replace) a feed; the link goes to the vault, the settings keep a placeholder."""
+        name = str(body.get("name") or "").strip()
+        url = str(body.get("url") or "").strip()
+        if not name:
+            raise ValueError("the calendar needs a name")
+        if not url:
+            raise ValueError("paste the calendar's .ics link (or a path to an .ics file)")
+        if not url.startswith(("http://", "https://", "file://", "/", "~")):
+            raise ValueError("the link must start with https:// (or be a path to an .ics file)")
+        secret = _vault_name(name)
+        self.vault.set(secret, url)
+        calendar = self._calendar_data()
+        feeds = [f for f in calendar.get("feeds") or [] if f.get("name") != name]
+        feeds.append({"name": name, "url": f"{{{{vault:{secret}}}}}"})
+        calendar["feeds"] = feeds
+        calendar["enabled"] = True
+        self._apply_calendar(calendar)
+        status = await self.svc.app.calendar.refresh(force=True)
+        state = next((f for f in status["feeds"] if f["name"] == name), None)
+        if state and state.get("error"):
+            # keep it (the user can fix the link) but say what went wrong
+            return {**self.view()["calendar"], "error": state["error"]}
+        self.svc.bus.publish({"kind": "calendar", "calendar": self.svc.calendar_view()})
+        return self.view()["calendar"]
+
+    def remove_calendar_feed(self, name: str) -> bool:
+        calendar = self._calendar_data()
+        feeds = calendar.get("feeds") or []
+        if not any(f.get("name") == name for f in feeds):
+            # a feed from config.toml: it can be switched off, not deleted from here
+            return False
+        calendar["feeds"] = [f for f in feeds if f.get("name") != name]
+        self.vault.delete(_vault_name(name))
+        if not calendar["feeds"] and not self._toml_feeds:
+            calendar["enabled"] = False
+        self._apply_calendar(calendar)
+        self.svc.app.calendar.states.pop(name, None)
+        self.svc.bus.publish({"kind": "calendar", "calendar": self.svc.calendar_view()})
+        return True
+
+    def set_calendar(self, body: dict[str, Any]) -> dict[str, Any]:
+        """Working hours, refresh interval, on/off."""
+        calendar = self._calendar_data()
+        if body.get("enabled") is not None:
+            calendar["enabled"] = bool(body["enabled"])
+        if body.get("refresh_minutes") is not None:
+            calendar["refresh_minutes"] = max(5, int(body["refresh_minutes"]))
+        for key in ("day_start", "day_end"):
+            if body.get(key):
+                value = str(body[key]).strip()
+                if not re.fullmatch(r"\d{2}:\d{2}", value):
+                    raise ValueError(f"{key} must be HH:MM")
+                calendar[key] = value
+        self._apply_calendar(calendar)
+        return self.view()["calendar"]
+
+    async def test_calendar(self) -> dict[str, Any]:
+        cal = self.svc.app.calendar
+        if not cal.configured:
+            return {"ok": False, "error": "add a calendar link first"}
+        status = await cal.refresh(force=True)
+        broken = [f for f in status["feeds"] if f["error"]]
+        if broken:
+            return {"ok": False, "error": "; ".join(f"{f['name']}: {f['error']}" for f in broken)}
+        self.svc.bus.publish({"kind": "calendar", "calendar": self.svc.calendar_view()})
+        return {
+            "ok": True,
+            "events": sum(f["events"] for f in status["feeds"]),
+            "feeds": len(status["feeds"]),
+        }
 
     # ------------------------------------------------------------------ browser
     def set_browser(self, enabled: bool) -> dict[str, Any]:

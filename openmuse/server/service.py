@@ -396,6 +396,7 @@ class MuseService:
             audit=self.app.audit,
             memory=self.app.memory,
             goals=self.app.goals,
+            calendar=self.app.calendar,
             session_file=session_file,
         )
         if session_file.exists():
@@ -804,6 +805,7 @@ class MuseService:
             try:
                 self._run_due_reminders()
                 self._run_due_check_ins()
+                await self._refresh_calendar()
                 due = self.next_goal_pass_at or datetime.now(UTC)
                 remaining = (due - datetime.now(UTC)).total_seconds()
                 if remaining > 0:
@@ -828,6 +830,32 @@ class MuseService:
             except Exception as exc:  # noqa: BLE001  pragma: no cover
                 logger.warning("goal scheduler error: {}", exc)
                 await asyncio.sleep(30)
+
+    # ------------------------------------------------------------------ calendar
+    async def _refresh_calendar(self) -> None:
+        """Fetch the calendar feeds when the cache is older than ``refresh_minutes``; the
+        Feed and the system prompt read the cache. Runs whatever the proactivity level:
+        it is the user's own data, not a background task."""
+        cal = self.app.calendar
+        if not cal.configured or not cal.stale():
+            return
+        before = cal.fetched_at
+        await cal.refresh()
+        if cal.fetched_at != before:
+            self.bus.publish({"kind": "calendar", "calendar": self.calendar_view()})
+
+    def calendar_view(self, days: int = 2) -> dict[str, Any]:
+        """Today's and tomorrow's events with the feeds' status, for the app."""
+        cal = self.app.calendar
+        status = cal.status()
+        today = datetime.now(cal.tz).date()
+        items = cal.agenda(today, days) if cal.configured else []
+        return {
+            **status,
+            "configured": cal.configured,
+            "today": today.isoformat(),
+            "events": [o.to_dict() for o in items],
+        }
 
     # ------------------------------------------------------------------ memory tidy-up
     TIDY_MIN_LINES = 12  # nothing to tidy below this

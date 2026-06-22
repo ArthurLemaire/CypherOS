@@ -7,7 +7,7 @@ import json
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 from rich.console import Console
@@ -27,11 +27,15 @@ app = typer.Typer(
 goals_app = typer.Typer(help="Manage long-term goals.", no_args_is_help=True)
 reminders_app = typer.Typer(help="Reminders and routines.", no_args_is_help=True)
 memory_app = typer.Typer(help="Inspect or edit long-term memory.", no_args_is_help=True)
+calendar_app = typer.Typer(
+    help="The calendar feeds: agenda, free time, links.", no_args_is_help=True
+)
 vault_app = typer.Typer(help="Store credentials the model never sees.", no_args_is_help=True)
 config_app = typer.Typer(help="Configuration helpers.", no_args_is_help=True)
 app.add_typer(goals_app, name="goals")
 app.add_typer(reminders_app, name="reminders")
 app.add_typer(memory_app, name="memory")
+app.add_typer(calendar_app, name="calendar")
 app.add_typer(vault_app, name="vault")
 app.add_typer(config_app, name="config")
 
@@ -412,6 +416,153 @@ def goals_delete(goal_id: str, config: ConfigOpt = None) -> None:
     s = _settings(config)
     ok = GoalStore(s.goals_db).delete(goal_id)
     console.print("deleted" if ok else f"[red]no goal {goal_id}[/red]")
+
+
+# ============================================================================ calendar
+def _calendar(config: Path | None):  # noqa: ANN202
+    from openmuse.calendar import CalendarFeeds
+    from openmuse.vault import CredentialVault
+
+    s = _settings(config)
+    vault = CredentialVault(s.vault_file, s.vault_key_file)
+    return s, CalendarFeeds(s.connectors.calendar, vault=vault, cache_file=s.calendar_cache)
+
+
+@calendar_app.command("agenda")
+def calendar_agenda(
+    config: ConfigOpt = None,
+    day: Annotated[str, typer.Option(help="'today', 'tomorrow' or YYYY-MM-DD")] = "today",
+    days: Annotated[int, typer.Option(min=1, max=31)] = 1,
+    refresh: Annotated[
+        bool, typer.Option("--refresh", help="Fetch the feeds even if fresh")
+    ] = False,
+) -> None:
+    """What is on the calendar, grouped by day."""
+    from openmuse.tools.calendar_tool import _parse_day
+
+    s, feeds = _calendar(config)
+    if not feeds.configured:
+        console.print("[yellow]no calendar feeds — `openmuse calendar add NAME URL`[/yellow]")
+        raise typer.Exit(1)
+    _run_async(feeds.refresh(force=refresh))
+    today = datetime.now(feeds.tz).date()
+    try:
+        start = _parse_day(day, today)
+    except ValueError:
+        console.print(f"[red]not a day: {day}[/red]")
+        raise typer.Exit(1) from None
+    console.print(feeds.render(feeds.agenda(start, days), today), markup=False)
+    for state in feeds.states.values():
+        if state.error:
+            console.print(f"[yellow]{state.name}: {state.error}[/yellow]")
+
+
+@calendar_app.command("free")
+def calendar_free(
+    config: ConfigOpt = None,
+    day: Annotated[str, typer.Option(help="'today', 'tomorrow' or YYYY-MM-DD")] = "today",
+    minutes: Annotated[int, typer.Option(min=5, help="Shortest gap worth listing")] = 30,
+) -> None:
+    """Free gaps in the working hours of a day."""
+    from openmuse.tools.calendar_tool import _parse_day
+
+    s, feeds = _calendar(config)
+    if not feeds.configured:
+        console.print("[yellow]no calendar feeds — `openmuse calendar add NAME URL`[/yellow]")
+        raise typer.Exit(1)
+    _run_async(feeds.refresh())
+    today = datetime.now(feeds.tz).date()
+    d = _parse_day(day, today)
+    cal = s.connectors.calendar
+    slots = feeds.free_slots(d, minutes, cal.day_start, cal.day_end)
+    if not slots:
+        console.print(
+            f"[dim]no gap of {minutes}+ min on {d:%a %Y-%m-%d} ({cal.day_start}–{cal.day_end})[/dim]"
+        )
+        return
+    for sl in slots:
+        console.print(f"{sl.start:%H:%M}–{sl.end:%H:%M}  ({sl.minutes} min)")
+
+
+@calendar_app.command("feeds")
+def calendar_feeds(config: ConfigOpt = None) -> None:
+    """The connected calendars and when they were last read."""
+    s, feeds = _calendar(config)
+    if not s.connectors.calendar.feeds:
+        console.print("[dim]no calendar feeds[/dim]")
+        return
+    table = Table(title="Calendar feeds" + ("" if s.connectors.calendar.enabled else " (off)"))
+    table.add_column("name", style="cyan")
+    table.add_column("link")
+    table.add_column("events")
+    table.add_column("read")
+    table.add_column("error")
+    status = {f["name"]: f for f in feeds.status()["feeds"]}
+    for f in s.connectors.calendar.feeds:
+        st = status.get(f.name, {})
+        link = f.url if "{{vault:" in f.url else (f.url[:40] + "…" if len(f.url) > 40 else f.url)
+        table.add_row(
+            f.name,
+            link,
+            str(st.get("events", 0)),
+            st.get("fetched_at") or "-",
+            st.get("error") or "",
+        )
+    console.print(table)
+
+
+@calendar_app.command("add")
+def calendar_add(name: str, url: str, config: ConfigOpt = None) -> None:
+    """Connect a calendar by its private .ics link (or a path to an .ics file).
+
+    The link is kept in the vault; app-settings.json refers to it as {{vault:CALENDAR_NAME}}.
+    """
+    import re
+
+    from openmuse.config import apply_app_settings, load_app_settings, save_app_settings
+    from openmuse.vault import CredentialVault
+
+    s = _settings(config)
+    secret = "CALENDAR_" + (re.sub(r"[^A-Z0-9]+", "_", name.upper()).strip("_") or "FEED")
+    CredentialVault(s.vault_file, s.vault_key_file).set(secret, url.strip())
+    data = load_app_settings(s.data_dir)
+    cal = dict(data.get("calendar") or {})
+    feeds = [f for f in cal.get("feeds") or [] if f.get("name") != name]
+    feeds.append({"name": name, "url": f"{{{{vault:{secret}}}}}"})
+    cal["feeds"], cal["enabled"] = feeds, True
+    data["calendar"] = cal
+    save_app_settings(s.data_dir, data)
+    apply_app_settings(s, {"calendar": cal})
+    _, reader = _calendar(config)
+    status = asyncio.run(reader.refresh(force=True))
+    st: dict[str, Any] = next((f for f in status["feeds"] if f["name"] == name), {})
+    if st.get("error"):
+        console.print(f"[yellow]added, but reading it failed: {st['error']}[/yellow]")
+        raise typer.Exit(1)
+    console.print(f"[green]added {name}: {st.get('events', 0)} events[/green]")
+
+
+@calendar_app.command("remove")
+def calendar_remove(name: str, config: ConfigOpt = None) -> None:
+    """Disconnect a calendar added with `calendar add` (feeds in config.toml are removed there)."""
+    import re
+
+    from openmuse.config import load_app_settings, save_app_settings
+    from openmuse.vault import CredentialVault
+
+    s = _settings(config)
+    data = load_app_settings(s.data_dir)
+    cal = dict(data.get("calendar") or {})
+    feeds = cal.get("feeds") or []
+    if not any(f.get("name") == name for f in feeds):
+        console.print(f"[red]no calendar '{name}' was added from the app or the CLI[/red]")
+        raise typer.Exit(1)
+    cal["feeds"] = [f for f in feeds if f.get("name") != name]
+    data["calendar"] = cal
+    save_app_settings(s.data_dir, data)
+    secret = "CALENDAR_" + (re.sub(r"[^A-Z0-9]+", "_", name.upper()).strip("_") or "FEED")
+    CredentialVault(s.vault_file, s.vault_key_file).delete(secret)
+    console.print(f"removed {name}")
 
 
 # ============================================================================ reminders
@@ -857,6 +1008,23 @@ async def _doctor(settings: Settings, check_model: bool) -> None:
             f"email: {'on' if email.enabled else 'off'}"
             + (f" · {email.imap_host} / {email.smtp_host}" if email.enabled else ""),
         )
+        cal = settings.connectors.calendar
+        if cal.enabled and cal.feeds:
+            status = await app_.calendar.refresh()
+            broken = [f for f in status["feeds"] if f["error"]]
+            line(
+                not broken,
+                f"calendar: {len(cal.feeds)} feed(s), "
+                f"{sum(f['events'] for f in status['feeds'])} events"
+                + (
+                    " · " + "; ".join(f"{f['name']}: {f['error']}" for f in broken)
+                    if broken
+                    else ""
+                ),
+                "a calendar feed could not be read",
+            )
+        else:
+            line(None, "calendar: off")
         if settings.browser.enabled:
             line(
                 playwright_available(),
