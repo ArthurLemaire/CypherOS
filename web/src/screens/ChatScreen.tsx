@@ -6,7 +6,7 @@ import { BrowserViewer } from "../components/BrowserViewer";
 import { ApprovalCard, ArtifactCard, BrowserCard, Notice, QuestionCard, ToolChip } from "../components/Cards";
 import { Markdown } from "../components/Markdown";
 import { Sheet } from "../components/Sheet";
-import { useT } from "../i18n";
+import { localLabel, useT } from "../i18n";
 import { useStore } from "../store";
 import type { ThreadMeta, TimelineEvent, UserEvent } from "../types";
 import { cx, timeShort } from "../util";
@@ -319,7 +319,7 @@ function AssistantBubble({
 function QuietLine({ text, about, ts }: { text: string; about?: string; ts?: string }) {
   const [open, setOpen] = useState(false);
   const t = useT();
-  const label = about?.replace(/^Working on your goal: /, "") ?? t("background check");
+  const label = about ? localLabel(about.replace(/^Working on your goal: /, "")) : t("background check");
   return (
     <div className="rise flex justify-center px-6">
       <button type="button" onClick={() => setOpen((o) => !o)} className="max-w-full rounded-2xl px-3 py-1.5 text-[12px] text-muted text-center leading-snug">

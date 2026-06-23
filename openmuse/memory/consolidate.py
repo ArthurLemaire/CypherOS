@@ -46,6 +46,17 @@ MAX_CONTENT = 300
 BUDGET_NOTE = "enough for one pass"
 
 
+_WORDS = {
+    "en": {
+        "merged": "Merged",
+        "dropped": "Dropped",
+        "would_merge": "Would merge",
+        "would_drop": "Would drop",
+    },
+    "zh": {"merged": "合并", "dropped": "删除", "would_merge": "将合并", "would_drop": "将删除"},
+}
+
+
 @dataclass
 class TidyReport:
     """What a tidy-up did (or would do, when planned only)."""
@@ -65,23 +76,23 @@ class TidyReport:
         """Sound proposals were left for the next pass because this one hit its budget."""
         return any(s.endswith(BUDGET_NOTE) for s in self.skipped)
 
-    def lines(self) -> list[str]:
-        """The report as the user reads it: one line per change."""
+    def lines(self, zh: bool = False) -> list[str]:
+        """The report as the user reads it: one line per change (English or 中文)."""
+        w = _WORDS["zh" if zh else "en"]
         out: list[str] = []
         for c in self.merged:
             olds = " + ".join(f"“{m.content}”" for m in c.before)
-            out.append(f"Merged {olds} → “{c.after.content if c.after else ''}”")
+            out.append(f"{w['merged']} {olds} → “{c.after.content if c.after else ''}”")
         for c in self.dropped:
             why = f" ({c.reason})" if c.reason else ""
-            out.append(f"Dropped “{c.before[0].content}”{why}")
+            out.append(f"{w['dropped']} “{c.before[0].content}”{why}")
         for p in self.planned:
             if p["op"] == "merge":
-                out.append(
-                    f"Would merge {' + '.join(f'“{t}”' for t in p['before'])} → “{p['content']}”"
-                )
+                olds = " + ".join(f"“{t}”" for t in p["before"])
+                out.append(f"{w['would_merge']} {olds} → “{p['content']}”")
             else:
                 why = f" ({p['reason']})" if p.get("reason") else ""
-                out.append(f"Would drop “{p['before'][0]}”{why}")
+                out.append(f"{w['would_drop']} “{p['before'][0]}”{why}")
         return out
 
     def to_dict(self) -> dict[str, Any]:

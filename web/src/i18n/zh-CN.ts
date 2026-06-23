@@ -149,6 +149,12 @@ const zhCN: Record<string, string> = {
   "{n} more": "还有 {n} 个",
   Reminder: "提醒",
   Routine: "例程",
+  // labels the server puts on background work (see localLabel)
+  "Working on your goal: {title}": "推进目标：{title}",
+  "Check-in: {title}": "跟进：{title}",
+  "Reminder: {title}": "提醒：{title}",
+  "Routine: {title}": "例程：{title}",
+  "Tidied memory": "整理了记忆",
   "{label} — nothing new": "{label}——没有新进展",
   "Open chat": "打开对话",
   Today: "今天",

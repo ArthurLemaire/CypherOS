@@ -12,6 +12,9 @@ All notable changes to OpenMuse. The format follows [Keep a Changelog](https://k
 ### Fixed
 
 - A reasoning model that spends the whole `max_tokens` thinking and returns nothing is asked once more with four times the budget — in the agent loop, for Ideas and for the memory tidy-up. The Responses API's "incomplete" is reported as the same `length` finish as the Chat API's.
+- A file the agent made is tappable in a reply even when it is named in plain prose ("saved as packing-list.html"), not only in backticks or a link.
+- A tool call whose arguments were cut off in transit is shown as such ("files: arguments cut off (4120 chars)") and handed straight back as a failure, instead of appearing as `files. .` and going through Sentinel — where a `files.write` with no path could even ask for approval.
+- The 简体中文 app translates the labels the server puts on background work (*Working on your goal*, *Check-in*, *Reminder*, *Routine*, *Tidied memory*) in the Feed and on quiet lines; the memory tidy-up's chat summary is written in 中文 when that is the reply language, or when the memories themselves are.
 
 ## [0.2.0] — 2026-09-23
 

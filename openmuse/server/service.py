@@ -884,7 +884,7 @@ class MuseService:
                     "thread": MAIN_THREAD,
                 }
             )
-            summary = _tidy_summary(report)
+            summary = _tidy_summary(report, self.settings.agent.language)
             self.ui.emit(
                 {
                     "type": "assistant",
@@ -1207,17 +1207,30 @@ class MuseService:
         }
 
 
-def _tidy_summary(report: TidyReport) -> str:
-    """The tidy-up as one chat message: what was merged and dropped, and where to undo it."""
+def _tidy_summary(report: TidyReport, language: str = "auto") -> str:
+    """The tidy-up as one chat message: what was merged and dropped, and where to undo it.
+
+    Written in 中文 when that is the reply language, or when the language is "auto" and the
+    memories themselves are Chinese; English otherwise (the two languages the app ships in).
+    """
     n_m, n_d = len(report.merged), len(report.dropped)
-    parts = []
-    if n_m:
-        parts.append(f"merged {n_m} line{'s' if n_m != 1 else ''}")
-    if n_d:
-        parts.append(f"dropped {n_d}")
-    head = "I tidied your memory — " + " and ".join(parts) + ":"
-    body = "\n".join(f"- {line}" for line in report.lines())
-    return f"{head}\n{body}\n\nEach change can be undone under Memory → Recent changes."
+    if language in ("", "auto"):
+        text = " ".join(m.content for c in report.merged + report.dropped for m in c.before)
+        zh = prompts.detect_language(text) == "Chinese"
+    else:
+        zh = language.lower().startswith(("中文", "zh", "chinese", "简体", "繁體"))
+    if zh:
+        parts = ([f"合并了 {n_m} 条"] if n_m else []) + ([f"删除了 {n_d} 条"] if n_d else [])
+        head = "我整理了一下记忆——" + "，".join(parts) + "："
+        tail = "每一处改动都可以在「记忆 → 最近的改动」里撤销。"
+    else:
+        parts = ([f"merged {n_m} line{'s' if n_m != 1 else ''}"] if n_m else []) + (
+            [f"dropped {n_d}"] if n_d else []
+        )
+        head = "I tidied your memory — " + " and ".join(parts) + ":"
+        tail = "Each change can be undone under Memory → Recent changes."
+    body = "\n".join(f"- {line}" for line in report.lines(zh=zh))
+    return f"{head}\n{body}\n\n{tail}"
 
 
 def _short(text: str, limit: int = 60) -> str:

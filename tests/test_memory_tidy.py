@@ -131,3 +131,50 @@ async def test_remember_updates_instead_of_duplicating(tmp_path: Path):
     n = len(store.history())
     out = await tool.execute(content="Partner is vegetarian, eats fish now", category="people")
     assert out.output.startswith("Remembered") and store.count() == 3 and len(store.history()) == n
+
+
+def test_tidy_summary_follows_the_reply_language():
+    from openmuse.memory import MemoryChange, MemoryItem, TidyReport
+    from openmuse.server.service import _tidy_summary
+
+    def item(content: str) -> MemoryItem:
+        return MemoryItem(
+            id="m_1", content=content, category="profile", created_at="", source="agent"
+        )
+
+    zh_report = TidyReport(
+        merged=[
+            MemoryChange(
+                id="c1",
+                at="",
+                action="merge",
+                before=[item("住在上海"), item("搬到了北京")],
+                after=item("从上海搬到了北京"),
+            )
+        ],
+        dropped=[
+            MemoryChange(
+                id="c2", at="", action="drop", before=[item("问过今天的天气")], reason="一次性请求"
+            )
+        ],
+    )
+    zh = _tidy_summary(zh_report, "auto")
+    assert zh.startswith("我整理了一下记忆——合并了 1 条，删除了 1 条：")
+    assert "- 合并 “住在上海” + “搬到了北京” → “从上海搬到了北京”" in zh
+    assert "- 删除 “问过今天的天气” (一次性请求)" in zh and "最近的改动" in zh
+
+    en_report = TidyReport(
+        dropped=[
+            MemoryChange(id="c3", at="", action="drop", before=[item("Asked for the weather")])
+        ]
+    )
+    en = _tidy_summary(en_report, "auto")
+    assert (
+        en.startswith("I tidied your memory — dropped 1:")
+        and "Dropped “Asked for the weather”" in en
+    )
+    # a fixed reply language wins over the script of the memories
+    assert _tidy_summary(en_report, "中文").startswith("我整理了一下记忆——删除了 1 条：")
+    assert _tidy_summary(zh_report, "English").startswith(
+        "I tidied your memory — merged 1 line and dropped 1:"
+    )
