@@ -218,7 +218,13 @@ class MuseAgent:
                 stop = False
                 for call in response.tool_calls:
                     tool = self.tools.get(call.name)
-                    summary = tool.assess(call.arguments).summary if tool else f"{call.name}(?)"
+                    if tool is None:
+                        summary = f"{call.name}(?)"
+                    elif "__raw__" in call.arguments:
+                        raw = str(call.arguments["__raw__"])
+                        summary = f"{call.name}: arguments cut off ({len(raw)} chars)"
+                    else:
+                        summary = tool.assess(call.arguments).summary
                     self.ui.on_tool_call(call, summary)
                     if tool is None:
                         result = ToolResult.fail(

@@ -16,6 +16,30 @@ export function matchFile(text: string, files: readonly string[]): string | null
   return suffix.length === 1 ? suffix[0] : null;
 }
 
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\/-]/g, "\\$&");
+
+/**
+ * Put backticks around bare mentions of the thread's files, so "saved as packing-list.html"
+ * gets the same tappable chip as "`packing-list.html`". Text already in code, fenced blocks
+ * or links is left alone; a bare name is marked only when it names exactly one file.
+ */
+export function markFiles(text: string, files: readonly string[]): string {
+  if (!text || files.length === 0) return text;
+  const names = new Set<string>(files);
+  for (const f of files) {
+    const base = f.slice(f.lastIndexOf("/") + 1);
+    if (base.includes(".") && matchFile(base, files) === f) names.add(base);
+  }
+  // longest first, so a path wins over the file name inside it
+  const alts = [...names].sort((a, b) => b.length - a.length).map(escapeRe);
+  const mention = new RegExp(`(?<![\\w./\\\\-])(${alts.join("|")})(?![\\w/-]|\\.\\w)`, "g");
+  const untouched = /(```[\s\S]*?```|`[^`\n]*`|\[[^\]]*\]\([^)]*\)|<[^>]*>)/;
+  return text
+    .split(untouched)
+    .map((part, i) => (i % 2 === 1 ? part : part.replace(mention, "`$1`")))
+    .join("");
+}
+
 function inlineCode(props: ComponentPropsWithoutRef<"code">): boolean {
   // react-markdown gives fenced blocks a `language-*` class and a newline in the text
   const text = typeof props.children === "string" ? props.children : "";
@@ -36,6 +60,7 @@ export function Markdown({
   const fileFor = (text: string | undefined): string | null =>
     onOpenFile && text && files.length > 0 ? matchFile(text, files) : null;
   const open = (path: string) => onOpenFile?.(path);
+  const source = onOpenFile && files.length > 0 ? markFiles(text, files) : text;
   return (
     <div className="md text-[15px] leading-[1.5] break-words">
       <ReactMarkdown
@@ -69,7 +94,7 @@ export function Markdown({
           },
         }}
       >
-        {text}
+        {source}
       </ReactMarkdown>
     </div>
   );

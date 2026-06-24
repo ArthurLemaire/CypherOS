@@ -183,6 +183,17 @@ async def test_gate_denies_when_user_declines(tmp_path: Path):
     assert audit.tail()[-1]["decision"] == "deny"
 
 
+async def test_gate_does_not_ask_about_arguments_that_never_parsed(tmp_path: Path):
+    ui = HeadlessUI(approve=True)
+    gate = Sentinel(SentinelSettings(always_ask_tools=["echo"]), AuditLog(tmp_path / "a.jsonl"), ui)
+    cut_off = ToolCall(
+        function=Function(name="echo", arguments='{"text": "a long page' + "x" * 1200)
+    )
+    result = await gate.guard(cut_off, Echo())
+    assert result.error and "not valid JSON" in result.error and "cut off" in result.error
+    assert not [e for e in ui.events if e[0] == "approval"], "nothing to approve: it cannot run"
+
+
 class ScopedUI(HeadlessUI):
     """Approves with a chosen scope and keeps the requests for inspection."""
 
