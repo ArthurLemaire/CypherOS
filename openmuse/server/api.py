@@ -10,6 +10,7 @@
     GET  /api/goals  POST /api/goals  GET|PATCH|DELETE /api/goals/{id}  POST /api/goals/{id}/advance|steps|check-in
     POST /api/goals/{id}/proposal/accept  DELETE /api/goals/{id}/proposal   the agent's plan change
     GET  /api/memory  POST /api/memory  DELETE /api/memory/{id}
+    POST /api/memory/tidy (?dry_run=1)   GET /api/memory/changes   POST /api/memory/changes/{id}/restore
     GET  /api/ideas (?refresh=1)
     GET  /api/activity                   audit tail + approvals granted
     GET  /api/feed                        what happened without you asking
@@ -474,6 +475,31 @@ def create_app(settings: Settings, service: MuseService | None = None) -> FastAP
             raise HTTPException(404, "no such memory")
         svc.bus.publish({"kind": "memory"})
         return {"ok": True}
+
+    @app.post("/api/memory/tidy", dependencies=dep)
+    async def tidy_memory(dry_run: bool = False) -> dict[str, Any]:
+        """One tidy-up pass now (merge duplicates, drop non-facts); ``dry_run`` only plans."""
+        try:
+            return await svc.tidy_memory(dry_run=dry_run)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.get("/api/memory/changes", dependencies=dep)
+    async def memory_changes(limit: int = Query(30, ge=1, le=200)) -> list[dict[str, Any]]:
+        """What tidy-ups and updates changed, newest first; each entry can be restored."""
+        if svc.app.memory is None:
+            return []
+        return [c.to_dict() for c in svc.app.memory.history(limit)]
+
+    @app.post("/api/memory/changes/{change_id}/restore", dependencies=dep)
+    async def restore_memory_change(change_id: str) -> dict[str, Any]:
+        if svc.app.memory is None:
+            raise HTTPException(400, "memory is disabled")
+        change = svc.app.memory.restore(change_id)
+        if change is None:
+            raise HTTPException(404, "no such change")
+        svc.bus.publish({"kind": "memory"})
+        return change.to_dict()
 
     # ------------------------------------------------------------------ ideas
     @app.get("/api/ideas", dependencies=dep)

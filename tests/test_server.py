@@ -488,6 +488,50 @@ def test_memory_api(server):
     assert client.delete("/api/memory/m_nope").status_code == 404
 
 
+def test_memory_tidy_from_the_app_and_on_schedule(server):
+    client, service, llm = server
+    store = service.app.memory
+    a = store.add("Prefers window seats", "preference")
+    b = store.add("Likes a window seat on flights", "preference")
+    for i in range(10):
+        store.add(f"fact {i}")
+    proposal = f'[{{"op": "merge", "ids": ["{a.id}", "{b.id}"], "content": "Prefers window seats on flights"}}]'
+
+    # nothing tidied yet and a dozen lines: due. A dry run plans and changes nothing.
+    assert service.memory_tidy_due()
+    llm.script.append(LLMResponse(content=proposal))
+    planned = client.post("/api/memory/tidy?dry_run=1").json()
+    assert planned["changed"] == 0 and planned["planned"][0]["op"] == "merge"
+    assert store.count() == 12 and service.memory_tidy_due()
+
+    llm.script.append(LLMResponse(content=proposal))
+    report = client.post("/api/memory/tidy").json()
+    assert report["changed"] == 1 and store.count() == 11
+    assert report["lines"][0].startswith("Merged")
+    # the pass is recorded: not due again until the store grows or a week passes
+    store.add("fact 10")  # back to a dozen lines, one more than at the pass
+    assert not service.memory_tidy_due()
+    store.set_meta("tidied_count", "4")
+    assert service.memory_tidy_due()  # 8 more lines than at the last pass
+    store.set_meta("tidied_count", str(store.count()))
+    store.set_meta("tidied_at", (datetime.now(UTC) - timedelta(days=8)).isoformat())
+    assert service.memory_tidy_due()  # a week went by
+
+    # the Feed and the chat carry one entry, the log one change, and undo works
+    feed = client.get("/api/feed").json()
+    assert (
+        feed[0]["title"] == "Tidied memory" and "Prefers window seats on flights" in feed[0]["text"]
+    )
+    said = events_of(client, "main", "assistant")[-1]
+    assert said["about"] == "Tidied memory" and said["final"] is True
+    changes = client.get("/api/memory/changes").json()
+    assert len(changes) == 1 and changes[0]["action"] == "merge" and not changes[0]["restored"]
+    restored = client.post(f"/api/memory/changes/{changes[0]['id']}/restore").json()
+    assert restored["restored"] and store.count() == 13
+    assert {m["content"] for m in client.get("/api/memory").json()} >= {a.content, b.content}
+    assert client.post("/api/memory/changes/c_nope/restore").status_code == 404
+
+
 def test_settings_and_profile(server, settings: Settings):
     client, service, _ = server
     view = client.put(

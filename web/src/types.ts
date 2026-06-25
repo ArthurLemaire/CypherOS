@@ -201,6 +201,29 @@ export interface MemoryItem {
   category: string;
   created_at: string;
   source: string;
+  /** set when the line was rewritten or is the result of a merge */
+  updated_at?: string;
+}
+
+/** One entry of the memory log: a tidy-up merge or drop, or an update the agent made. Undoable. */
+export interface MemoryChange {
+  id: string;
+  at: string;
+  action: "merge" | "rewrite" | "drop";
+  before: MemoryItem[];
+  after: MemoryItem | null;
+  reason: string;
+  restored: boolean;
+}
+
+export interface TidyReport {
+  considered: number;
+  changed: number;
+  merged: MemoryChange[];
+  dropped: MemoryChange[];
+  skipped: string[];
+  planned: { op: string; before: string[]; content?: string; reason?: string }[];
+  lines: string[];
 }
 
 export interface Idea {

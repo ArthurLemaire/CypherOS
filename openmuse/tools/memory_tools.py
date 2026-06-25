@@ -19,7 +19,9 @@ class Remember(BaseTool):
     description: str = (
         "Save a durable fact about the user or their preferences for future sessions "
         "(e.g. 'prefers window seats', 'partner is vegetarian', 'works at Acme, timezone UTC+8'). "
-        "Keep it short and factual. Never store passwords or payment details here."
+        "Keep it short and factual. When a fact has changed (they moved, changed jobs), pass "
+        "`replaces` with the id of the memory it supersedes instead of adding a second one. "
+        "Never store passwords or payment details here."
     )
     parameters: dict[str, Any] = {
         "type": "object",
@@ -29,6 +31,10 @@ class Remember(BaseTool):
                 "type": "string",
                 "description": "profile | preference | contact | project | routine | other",
             },
+            "replaces": {
+                "type": "string",
+                "description": "id (m_xxxxxxxx) of an existing memory this one updates",
+            },
         },
         "required": ["content"],
     }
@@ -37,15 +43,54 @@ class Remember(BaseTool):
 
     def assess(self, args: dict[str, Any]) -> CallAssessment:
         a = super().assess(args)
-        a.summary = f"remember: {_short(args.get('content'))}"
+        verb = "update memory" if args.get("replaces") else "remember"
+        a.summary = f"{verb}: {_short(args.get('content'))}"
         return a
 
-    async def execute(self, content: str = "", category: str = "general", **_: Any) -> ToolResult:
+    async def execute(
+        self, content: str = "", category: str = "general", replaces: str = "", **_: Any
+    ) -> ToolResult:
         try:
+            if replaces:
+                old = self.store.get(replaces)
+                if old is None:
+                    return ToolResult.fail(f"no memory with id {replaces}")
+                change = self.store.replace(
+                    [replaces], content, category=category or old.category, action="rewrite"
+                )
+                if change is None or change.after is None:
+                    return ToolResult.fail("memory content is empty")
+                return ToolResult(
+                    output=f"Updated {replaces} → {change.after.id}: {change.after.content}"
+                )
+            # The same fact in other words: update that line rather than keep two.
+            for _score, twin in self.store.similar(content, threshold=0.8, limit=1):
+                if twin.content.strip() == content.strip():
+                    break  # an exact repeat: add() hands back the existing line
+                change = self.store.replace(
+                    [twin.id], content, category=category or twin.category, action="rewrite"
+                )
+                if change is not None and change.after is not None:
+                    return ToolResult(
+                        output=f"Updated {twin.id} → {change.after.id}: {change.after.content} "
+                        f"(was: {twin.content})"
+                    )
             item = self.store.add(content, category=category or "general")
         except ValueError as exc:
             return ToolResult.fail(str(exc))
-        return ToolResult(output=f"Remembered {item.id}: {item.content}")
+        note = ""
+        similar = [
+            (s, m)
+            for s, m in self.store.similar(content, threshold=0.4, limit=2)
+            if m.id != item.id
+        ]
+        if similar:
+            note = (
+                " Similar memories: "
+                + "; ".join(f"[{m.id}] {m.content}" for _, m in similar)
+                + " — if this replaces one of them, call remember again with replaces=<id>."
+            )
+        return ToolResult(output=f"Remembered {item.id}: {item.content}.{note}")
 
 
 class Recall(BaseTool):
