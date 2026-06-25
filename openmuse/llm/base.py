@@ -50,13 +50,35 @@ class BaseLLM(ABC):
         tools: list[dict[str, Any]] | None = None,
         tool_choice: str = "auto",
         on_delta: DeltaCallback | None = None,
+        max_tokens: int | None = None,
     ) -> LLMResponse:
         """Send a conversation and get one assistant turn back.
 
         ``tools`` are OpenAI-style function schemas
         (``{"type": "function", "function": {...}}``).
         ``on_delta`` receives visible text as it streams (never reasoning).
+        ``max_tokens`` overrides the configured budget for this one call.
         """
+
+    def roomier_max_tokens(self) -> int:
+        """A budget for a second try when the first answer was cut off: four times the
+        configured one, 16k at least — enough for a reasoning model to think and answer."""
+        configured = getattr(getattr(self, "settings", None), "max_tokens", None) or 0
+        return max(16384, 4 * int(configured))
+
+    async def ask_complete(self, messages: list[Message], **kwargs: Any) -> LLMResponse:
+        """``ask``, tried once more with room when the answer was cut off.
+
+        A reasoning model can spend the whole ``max_tokens`` thinking and hand back an
+        empty or half-written answer with ``finish_reason == "length"``. The callers
+        that want a JSON list (ideas, memory tidy-up) cannot use a fragment, so the
+        second try gets ``roomier_max_tokens()``.
+        """
+        response = await self.ask(messages, **kwargs)
+        if response.finish_reason == "length":
+            kwargs["max_tokens"] = self.roomier_max_tokens()
+            response = await self.ask(messages, **kwargs)
+        return response
 
     async def close(self) -> None:  # pragma: no cover - default no-op
         return None

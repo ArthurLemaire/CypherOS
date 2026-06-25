@@ -229,13 +229,16 @@ class PromptToolAdapter(BaseLLM):
         tools: list[dict[str, Any]] | None = None,
         tool_choice: str = "auto",
         on_delta: DeltaCallback | None = None,
+        max_tokens: int | None = None,
     ) -> LLMResponse:
         if not tools:
-            return await self.inner.ask(messages, None, on_delta=on_delta)
+            return await self.inner.ask(messages, None, on_delta=on_delta, max_tokens=max_tokens)
         known = {t.get("function", t).get("name", "") for t in tools}
         if self.native:
             try:
-                resp = await self.inner.ask(messages, tools, tool_choice, on_delta=on_delta)
+                resp = await self.inner.ask(
+                    messages, tools, tool_choice, on_delta=on_delta, max_tokens=max_tokens
+                )
             except ToolsUnsupported as e:
                 self.native = False
                 logger.warning(
@@ -255,7 +258,9 @@ class PromptToolAdapter(BaseLLM):
                 return resp
         converted = convert_messages(messages, tools)
         stopper = _StopAtToolCall(on_delta)
-        resp = await self.inner.ask(converted, None, on_delta=stopper if on_delta else None)
+        resp = await self.inner.ask(
+            converted, None, on_delta=stopper if on_delta else None, max_tokens=max_tokens
+        )
         stopper.flush()
         visible, calls = parse_tool_calls(resp.content, known)
         resp.content = visible

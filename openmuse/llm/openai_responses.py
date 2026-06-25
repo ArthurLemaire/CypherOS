@@ -107,13 +107,14 @@ class OpenAIResponsesLLM(BaseLLM):
         tools: list[dict[str, Any]] | None = None,
         tool_choice: str = "auto",
         on_delta: DeltaCallback | None = None,
+        max_tokens: int | None = None,
     ) -> LLMResponse:
         instructions, items = _to_input_items(messages)
         params: dict[str, Any] = {
             "model": self.settings.model,
             "input": items,
             "temperature": self.settings.temperature,
-            "max_output_tokens": self.settings.max_tokens,
+            "max_output_tokens": max_tokens or self.settings.max_tokens,
         }
         if instructions:
             params["instructions"] = instructions
@@ -175,11 +176,16 @@ class OpenAIResponsesLLM(BaseLLM):
                     reasoning.append(getattr(s, "text", "") or "")
         content, think = split_think("".join(texts).strip() or None)
         usage = resp.usage.model_dump(exclude_none=True) if getattr(resp, "usage", None) else {}
+        # the budget ran out (a reasoning model thinking): the same "length" the Chat API says
+        details = getattr(resp, "incomplete_details", None)
+        cut = getattr(resp, "status", None) == "incomplete" and (
+            getattr(details, "reason", None) in (None, "max_output_tokens")
+        )
         return LLMResponse(
             content=content,
             tool_calls=tool_calls,
             reasoning="\n".join(r for r in reasoning if r) or think,
-            finish_reason="tool_calls" if tool_calls else "stop",
+            finish_reason="tool_calls" if tool_calls else ("length" if cut else "stop"),
             usage=usage,
             model=getattr(resp, "model", None),
         )

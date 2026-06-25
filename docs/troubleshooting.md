@@ -14,6 +14,8 @@ Start with `openmuse doctor`: it prints the config file in use, the data directo
 
 **"does not support tools" in the log, then the agent carries on.** That is `auto` doing its job: Ollama refused function calling for this model, so tools are described in the prompt from then on. Pick a model with a tool template (`qwen3:8b`, `llama3.1:8b`) for better results on long tasks.
 
+**Empty replies, or Ideas that stay on the starter list, with a reasoning model.** DeepSeek's thinking variants and the OpenAI o-series count their reasoning against `max_tokens`; on a hard prompt they can spend the whole budget thinking and return nothing (`finish_reason = "length"`). OpenMuse asks once more with four times the budget when that happens. If it keeps happening, raise `max_tokens` under `[llm]` (16384 is a sensible value for these models).
+
 **429 / rate limits.** Requests retry with exponential back-off (`max_retries`, default 5). Lower `agent.max_steps`, or add `web_fetch` to `always_ask_tools` to slow the loop down.
 
 **An approval card never appears in the terminal.** `openmuse daemon` and `--auto` run in Sentinel `auto` mode by design. Use `openmuse chat` or the app for interactive approvals.
