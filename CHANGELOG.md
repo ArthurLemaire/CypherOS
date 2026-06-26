@@ -4,6 +4,10 @@ All notable changes to OpenMuse. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-09-23
+
+The first release meant for other people's phones: the Muse-style app with Feed, Ideas, Goals and Library, scoped approvals, artifacts, push notifications, a browser view with take-over, reminders and routines, the app in 简体中文, `tool_mode = "auto"` so small local models work, and `openmuse doctor`. Verified end to end with DeepSeek V4.1 Flash and with `qwen3:8b`, `llama3.2:3b` and `gemma3:4b` on Ollama; CI on Linux, macOS and Windows.
+
 ### Added
 
 - **Approvals are scoped capabilities.** An approval is bound to a tool and a target (`shell:git`, `send_email:alice@example.com`, `web_fetch:api.github.com`) and lasts once, for this task, this session, 24 hours or always. Cards show the purpose; a Permissions list revokes any grant. Calls with warnings (a `rm -rf`, a `curl | sh`) are never covered by a grant.
@@ -58,5 +62,6 @@ First public release.
 - Mobile-first web app built with React, Vite and Tailwind, shipped inside the package.
 - Docker image and Compose file; GitHub Actions CI; PyPI publishing through Trusted Publishing.
 
-[Unreleased]: https://github.com/OpenMuseAgent/OpenMuse/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/OpenMuseAgent/OpenMuse/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/OpenMuseAgent/OpenMuse/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/OpenMuseAgent/OpenMuse/releases/tag/v0.1.0
