@@ -1178,17 +1178,41 @@ def goal_to_dict(g: Goal) -> dict[str, Any]:
     }
 
 
-def _parse_ideas(text: str) -> list[dict[str, str]]:
-    text = re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
+def _idea_objects(text: str) -> list[Any]:
+    """The JSON objects in a model reply that should have been a JSON array.
+
+    Usually it is one: ``[{...}, {...}]``, possibly inside a code fence. When the
+    array does not parse — a real newline inside a string, a trailing comma, the
+    reply cut off at max_tokens before the closing bracket — each ``{...}`` that
+    parses on its own is kept, so one bad item does not cost the whole list.
+    """
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.S)
+    text = re.sub(r"^\s*```(?:json)?\s*|\s*```\s*$", "", text.strip())
     start, end = text.find("["), text.rfind("]")
-    if start < 0 or end <= start:
-        return []
-    try:
-        data = json.loads(text[start : end + 1])
-    except json.JSONDecodeError:
-        return []
+    if start >= 0 and end > start:
+        try:
+            data = json.loads(text[start : end + 1], strict=False)
+            if isinstance(data, list):
+                return data
+        except json.JSONDecodeError:
+            pass
+    decoder = json.JSONDecoder(strict=False)
+    found: list[Any] = []
+    pos = text.find("{")
+    while pos >= 0:
+        try:
+            obj, stop = decoder.raw_decode(text, pos)
+        except json.JSONDecodeError:
+            pos = text.find("{", pos + 1)
+            continue
+        found.append(obj)
+        pos = text.find("{", stop)
+    return found
+
+
+def _parse_ideas(text: str) -> list[dict[str, str]]:
     ideas: list[dict[str, str]] = []
-    for item in data if isinstance(data, list) else []:
+    for item in _idea_objects(text):
         if not isinstance(item, dict):
             continue
         title = str(item.get("title", "")).strip()
