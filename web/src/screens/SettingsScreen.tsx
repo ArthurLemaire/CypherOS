@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { api, setToken } from "../api";
 import { Avatar } from "../components/Avatar";
 import { BackBar } from "../components/BackBar";
+import { LOCALES, setLocaleSetting, useLocaleSetting, useT } from "../i18n";
 import { disablePush, enablePush, pushState, type PushState } from "../push";
 import { useStore } from "../store";
 import type { Proactivity, PushInfo } from "../types";
@@ -41,6 +42,8 @@ export function SettingsScreen() {
   const [style, setStyle] = useState("");
   const [userName, setUserName] = useState("");
   const [saving, setSaving] = useState(false);
+  const t = useT();
+  const localeSetting = useLocaleSetting();
 
   useEffect(() => {
     if (!s) void refreshSettings();
@@ -83,17 +86,17 @@ export function SettingsScreen() {
     <div className="flex h-full flex-col">
       <header className="safe-top shrink-0 px-5 pt-2 pb-3">
         <BackBar />
-        <h1 className="text-[24px] font-bold tracking-tight">You &amp; {state.profile?.name ?? "Muse"}</h1>
-        <p className="text-[13px] text-muted">Make it yours, and decide how careful it should be.</p>
+        <h1 className="text-[24px] font-bold tracking-tight">{t("You & {name}", { name: state.profile?.name ?? "Muse" })}</h1>
+        <p className="text-[13px] text-muted">{t("Make it yours, and decide how careful it should be.")}</p>
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 pb-8 space-y-5">
         {/* Your Muse */}
-        <Section title="Your Muse">
+        <Section title={t("Your Muse")}>
           <div className="flex items-center gap-4">
             <Avatar profile={preview} size={64} />
             <div className="flex-1">
-              <label className="text-[12px] text-muted">Name</label>
+              <label className="text-[12px] text-muted">{t("Name")}</label>
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -103,7 +106,7 @@ export function SettingsScreen() {
             </div>
           </div>
           <div>
-            <label className="text-[12px] text-muted">Avatar</label>
+            <label className="text-[12px] text-muted">{t("Avatar")}</label>
             <div className="mt-1.5 grid grid-cols-8 gap-1.5">
               {EMOJI.map((e) => (
                 <button
@@ -118,7 +121,7 @@ export function SettingsScreen() {
             </div>
           </div>
           <div>
-            <label className="text-[12px] text-muted">Colour</label>
+            <label className="text-[12px] text-muted">{t("Colour")}</label>
             <div className="mt-1.5 flex gap-2">
               {COLORS.map((c) => (
                 <button
@@ -135,39 +138,39 @@ export function SettingsScreen() {
             </div>
           </div>
           <div>
-            <label className="text-[12px] text-muted">Personality &amp; style</label>
+            <label className="text-[12px] text-muted">{t("Personality & style")}</label>
             <textarea
               value={style}
               onChange={(e) => setStyle(e.target.value)}
               rows={2}
-              placeholder="e.g. Warm, concise, a little witty. Uses metric units. Calls me Sam."
+              placeholder={t("e.g. Warm, concise, a little witty. Uses metric units. Calls me Sam.")}
               className="mt-0.5 w-full resize-none rounded-2xl bg-surface-2 px-3.5 py-2.5 text-[14px] outline-none focus:ring-2 focus:ring-accent/40"
             />
           </div>
           <div>
-            <label className="text-[12px] text-muted">What it calls you</label>
+            <label className="text-[12px] text-muted">{t("What it calls you")}</label>
             <input
               value={userName}
               onChange={(e) => setUserName(e.target.value)}
               maxLength={60}
-              placeholder="Your name"
+              placeholder={t("Your name")}
               className="mt-0.5 w-full rounded-2xl bg-surface-2 px-3.5 py-2.5 text-[14px] outline-none focus:ring-2 focus:ring-accent/40"
             />
           </div>
           <button
             type="button"
             disabled={!dirty || saving}
-            onClick={() => void update({ profile: { name, emoji, color, style, user_name: userName } }, "Saved")}
+            onClick={() => void update({ profile: { name, emoji, color, style, user_name: userName } }, t("Saved"))}
             className="w-full rounded-2xl bg-accent text-accent-fg py-2.5 font-medium disabled:opacity-40"
           >
-            Save
+            {t("Save")}
           </button>
         </Section>
 
         {/* Sentinel */}
-        <Section title="Safety · Sentinel">
+        <Section title={t("Safety · Sentinel")}>
           <p className="text-[13px] text-muted -mt-1">
-            A separate gatekeeper reviews every action. Pick how often it should check in with you.
+            {t("A separate gatekeeper reviews every action. Pick how often it should check in with you.")}
           </p>
           <div className="space-y-2">
             {MODES.map((m) => (
@@ -183,9 +186,9 @@ export function SettingsScreen() {
                 <div className={cx("mt-0.5", m.id === "auto" ? "text-rose-500" : "text-accent")}>{m.icon}</div>
                 <div className="flex-1">
                   <div className="font-medium text-[14.5px]">
-                    {m.title} <span className="text-muted font-normal">· {m.id}</span>
+                    {t(m.title)} <span className="text-muted font-normal">· {m.id}</span>
                   </div>
-                  <div className="text-[12.5px] text-muted leading-snug mt-0.5">{m.text}</div>
+                  <div className="text-[12.5px] text-muted leading-snug mt-0.5">{t(m.text)}</div>
                 </div>
                 {s?.sentinel.mode === m.id && <Check size={18} className="text-accent mt-0.5" />}
               </button>
@@ -193,21 +196,21 @@ export function SettingsScreen() {
           </div>
           {s && (
             <div className="text-[12.5px] text-muted leading-relaxed">
-              Always asks for: {s.sentinel.always_ask_tools.join(", ") || "—"}.{" "}
-              {s.sentinel.taint_tracking && "After reading private data, new network destinations need approval."}
+              {t("Always asks for: {tools}.", { tools: s.sentinel.always_ask_tools.join(", ") || "—" })}{" "}
+              {s.sentinel.taint_tracking && t("After reading private data, new network destinations need approval.")}
             </div>
           )}
         </Section>
 
         {/* Proactivity */}
-        <Section title="Proactivity">
+        <Section title={t("Proactivity")}>
           <ProactivityDial value={state.profile?.proactivity ?? "default"} onChange={(v) => void update({ profile: { proactivity: v } })} />
           <div className="flex items-center gap-3">
             <label className="text-[13.5px] flex-1">
-              Check-in interval
+              {t("Check-in interval")}
               {state.profile && state.profile.proactivity !== "default" && state.profile.proactivity !== "off" && (
                 <span className="block text-[12px] text-muted">
-                  {state.profile.proactivity === "low" ? "Doubled" : "Halved"} at this level
+                  {state.profile.proactivity === "low" ? t("Doubled at this level") : t("Halved at this level")}
                 </span>
               )}
             </label>
@@ -220,7 +223,7 @@ export function SettingsScreen() {
                 .sort((a, b) => a - b)
                 .map((m) => (
                   <option key={m} value={m}>
-                    {m < 60 ? `${m} min` : m % 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m / 60} h`}
+                    {m < 60 ? t("{n} min", { n: m }) : m % 60 ? `${t("{n} h", { n: Math.floor(m / 60) })} ${t("{n} min", { n: m % 60 })}` : t("{n} h", { n: m / 60 })}
                   </option>
                 ))}
             </select>
@@ -229,34 +232,54 @@ export function SettingsScreen() {
         </Section>
 
         {/* Notifications */}
-        <Section title="Notifications">
+        <Section title={t("Notifications")}>
           <PushSettings name={state.profile?.name ?? "Muse"} />
         </Section>
 
         {/* Model */}
-        <Section title="Model">
+        <Section title={t("Model")}>
           {s && (
             <button type="button" onClick={() => setTab("connections")} className="w-full text-[13.5px] flex items-center justify-between">
-              <span className="text-muted">Provider / model</span>
+              <span className="text-muted">{t("Provider / model")}</span>
               <span className="font-mono text-[12.5px] flex items-center gap-1">
                 {s.llm.model} <ChevronRight size={14} className="text-muted" />
               </span>
             </button>
           )}
           <Toggle
-            label="Show thinking"
-            hint="Reveal the model's reasoning under each reply when the provider exposes it."
+            label={t("Show thinking")}
+            hint={t("Reveal the model's reasoning under each reply when the provider exposes it.")}
             checked={!!s?.agent.show_thinking}
             onChange={(v) => void update({ show_thinking: v })}
           />
           <div className="flex items-center gap-3">
-            <label className="text-[13.5px] flex-1">Reply language</label>
+            <label className="text-[13.5px] flex-1">
+              {t("App language")}
+              <span className="block text-[12px] text-muted">{t("This device only")}</span>
+            </label>
+            <select
+              value={localeSetting}
+              onChange={(e) => setLocaleSetting(e.target.value as typeof localeSetting)}
+              className="rounded-2xl bg-surface-2 px-3 py-2 text-[13.5px] outline-none"
+            >
+              {LOCALES.map((l) => (
+                <option key={l.value} value={l.value}>
+                  {l.value === "auto" ? t("Auto") : l.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="text-[13.5px] flex-1">
+              {t("Reply language")}
+              <span className="block text-[12px] text-muted">{t("What {name} writes in", { name: state.profile?.name ?? "Muse" })}</span>
+            </label>
             <select
               value={s?.agent.language ?? "auto"}
               onChange={(e) => void update({ language: e.target.value })}
               className="rounded-2xl bg-surface-2 px-3 py-2 text-[13.5px] outline-none"
             >
-              <option value="auto">Match mine</option>
+              <option value="auto">{t("Match mine")}</option>
               <option value="English">English</option>
               <option value="中文">中文</option>
               <option value="日本語">日本語</option>
@@ -267,22 +290,22 @@ export function SettingsScreen() {
           </div>
           {s && (
             <div className="text-[12.5px] text-muted">
-              Tools: {s.tools.map((t) => t.name).join(", ")}.{" "}
+              {t("Tools: {tools}.", { tools: s.tools.map((tool) => tool.name).join(", ") })}{" "}
               <button type="button" onClick={() => setTab("connections")} className="text-accent underline-offset-2 hover:underline">
-                Connections
+                {t("Connections")}
               </button>{" "}
-              is where email, the browser and MCP servers are plugged in.
+              {t("is where email, the browser and MCP servers are plugged in.")}
             </div>
           )}
         </Section>
 
         {/* About */}
-        <Section title="About">
+        <Section title={t("About")}>
           <div className="text-[13px] text-muted space-y-1">
             <div>OpenMuse {state.version}</div>
-            {s && <div className="break-all">Data: {s.data_dir}</div>}
-            {s && <div className="break-all">Workspace: {s.agent.workspace}</div>}
-            <div>{state.connected ? "Connected" : "Reconnecting…"}</div>
+            {s && <div className="break-all">{t("Data:")} {s.data_dir}</div>}
+            {s && <div className="break-all">{t("Workspace:")} {s.agent.workspace}</div>}
+            <div>{state.connected ? t("Connected") : t("Reconnecting…")}</div>
           </div>
           <button
             type="button"
@@ -292,7 +315,7 @@ export function SettingsScreen() {
             }}
             className="w-full rounded-2xl border border-border py-2.5 text-[14px] font-medium flex items-center justify-center gap-2 text-muted"
           >
-            <LogOut size={16} /> Forget this device's access token
+            <LogOut size={16} /> {t("Forget this device's access token")}
           </button>
         </Section>
       </div>
@@ -306,6 +329,7 @@ function PushSettings({ name }: { name: string }) {
   const [info, setInfo] = useState<PushInfo | null>(null);
   const [status, setStatus] = useState<PushState>("off");
   const [busy, setBusy] = useState(false);
+  const t = useT();
 
   const refresh = async () => {
     setStatus(await pushState());
@@ -326,13 +350,13 @@ function PushSettings({ name }: { name: string }) {
     try {
       const next = status === "on" ? await disablePush() : await enablePush(info.public_key);
       setStatus(next);
-      if (next === "denied") toast("Notifications are blocked for this site in the browser settings");
+      if (next === "denied") toast(t("Notifications are blocked for this site in the browser settings"));
       await refresh();
     } catch (e) {
       const err = e as Error;
       toast(
         err.name === "AbortError"
-          ? "This browser has no push service (embedded browsers often don't). Use Chrome, Edge, Firefox or Safari 16.4+ on the phone."
+          ? t("This browser has no push service (embedded browsers often don't). Use Chrome, Edge, Firefox or Safari 16.4+ on the phone.")
           : err.message,
       );
     } finally {
@@ -343,7 +367,7 @@ function PushSettings({ name }: { name: string }) {
   const test = async () => {
     try {
       const r = await api.pushTest();
-      toast(r.ok ? "Sent — it should arrive in a moment" : r.error ?? "Could not send");
+      toast(r.ok ? t("Sent — it should arrive in a moment") : r.error ?? t("Could not send"));
     } catch (e) {
       toast((e as Error).message);
     }
@@ -351,20 +375,20 @@ function PushSettings({ name }: { name: string }) {
 
   const blocked =
     status === "unsupported"
-      ? "This browser cannot receive push notifications."
+      ? t("This browser cannot receive push notifications.")
       : status === "insecure"
-        ? "Notifications need https:// (or localhost). Over plain http on your LAN the app works, this part stays off — see docs/deployment.md."
+        ? t("Notifications need https:// (or localhost). Over plain http on your LAN the app works, this part stays off — see docs/deployment.md.")
         : status === "denied"
-          ? "Blocked for this site. Allow notifications in the browser's site settings, then try again."
+          ? t("Blocked for this site. Allow notifications in the browser's site settings, then try again.")
           : info && !info.available
-            ? "The server was installed without pywebpush."
+            ? t("The server was installed without pywebpush.")
             : "";
 
   return (
     <>
       <Toggle
-        label={`Let ${name} notify this device`}
-        hint="When it needs your approval, has a question, finished something in the background, or it is check-in time. Nothing is shown while the app is on screen."
+        label={t("Let {name} notify this device", { name })}
+        hint={t("When it needs your approval, has a question, finished something in the background, or it is check-in time. Nothing is shown while the app is on screen.")}
         checked={status === "on"}
         onChange={() => void toggle()}
         disabled={busy || !!blocked}
@@ -373,15 +397,15 @@ function PushSettings({ name }: { name: string }) {
       {info && info.subscriptions > 0 && (
         <div className="flex items-center justify-between text-[12.5px] text-muted">
           <span>
-            {info.subscriptions} device{info.subscriptions === 1 ? "" : "s"} subscribed
+            {info.subscriptions === 1 ? t("1 device subscribed") : t("{n} devices subscribed", { n: info.subscriptions })}
           </span>
           <button type="button" onClick={() => void test()} className="text-accent font-medium">
-            Send a test
+            {t("Send a test")}
           </button>
         </div>
       )}
       <div className="text-[12.5px] text-muted">
-        On a phone, add the app to the home screen first: then the icon shows a badge with what is waiting for you, and notifications open the right chat.
+        {t("On a phone, add the app to the home screen first: then the icon shows a badge with what is waiting for you, and notifications open the right chat.")}
       </div>
     </>
   );
@@ -395,13 +419,14 @@ const LEVELS: Array<{ id: Proactivity; title: string; text: string }> = [
 ];
 
 export function ProactivityDial({ value, onChange }: { value: Proactivity; onChange: (v: Proactivity) => void }) {
+  const t = useT();
   const current = LEVELS.find((l) => l.id === value) ?? LEVELS[2];
   return (
     <div>
       <div className="flex items-center gap-3">
         <div className="flex-1">
-          <div className="text-[14px]">How much it does on its own</div>
-          <div className="text-[12.5px] text-muted leading-snug">{current.text}</div>
+          <div className="text-[14px]">{t("How much it does on its own")}</div>
+          <div className="text-[12.5px] text-muted leading-snug">{t(current.text)}</div>
         </div>
       </div>
       <div className="mt-2 grid grid-cols-4 gap-1 rounded-2xl bg-surface-2 p-1">
@@ -415,7 +440,7 @@ export function ProactivityDial({ value, onChange }: { value: Proactivity; onCha
               value === l.id ? "bg-surface shadow-sm text-accent" : "text-muted",
             )}
           >
-            {l.title}
+            {t(l.title)}
           </button>
         ))}
       </div>
@@ -426,15 +451,16 @@ export function ProactivityDial({ value, onChange }: { value: Proactivity; onCha
 export function QuietHours({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [start, end] = value ? value.split("-") : ["", ""];
   const on = !!value;
+  const t = useT();
   const set = (s: string, e: string) => onChange(s && e ? `${s}-${e}` : "");
   return (
     <div>
       <label className="flex items-start gap-3 cursor-pointer">
         <div className="flex-1">
           <div className="text-[14px] flex items-center gap-1.5">
-            <Moon size={15} className="text-muted" /> Quiet hours
+            <Moon size={15} className="text-muted" /> {t("Quiet hours")}
           </div>
-          <div className="text-[12.5px] text-muted leading-snug">No background work in this window; anything due waits until it ends.</div>
+          <div className="text-[12.5px] text-muted leading-snug">{t("No background work in this window; anything due waits until it ends.")}</div>
         </div>
         <button
           type="button"
@@ -448,9 +474,9 @@ export function QuietHours({ value, onChange }: { value: string; onChange: (v: s
       </label>
       {on && (
         <div className="mt-2 flex items-center gap-2 text-[13.5px]">
-          <span className="text-muted">From</span>
+          <span className="text-muted">{t("From")}</span>
           <input type="time" value={start} onChange={(e) => set(e.target.value, end)} className="rounded-xl bg-surface-2 px-2.5 py-1.5 outline-none" />
-          <span className="text-muted">to</span>
+          <span className="text-muted">{t("to")}</span>
           <input type="time" value={end} onChange={(e) => set(start, e.target.value)} className="rounded-xl bg-surface-2 px-2.5 py-1.5 outline-none" />
         </div>
       )}

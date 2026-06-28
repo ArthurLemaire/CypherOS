@@ -2,6 +2,7 @@ import { ArrowRight, Check, Loader2, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { Avatar } from "../components/Avatar";
+import { useT } from "../i18n";
 import { useStore } from "../store";
 import type { ConnectionsData } from "../types";
 import { cx } from "../util";
@@ -36,6 +37,7 @@ export function Onboarding() {
   const [style, setStyle] = useState(state.profile?.style ?? "");
   const [conn, setConn] = useState<ConnectionsData | null>(null);
   const [saving, setSaving] = useState(false);
+  const t = useT();
 
   const loadConn = async () => {
     try {
@@ -100,7 +102,7 @@ export function Onboarding() {
         </div>
         {step !== "tips" && (
           <button type="button" onClick={() => void finish()} className="text-[13px] text-muted">
-            Skip setup
+            {t("Skip setup")}
           </button>
         )}
       </header>
@@ -109,18 +111,16 @@ export function Onboarding() {
         {step === "welcome" && (
           <div className="flex h-full flex-col items-center justify-center text-center">
             <Avatar profile={preview} size={96} />
-            <h1 className="mt-6 text-[28px] font-bold tracking-tight">Meet your Muse</h1>
+            <h1 className="mt-6 text-[28px] font-bold tracking-tight">{t("Meet your Muse")}</h1>
             <p className="mt-3 max-w-sm text-[15px] text-muted leading-relaxed">
-              A personal agent that does the work: it searches, browses, writes files and code, reads and sends mail, and keeps going on
-              long goals while you are away.
+              {t("A personal agent that does the work: it searches, browses, writes files and code, reads and sends mail, and keeps going on long goals while you are away.")}
             </p>
             <div className="mt-6 max-w-sm rounded-3xl bg-surface border border-border/70 p-4 text-left text-[13.5px] leading-relaxed">
               <div className="flex items-center gap-2 font-medium">
-                <ShieldCheck size={18} className="text-accent" /> Yours, on your machine
+                <ShieldCheck size={18} className="text-accent" /> {t("Yours, on your machine")}
               </div>
               <p className="mt-1.5 text-muted">
-                It runs on the server you started. A separate Sentinel checks every action, asks before anything hard to undo, and keeps
-                your keys and passwords in an encrypted vault the model cannot read.
+                {t("It runs on the server you started. A separate Sentinel checks every action, asks before anything hard to undo, and keeps your keys and passwords in an encrypted vault the model cannot read.")}
               </p>
             </div>
           </div>
@@ -128,19 +128,18 @@ export function Onboarding() {
 
         {step === "you" && (
           <div className="pt-6">
-            <h1 className="text-[26px] font-bold tracking-tight">First, you</h1>
-            <p className="mt-1 text-[14px] text-muted">What should it call you?</p>
+            <h1 className="text-[26px] font-bold tracking-tight">{t("First, you")}</h1>
+            <p className="mt-1 text-[14px] text-muted">{t("What should it call you?")}</p>
             <input
               autoFocus
               value={userName}
               onChange={(e) => setUserName(e.target.value)}
               maxLength={60}
-              placeholder="Your name"
+              placeholder={t("Your name")}
               className={cx(inputCls, "mt-5 text-[18px] py-3")}
             />
             <p className="mt-3 text-[12.5px] text-muted">
-              Anything else it should know about you — where you live, what you do, what you like — you can just tell it in the chat. It
-              remembers.
+              {t("Anything else it should know about you — where you live, what you do, what you like — you can just tell it in the chat. It remembers.")}
             </p>
           </div>
         )}
@@ -148,8 +147,8 @@ export function Onboarding() {
         {step === "muse" && (
           <div className="pt-6 space-y-5">
             <div>
-              <h1 className="text-[26px] font-bold tracking-tight">Now, your Muse</h1>
-              <p className="mt-1 text-[14px] text-muted">Give it a name, a look and a way of talking.</p>
+              <h1 className="text-[26px] font-bold tracking-tight">{t("Now, your Muse")}</h1>
+              <p className="mt-1 text-[14px] text-muted">{t("Give it a name, a look and a way of talking.")}</p>
             </div>
             <div className="flex items-center gap-4">
               <Avatar profile={preview} size={64} />
@@ -172,8 +171,8 @@ export function Onboarding() {
             <div>
               <div className="flex flex-wrap gap-1.5">
                 {STYLES.map((s) => (
-                  <button key={s} type="button" onClick={() => setStyle(s)} className={cx("rounded-full px-3 py-1.5 text-[13px] border", style === s ? "border-accent bg-accent/10 text-accent font-medium" : "border-border text-muted")}>
-                    {s}
+                  <button key={s} type="button" onClick={() => setStyle(t(s))} className={cx("rounded-full px-3 py-1.5 text-[13px] border", style === t(s) ? "border-accent bg-accent/10 text-accent font-medium" : "border-border text-muted")}>
+                    {t(s)}
                   </button>
                 ))}
               </div>
@@ -181,7 +180,7 @@ export function Onboarding() {
                 value={style}
                 onChange={(e) => setStyle(e.target.value)}
                 rows={2}
-                placeholder="…or describe it: e.g. Warm, concise, a little witty. Uses metric units."
+                placeholder={t("…or describe it: e.g. Warm, concise, a little witty. Uses metric units.")}
                 className={cx(inputCls, "mt-2 resize-none text-[14px]")}
               />
             </div>
@@ -191,11 +190,11 @@ export function Onboarding() {
         {step === "model" && (
           <div className="pt-6 space-y-4">
             <div>
-              <h1 className="text-[26px] font-bold tracking-tight">The model behind it</h1>
+              <h1 className="text-[26px] font-bold tracking-tight">{t("The model behind it")}</h1>
               <p className="mt-1 text-[14px] text-muted">
                 {modelReady
-                  ? "A model is already set up on the server. Keep it, or switch here."
-                  : "Pick a provider and paste a key. It is stored encrypted in the vault on the server, never shown to the model."}
+                  ? t("A model is already set up on the server. Keep it, or switch here.")
+                  : t("Pick a provider and paste a key. It is stored encrypted in the vault on the server, never shown to the model.")}
               </p>
             </div>
             {conn ? (
@@ -211,10 +210,9 @@ export function Onboarding() {
         {step === "connect" && (
           <div className="pt-6 space-y-4">
             <div>
-              <h1 className="text-[26px] font-bold tracking-tight">Connect your mail</h1>
+              <h1 className="text-[26px] font-bold tracking-tight">{t("Connect your mail")}</h1>
               <p className="mt-1 text-[14px] text-muted">
-                Optional. With a mailbox connected it can read what came in and draft replies; it will always ask before sending. The
-                browser and MCP servers are under Connections later.
+                {t("Optional. With a mailbox connected it can read what came in and draft replies; it will always ask before sending. The browser and MCP servers are under Connections later.")}
               </p>
             </div>
             {conn ? (
@@ -232,15 +230,15 @@ export function Onboarding() {
             <div className="flex items-center gap-3">
               <Avatar profile={preview} size={48} />
               <div>
-                <h1 className="text-[24px] font-bold tracking-tight">{userName ? `Ready, ${userName}.` : "Ready."}</h1>
-                <p className="text-[14px] text-muted">A few things people do in their first days.</p>
+                <h1 className="text-[24px] font-bold tracking-tight">{userName ? t("Ready, {name}.", { name: userName }) : t("Ready.")}</h1>
+                <p className="text-[14px] text-muted">{t("A few things people do in their first days.")}</p>
               </div>
             </div>
             <ul className="space-y-2">
               {FIRST_ASKS.map((ask) => (
                 <li key={ask}>
-                  <button type="button" onClick={() => void finish(ask)} className="w-full text-left rounded-2xl bg-surface border border-border/70 px-4 py-3 text-[14px] flex items-center gap-3 active:bg-surface-2">
-                    <span className="flex-1">{ask}</span>
+                  <button type="button" onClick={() => void finish(t(ask))} className="w-full text-left rounded-2xl bg-surface border border-border/70 px-4 py-3 text-[14px] flex items-center gap-3 active:bg-surface-2">
+                    <span className="flex-1">{t(ask)}</span>
                     <ArrowRight size={16} className="text-muted shrink-0" />
                   </button>
                 </li>
@@ -248,15 +246,13 @@ export function Onboarding() {
             </ul>
             <div className="rounded-3xl bg-surface-2/60 p-4 text-[13px] text-muted leading-relaxed space-y-1.5">
               <p>
-                <b className="text-fg">Approvals.</b> When it wants to do something that matters — send mail, run a command, reach a new
-                site — a card appears. Allow once, for this task, or always.
+                <b className="text-fg">{t("Approvals.")}</b> {t("When it wants to do something that matters — send mail, run a command, reach a new site — a card appears. Allow once, for this task, or always.")}
               </p>
               <p>
-                <b className="text-fg">Goals.</b> Anything long-running lives in Goals; turn on background work in Settings and it keeps
-                going between your visits, reporting in the Feed.
+                <b className="text-fg">{t("Goals.")}</b> {t("Anything long-running lives in Goals; turn on background work in Settings and it keeps going between your visits, reporting in the Feed.")}
               </p>
               <p>
-                <b className="text-fg">Library.</b> Pages, documents and files it makes for you open right here.
+                <b className="text-fg">{t("Library.")}</b> {t("Pages, documents and files it makes for you open right here.")}
               </p>
             </div>
           </div>
@@ -266,37 +262,37 @@ export function Onboarding() {
       <footer className="safe-bottom shrink-0 px-5 pb-5 pt-2 flex gap-2">
         {idx > 0 && step !== "tips" && (
           <button type="button" onClick={back} className={secondaryBtn}>
-            Back
+            {t("Back")}
           </button>
         )}
         {step === "welcome" && (
           <button type="button" onClick={next} className={cx(primaryBtn, "flex-1 py-3")}>
-            Get started <ArrowRight size={16} />
+            {t("Get started")} <ArrowRight size={16} />
           </button>
         )}
         {step === "you" && (
           <button type="button" onClick={next} className={cx(primaryBtn, "flex-1 py-3")}>
-            {userName.trim() ? "Continue" : "Skip"} <ArrowRight size={16} />
+            {userName.trim() ? t("Continue") : t("Skip")} <ArrowRight size={16} />
           </button>
         )}
         {step === "muse" && (
           <button type="button" disabled={saving} onClick={() => void saveProfile()} className={cx(primaryBtn, "flex-1 py-3")}>
-            {saving ? <Loader2 size={16} className="animate-spin" /> : null} Continue <ArrowRight size={16} />
+            {saving ? <Loader2 size={16} className="animate-spin" /> : null} {t("Continue")} <ArrowRight size={16} />
           </button>
         )}
         {step === "model" && (
           <button type="button" disabled={!modelReady} onClick={next} className={cx(primaryBtn, "flex-1 py-3")}>
-            {modelReady ? "Continue" : "Save a model to continue"} <ArrowRight size={16} />
+            {modelReady ? t("Continue") : t("Save a model to continue")} <ArrowRight size={16} />
           </button>
         )}
         {step === "connect" && (
           <button type="button" onClick={next} className={cx(primaryBtn, "flex-1 py-3")}>
-            {conn?.email.configured ? "Continue" : "Skip for now"} <ArrowRight size={16} />
+            {conn?.email.configured ? t("Continue") : t("Skip for now")} <ArrowRight size={16} />
           </button>
         )}
         {step === "tips" && (
           <button type="button" onClick={() => void finish()} className={cx(primaryBtn, "flex-1 py-3")}>
-            Open the chat <ArrowRight size={16} />
+            {t("Open the chat")} <ArrowRight size={16} />
           </button>
         )}
       </footer>

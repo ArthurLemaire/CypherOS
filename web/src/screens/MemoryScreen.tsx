@@ -2,6 +2,7 @@ import { Brain, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { BackBar } from "../components/BackBar";
+import { useT } from "../i18n";
 import { useStore } from "../store";
 import type { MemoryItem } from "../types";
 import { relativeTime } from "../util";
@@ -16,6 +17,7 @@ export function MemoryScreen() {
   const [category, setCategory] = useState("profile");
   const [adding, setAdding] = useState(false);
   const name = state.profile?.name ?? "Muse";
+  const t = useT();
 
   const load = () => api.memory().then(setItems).catch((e: Error) => toast(e.message));
   useEffect(() => {
@@ -44,7 +46,7 @@ export function MemoryScreen() {
   };
 
   const forget = async (m: MemoryItem) => {
-    if (!window.confirm(`Forget “${m.content.slice(0, 60)}”?`)) return;
+    if (!window.confirm(t("Forget “{text}”?", { text: m.content.slice(0, 60) }))) return;
     try {
       await api.forgetMemory(m.id);
       setItems((prev) => prev.filter((x) => x.id !== m.id));
@@ -57,9 +59,9 @@ export function MemoryScreen() {
     <div className="flex h-full flex-col">
       <header className="safe-top shrink-0 px-5 pt-2 pb-3">
         <BackBar />
-        <h1 className="text-[24px] font-bold tracking-tight">Memory</h1>
+        <h1 className="text-[24px] font-bold tracking-tight">{t("Memory")}</h1>
         <p className="text-[13px] text-muted">
-          What {name} remembers about you. Read it, add to it, or make {name} forget — nothing here is hidden from you.
+          {t("What {name} remembers about you. Read it, add to it, or make {name} forget — nothing here is hidden from you.", { name })}
         </p>
       </header>
 
@@ -69,7 +71,7 @@ export function MemoryScreen() {
             value={content}
             onChange={(e) => setContent(e.target.value)}
             rows={2}
-            placeholder={`Tell ${name} something to remember, e.g. “I'm vegetarian” or “My sister's birthday is 14 May”`}
+            placeholder={t("Tell {name} something to remember, e.g. “I'm vegetarian” or “My sister's birthday is 14 May”", { name })}
             className="w-full resize-none rounded-2xl bg-surface-2 px-3.5 py-2.5 text-[14.5px] outline-none focus:ring-2 focus:ring-accent/40"
           />
           <div className="flex items-center gap-2">
@@ -80,7 +82,7 @@ export function MemoryScreen() {
             >
               {CATEGORIES.map((c) => (
                 <option key={c} value={c}>
-                  {c}
+                  {t(c)}
                 </option>
               ))}
             </select>
@@ -91,7 +93,7 @@ export function MemoryScreen() {
               onClick={() => void add()}
               className="rounded-2xl bg-accent text-accent-fg px-3.5 py-2 text-[14px] font-medium flex items-center gap-1.5 disabled:opacity-50"
             >
-              <Plus size={16} /> Remember
+              <Plus size={16} /> {t("Remember")}
             </button>
           </div>
         </div>
@@ -99,9 +101,9 @@ export function MemoryScreen() {
         {items.length === 0 && (
           <div className="rounded-3xl border border-dashed border-border p-6 text-center">
             <Brain className="mx-auto text-accent" />
-            <div className="mt-2 font-semibold">Nothing remembered yet</div>
+            <div className="mt-2 font-semibold">{t("Nothing remembered yet")}</div>
             <p className="mt-1 text-[13.5px] text-muted">
-              {name} saves durable facts you share in chat — preferences, people, routines — and never secrets.
+              {t("{name} saves durable facts you share in chat — preferences, people, routines — and never secrets.", { name })}
             </p>
           </div>
         )}
@@ -109,7 +111,7 @@ export function MemoryScreen() {
         {grouped.map(([cat, list]) => (
           <section key={cat}>
             <div className="px-1 mb-2 text-[12px] font-semibold uppercase tracking-wide text-muted">
-              {cat} · {list.length}
+              {t(cat)} · {list.length}
             </div>
             <ul className="rounded-3xl bg-surface border border-border/70 shadow-sm divide-y divide-border/70 overflow-hidden">
               {list.map((m) => (
@@ -117,10 +119,10 @@ export function MemoryScreen() {
                   <div className="flex-1 min-w-0">
                     <div className="text-[14.5px] leading-snug break-words">{m.content}</div>
                     <div className="mt-0.5 text-[11.5px] text-muted">
-                      {m.source === "user" ? "added by you" : `saved by ${name}`} · {relativeTime(m.created_at)}
+                      {m.source === "user" ? t("added by you") : t("saved by {name}", { name })} · {relativeTime(m.created_at)}
                     </div>
                   </div>
-                  <button type="button" aria-label="Forget" onClick={() => void forget(m)} className="p-1.5 text-muted hover:text-rose-500">
+                  <button type="button" aria-label={t("Forget")} onClick={() => void forget(m)} className="p-1.5 text-muted hover:text-rose-500">
                     <Trash2 size={17} />
                   </button>
                 </li>

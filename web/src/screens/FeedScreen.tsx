@@ -1,6 +1,7 @@
 import { ArrowRight, Bell, FileText, MessageCircleQuestion, Moon, ShieldAlert, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
+import { intlLocale, t, useLocale, useT } from "../i18n";
 import { useStore } from "../store";
 import type { FeedItem, UpcomingData } from "../types";
 import { cx, relativeTime, timeShort } from "../util";
@@ -15,6 +16,8 @@ export function FeedScreen() {
   const [items, setItems] = useState<FeedItem[] | null>(null);
   const [upcoming, setUpcoming] = useState<UpcomingData | null>(null);
   const name = state.profile?.name ?? "Muse";
+  const t = useT();
+  const locale = useLocale();
 
   useEffect(() => {
     let alive = true;
@@ -35,13 +38,14 @@ export function FeedScreen() {
     if (items && items.length && items[0].ts > state.feedSeenAt) markFeedSeen(items[0].ts);
   }, [items, state.feedSeenAt, markFeedSeen]);
 
-  const groups = useMemo(() => groupByDay(items ?? []), [items]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const groups = useMemo(() => groupByDay(items ?? []), [items, locale]);
 
   return (
     <div className="flex h-full flex-col">
       <header className="safe-top shrink-0 px-5 pt-4 pb-3">
-        <h1 className="text-[24px] font-bold tracking-tight">Feed</h1>
-        <p className="text-[13px] text-muted">What {name} did while you were away, and what it is waiting on.</p>
+        <h1 className="text-[24px] font-bold tracking-tight">{t("Feed")}</h1>
+        <p className="text-[13px] text-muted">{t("What {name} did while you were away, and what it is waiting on.", { name })}</p>
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 pb-6 space-y-4">
@@ -50,7 +54,7 @@ export function FeedScreen() {
         {items && items.length === 0 && (
           <div className="py-10 text-center text-muted text-[14px] px-6">
             <Moon size={28} className="mx-auto mb-2 opacity-60" />
-            Nothing yet. Once {name} works on a goal in the background or needs your approval, it shows up here.
+            {t("Nothing yet. Once {name} works on a goal in the background or needs your approval, it shows up here.", { name })}
           </div>
         )}
 
@@ -89,6 +93,7 @@ function NextUp({
   onSettings: () => void;
   onGoals: () => void;
 }) {
+  const t = useT();
   const next = data.queue[0];
   const active = data.reminders.filter((r) => r.status === "active" && r.next_at);
   const nextReminder = active[0];
@@ -96,48 +101,48 @@ function NextUp({
   return (
     <div className="rounded-3xl border border-border/70 bg-surface shadow-sm px-4 py-3.5">
       <div className="flex items-center gap-2 text-[12px] uppercase tracking-wide text-muted font-semibold">
-        <Bell size={13} /> Next up
+        <Bell size={13} /> {t("Next up")}
       </div>
       {!data.proactive ? (
         <div className="mt-1.5 text-[14px] leading-snug">
-          Background work is off. {name} only acts when you ask.{" "}
+          {t("Background work is off. {name} only acts when you ask.", { name })}{" "}
           <button type="button" onClick={onSettings} className="text-accent font-medium">
-            Turn it on
+            {t("Turn it on")}
           </button>
         </div>
       ) : !next ? (
         <div className="mt-1.5 text-[14px] leading-snug">
-          No goal has a next step to work on.{" "}
+          {t("No goal has a next step to work on.")}{" "}
           <button type="button" onClick={onGoals} className="text-accent font-medium">
-            Add one
+            {t("Add one")}
           </button>
         </div>
       ) : (
         <div className="mt-1.5 text-[14px] leading-snug">
           {data.busy
-            ? "Working now"
+            ? t("Working now")
             : data.quiet_until
-              ? `Quiet hours — after ${timeShort(data.quiet_until)}`
+              ? t("Quiet hours — after {time}", { time: timeShort(data.quiet_until) })
               : data.next_pass_at
-                ? `Around ${timeShort(data.next_pass_at)}`
-                : "Soon"}
+                ? t("Around {time}", { time: timeShort(data.next_pass_at) })
+                : t("Soon")}
           : <span className="font-medium">{next.title}</span>
           {next.next_step && <span className="text-muted"> — {next.next_step}</span>}
-          {next.overdue && <span className="text-rose-500 font-medium"> · overdue</span>}
-          {data.queue.length > 1 && <span className="text-muted"> · {data.queue.length - 1} more in line</span>}
+          {next.overdue && <span className="text-rose-500 font-medium"> · {t("overdue")}</span>}
+          {data.queue.length > 1 && <span className="text-muted"> · {t("{n} more in line", { n: data.queue.length - 1 })}</span>}
         </div>
       )}
       {data.check_ins[0] && (
         <div className="mt-1.5 text-[12.5px] text-muted">
-          Check-in on <span className="font-medium text-fg">{data.check_ins[0].title}</span> {relativeTime(data.check_ins[0].at)}
-          {data.check_ins.length > 1 && ` · ${data.check_ins.length - 1} more`}
+          {t("Check-in on")} <span className="font-medium text-fg">{data.check_ins[0].title}</span> {relativeTime(data.check_ins[0].at)}
+          {data.check_ins.length > 1 && ` · ${t("{n} more", { n: data.check_ins.length - 1 })}`}
         </div>
       )}
       {nextReminder && (
         <div className="mt-1.5 text-[12.5px] text-muted">
-          {nextReminder.kind === "task" ? "Routine" : "Reminder"} <span className="font-medium text-fg">{nextReminder.text}</span>{" "}
+          {nextReminder.kind === "task" ? t("Routine") : t("Reminder")} <span className="font-medium text-fg">{nextReminder.text}</span>{" "}
           {relativeTime(nextReminder.next_at!)}
-          {activeReminders > 1 && ` · ${activeReminders - 1} more`}
+          {activeReminders > 1 && ` · ${t("{n} more", { n: activeReminders - 1 })}`}
         </div>
       )}
     </div>
@@ -156,6 +161,7 @@ function plain(md: string): string {
 }
 
 function FeedRow({ item, unseen, onOpen }: { item: FeedItem; unseen: boolean; onOpen: () => void }) {
+  const t = useT();
   const icon =
     item.kind === "approval" ? (
       <ShieldAlert size={18} />
@@ -180,7 +186,7 @@ function FeedRow({ item, unseen, onOpen }: { item: FeedItem; unseen: boolean; on
       <button type="button" onClick={onOpen} className="w-full text-left px-2 py-1.5 flex items-center gap-2 text-[12.5px] text-muted">
         <Moon size={13} className="shrink-0" />
         <span className="truncate">
-          {item.title.replace(/^Working on your goal: /, "")} — nothing new{item.text ? `: ${item.text}` : ""}
+          {t("{label} — nothing new", { label: item.title.replace(/^Working on your goal: /, "") })}{item.text ? `: ${item.text}` : ""}
         </span>
         <span className="ml-auto shrink-0">{relativeTime(item.ts)}</span>
       </button>
@@ -206,9 +212,9 @@ function FeedRow({ item, unseen, onOpen }: { item: FeedItem; unseen: boolean; on
           <div className="mt-1.5 flex items-center gap-2 text-[12px] text-muted">
             <span>{relativeTime(item.ts)}</span>
             <span>·</span>
-            <span className="truncate">{item.thread_title}</span>
+            <span className="truncate">{item.thread === "main" ? t(item.thread_title) : item.thread_title}</span>
             <span className="ml-auto flex items-center gap-1 text-accent font-medium">
-              {item.kind === "artifact" ? "Open" : item.kind === "approval" || item.kind === "question" ? "Answer" : "Open chat"}
+              {item.kind === "artifact" ? t("Open") : item.kind === "approval" || item.kind === "question" ? t("Answer") : t("Open chat")}
               <ArrowRight size={13} />
             </span>
           </div>
@@ -224,9 +230,9 @@ function groupByDay(items: FeedItem[]): Array<[string, FeedItem[]]> {
   yesterday.setDate(today.getDate() - 1);
   const label = (iso: string) => {
     const d = new Date(iso);
-    if (d.toDateString() === today.toDateString()) return "Today";
-    if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
-    return d.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+    if (d.toDateString() === today.toDateString()) return t("Today");
+    if (d.toDateString() === yesterday.toDateString()) return t("Yesterday");
+    return d.toLocaleDateString(intlLocale(), { weekday: "long", month: "short", day: "numeric" });
   };
   const map = new Map<string, FeedItem[]>();
   for (const it of items) {

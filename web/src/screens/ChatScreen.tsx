@@ -6,6 +6,7 @@ import { BrowserViewer } from "../components/BrowserViewer";
 import { ApprovalCard, ArtifactCard, BrowserCard, Notice, QuestionCard, ToolChip } from "../components/Cards";
 import { Markdown } from "../components/Markdown";
 import { Sheet } from "../components/Sheet";
+import { useT } from "../i18n";
 import { useStore } from "../store";
 import type { ThreadMeta, TimelineEvent, UserEvent } from "../types";
 import { cx, timeShort } from "../util";
@@ -13,6 +14,7 @@ import { MuseSheet } from "./MuseSheet";
 
 export function ChatScreen() {
   const { state, send, decide, loadEvents, openThread, openFile, toast } = useStore();
+  const t = useT();
   const { profile, status, activeThread, threads } = state;
   // undefined until the first fetch for this thread has returned — don't flash the empty state
   const loaded = state.events[activeThread];
@@ -54,11 +56,13 @@ export function ChatScreen() {
 
   const queued = state.pendingApprovals.length;
   const statusLine = useMemo(() => {
-    if (queued > 0 && status.state !== "working") return `${queued} approval${queued > 1 ? "s" : ""} waiting for you`;
-    if (status.state === "idle" && !thread?.busy) return "Idle · tap the avatar for activity";
+    if (queued > 0 && status.state !== "working") {
+      return queued > 1 ? t("{n} approvals waiting for you", { n: queued }) : t("1 approval waiting for you");
+    }
+    if (status.state === "idle" && !thread?.busy) return t("Idle · tap the avatar for activity");
     if (status.detail) return status.detail;
-    return status.state === "waiting" ? "Waiting for you" : "Working…";
-  }, [status, thread, queued]);
+    return status.state === "waiting" ? t("Waiting for you") : t("Working…");
+  }, [status, thread, queued, t]);
 
   const pendingApprovals = events.filter((e) => e.type === "approval" && e.status === "pending").length;
   // files made in this chat: a reply that names one ("saved to `plan.md`") opens it on tap
@@ -94,7 +98,7 @@ export function ChatScreen() {
           <button
             type="button"
             onClick={() => setThreadsOpen(true)}
-            aria-label="Chats"
+            aria-label={t("Chats")}
             className="p-2 rounded-full text-muted hover:bg-surface-2"
           >
             <MoreHorizontal size={22} />
@@ -112,11 +116,11 @@ export function ChatScreen() {
               className="text-[12.5px] text-accent px-3 py-1 rounded-full bg-surface-2"
               onClick={() => void loadEvents(activeThread, events[0]?.id)}
             >
-              Load earlier messages
+              {t("Load earlier messages")}
             </button>
           </div>
         )}
-        {eventsLoaded && events.length === 0 && !stream && <EmptyChat name={name} emoji={profile?.emoji ?? "✨"} onSend={(t) => void send(activeThread, t)} />}
+        {eventsLoaded && events.length === 0 && !stream && <EmptyChat name={name} emoji={profile?.emoji ?? "✨"} onSend={(text) => void send(activeThread, text)} />}
         {events.map((ev, i) => (
           <EventView
             key={ev.id}
@@ -124,7 +128,7 @@ export function ChatScreen() {
             prev={events[i - 1]}
             name={name}
             onDecide={(approved, scope) =>
-              decide(ev.id, approved, scope).catch((e: Error) => toast(e.message || "Could not send decision"))
+              decide(ev.id, approved, scope).catch((e: Error) => toast(e.message || t("Could not send decision")))
             }
             onOpenFile={openFile}
             onOpenBrowser={setBrowserView}
@@ -135,7 +139,7 @@ export function ChatScreen() {
           <AssistantBubble text={stream.text} streaming files={files} onOpenFile={openFile} />
         )}
         {(thread?.busy || status.state !== "idle") && !stream?.text && status.state !== "waiting" && (
-          <TypingIndicator label={thread?.queued ? `${thread.queued} queued` : undefined} />
+          <TypingIndicator label={thread?.queued ? t("{n} queued", { n: thread.queued }) : undefined} />
         )}
         {showJump && (
           <button
@@ -143,7 +147,7 @@ export function ChatScreen() {
             onClick={jumpToBottom}
             className="sticky bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-surface border border-border shadow px-3 py-1.5 text-[12.5px] flex items-center gap-1"
           >
-            <ChevronDown size={14} /> Latest{pendingApprovals ? ` · ${pendingApprovals} approval` : ""}
+            <ChevronDown size={14} /> {t("Latest")}{pendingApprovals ? ` · ${t("{n} approval", { n: pendingApprovals })}` : ""}
           </button>
         )}
       </div>
@@ -152,7 +156,7 @@ export function ChatScreen() {
         name={name}
         busy={!!thread?.busy && pendingApprovals === 0}
         waiting={events.some((e) => e.type === "question" && e.status === "pending")}
-        onSend={(text) => send(activeThread, text).catch((e: Error) => toast(e.message || "Could not send"))}
+        onSend={(text) => send(activeThread, text).catch((e: Error) => toast(e.message || t("Could not send")))}
       />
 
       <MuseSheet open={activityOpen} onClose={() => setActivityOpen(false)} />
@@ -183,24 +187,25 @@ function ThreadStrip({
   onPick: (id: string) => void;
   onNew: () => void;
 }) {
+  const t = useT();
   if (threads.length <= 1) return null;
   return (
     <div className="no-scrollbar flex gap-2 overflow-x-auto px-4 pb-2.5">
-      {threads.map((t) => (
+      {threads.map((th) => (
         <button
-          key={t.id}
+          key={th.id}
           type="button"
-          onClick={() => onPick(t.id)}
+          onClick={() => onPick(th.id)}
           className={cx(
             "shrink-0 rounded-full px-3 py-1 text-[13px] flex items-center gap-1.5 border transition",
-            t.id === active ? "bg-accent text-accent-fg border-accent" : "bg-surface-2 border-transparent text-fg",
+            th.id === active ? "bg-accent text-accent-fg border-accent" : "bg-surface-2 border-transparent text-fg",
           )}
         >
-          {t.busy && <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />}
-          {t.title}
+          {th.busy && <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />}
+          {th.id === "main" ? t(th.title) : th.title}
         </button>
       ))}
-      <button type="button" onClick={onNew} aria-label="New side chat" className="shrink-0 rounded-full px-2.5 py-1 bg-surface-2 text-muted">
+      <button type="button" onClick={onNew} aria-label={t("New side chat")} className="shrink-0 rounded-full px-2.5 py-1 bg-surface-2 text-muted">
         <Plus size={16} />
       </button>
     </div>
@@ -285,13 +290,14 @@ function AssistantBubble({
   onOpenFile?: (path: string) => void;
 }) {
   const [showReasoning, setShowReasoning] = useState(false);
+  const t = useT();
   return (
     <div className={cx("rise flex items-end gap-2 pr-8", continued && "-mt-1")}>
       <div className="w-9 shrink-0" />
       <div className="min-w-0 max-w-full">
         {reasoning && (
           <button type="button" className="mb-1 ml-1 text-[12px] text-muted" onClick={() => setShowReasoning((s) => !s)}>
-            {showReasoning ? "Hide thinking" : "Show thinking"}
+            {showReasoning ? t("Hide thinking") : t("Show thinking")}
           </button>
         )}
         {reasoning && showReasoning && (
@@ -312,12 +318,13 @@ function AssistantBubble({
 /** A background pass that found nothing worth interrupting you for: one muted line, not a bubble. */
 function QuietLine({ text, about, ts }: { text: string; about?: string; ts?: string }) {
   const [open, setOpen] = useState(false);
-  const label = about?.replace(/^Working on your goal: /, "") ?? "background check";
+  const t = useT();
+  const label = about?.replace(/^Working on your goal: /, "") ?? t("background check");
   return (
     <div className="rise flex justify-center px-6">
       <button type="button" onClick={() => setOpen((o) => !o)} className="max-w-full rounded-2xl px-3 py-1.5 text-[12px] text-muted text-center leading-snug">
         <span className="inline-flex items-center gap-1.5">
-          <Moon size={12} /> Checked on {label} — nothing new{ts ? ` · ${timeShort(ts)}` : ""}
+          <Moon size={12} /> {t("Checked on {label} — nothing new", { label })}{ts ? ` · ${timeShort(ts)}` : ""}
         </span>
         {open && <span className="block mt-1 text-left whitespace-pre-wrap text-[12.5px]">{text}</span>}
       </button>
@@ -338,20 +345,20 @@ function TypingIndicator({ label }: { label?: string }) {
   );
 }
 
-function EmptyChat({ name, emoji, onSend }: { name: string; emoji: string; onSend: (t: string) => void }) {
+function EmptyChat({ name, emoji, onSend }: { name: string; emoji: string; onSend: (text: string) => void }) {
+  const t = useT();
   const starters = [
-    "What can you do for me?",
-    "Plan my week — ask me what's on my plate",
-    "Research and compare two options for me",
-    "Set up a long-term goal and track it",
+    t("What can you do for me?"),
+    t("Plan my week — ask me what's on my plate"),
+    t("Research and compare two options for me"),
+    t("Set up a long-term goal and track it"),
   ];
   return (
     <div className="flex flex-col items-center text-center px-6 pt-10 pb-6 gap-3">
       <div className="text-5xl">{emoji}</div>
-      <div className="text-[20px] font-semibold">Hi, I'm {name}.</div>
+      <div className="text-[20px] font-semibold">{t("Hi, I'm {name}.", { name })}</div>
       <p className="text-muted text-[14.5px] leading-snug max-w-sm">
-        I don't just answer — I get things done: research, plans, files, code, email, long-running goals. Everything I
-        do shows up here, and anything hard to undo waits for your approval.
+        {t("I don't just answer — I get things done: research, plans, files, code, email, long-running goals. Everything I do shows up here, and anything hard to undo waits for your approval.")}
       </p>
       <div className="mt-2 flex flex-wrap justify-center gap-2">
         {starters.map((s) => (
@@ -382,6 +389,7 @@ function Composer({
 }) {
   const [text, setText] = useState("");
   const ref = useRef<HTMLTextAreaElement>(null);
+  const t = useT();
 
   useEffect(() => {
     const el = ref.current;
@@ -392,9 +400,9 @@ function Composer({
 
   const submit = (e?: FormEvent) => {
     e?.preventDefault();
-    const t = text.trim();
-    if (!t) return;
-    onSend(t);
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    onSend(trimmed);
     setText("");
     ref.current?.focus();
   };
@@ -402,7 +410,7 @@ function Composer({
   return (
     <form onSubmit={submit} className="safe-bottom shrink-0 border-t border-border bg-surface/90 backdrop-blur px-3 pt-2 pb-2">
       {busy && !waiting && (
-        <div className="px-2 pb-1 text-[12px] text-muted">{name} is working — anything you send now is picked up right away.</div>
+        <div className="px-2 pb-1 text-[12px] text-muted">{t("{name} is working — anything you send now is picked up right away.", { name })}</div>
       )}
       <div className="flex items-end gap-2">
         <textarea
@@ -416,13 +424,13 @@ function Composer({
             }
           }}
           rows={1}
-          placeholder={waiting ? `Answer ${name}…` : `Message ${name}`}
+          placeholder={waiting ? t("Answer {name}…", { name }) : t("Message {name}", { name })}
           className="flex-1 resize-none rounded-3xl bg-surface-2 px-4 py-2.5 text-[15px] leading-[1.4] outline-none placeholder:text-muted focus:ring-2 focus:ring-accent/40"
         />
         <button
           type="submit"
           disabled={!text.trim()}
-          aria-label="Send"
+          aria-label={t("Send")}
           className="mb-0.5 h-10 w-10 shrink-0 rounded-full bg-accent text-accent-fg flex items-center justify-center disabled:opacity-40 active:scale-95 transition"
         >
           <ArrowUp size={20} strokeWidth={2.5} />
@@ -446,16 +454,17 @@ function ThreadsSheet({
   onPick: (id: string) => void;
 }) {
   const { toast, dispatch } = useStore();
+  const t = useT();
   const [title, setTitle] = useState("");
   const [creating, setCreating] = useState(false);
 
   const create = async () => {
     setCreating(true);
     try {
-      const t = await api.createThread(title.trim() || "Side chat");
-      dispatch({ type: "ws", msg: { kind: "thread", thread: t } });
+      const created = await api.createThread(title.trim() || t("Side chat"));
+      dispatch({ type: "ws", msg: { kind: "thread", thread: created } });
       setTitle("");
-      onPick(t.id);
+      onPick(created.id);
     } catch (e) {
       toast((e as Error).message);
     } finally {
@@ -464,7 +473,7 @@ function ThreadsSheet({
   };
 
   const remove = async (id: string) => {
-    if (!window.confirm("Delete this side chat and its history?")) return;
+    if (!window.confirm(t("Delete this side chat and its history?"))) return;
     try {
       await api.deleteThread(id);
       dispatch({ type: "ws", msg: { kind: "thread_deleted", thread: id } });
@@ -474,7 +483,7 @@ function ThreadsSheet({
   };
 
   const clear = async (id: string) => {
-    if (!window.confirm("Clear this conversation? Memory and goals are kept.")) return;
+    if (!window.confirm(t("Clear this conversation? Memory and goals are kept."))) return;
     try {
       await api.clearThread(id);
       dispatch({ type: "ws", msg: { kind: "thread_cleared", thread: id } });
@@ -485,28 +494,27 @@ function ThreadsSheet({
   };
 
   return (
-    <Sheet open={open} onClose={onClose} title="Chats">
+    <Sheet open={open} onClose={onClose} title={t("Chats")}>
       <p className="text-[13px] text-muted mb-3">
-        The main chat is one long conversation. Side chats keep a separate context for a project — memory, goals and
-        approvals are shared.
+        {t("The main chat is one long conversation. Side chats keep a separate context for a project — memory, goals and approvals are shared.")}
       </p>
       <ul className="divide-y divide-border rounded-2xl border border-border overflow-hidden">
-        {threads.map((t) => (
-          <li key={t.id} className={cx("flex items-center gap-2 px-3 py-2.5", t.id === active && "bg-surface-2/60")}>
-            <button type="button" onClick={() => onPick(t.id)} className="flex-1 text-left min-w-0">
+        {threads.map((th) => (
+          <li key={th.id} className={cx("flex items-center gap-2 px-3 py-2.5", th.id === active && "bg-surface-2/60")}>
+            <button type="button" onClick={() => onPick(th.id)} className="flex-1 text-left min-w-0">
               <div className="font-medium text-[15px] truncate flex items-center gap-2">
-                {t.title}
-                {t.busy && <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />}
+                {th.id === "main" ? t(th.title) : th.title}
+                {th.busy && <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />}
               </div>
               <div className="text-[12px] text-muted">
-                {t.events} events{t.queued ? ` · ${t.queued} queued` : ""} · {timeShort(t.updated_at)}
+                {t("{n} events", { n: th.events })}{th.queued ? ` · ${t("{n} queued", { n: th.queued })}` : ""} · {timeShort(th.updated_at)}
               </div>
             </button>
-            <button type="button" aria-label="Clear" onClick={() => void clear(t.id)} className="p-2 text-muted hover:text-fg">
+            <button type="button" aria-label={t("Clear")} onClick={() => void clear(th.id)} className="p-2 text-muted hover:text-fg">
               <X size={16} />
             </button>
-            {t.id !== "main" && (
-              <button type="button" aria-label="Delete" onClick={() => void remove(t.id)} className="p-2 text-muted hover:text-rose-500">
+            {th.id !== "main" && (
+              <button type="button" aria-label={t("Delete")} onClick={() => void remove(th.id)} className="p-2 text-muted hover:text-rose-500">
                 <Trash2 size={16} />
               </button>
             )}
@@ -517,7 +525,7 @@ function ThreadsSheet({
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="New side chat, e.g. “Trip to Kyoto”"
+          placeholder={t("New side chat, e.g. “Trip to Kyoto”")}
           className="flex-1 rounded-2xl bg-surface-2 px-3.5 py-2.5 text-[14px] outline-none focus:ring-2 focus:ring-accent/40"
         />
         <button
@@ -526,7 +534,7 @@ function ThreadsSheet({
           onClick={() => void create()}
           className="rounded-2xl bg-accent text-accent-fg px-3.5 py-2.5 flex items-center gap-1.5 font-medium disabled:opacity-50"
         >
-          <MessageSquarePlus size={18} /> New
+          <MessageSquarePlus size={18} /> {t("New")}
         </button>
       </div>
     </Sheet>

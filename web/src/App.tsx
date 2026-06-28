@@ -12,6 +12,7 @@ import { MemoryScreen } from "./screens/MemoryScreen";
 import { Onboarding } from "./screens/Onboarding";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { useStore, type Tab } from "./store";
+import { useT } from "./i18n";
 import { cx } from "./util";
 
 /** The tab bar. Memory and Settings are reached through the avatar menu, like in Muse. */
@@ -25,6 +26,7 @@ const TABS: Array<{ id: Tab; label: string; icon: (active: boolean) => ReactNode
 
 export default function App() {
   const { state, setTab, openFile } = useStore();
+  const t = useT();
 
   // Accent colour follows the avatar colour; document title follows the name.
   useEffect(() => {
@@ -48,12 +50,12 @@ export default function App() {
     <div className="mx-auto flex h-[100dvh] max-w-[760px] flex-col bg-bg sm:border-x sm:border-border">
       {!state.connected && state.loaded && (
         <div className="flex items-center justify-center gap-2 bg-amber-500/15 text-amber-700 dark:text-amber-300 text-[12.5px] py-1">
-          <WifiOff size={14} /> Reconnecting to your Muse…
+          <WifiOff size={14} /> {t("Reconnecting to your Muse…")}
         </div>
       )}
       {state.error && !state.loaded && (
         <div className="m-4 rounded-2xl bg-rose-500/12 text-rose-700 dark:text-rose-300 p-3 text-[13.5px]">
-          Could not reach the server: {state.error}
+          {t("Could not reach the server: {error}", { error: state.error })}
         </div>
       )}
       <main className="min-h-0 flex-1">
@@ -68,26 +70,26 @@ export default function App() {
       </main>
       <nav className="safe-bottom shrink-0 border-t border-border bg-surface/90 backdrop-blur">
         <ul className="grid grid-cols-5">
-          {TABS.map((t) => {
-            const active = state.tab === t.id;
-            const badge = t.id === "chat" ? pendingApprovals : t.id === "feed" ? feedUnseen : t.id === "goals" ? proposals || activeGoals : 0;
+          {TABS.map((tab) => {
+            const active = state.tab === tab.id;
+            const badge = tab.id === "chat" ? pendingApprovals : tab.id === "feed" ? feedUnseen : tab.id === "goals" ? proposals || activeGoals : 0;
             return (
-              <li key={t.id}>
+              <li key={tab.id}>
                 <button
                   type="button"
-                  onClick={() => setTab(t.id)}
+                  onClick={() => setTab(tab.id)}
                   className={cx(
                     "relative w-full flex flex-col items-center gap-0.5 pt-2 pb-1.5 text-[10.5px] font-medium transition",
                     active ? "text-accent" : "text-muted",
                   )}
                 >
-                  {t.icon(active)}
-                  <span>{t.label}</span>
+                  {tab.icon(active)}
+                  <span>{t(tab.label)}</span>
                   {badge > 0 && (
                     <span
                       className={cx(
                         "absolute top-1 left-1/2 ml-2 min-w-[17px] h-[17px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center",
-                        t.id === "goals" && !proposals ? "bg-surface-2 text-muted" : "bg-rose-500 text-white",
+                        tab.id === "goals" && !proposals ? "bg-surface-2 text-muted" : "bg-rose-500 text-white",
                       )}
                     >
                       {badge}
@@ -111,13 +113,14 @@ export default function App() {
 
 function TokenGate() {
   const [value, setValue] = useState("");
+  const t = useT();
   return (
     <div className="mx-auto flex h-[100dvh] max-w-md flex-col items-center justify-center px-6 text-center">
       <div className="text-5xl">✨</div>
-      <h1 className="mt-3 text-[22px] font-bold">Connect to your Muse</h1>
+      <h1 className="mt-3 text-[22px] font-bold">{t("Connect to your Muse")}</h1>
       <p className="mt-2 text-[14px] text-muted">
-        This app talks to the OpenMuse server you run yourself. Scan the QR code printed by{" "}
-        <code className="rounded bg-surface-2 px-1">openmuse serve</code>, or paste the access token below.
+        {t("This app talks to the OpenMuse server you run yourself. Scan the QR code printed by")}{" "}
+        <code className="rounded bg-surface-2 px-1">openmuse serve</code>{t(", or paste the access token below.")}
       </p>
       <form
         className="mt-5 w-full flex gap-2"
@@ -131,11 +134,11 @@ function TokenGate() {
         <input
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder="Access token"
+          placeholder={t("Access token")}
           className="flex-1 rounded-2xl bg-surface-2 px-4 py-2.5 text-[15px] outline-none focus:ring-2 focus:ring-accent/40"
         />
         <button type="submit" className="rounded-2xl bg-accent text-accent-fg px-4 font-medium">
-          Connect
+          {t("Connect")}
         </button>
       </form>
     </div>

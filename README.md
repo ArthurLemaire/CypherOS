@@ -246,7 +246,7 @@ More in [docs/architecture.md](docs/architecture.md).
 - [ ] Better memory recall (embeddings) and periodic consolidation
 - [ ] Per-tool sandboxes for `shell` and `python_execute`
 - [ ] Skills: reusable task recipes
-- [ ] The app in more languages (zh-CN first)
+- [x] The app in 简体中文 (Settings → App language); more languages welcome — one dictionary file each
 
 ## Contributing
 

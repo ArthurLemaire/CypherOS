@@ -15,6 +15,7 @@ import {
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { api } from "../api";
 import { BackBar } from "../components/BackBar";
+import { useT } from "../i18n";
 import { useStore } from "../store";
 import type { ConnectionsData, TestResult } from "../types";
 import { cx } from "../util";
@@ -29,6 +30,7 @@ export function ConnectionsScreen() {
   const [data, setData] = useState<ConnectionsData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const name = state.profile?.name ?? "Muse";
+  const t = useT();
 
   const load = useCallback(async () => {
     try {
@@ -47,9 +49,9 @@ export function ConnectionsScreen() {
     <div className="flex h-full flex-col">
       <header className="safe-top shrink-0 px-5 pt-2 pb-3">
         <BackBar />
-        <h1 className="text-[24px] font-bold tracking-tight">Connections</h1>
+        <h1 className="text-[24px] font-bold tracking-tight">{t("Connections")}</h1>
         <p className="text-[13px] text-muted">
-          What {name} can reach. Keys and passwords go into the vault on your machine — the model never sees them.
+          {t("What {name} can reach. Keys and passwords go into the vault on your machine — the model never sees them.", { name })}
         </p>
       </header>
       <div className="flex-1 overflow-y-auto px-4 pb-8 space-y-4">
@@ -76,6 +78,7 @@ export function ConnectionsScreen() {
 // ------------------------------------------------------------------ model
 export function ModelCard({ data, onChange, compact }: { data: ConnectionsData; onChange: () => void; compact?: boolean }) {
   const { toast } = useStore();
+  const t = useT();
   const [open, setOpen] = useState(!!compact);
   const presets = data.providers;
   const currentPreset =
@@ -108,10 +111,10 @@ export function ModelCard({ data, onChange, compact }: { data: ConnectionsData; 
 
   const status =
     data.llm.key_source === "none" && !presets[preset]?.no_key
-      ? { text: "No key yet", tone: "warn" }
+      ? { text: t("No key yet"), tone: "warn" }
       : data.llm.key_source === "missing"
-        ? { text: "Key missing from vault", tone: "warn" }
-        : { text: data.llm.key_source === "vault" ? "Key in vault" : data.llm.key_source === "config" ? "Key from config" : "No key needed", tone: "ok" };
+        ? { text: t("Key missing from vault"), tone: "warn" }
+        : { text: data.llm.key_source === "vault" ? t("Key in vault") : data.llm.key_source === "config" ? t("Key from config") : t("No key needed"), tone: "ok" };
 
   const save = async () => {
     setSaving(true);
@@ -125,7 +128,7 @@ export function ModelCard({ data, onChange, compact }: { data: ConnectionsData; 
         api_key: key ? key : presets[preset]?.no_key ? "" : null,
       });
       setKey("");
-      toast("Model saved");
+      toast(t("Model saved"));
       onChange();
       if (!compact) setOpen(false);
     } catch (e) {
@@ -149,13 +152,13 @@ export function ModelCard({ data, onChange, compact }: { data: ConnectionsData; 
   return (
     <Card
       icon={<Bot size={19} />}
-      title="Model"
+      title={t("Model")}
       summary={`${data.llm.model || "—"}${data.llm.base_url ? ` · ${hostOf(data.llm.base_url)}` : ""}`}
       status={status}
       open={open}
       onToggle={compact ? undefined : () => setOpen(!open)}
     >
-      <Field label="Provider">
+      <Field label={t("Provider")}>
         <div className="flex flex-wrap gap-1.5">
           {Object.entries(presets).map(([id, p]) => (
             <button
@@ -169,8 +172,8 @@ export function ModelCard({ data, onChange, compact }: { data: ConnectionsData; 
           ))}
         </div>
       </Field>
-      <Field label="Model">
-        <input list="om-models" value={model} onChange={(e) => setModel(e.target.value)} className={inputCls} placeholder="model name" />
+      <Field label={t("Model")}>
+        <input list="om-models" value={model} onChange={(e) => setModel(e.target.value)} className={inputCls} placeholder={t("model name")} />
         <datalist id="om-models">
           {(presets[preset]?.models ?? []).map((m) => (
             <option key={m} value={m} />
@@ -178,16 +181,16 @@ export function ModelCard({ data, onChange, compact }: { data: ConnectionsData; 
         </datalist>
       </Field>
       {(preset === "custom" || !presets[preset]?.base_url) && (
-        <Field label="Base URL">
+        <Field label={t("Base URL")}>
           <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} className={inputCls} placeholder="https://host/v1" inputMode="url" />
         </Field>
       )}
       {!presets[preset]?.no_key && (
-        <Field label="API key" hint={data.llm.key_source === "vault" ? "A key is in the vault. Leave blank to keep it." : "Stored encrypted in the vault as LLM_API_KEY."}>
+        <Field label={t("API key")} hint={data.llm.key_source === "vault" ? t("A key is in the vault. Leave blank to keep it.") : t("Stored encrypted in the vault as LLM_API_KEY.")}>
           <input type="password" value={key} onChange={(e) => setKey(e.target.value)} className={inputCls} placeholder={data.llm.key_source === "vault" ? "••••••••" : "sk-…"} autoComplete="off" />
         </Field>
       )}
-      <Field label="Tool calling" hint="Auto uses the API's function calling and falls back to describing tools in the prompt when the endpoint rejects them. Prompt: for endpoints that silently ignore tools.">
+      <Field label={t("Tool calling")} hint={t("Auto uses the API's function calling and falls back to describing tools in the prompt when the endpoint rejects them. Prompt: for endpoints that silently ignore tools.")}>
         <div className="flex gap-1.5">
           {["auto", "native", "prompt"].map((m) => (
             <button key={m} type="button" onClick={() => setToolMode(m)} className={cx("rounded-full px-3 py-1.5 text-[13px] border", toolMode === m ? "border-accent bg-accent/10 text-accent font-medium" : "border-border text-muted")}>
@@ -198,13 +201,13 @@ export function ModelCard({ data, onChange, compact }: { data: ConnectionsData; 
       </Field>
       <div className="flex gap-2 pt-1">
         <button type="button" disabled={saving || !model.trim()} onClick={() => void save()} className={primaryBtn}>
-          {saving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} Save
+          {saving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} {t("Save")}
         </button>
         <button type="button" disabled={testing} onClick={() => void runTest()} className={secondaryBtn}>
-          {testing ? <Loader2 size={16} className="animate-spin" /> : <Plug size={16} />} Test
+          {testing ? <Loader2 size={16} className="animate-spin" /> : <Plug size={16} />} {t("Test")}
         </button>
       </div>
-      {test && <TestLine result={test} okText={`Replied "${test.reply}" in ${test.ms} ms`} />}
+      {test && <TestLine result={test} okText={t('Replied "{reply}" in {ms} ms', { reply: test.reply ?? "", ms: test.ms ?? 0 })} />}
     </Card>
   );
 }
@@ -221,6 +224,7 @@ const MAIL_PRESETS: Array<{ id: string; label: string; imap: string; smtp: strin
 
 export function EmailCard({ data, onChange, compact }: { data: ConnectionsData; onChange: () => void; compact?: boolean }) {
   const { toast } = useStore();
+  const t = useT();
   const e = data.email;
   const [open, setOpen] = useState(!!compact);
   const [address, setAddress] = useState(e.address);
@@ -267,7 +271,7 @@ export function EmailCard({ data, onChange, compact }: { data: ConnectionsData; 
       setPassword("");
       const result = await api.testEmail();
       setTest(result);
-      toast(result.ok ? "Email connected" : "Saved, but the test failed");
+      toast(result.ok ? t("Email connected") : t("Saved, but the test failed"));
       onChange();
     } catch (err) {
       toast((err as Error).message);
@@ -281,7 +285,7 @@ export function EmailCard({ data, onChange, compact }: { data: ConnectionsData; 
     try {
       await api.disconnectEmail();
       setTest(null);
-      toast("Email disconnected");
+      toast(t("Email disconnected"));
       onChange();
     } catch (err) {
       toast((err as Error).message);
@@ -290,21 +294,21 @@ export function EmailCard({ data, onChange, compact }: { data: ConnectionsData; 
     }
   };
 
-  const status = e.enabled && e.configured ? { text: "Connected", tone: "ok" } : e.enabled ? { text: "Incomplete", tone: "warn" } : { text: "Not connected", tone: "off" };
+  const status = e.enabled && e.configured ? { text: t("Connected"), tone: "ok" } : e.enabled ? { text: t("Incomplete"), tone: "warn" } : { text: t("Not connected"), tone: "off" };
 
   return (
     <Card
       icon={<Mail size={19} />}
-      title="Email"
-      summary={e.configured && e.enabled ? `${e.address} · reads and sends` : "Read your inbox, draft and send mail"}
+      title={t("Email")}
+      summary={e.configured && e.enabled ? `${e.address} · ${t("reads and sends")}` : t("Read your inbox, draft and send mail")}
       status={status}
       open={open}
       onToggle={compact ? undefined : () => setOpen(!open)}
     >
       <p className="text-[12.5px] text-muted -mt-1">
-        Reading is a moderate action; sending always asks you first. Use an app password where your provider offers one.
+        {t("Reading is a moderate action; sending always asks you first. Use an app password where your provider offers one.")}
       </p>
-      <Field label="Provider">
+      <Field label={t("Provider")}>
         <div className="flex flex-wrap gap-1.5">
           {MAIL_PRESETS.map((p) => (
             <button key={p.id} type="button" onClick={() => applyPreset(p)} className={cx("rounded-full px-3 py-1.5 text-[13px] border", imap === p.imap ? "border-accent bg-accent/10 text-accent font-medium" : "border-border text-muted")}>
@@ -313,40 +317,40 @@ export function EmailCard({ data, onChange, compact }: { data: ConnectionsData; 
           ))}
         </div>
       </Field>
-      <Field label="Address">
+      <Field label={t("Address")}>
         <input value={address} onChange={(ev) => setAddress(ev.target.value)} className={inputCls} placeholder="you@example.com" inputMode="email" autoComplete="off" />
       </Field>
-      <Field label="Password" hint={e.password_set ? "A password is in the vault. Leave blank to keep it." : "Stored encrypted in the vault as EMAIL_PASSWORD."}>
-        <input type="password" value={password} onChange={(ev) => setPassword(ev.target.value)} className={inputCls} placeholder={e.password_set ? "••••••••" : "app password"} autoComplete="off" />
+      <Field label={t("Password")} hint={e.password_set ? t("A password is in the vault. Leave blank to keep it.") : t("Stored encrypted in the vault as EMAIL_PASSWORD.")}>
+        <input type="password" value={password} onChange={(ev) => setPassword(ev.target.value)} className={inputCls} placeholder={e.password_set ? "••••••••" : t("app password")} autoComplete="off" />
       </Field>
       <div className="grid grid-cols-[1fr_84px] gap-2">
-        <Field label="IMAP server">
+        <Field label={t("IMAP server")}>
           <input value={imap} onChange={(ev) => setImap(ev.target.value)} className={inputCls} placeholder="imap.example.com" />
         </Field>
-        <Field label="Port">
+        <Field label={t("Port")}>
           <input type="number" value={imapPort} onChange={(ev) => setImapPort(Number(ev.target.value))} className={inputCls} />
         </Field>
-        <Field label="SMTP server">
+        <Field label={t("SMTP server")}>
           <input value={smtp} onChange={(ev) => setSmtp(ev.target.value)} className={inputCls} placeholder="smtp.example.com" />
         </Field>
-        <Field label="Port">
+        <Field label={t("Port")}>
           <input type="number" value={smtpPort} onChange={(ev) => setSmtpPort(Number(ev.target.value))} className={inputCls} />
         </Field>
       </div>
       <label className="flex items-center gap-2 text-[13.5px]">
-        <input type="checkbox" checked={starttls} onChange={(ev) => setStarttls(ev.target.checked)} className="accent-[var(--om-accent)]" /> STARTTLS for SMTP (off for port 465)
+        <input type="checkbox" checked={starttls} onChange={(ev) => setStarttls(ev.target.checked)} className="accent-[var(--om-accent)]" /> {t("STARTTLS for SMTP (off for port 465)")}
       </label>
       <div className="flex gap-2 pt-1">
         <button type="button" disabled={busy !== null || !address.trim() || !imap.trim() || !smtp.trim() || (!password && !e.password_set)} onClick={() => void connect()} className={primaryBtn}>
-          {busy === "save" ? <Loader2 size={16} className="animate-spin" /> : <Plug size={16} />} {e.configured ? "Save & test" : "Connect"}
+          {busy === "save" ? <Loader2 size={16} className="animate-spin" /> : <Plug size={16} />} {e.configured ? t("Save & test") : t("Connect")}
         </button>
         {e.enabled && (
           <button type="button" disabled={busy !== null} onClick={() => void disconnect()} className={secondaryBtn}>
-            {busy === "off" ? <Loader2 size={16} className="animate-spin" /> : <Unplug size={16} />} Disconnect
+            {busy === "off" ? <Loader2 size={16} className="animate-spin" /> : <Unplug size={16} />} {t("Disconnect")}
           </button>
         )}
       </div>
-      {test && <TestLine result={test} okText={`Signed in · ${test.inbox ?? "?"} messages in the inbox`} />}
+      {test && <TestLine result={test} okText={t("Signed in · {n} messages in the inbox", { n: test.inbox ?? "?" })} />}
     </Card>
   );
 }
@@ -354,6 +358,7 @@ export function EmailCard({ data, onChange, compact }: { data: ConnectionsData; 
 // ------------------------------------------------------------------ browser
 function BrowserCard({ data, onChange }: { data: ConnectionsData; onChange: () => void }) {
   const { toast } = useStore();
+  const t = useT();
   const b = data.browser;
   const [busy, setBusy] = useState(false);
   const flip = async () => {
@@ -370,9 +375,9 @@ function BrowserCard({ data, onChange }: { data: ConnectionsData; onChange: () =
   return (
     <Card
       icon={<Globe size={19} />}
-      title="Browser"
-      summary={b.available ? "Open pages, click, fill forms, screenshot" : "Playwright is not installed on the server"}
-      status={b.enabled && b.available ? { text: "On", tone: "ok" } : b.enabled ? { text: "Unavailable", tone: "warn" } : { text: "Off", tone: "off" }}
+      title={t("Browser")}
+      summary={b.available ? t("Open pages, click, fill forms, screenshot") : t("Playwright is not installed on the server")}
+      status={b.enabled && b.available ? { text: t("On"), tone: "ok" } : b.enabled ? { text: t("Unavailable"), tone: "warn" } : { text: t("Off"), tone: "off" }}
       open={false}
       trailing={
         <button type="button" role="switch" aria-checked={b.enabled} disabled={busy} onClick={() => void flip()} className={cx("relative h-7 w-12 shrink-0 rounded-full transition", b.enabled ? "bg-accent" : "bg-surface-2 border border-border")}>
@@ -382,7 +387,7 @@ function BrowserCard({ data, onChange }: { data: ConnectionsData; onChange: () =
     >
       {!b.available && (
         <p className="text-[12.5px] text-muted">
-          Install it where the server runs: <code className="rounded bg-surface-2 px-1">pip install &quot;openmuse[browser]&quot; &amp;&amp; playwright install chromium</code>
+          {t("Install it where the server runs:")} <code className="rounded bg-surface-2 px-1">pip install &quot;openmuse[browser]&quot; &amp;&amp; playwright install chromium</code>
         </p>
       )}
     </Card>
@@ -392,6 +397,7 @@ function BrowserCard({ data, onChange }: { data: ConnectionsData; onChange: () =
 // ------------------------------------------------------------------ mcp
 function MCPCard({ data, onChange }: { data: ConnectionsData; onChange: () => void }) {
   const { toast } = useStore();
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
@@ -415,7 +421,7 @@ function MCPCard({ data, onChange }: { data: ConnectionsData; onChange: () => vo
       setCommand("");
       setUrl("");
       setAdding(false);
-      toast("Server connected");
+      toast(t("Server connected"));
       onChange();
     } catch (e) {
       toast((e as Error).message);
@@ -440,9 +446,13 @@ function MCPCard({ data, onChange }: { data: ConnectionsData; onChange: () => vo
   return (
     <Card
       icon={<Plug size={19} />}
-      title="MCP servers"
-      summary={data.mcp.length ? `${connected} of ${data.mcp.length} connected · ${data.mcp.reduce((n, m) => n + m.tools, 0)} tools` : "Add tools from any Model Context Protocol server"}
-      status={data.mcp.length ? { text: `${connected} on`, tone: connected ? "ok" : "warn" } : { text: "None", tone: "off" }}
+      title={t("MCP servers")}
+      summary={
+        data.mcp.length
+          ? t("{n} of {total} connected · {tools} tools", { n: connected, total: data.mcp.length, tools: data.mcp.reduce((n, m) => n + m.tools, 0) })
+          : t("Add tools from any Model Context Protocol server")
+      }
+      status={data.mcp.length ? { text: t("{n} on", { n: connected }), tone: connected ? "ok" : "warn" } : { text: t("None"), tone: "off" }}
       open={open}
       onToggle={() => setOpen(!open)}
     >
@@ -454,12 +464,12 @@ function MCPCard({ data, onChange }: { data: ConnectionsData; onChange: () => vo
               <div className="min-w-0 flex-1">
                 <div className="text-[13.5px] font-medium truncate">{m.name}</div>
                 <div className="text-[11.5px] text-muted truncate">
-                  {m.url ?? [m.command, ...m.args].join(" ")} · {m.tools} tools · {m.risk}
-                  {!m.from_app && " · from config.toml"}
+                  {m.url ?? [m.command, ...m.args].join(" ")} · {t("{n} tools", { n: m.tools })} · {t(m.risk)}
+                  {!m.from_app && ` · ${t("from config.toml")}`}
                 </div>
               </div>
               {m.from_app && (
-                <button type="button" aria-label="Remove" disabled={busy === m.name} onClick={() => void remove(m.name)} className="p-1.5 rounded-full text-muted hover:bg-surface-2">
+                <button type="button" aria-label={t("Remove")} disabled={busy === m.name} onClick={() => void remove(m.name)} className="p-1.5 rounded-full text-muted hover:bg-surface-2">
                   {busy === m.name ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
                 </button>
               )}
@@ -469,36 +479,36 @@ function MCPCard({ data, onChange }: { data: ConnectionsData; onChange: () => vo
       )}
       {adding ? (
         <div className="space-y-2.5 rounded-2xl border border-border/70 p-3">
-          <Field label="Name">
+          <Field label={t("Name")}>
             <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} placeholder="filesystem" />
           </Field>
-          <Field label="Command" hint="Run locally over stdio, for example: npx -y @modelcontextprotocol/server-filesystem ./workspace">
+          <Field label={t("Command")} hint={t("Run locally over stdio, for example: npx -y @modelcontextprotocol/server-filesystem ./workspace")}>
             <input value={command} onChange={(e) => setCommand(e.target.value)} className={inputCls} placeholder="npx -y @modelcontextprotocol/server-…" />
           </Field>
-          <Field label="or URL" hint="A remote server over Streamable HTTP.">
+          <Field label={t("or URL")} hint={t("A remote server over Streamable HTTP.")}>
             <input value={url} onChange={(e) => setUrl(e.target.value)} className={inputCls} placeholder="https://host/mcp" inputMode="url" />
           </Field>
-          <Field label="Risk of its tools" hint="Decides when the Sentinel asks you before a call.">
+          <Field label={t("Risk of its tools")} hint={t("Decides when the Sentinel asks you before a call.")}>
             <div className="flex gap-1.5">
               {["safe", "moderate", "high"].map((r) => (
                 <button key={r} type="button" onClick={() => setRisk(r)} className={cx("rounded-full px-3 py-1.5 text-[13px] border", risk === r ? "border-accent bg-accent/10 text-accent font-medium" : "border-border text-muted")}>
-                  {r}
+                  {t(r)}
                 </button>
               ))}
             </div>
           </Field>
           <div className="flex gap-2">
             <button type="button" disabled={busy === "add" || !name.trim() || !(command.trim() || url.trim())} onClick={() => void add()} className={primaryBtn}>
-              {busy === "add" ? <Loader2 size={16} className="animate-spin" /> : <Plug size={16} />} Connect
+              {busy === "add" ? <Loader2 size={16} className="animate-spin" /> : <Plug size={16} />} {t("Connect")}
             </button>
             <button type="button" onClick={() => setAdding(false)} className={secondaryBtn}>
-              Cancel
+              {t("Cancel")}
             </button>
           </div>
         </div>
       ) : (
         <button type="button" onClick={() => setAdding(true)} className={secondaryBtn}>
-          <Plus size={16} /> Add a server
+          <Plus size={16} /> {t("Add a server")}
         </button>
       )}
     </Card>
@@ -508,6 +518,7 @@ function MCPCard({ data, onChange }: { data: ConnectionsData; onChange: () => vo
 // ------------------------------------------------------------------ vault
 function VaultCard({ data, onChange }: { data: ConnectionsData; onChange: () => void }) {
   const { toast } = useStore();
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [value, setValue] = useState("");
@@ -519,7 +530,7 @@ function VaultCard({ data, onChange }: { data: ConnectionsData; onChange: () => 
       await api.vaultSet(name.trim(), value);
       setName("");
       setValue("");
-      toast("Stored in the vault");
+      toast(t("Stored in the vault"));
       onChange();
     } catch (e) {
       toast((e as Error).message);
@@ -542,21 +553,21 @@ function VaultCard({ data, onChange }: { data: ConnectionsData; onChange: () => 
   return (
     <Card
       icon={<KeyRound size={19} />}
-      title="Vault"
-      summary={data.vault.length ? `${data.vault.length} secrets · encrypted on your machine` : "Encrypted secrets the model never sees"}
+      title={t("Vault")}
+      summary={data.vault.length ? t("{n} secrets · encrypted on your machine", { n: data.vault.length }) : t("Encrypted secrets the model never sees")}
       status={{ text: `${data.vault.length}`, tone: "off" }}
       open={open}
       onToggle={() => setOpen(!open)}
     >
       <p className="text-[12.5px] text-muted -mt-1">
-        Refer to a secret as <code className="rounded bg-surface-2 px-1">{"{{vault:NAME}}"}</code> in a tool call or config: the value is filled in after the Sentinel approves and is redacted from everything the model reads.
+        {t("Refer to a secret as")} <code className="rounded bg-surface-2 px-1">{"{{vault:NAME}}"}</code> {t("in a tool call or config: the value is filled in after the Sentinel approves and is redacted from everything the model reads.")}
       </p>
       {data.vault.length > 0 && (
         <ul className="flex flex-wrap gap-1.5">
           {data.vault.map((n) => (
             <li key={n} className="flex items-center gap-1 rounded-full bg-surface-2 pl-3 pr-1 py-1 text-[12.5px] font-mono">
               {n}
-              <button type="button" aria-label={`Delete ${n}`} disabled={busy === n} onClick={() => void remove(n)} className="p-1 rounded-full text-muted hover:text-rose-500">
+              <button type="button" aria-label={t("Delete {name}", { name: n })} disabled={busy === n} onClick={() => void remove(n)} className="p-1 rounded-full text-muted hover:text-rose-500">
                 {busy === n ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
               </button>
             </li>
@@ -564,13 +575,13 @@ function VaultCard({ data, onChange }: { data: ConnectionsData; onChange: () => 
         </ul>
       )}
       <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
-        <Field label="Name">
+        <Field label={t("Name")}>
           <input value={name} onChange={(e) => setName(e.target.value.toUpperCase().replace(/[^A-Z0-9_.-]/g, "_"))} className={cx(inputCls, "font-mono")} placeholder="GITHUB_TOKEN" />
         </Field>
-        <Field label="Value">
-          <input type="password" value={value} onChange={(e) => setValue(e.target.value)} className={inputCls} placeholder="secret" autoComplete="off" />
+        <Field label={t("Value")}>
+          <input type="password" value={value} onChange={(e) => setValue(e.target.value)} className={inputCls} placeholder={t("secret")} autoComplete="off" />
         </Field>
-        <button type="button" disabled={busy === "add" || !name || !value} onClick={() => void add()} className={cx(primaryBtn, "px-3")} aria-label="Store">
+        <button type="button" disabled={busy === "add" || !name || !value} onClick={() => void add()} className={cx(primaryBtn, "px-3")} aria-label={t("Store")}>
           {busy === "add" ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
         </button>
       </div>

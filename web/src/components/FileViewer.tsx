@@ -1,6 +1,7 @@
 import { Download, ExternalLink, Loader2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, fileUrl } from "../api";
+import { useT } from "../i18n";
 import { fileKind } from "../util";
 import { Markdown } from "./Markdown";
 
@@ -12,6 +13,7 @@ import { Markdown } from "./Markdown";
  * call the API. Images and PDFs load by URL (the server does not run them).
  */
 export function FileViewer({ path, onClose }: { path: string | null; onClose: () => void }) {
+  const t = useT();
   useEffect(() => {
     if (!path) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -25,7 +27,7 @@ export function FileViewer({ path, onClose }: { path: string | null; onClose: ()
   return (
     <div className="fixed inset-0 z-[60] flex flex-col bg-bg">
       <header className="safe-top shrink-0 flex items-center gap-2 border-b border-border bg-surface/90 px-3 py-2 backdrop-blur">
-        <button type="button" onClick={onClose} aria-label="Close" className="p-2 rounded-full text-muted hover:bg-surface-2">
+        <button type="button" onClick={onClose} aria-label={t("Close")} className="p-2 rounded-full text-muted hover:bg-surface-2">
           <X size={20} />
         </button>
         <div className="flex-1 min-w-0">
@@ -37,13 +39,13 @@ export function FileViewer({ path, onClose }: { path: string | null; onClose: ()
             href={fileUrl(path)}
             target="_blank"
             rel="noreferrer noopener"
-            aria-label="Open in a new tab"
+            aria-label={t("Open in a new tab")}
             className="p-2 rounded-full text-muted hover:bg-surface-2"
           >
             <ExternalLink size={19} />
           </a>
         )}
-        <a href={fileUrl(path, true)} aria-label="Download" className="p-2 rounded-full text-muted hover:bg-surface-2">
+        <a href={fileUrl(path, true)} aria-label={t("Download")} className="p-2 rounded-full text-muted hover:bg-surface-2">
           <Download size={19} />
         </a>
       </header>
@@ -55,6 +57,7 @@ export function FileViewer({ path, onClose }: { path: string | null; onClose: ()
 }
 
 function Body({ path, kind }: { path: string; kind: ReturnType<typeof fileKind> }) {
+  const t = useT();
   if (kind === "image") {
     return (
       <div className="flex h-full items-center justify-center p-3">
@@ -69,11 +72,10 @@ function Body({ path, kind }: { path: string; kind: ReturnType<typeof fileKind> 
   if (kind === "text" || kind === "code" || kind === "data") return <TextBody path={path} kind={kind} />;
   return (
     <div className="p-8 text-center text-muted text-[14px]">
-      No preview for this file type.{" "}
+      {t("No preview for this file type.")}{" "}
       <a href={fileUrl(path, true)} className="text-accent font-medium">
-        Download it
+        {t("Download it")}
       </a>
-      .
     </div>
   );
 }
@@ -128,12 +130,13 @@ function TextBody({ path, kind }: { path: string; kind: "text" | "code" | "data"
 }
 
 function CsvTable({ text }: { text: string }) {
+  const t = useT();
   const rows = text
     .split(/\r?\n/)
     .filter((l) => l.trim())
     .slice(0, 500)
     .map((l) => l.split(","));
-  if (!rows.length) return <div className="p-6 text-muted text-center">Empty file.</div>;
+  if (!rows.length) return <div className="p-6 text-muted text-center">{t("Empty file.")}</div>;
   const [head, ...body] = rows;
   return (
     <div className="overflow-auto p-3">
@@ -172,5 +175,6 @@ function Loading() {
 }
 
 function Failed({ error }: { error: string }) {
-  return <div className="p-8 text-center text-rose-600 dark:text-rose-300 text-[14px]">Could not load the file: {error}</div>;
+  const t = useT();
+  return <div className="p-8 text-center text-rose-600 dark:text-rose-300 text-[14px]">{t("Could not load the file: {error}", { error })}</div>;
 }

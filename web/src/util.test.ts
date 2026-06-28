@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { intlLocale, setLocaleSetting } from "./i18n";
 import { cx, fileKind, relativeTime, timeShort, truncate } from "./util";
 
 describe("relativeTime", () => {
@@ -21,6 +22,16 @@ describe("relativeTime", () => {
     expect(relativeTime("2026-10-01T12:00:00Z")).toBe("in 9 d");
   });
 
+  it("speaks the app language", () => {
+    setLocaleSetting("zh-CN");
+    try {
+      expect(relativeTime("2026-09-22T11:57:00Z")).toBe("3 分钟前");
+      expect(relativeTime("2026-09-22T14:00:00Z")).toBe("2 小时后");
+    } finally {
+      setLocaleSetting("en");
+    }
+  });
+
   it("is empty for nothing and for garbage", () => {
     expect(relativeTime(null)).toBe("");
     expect(relativeTime(undefined)).toBe("");
@@ -32,7 +43,8 @@ describe("timeShort", () => {
   it("shows only the time for today and adds the day otherwise", () => {
     const today = new Date();
     today.setHours(9, 5, 0, 0);
-    const clock = today.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    // the clock follows the app language, not the machine's locale
+    const clock = today.toLocaleTimeString(intlLocale(), { hour: "2-digit", minute: "2-digit" });
     expect(timeShort(today.toISOString())).toBe(clock);
     // locale-agnostic: an older date carries a day part in front of the clock
     const old = timeShort("2020-01-15T09:05:00Z");

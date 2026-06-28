@@ -1,6 +1,7 @@
 import { Code2, FileImage, FileSpreadsheet, FileText, Globe, Loader2, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
+import { useT } from "../i18n";
 import { useStore } from "../store";
 import type { FileInfo } from "../types";
 import { cx, fileKind, relativeTime } from "../util";
@@ -27,6 +28,7 @@ export function LibraryScreen() {
   const [group, setGroup] = useState<Kind | "all">("all");
   const [query, setQuery] = useState("");
   const name = state.profile?.name ?? "Muse";
+  const t = useT();
 
   // Reload whenever the agent finishes a step (the timeline moves) or the tab is opened.
   const version = Object.values(state.events).reduce((n, list) => n + list.length, 0);
@@ -53,14 +55,14 @@ export function LibraryScreen() {
   return (
     <div className="flex h-full flex-col">
       <header className="safe-top shrink-0 px-5 pt-4 pb-2">
-        <h1 className="text-[24px] font-bold tracking-tight">Library</h1>
-        <p className="text-[13px] text-muted">Pages, documents and files {name} made for you. Tap one to open it here.</p>
+        <h1 className="text-[24px] font-bold tracking-tight">{t("Library")}</h1>
+        <p className="text-[13px] text-muted">{t("Pages, documents and files {name} made for you. Tap one to open it here.", { name })}</p>
         <label className="mt-3 flex items-center gap-2 rounded-2xl bg-surface-2 px-3 py-2">
           <Search size={16} className="text-muted" />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search files"
+            placeholder={t("Search files")}
             className="flex-1 bg-transparent text-[14.5px] outline-none"
           />
         </label>
@@ -75,7 +77,7 @@ export function LibraryScreen() {
                 group === g.id ? "bg-accent text-accent-fg border-accent" : "bg-surface-2 border-transparent text-fg",
               )}
             >
-              {g.label}
+              {t(g.label)}
             </button>
           ))}
         </div>
@@ -90,8 +92,8 @@ export function LibraryScreen() {
         {files !== null && shown.length === 0 && (
           <div className="py-10 text-center text-muted text-[14px] px-6">
             {files.length === 0
-              ? `Nothing here yet. Ask ${name} for a plan, a comparison page or a tracker and it lands in the Library.`
-              : "No files match."}
+              ? t("Nothing here yet. Ask {name} for a plan, a comparison page or a tracker and it lands in the Library.", { name })
+              : t("No files match.")}
           </div>
         )}
         <ul className="space-y-2">
