@@ -685,6 +685,160 @@ def version() -> None:
     console.print(f"openmuse {__version__}")
 
 
+# ============================================================================ doctor
+@app.command()
+def doctor(
+    config: ConfigOpt = None,
+    no_model: Annotated[
+        bool, typer.Option("--no-model", help="Do not call the model (offline check)")
+    ] = False,
+) -> None:
+    """Check the installation: config, data, model, connectors. Paste the output into a bug report."""
+    settings = _settings(config)
+    _run_async(_doctor(settings, check_model=not no_model))
+
+
+def _mark(ok: bool | None) -> str:
+    return "[green]✓[/green]" if ok else ("[yellow]·[/yellow]" if ok is None else "[red]✗[/red]")
+
+
+async def _doctor(settings: Settings, check_model: bool) -> None:
+    import os
+    import platform
+    import sys
+
+    from openmuse.app import OpenMuseApp
+    from openmuse.console import ConsoleUI
+    from openmuse.schema import Message
+    from openmuse.tools.browser import playwright_available
+
+    problems: list[str] = []
+
+    def line(ok: bool | None, text: str, problem: str | None = None) -> None:
+        console.print(f" {_mark(ok)} {text}")
+        if ok is False and problem:
+            problems.append(problem)
+
+    console.print(
+        f"[bold magenta]openmuse {__version__}[/bold magenta] · Python {platform.python_version()} · "
+        f"{platform.system()} {platform.release()} · {sys.executable}"
+    )
+    line(settings.source != "defaults+env" or None, f"config: {settings.source}")
+    data_ok = os.access(settings.data_dir, os.W_OK)
+    line(data_ok, f"data dir: {settings.data_dir}", "data dir is not writable")
+    ws = settings.agent.workspace
+    line(ws.is_dir(), f"workspace: {ws}", f"workspace {ws} does not exist")
+
+    llm = settings.llm
+    key = llm.api_key or ""
+    key_state = "no key"
+    app_: OpenMuseApp | None = None
+    try:
+        app_ = OpenMuseApp(settings, ConsoleUI(console))
+    except Exception as exc:  # noqa: BLE001
+        line(False, f"could not start: {type(exc).__name__}: {exc}", "the app does not start")
+    if app_ is not None and key:
+        if app_.vault.has_placeholders(key):
+            resolved = app_.vault.resolve(key, strict=False)
+            key_state = (
+                "key in the vault"
+                if not app_.vault.has_placeholders(resolved)
+                else "key MISSING from the vault"
+            )
+        else:
+            key_state = "key set"
+    local = "localhost" in (llm.base_url or "") or "127.0.0.1" in (llm.base_url or "")
+    line(
+        ("MISSING" not in key_state) and (bool(key) or local),
+        f"model: {llm.model} · {llm.provider} · {llm.base_url or 'provider default'} · "
+        f"tools {llm.tool_mode} · {key_state}",
+        "no usable API key (set llm.api_key, or enter it under Connections in the app)",
+    )
+    line(
+        None,
+        f"sentinel: {settings.sentinel.mode} mode · taint tracking {'on' if settings.sentinel.taint_tracking else 'off'}",
+    )
+
+    if app_ is None:
+        _doctor_summary(problems)
+        return
+    try:
+        try:
+            await app_.start()
+            mcp_ok: bool | None = True if settings.mcp.servers else None
+        except Exception as exc:  # noqa: BLE001
+            mcp_ok = False
+            console.print(f"   [red]MCP: {type(exc).__name__}: {exc}[/red]")
+        names = sorted(t.name for t in app_.tools if t.name not in {"terminate", "ask_user"})
+        line(True, f"tools ({len(names)}): {', '.join(names)}")
+        email = settings.connectors.email
+        line(
+            None,
+            f"email: {'on' if email.enabled else 'off'}"
+            + (f" · {email.imap_host} / {email.smtp_host}" if email.enabled else ""),
+        )
+        if settings.browser.enabled:
+            line(
+                playwright_available(),
+                "browser: on"
+                + ("" if playwright_available() else " · Playwright is not installed"),
+                "browser.enabled but Playwright is missing: pip install 'openmuse[browser]' && playwright install chromium",
+            )
+        else:
+            line(None, "browser: off")
+        line(
+            mcp_ok,
+            f"MCP servers: {len(settings.mcp.servers)}"
+            + (
+                f" ({', '.join(s.name for s in settings.mcp.servers)})"
+                if settings.mcp.servers
+                else ""
+            ),
+            "an MCP server did not connect",
+        )
+        line(
+            None,
+            "push notifications: "
+            + (
+                "keys ready · needs https:// or localhost"
+                if (settings.data_dir / "push-vapid.json").exists()
+                else "not set up yet (turned on from Settings in the app)"
+            ),
+        )
+        if check_model:
+            loop = asyncio.get_running_loop()
+            started = loop.time()
+            try:
+                reply = await asyncio.wait_for(
+                    app_.llm.ask([Message.user("Reply with the single word OK.")], tools=None),
+                    timeout=45,
+                )
+                text = (reply.content or "").strip().replace("\n", " ")[:60]
+                line(True, f"model call: {int((loop.time() - started) * 1000)} ms · {text!r}")
+            except TimeoutError:
+                line(False, "model call: no answer within 45 s", "the model did not answer")
+            except Exception as exc:  # noqa: BLE001
+                line(
+                    False,
+                    f"model call: {type(exc).__name__}: {str(exc)[:200]}",
+                    "the model call failed",
+                )
+        else:
+            line(None, "model call: skipped (--no-model)")
+    finally:
+        await app_.close()
+    _doctor_summary(problems)
+
+
+def _doctor_summary(problems: list[str]) -> None:
+    if problems:
+        console.print("\n[bold red]problems:[/bold red]")
+        for p in problems:
+            console.print(f" - {p}")
+        raise typer.Exit(1)
+    console.print("\n[green]all good.[/green]")
+
+
 def main() -> None:  # pragma: no cover
     app()
 

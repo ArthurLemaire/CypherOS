@@ -30,7 +30,7 @@ body:
     id: version
     attributes:
       label: OpenMuse version
-      description: "`openmuse version`, or the commit hash if you run from source"
+      description: "`openmuse --version`, or the commit hash if you run from source. The output of `openmuse doctor --no-model` in the description helps."
     validations:
       required: true
   - type: dropdown
