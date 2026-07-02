@@ -37,6 +37,27 @@ app.add_typer(config_app, name="config")
 
 console = Console()
 
+
+def _version_flag(value: bool) -> None:
+    if value:
+        console.print(f"openmuse {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def _root(
+    version: bool = typer.Option(  # noqa: B008
+        False,
+        "--version",
+        "-V",
+        help="Print the version and exit.",
+        callback=_version_flag,
+        is_eager=True,
+    ),
+) -> None:
+    """OpenMuse — an open-source personal AI agent with a Sentinel gatekeeper."""
+
+
 ConfigOpt = Annotated[Path | None, typer.Option("--config", "-c", help="Path to config.toml")]
 AutoOpt = Annotated[
     bool, typer.Option("--auto", help="Sentinel auto mode: approve everything (unattended)")
