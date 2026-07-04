@@ -11,7 +11,7 @@ OpenMinis is an AI Agent app that brings leading models such as Claude, GPT, and
 | Channel | Link |
 |---|---|
 | App Store | [Download on the App Store](https://apps.apple.com/app/id6738544579) |
-| TestFlight | [Join the TestFlight Beta](https://testflight.apple.com/join/MJIFjBBq) |
+| TestFlight | [Join the TestFlight Beta](https://testflight.apple.com/join/3BdkA5c3) |
 
 ---
 
