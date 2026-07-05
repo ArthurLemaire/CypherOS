@@ -13,6 +13,7 @@ from openmuse.goals import GoalStore
 from openmuse.llm import BaseLLM, create_llm
 from openmuse.logger import logger, setup_logging
 from openmuse.memory import MemoryStore
+from openmuse.reminders import ReminderStore
 from openmuse.sentinel import AuditLog, Sentinel
 from openmuse.tools import (
     AskUser,
@@ -25,6 +26,7 @@ from openmuse.tools import (
     ReadEmails,
     Recall,
     Remember,
+    Reminders,
     SendEmail,
     Shell,
     Terminate,
@@ -52,6 +54,7 @@ class OpenMuseApp:
         self.vault = CredentialVault(settings.vault_file, settings.vault_key_file)
         self.memory = MemoryStore(settings.memory_db) if settings.memory.enabled else None
         self.goals = GoalStore(settings.goals_db)
+        self.reminders = ReminderStore(settings.reminders_db)
         self.audit = AuditLog(settings.audit_file, session_id=self.session_id)
         self.sentinel = Sentinel(
             settings.sentinel,
@@ -102,6 +105,7 @@ class OpenMuseApp:
             WebSearch(),
             WebFetch(),
             Goals(store=self.goals),
+            Reminders(store=self.reminders),
         )
         if self.memory is not None:
             tools.add(
@@ -140,6 +144,7 @@ class OpenMuseApp:
         if self.memory is not None:
             self.memory.close()
         self.goals.close()
+        self.reminders.close()
 
     async def __aenter__(self) -> OpenMuseApp:
         return await self.start()

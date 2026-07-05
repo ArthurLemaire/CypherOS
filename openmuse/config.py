@@ -202,6 +202,10 @@ class Settings(BaseModel):
         return self.data_dir / "goals.db"
 
     @property
+    def reminders_db(self) -> Path:
+        return self.data_dir / "reminders.db"
+
+    @property
     def vault_file(self) -> Path:
         return self.data_dir / "vault.enc"
 

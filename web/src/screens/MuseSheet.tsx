@@ -1,4 +1,5 @@
 import {
+  AlarmClock,
   Ban,
   Bell,
   Brain,
@@ -9,6 +10,7 @@ import {
   Loader2,
   Play,
   Plug,
+  Repeat,
   ShieldAlert,
   ShieldCheck,
   ShieldOff,
@@ -21,7 +23,7 @@ import { Avatar } from "../components/Avatar";
 import { ApprovalCard, RiskBadge, grantSubject, scopeLabel, toolIcon } from "../components/Cards";
 import { Sheet } from "../components/Sheet";
 import { useStore } from "../store";
-import type { ActivityData, AuditEntry, Grant, RiskLevel, UpcomingData } from "../types";
+import type { ActivityData, AuditEntry, Grant, Reminder, ReminderKind, RiskLevel, UpcomingData } from "../types";
 import { cx, relativeTime, timeShort } from "../util";
 import { describeCadence } from "./GoalsScreen";
 
@@ -212,7 +214,7 @@ function UpcomingView({ onSettings }: { onSettings: () => void }) {
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.goalsVersion, state.profile?.proactive, state.profile?.goal_interval_minutes]);
+  }, [state.goalsVersion, state.remindersVersion, state.profile?.proactive, state.profile?.goal_interval_minutes]);
 
   const toggle = async () => {
     try {
@@ -317,11 +319,242 @@ function UpcomingView({ onSettings }: { onSettings: () => void }) {
               </li>
             ))}
           </ul>
-          <div className="mt-1.5 text-[12px] text-muted">Reminders you asked for; they arrive whatever the proactivity level, but wait out quiet hours.</div>
+          <div className="mt-1.5 text-[12px] text-muted">Goal nudges you asked for; they arrive whatever the proactivity level, but wait out quiet hours.</div>
         </div>
       )}
+
+      <RemindersSection items={data.reminders} name={name} onChange={() => void load()} />
     </div>
   );
+}
+
+// ------------------------------------------------------------------ reminders & routines
+function RemindersSection({ items, name, onChange }: { items: Reminder[]; name: string; onChange: () => void }) {
+  const { toast } = useStore();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const active = items.filter((r) => r.status === "active");
+  const finished = items.filter((r) => r.status !== "active");
+
+  const cancel = async (r: Reminder) => {
+    setBusy(r.id);
+    try {
+      await api.cancelReminder(r.id);
+      onChange();
+    } catch (e) {
+      toast((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+  const fireNow = async (r: Reminder) => {
+    setBusy(r.id);
+    try {
+      await api.fireReminder(r.id);
+      toast(r.kind === "task" ? `${name} is on it` : `${name} will say it now`);
+      onChange();
+    } catch (e) {
+      toast((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <div className="text-[12px] uppercase tracking-wide text-muted font-semibold">Reminders & routines</div>
+        {!adding && (
+          <button type="button" onClick={() => setAdding(true)} className="text-[12.5px] text-accent font-medium">
+            + Add
+          </button>
+        )}
+      </div>
+      {adding && (
+        <ReminderForm
+          onDone={() => {
+            setAdding(false);
+            onChange();
+          }}
+          onCancel={() => setAdding(false)}
+        />
+      )}
+      {active.length === 0 && !adding ? (
+        <div className="text-[13px] text-muted">
+          Nothing scheduled. Tell {name} “remind me at six to call mum” or “every weekday morning, summarise my unread email”.
+        </div>
+      ) : (
+        <ul className="space-y-1.5">
+          {active.map((r) => (
+            <li key={r.id} className="flex items-center gap-2.5 rounded-2xl bg-surface-2/60 px-3 py-2">
+              {r.kind === "task" ? <Repeat size={15} className="text-muted shrink-0" /> : <AlarmClock size={15} className="text-muted shrink-0" />}
+              <div className="min-w-0 flex-1">
+                <div className="text-[13.5px] font-medium truncate">{r.text}</div>
+                <div className="text-[11.5px] text-muted truncate">
+                  {r.next_at ? `${relativeTime(r.next_at)} · ${timeShort(r.next_at)}` : "—"}
+                  {r.repeat && ` · ${describeCadence(r.repeat).toLowerCase()}`}
+                  {r.kind === "task" && " · does the work"}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => void fireNow(r)}
+                disabled={busy !== null}
+                aria-label={r.kind === "task" ? `Do "${r.text}" now` : `Remind me now: ${r.text}`}
+                className="rounded-full bg-accent/12 p-2 text-accent disabled:opacity-50"
+              >
+                {busy === r.id ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} />}
+              </button>
+              <button
+                type="button"
+                onClick={() => void cancel(r)}
+                disabled={busy !== null}
+                aria-label={`Cancel: ${r.text}`}
+                className="rounded-full p-2 text-muted hover:text-fg disabled:opacity-50"
+              >
+                <X size={15} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {finished.length > 0 && (
+        <details className="mt-2">
+          <summary className="text-[12px] text-muted cursor-pointer select-none">
+            {finished.length} finished recently
+          </summary>
+          <ul className="mt-1.5 space-y-1">
+            {finished.map((r) => (
+              <li key={r.id} className="flex items-center gap-2 px-3 text-[12.5px] text-muted">
+                <span className="min-w-0 flex-1 truncate line-through decoration-border">{r.text}</span>
+                <span className="shrink-0">{r.status === "done" ? (r.last_fired_at ? relativeTime(r.last_fired_at) : "done") : "cancelled"}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      <div className="mt-1.5 text-[12px] text-muted">
+        A time you named is kept whatever the level or the quiet hours. Reminders just say it; routines do the work and report.
+      </div>
+    </div>
+  );
+}
+
+function ReminderForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => void }) {
+  const { toast } = useStore();
+  const [text, setText] = useState("");
+  const [kind, setKind] = useState<ReminderKind>("remind");
+  const [mode, setMode] = useState<"once" | "repeat">("once");
+  const [at, setAt] = useState(() => defaultAt());
+  const [cadence, setCadence] = useState("daily");
+  const [time, setTime] = useState("09:00");
+  const [weekday, setWeekday] = useState("mon");
+  const [day, setDay] = useState("1");
+  const [saving, setSaving] = useState(false);
+
+  const repeat =
+    cadence === "weekly" ? `weekly ${weekday} ${time}` : cadence === "monthly" ? `monthly ${day} ${time}` : `${cadence} ${time}`;
+
+  const submit = async () => {
+    if (!text.trim()) return;
+    setSaving(true);
+    try {
+      await api.createReminder(
+        mode === "once" ? { text: text.trim(), kind, at: at.replace("T", " ") } : { text: text.trim(), kind, repeat },
+      );
+      onDone();
+    } catch (e) {
+      toast((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const field = "h-9 rounded-xl bg-surface border border-border px-3 text-[13px] outline-none focus:border-accent";
+  return (
+    <div className="mb-2 rounded-2xl border border-border p-3 space-y-2">
+      <input
+        autoFocus
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder={kind === "task" ? "What should be done…" : "What to remind you of…"}
+        className={cx(field, "w-full h-10 text-[14px]")}
+      />
+      <div className="flex gap-1.5 text-[12.5px]">
+        <Segment options={[["remind", "Remind me"], ["task", "Do it for me"]]} value={kind} onChange={(v) => setKind(v as ReminderKind)} />
+        <Segment options={[["once", "Once"], ["repeat", "Repeat"]]} value={mode} onChange={(v) => setMode(v as "once" | "repeat")} />
+      </div>
+      {mode === "once" ? (
+        <input type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} className={cx(field, "w-full")} />
+      ) : (
+        <div className="flex flex-wrap gap-1.5">
+          <select value={cadence} onChange={(e) => setCadence(e.target.value)} className={field}>
+            <option value="daily">Every day</option>
+            <option value="weekdays">Weekdays</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+          {cadence === "weekly" && (
+            <select value={weekday} onChange={(e) => setWeekday(e.target.value)} className={field}>
+              {["mon", "tue", "wed", "thu", "fri", "sat", "sun"].map((d) => (
+                <option key={d} value={d}>
+                  {d[0].toUpperCase() + d.slice(1)}
+                </option>
+              ))}
+            </select>
+          )}
+          {cadence === "monthly" && (
+            <select value={day} onChange={(e) => setDay(e.target.value)} className={field}>
+              {Array.from({ length: 28 }, (_, i) => String(i + 1)).map((d) => (
+                <option key={d} value={d}>
+                  Day {d}
+                </option>
+              ))}
+            </select>
+          )}
+          <input type="time" value={time} onChange={(e) => setTime(e.target.value)} className={field} />
+        </div>
+      )}
+      <div className="flex justify-end gap-2 pt-0.5">
+        <button type="button" onClick={onCancel} className="rounded-full px-3 py-1.5 text-[13px] text-muted">
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={() => void submit()}
+          disabled={saving || !text.trim()}
+          className="rounded-full bg-accent px-3.5 py-1.5 text-[13px] font-medium text-accent-fg disabled:opacity-50"
+        >
+          {saving ? "Saving…" : mode === "once" ? "Set reminder" : "Set routine"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Segment({ options, value, onChange }: { options: Array<[string, string]>; value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="flex rounded-full bg-surface-2 p-0.5">
+      {options.map(([v, label]) => (
+        <button
+          key={v}
+          type="button"
+          onClick={() => onChange(v)}
+          className={cx("rounded-full px-2.5 py-1 transition", value === v ? "bg-surface shadow-sm font-medium" : "text-muted")}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** An hour from now, on the next full hour, as datetime-local wants it (local time, no zone). */
+function defaultAt(): string {
+  const d = new Date(Date.now() + 60 * 60 * 1000);
+  d.setMinutes(0, 0, 0);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 // ------------------------------------------------------------------ activity log

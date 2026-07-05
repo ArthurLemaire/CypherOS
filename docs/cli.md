@@ -53,6 +53,17 @@ openmuse goals status g_1a2b3c paused
 openmuse goals delete g_1a2b3c
 ```
 
+## Reminders and routines
+
+```bash
+openmuse reminders list [--all]                                  # --all includes the recently fired
+openmuse reminders add "Call mum" --at "2026-10-01 18:00"        # one message at that time
+openmuse reminders add "Summarise unread email" --repeat "weekdays 07:30" --task   # the agent does it, then reports
+openmuse reminders cancel r_1a2b3c
+```
+
+A reminder says one thing at the time you named; a routine (`--task`) is work the agent does at that time with its tools. Both fire from the running `openmuse serve` — those set from the terminal land in the main chat, those set in a side chat stay there. Cadence grammar as for goal check-ins: `daily HH:MM`, `weekdays HH:MM`, `weekly <mon…sun> HH:MM`, `monthly <day> HH:MM`.
+
 ## Memory
 
 ```bash

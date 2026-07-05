@@ -92,6 +92,14 @@ class StepBody(BaseModel):
     title: str = Field(min_length=1, max_length=300)
 
 
+class ReminderBody(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+    kind: str = "remind"
+    at: str = ""
+    repeat: str = ""
+    thread: str = ""
+
+
 class MemoryBody(BaseModel):
     content: str = Field(min_length=1, max_length=2000)
     category: str = "profile"
@@ -409,6 +417,41 @@ def create_app(settings: Settings, service: MuseService | None = None) -> FastAP
             raise HTTPException(404, "no such goal")
         svc.bus.publish({"kind": "goals"})
         return {"ok": True}
+
+    # ------------------------------------------------------------------ reminders
+    @app.get("/api/reminders", dependencies=dep)
+    async def list_reminders(all: bool = False) -> list[dict[str, Any]]:  # noqa: A002
+        """Active reminders and routines, soonest first; ``?all=1`` adds recently finished ones."""
+        return [r.to_dict() for r in svc.app.reminders.list(None if all else "active")]
+
+    @app.post("/api/reminders", dependencies=dep)
+    async def create_reminder(body: ReminderBody) -> dict[str, Any]:
+        try:
+            item = svc.create_reminder(
+                body.text, at=body.at, repeat=body.repeat, kind=body.kind, thread=body.thread
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return item.to_dict()
+
+    @app.post("/api/reminders/{reminder_id}/fire", dependencies=dep)
+    async def fire_reminder(reminder_id: str) -> dict[str, Any]:
+        """Deliver it now instead of waiting for its time."""
+        try:
+            return svc.fire_reminder(reminder_id).to_dict()
+        except KeyError as exc:
+            raise HTTPException(404, "no such reminder") from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.delete("/api/reminders/{reminder_id}", dependencies=dep)
+    async def cancel_reminder(reminder_id: str) -> dict[str, Any]:
+        item = svc.cancel_reminder(reminder_id)
+        if item is None:
+            if svc.app.reminders.get(reminder_id) is None:
+                raise HTTPException(404, "no such reminder")
+            raise HTTPException(409, "already finished")
+        return item.to_dict()
 
     # ------------------------------------------------------------------ memory
     @app.get("/api/memory", dependencies=dep)

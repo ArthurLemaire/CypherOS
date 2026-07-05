@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Iterator
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -803,6 +803,115 @@ def test_quiet_hours_push_the_next_pass_out(server):
     # a profile written before the dial existed
     assert Profile.from_dict({"proactive": True}).proactivity == "default"
     assert Profile.from_dict({"proactive": False}).proactivity == "off"
+
+
+def test_reminders_fire_in_their_chat_and_are_pushed_once(server, monkeypatch):
+    client, service, llm = server
+    pushed: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        service.push,
+        "notify",
+        lambda title, body, **kw: pushed.append({"title": title, "body": body, **kw}),
+    )
+    service.push.subscriptions.append({"endpoint": "https://push.example/sub/1", "keys": {}})
+    side = client.post("/api/threads", json={"title": "Errands"}).json()
+
+    # the agent sets one from a side chat: the tool binds it to that chat
+    soon = (datetime.now().astimezone() + timedelta(hours=1)).strftime("%Y-%m-%d %H:%M")
+    llm.script.extend(
+        [
+            LLMResponse(
+                content="Setting that up.",
+                tool_calls=[tc("reminders", action="create", text="call mum", at=soon)],
+            ),
+            LLMResponse(content="Done — I'll remind you at six."),
+        ]
+    )
+    client.post(f"/api/threads/{side['id']}/send", json={"text": "remind me at six to call mum"})
+    wait_idle(service, side["id"])
+    items = client.get("/api/reminders").json()
+    assert len(items) == 1 and items[0]["thread"] == side["id"] and items[0]["kind"] == "remind"
+    assert items[0]["status"] == "active" and items[0]["repeat"] == ""
+    upcoming = client.get("/api/upcoming").json()
+    assert [r["id"] for r in upcoming["reminders"]] == [items[0]["id"]]
+
+    # bad input from the app
+    assert client.post("/api/reminders", json={"text": "x", "at": "whenever"}).status_code == 400
+    assert client.post("/api/reminders", json={"text": "x"}).status_code == 400
+    r = client.post(
+        "/api/reminders",
+        json={"text": "summarise unread email", "repeat": "weekdays 07:30", "kind": "task"},
+    )
+    assert r.status_code == 200 and r.json()["repeat"] == "weekdays 07:30"
+    routine = r.json()
+    assert routine["thread"] == "main"
+
+    # its time comes: the reminder is delivered in the chat it was set from, as a run
+    # the Feed can see, and pushed exactly once — the model's narration is not. Models
+    # tend to hand the whole message to terminate with no prose around it; after the
+    # text-only reply above that must still come out as a bubble.
+    llm.script.append(
+        LLMResponse(
+            content="",
+            tool_calls=[
+                tc(
+                    "terminate",
+                    status="success",
+                    summary="Hey — you asked me to remind you: call mum.",
+                )
+            ],
+        )
+    )
+    fired = client.post(f"/api/reminders/{items[0]['id']}/fire").json()
+    assert fired["status"] == "done" and fired["fired"] == 1 and fired["next_at"] is None
+    wait_idle(service, side["id"])
+    notice = [e for e in events_of(client, side["id"], "notice") if e.get("source") == "reminder"]
+    assert notice and notice[-1]["text"] == "Reminder: call mum"
+    said = events_of(client, side["id"], "assistant")[-1]
+    assert said["source"] == "background" and said["about"] == "Reminder: call mum"
+    assert said["final"] is True and "call mum" in said["text"]
+    assert [p["kind"] for p in pushed] == ["background"]
+    assert (
+        pushed[-1]["title"] == "Muse · reminder" and pushed[-1]["url"] == f"/?thread={side['id']}"
+    )
+    # the main chat was not touched
+    assert not [e for e in events_of(client, "main") if e["type"] != "notice" or e.get("source")]
+    # once fired it is out of the active list, still in the full one
+    assert client.get("/api/reminders").json()[0]["id"] == routine["id"]
+    assert client.get("/api/reminders?all=1").json()[-1]["id"] == items[0]["id"]
+    assert client.post(f"/api/reminders/{items[0]['id']}/fire").status_code == 409
+
+    # a routine moves to its next occurrence when it fires; the scheduler picks up what
+    # is due without anyone asking
+    monkeypatch.setattr(
+        service.app.reminders,
+        "due",
+        lambda now=None: [service.app.reminders.get(routine["id"])],
+    )
+    llm.script.append(
+        LLMResponse(content="Three unread, nothing urgent — the Friday report is in the library.")
+    )
+    assert client.portal is not None
+    client.portal.call(service._run_due_reminders)  # what the scheduler tick does, on the loop
+    wait_idle(service, "main")
+    after = client.get("/api/reminders").json()
+    assert (
+        after[0]["id"] == routine["id"]
+        and after[0]["fired"] == 1
+        and after[0]["status"] == "active"
+    )
+    assert after[0]["next_at"] and datetime.fromisoformat(after[0]["next_at"]) > datetime.now(UTC)
+    said = events_of(client, "main", "assistant")[-1]
+    assert said["about"] == "Routine: summarise unread email" and said["final"] is True
+    assert pushed[-1]["title"] == "summarise unread email"
+
+    # cancel from the app: gone from Upcoming, 404/409 afterwards
+    assert client.delete(f"/api/reminders/{routine['id']}").json()["status"] == "cancelled"
+    assert client.delete(f"/api/reminders/{routine['id']}").status_code == 409
+    assert client.delete("/api/reminders/r_nope").status_code == 404
+    statuses = {r["id"]: r["status"] for r in client.get("/api/upcoming").json()["reminders"]}
+    assert statuses == {items[0]["id"]: "done", routine["id"]: "cancelled"}
+    assert client.get("/api/reminders").json() == []
 
 
 def test_ideas_fallback_and_parsing(server):

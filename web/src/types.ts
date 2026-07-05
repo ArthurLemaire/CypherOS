@@ -368,9 +368,29 @@ export interface UpcomingData {
     next_step: string | null;
     progress: { done: number; total: number };
   }>;
-  /** Reminders the user asked for, soonest first. */
+  /** Goal check-ins, soonest first. */
   check_ins: Array<{ goal_id: string; title: string; at: string; cadence: string }>;
+  /** Reminders and routines: active ones soonest first, then recently finished. */
+  reminders: Reminder[];
   busy: boolean;
+}
+
+export type ReminderKind = "remind" | "task";
+export type ReminderStatus = "active" | "done" | "cancelled";
+
+export interface Reminder {
+  id: string;
+  text: string;
+  kind: ReminderKind;
+  thread: string;
+  status: ReminderStatus;
+  /** Next time it fires (ISO); null once a one-off has fired. */
+  next_at: string | null;
+  /** "" for a one-off, else a cadence such as "daily 08:00". */
+  repeat: string;
+  created_at: string;
+  last_fired_at: string | null;
+  fired: number;
 }
 
 export interface PushInfo {
@@ -402,6 +422,7 @@ export type WsMessage =
   | { kind: "thread_cleared"; thread: string }
   | { kind: "goals" }
   | { kind: "memory" }
+  | { kind: "reminders" }
   | { kind: "ideas"; ideas: IdeasData }
   | { kind: "profile"; profile: Profile }
   | { kind: "settings"; settings: SettingsView }
