@@ -122,6 +122,7 @@ class WebUI:
         """Called by the service before each agent run in ``thread``."""
         self.reply_shown.discard(thread)
         self.last_assistant_event.pop(thread, None)
+        self._step_text.pop(thread, None)
         self._artifacts[thread] = {}
         self._browser_card.pop(thread, None)
         if background:
@@ -278,6 +279,9 @@ class WebUI:
         thread = self.thread()
         sid = self._stream_ids.pop(thread, None)
         self._stream_buf.pop(thread, None)
+        # _step_text describes this response only; a terminate-only response after a
+        # text reply must not look like "already said its piece".
+        self._step_text.pop(thread, None)
         text = (content or "").strip()
         quiet = False
         if thread in self.background:
