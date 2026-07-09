@@ -637,9 +637,10 @@ def test_any_tool_that_writes_a_file_yields_one_artifact_card(server, settings: 
     client.post("/api/threads/main/send", json={"text": "make a report"})
     wait_for(lambda: events_of(client, kind="assistant"))
     cards = events_of(client, kind="artifact")
-    # the second write refreshed the first card (action → update) instead of adding another
+    # the second write refreshed the first card instead of adding another — and the page is
+    # still "new": it did not exist before this run, however many times it was touched
     assert [(c["path"], c["action"]) for c in cards] == [
-        ("report.html", "update"),
+        ("report.html", "write"),
         ("notes.md", "write"),
     ]
     assert cards[0]["updated_ts"]
