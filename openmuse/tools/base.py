@@ -94,8 +94,17 @@ async def safe_execute(tool: BaseTool, args: dict[str, Any] | None = None) -> To
     """Run a tool, converting every failure into a :class:`ToolResult` error."""
     args = args or {}
     if "__raw__" in args:
+        raw = str(args["__raw__"])
+        hint = (
+            " The JSON stops mid-way, so the arguments were probably cut off in transit: "
+            "call the tool again with less content at a time (write the file in parts with "
+            "`append`, or generate it with python_execute)."
+            if len(raw) > 1000
+            else ""
+        )
         return ToolResult.fail(
-            f"arguments for {tool.name} were not valid JSON: {str(args['__raw__'])[:200]}"
+            f"arguments for {tool.name} were not valid JSON ({len(raw)} chars): "
+            f"...{raw[-120:]}{hint}"
         )
     try:
         result = await tool.execute(**args)

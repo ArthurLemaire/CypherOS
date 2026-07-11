@@ -224,3 +224,17 @@ async def test_auto_mode_switches_to_prompt_tools_when_the_endpoint_rejects_them
     plain = PromptToolAdapter(fine, native_first=True)
     await plain.ask([Message.user("hi")], tools)
     assert fine.calls[0]["tools"] == tools and plain.supports_native_tools
+
+
+def test_cut_off_tool_arguments_go_to_the_provider_as_an_empty_object():
+    """A gateway truncated the arguments mid-string; the history must still be accepted
+    by a strict endpoint (Ollama answers 400 'invalid tool call arguments' otherwise)."""
+    cut = ToolCall(id="c1", function=Function(name="files", arguments='{"action": "write", "con'))
+    assert cut.arguments == {"__raw__": '{"action": "write", "con'}
+    wire = Message.assistant(tool_calls=[cut]).to_openai()["tool_calls"][0]["function"]
+    assert wire == {"name": "files", "arguments": "{}"}
+    fine = ToolCall(function=Function(name="files", arguments='{"action": "list"}'))
+    assert (
+        Message.assistant(tool_calls=[fine]).to_openai()["tool_calls"][0]["function"]["arguments"]
+        == '{"action": "list"}'
+    )

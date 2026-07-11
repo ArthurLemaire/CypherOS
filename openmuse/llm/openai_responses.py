@@ -73,7 +73,7 @@ def _to_input_items(messages: list[Message]) -> tuple[str | None, list[dict[str,
                         "type": "function_call",
                         "call_id": tc.id,
                         "name": tc.function.name,
-                        "arguments": tc.function.arguments or "{}",
+                        "arguments": tc.function.wire_arguments(),
                     }
                 )
         elif m.role == Role.TOOL:
