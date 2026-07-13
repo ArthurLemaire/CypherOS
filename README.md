@@ -226,13 +226,16 @@ More in [docs/architecture.md](docs/architecture.md).
 ## Roadmap
 
 - [x] Agent loop, Sentinel, vault, audit, memory, goals, tools, MCP, CLI
-- [x] Mobile-first app: chat, approval cards, side chats, Goals / Ideas / Memory, background goal work
-- [ ] Push notifications when an approval is waiting or a goal posts an update
+- [x] Mobile-first app: Chat · Feed · Ideas · Goals · Library, approvals as scoped grants, side chats, background goal work
+- [x] Push notifications when an approval is waiting or a goal posts an update
+- [x] Browser view: watch the agent browse live, take over for sign-ins
+- [x] Local models (Ollama) with automatic prompt-mode fallback
 - [ ] Triggers for goals: cron, webhooks, new mail
 - [ ] Calendar and contacts connectors (via MCP)
 - [ ] Better memory recall (embeddings) and periodic consolidation
 - [ ] Per-tool sandboxes for `shell` and `python_execute`
 - [ ] Skills: reusable task recipes
+- [ ] The app in more languages (zh-CN first)
 
 ## Contributing
 
