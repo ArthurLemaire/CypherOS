@@ -245,8 +245,8 @@ function applyWs(state: AppState, msg: WsMessage): AppState {
       const current = state.streams[msg.thread];
       if (!current || current.id !== msg.id) return state;
       // Keep it until the persisted assistant event replaces it (avoids flicker);
-      // an empty stream can go right away.
-      if (!current.text.trim()) return { ...state, streams: { ...state.streams, [msg.thread]: undefined } };
+      // an empty stream, or one the server says was not a reply, can go right away.
+      if (msg.discard || !current.text.trim()) return { ...state, streams: { ...state.streams, [msg.thread]: undefined } };
       return { ...state, streams: { ...state.streams, [msg.thread]: { ...current, ended: true } } };
     }
     case "status": {

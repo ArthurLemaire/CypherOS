@@ -136,7 +136,7 @@ On connect the server sends `{"kind": "hello", "state": …}` (the same payload 
 |---|---|
 | `event` | a new timeline event (`user`, `assistant`, `tool`, `approval`, `question`, `artifact`, `browser`, `notice`). An `approval` carries `summary`, `purpose` (what you asked for), `target`, `grant_key`, `grant_options`, `risk`, `warnings`, `args`. A `browser` card carries `url`, `title`, `action`, `frame` (id of the latest picture), `frames`, `status` (`live` / `done`), `by_user`. Events produced during a background pass carry `source: "background"` and `about` (the pass label). The `assistant` bubble that ends a run carries `final: true` (set on emit, or as an `update` when the bubble was already on screen); the step-by-step narration before it does not — a client that mirrors background results into notifications should key off that flag |
 | `update` | fields changed on an existing event (a tool finished, an approval was decided, a browser card got a new frame) |
-| `stream_start` / `delta` / `stream_end` | the assistant reply being generated |
+| `stream_start` / `delta` / `stream_end` | the assistant reply being generated; `stream_end` carries `discard: true` when what streamed turned out not to be a reply (a prompt-mode tool call, a quiet background pass) |
 | `status` | idle / working / waiting, with a short detail line |
 | `thread`, `thread_cleared`, `thread_deleted` | thread list changes |
 | `goals`, `memory`, `ideas`, `profile`, `settings`, `connections`, `approvals_reset` | refresh hints for the tabs |
