@@ -17,6 +17,19 @@ from openmuse.tools.base import BaseTool, CallAssessment, short_json
 MAX_READ_CHARS = 60_000
 
 
+def unescape_flat(content: str) -> tuple[str, bool]:
+    """Turn a one-line text full of literal ``\\n`` into lines.
+
+    Small models double-escape newlines in JSON arguments, so a three-day itinerary
+    arrives as one line with ``\\n`` between the days. Only text that has *no* real
+    newline and at least two escaped ones is touched — code has real newlines, and a
+    one-liner that genuinely contains ``\\n`` twice is not something people write.
+    """
+    if "\n" in content or content.count("\\n") < 2:
+        return content, False
+    return content.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\t", "\t"), True
+
+
 class Files(BaseTool):
     name: str = "files"
     description: str = (
@@ -107,13 +120,16 @@ class Files(BaseTool):
             if action in ("write", "append"):
                 if content is None:
                     return ToolResult.fail("`content` is required")
+                content, fixed = unescape_flat(content)
                 target = self._resolve(path)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with target.open("a" if action == "append" else "w", encoding="utf-8") as fh:
                     fh.write(content)
                 rel = os.path.relpath(target, self.workspace)
+                note = " (the content had escaped newlines; written as lines)" if fixed else ""
                 return ToolResult(
-                    output=f"{'Appended' if action == 'append' else 'Wrote'} {len(content)} chars to {rel}"
+                    output=f"{'Appended' if action == 'append' else 'Wrote'} {len(content)} chars "
+                    f"to {rel}{note}"
                 )
             if action == "list":
                 target = self._resolve(path, must_exist=True)

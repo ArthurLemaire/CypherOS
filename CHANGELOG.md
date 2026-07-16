@@ -17,6 +17,7 @@ All notable changes to OpenMuse. The format follows [Keep a Changelog](https://k
 - CLI: `/permissions`, `/revoke <key>`; `goals add --category/--due/--check-in`, `goals list --category`.
 - `tool_mode = "auto"` (the new default): the API's function calling, and when the endpoint rejects the `tools` field — Ollama for a model without a tool template, vLLM without a tool parser — tools are described in the prompt for the rest of the run. Prompt mode also accepts the ```` ```tool_call ```` / ```` ```json ```` fences small models emit instead of the tags.
 - `scripts/provider_check.py`: five everyday tasks against any model, one line each; results for Ollama models in `docs/configuration.md`.
+- Small-model repairs: a reply that is a bare JSON object naming a tool counts as a tool call in native mode too (Llama 3.x); JSON arguments may contain real newlines; `files.write` turns a one-line text with spelled-out `\n` into lines. `qwen3:8b`, `llama3.2:3b` and `gemma3:4b` all pass the provider check.
 
 ### Changed
 

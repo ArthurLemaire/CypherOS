@@ -40,6 +40,27 @@ async def test_files_workspace_scoping(tmp_path: Path):
     assert a.reads_private_data and a.risk == RiskLevel.MODERATE
 
 
+async def test_files_write_repairs_double_escaped_newlines(tmp_path: Path):
+    files = Files(workspace=tmp_path)
+    # a small model's itinerary: one line, "\n" spelled out between the days
+    flat = "Day 1: Fushimi Inari\\nDay 2: Gion\\nDay 3: Arashiyama"
+    r = await files.execute(action="write", path="kyoto.md", content=flat)
+    assert "escaped newlines" in r.output
+    assert (tmp_path / "kyoto.md").read_text().splitlines() == [
+        "Day 1: Fushimi Inari",
+        "Day 2: Gion",
+        "Day 3: Arashiyama",
+    ]
+    # code with real newlines keeps its escape sequences
+    code = 'print("a\\nb")\nprint("c\\nd")\n'
+    await files.execute(action="write", path="x.py", content=code)
+    assert (tmp_path / "x.py").read_text() == code
+    # a single escaped newline on one line is left alone too
+    one = 'echo "a\\nb"'
+    await files.execute(action="write", path="one.sh", content=one)
+    assert (tmp_path / "one.sh").read_text() == one
+
+
 async def test_shell_and_python(tmp_path: Path):
     shell = Shell(workspace=tmp_path)
     r = await shell.execute(command="echo hi && echo err 1>&2")
