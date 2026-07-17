@@ -509,19 +509,7 @@ class MuseService:
                     quiet, final = (
                         prompts.split_quiet(final or "") if purpose else (False, final or "")
                     )
-                    if (
-                        final.strip()
-                        and thread.id not in self.ui.reply_shown
-                        and final.strip() != self.ui.last_assistant_text.get(thread.id)
-                    ):
-                        event: dict[str, Any] = {
-                            "type": "assistant",
-                            "text": final.strip(),
-                            "thread": thread.id,
-                        }
-                        if quiet:
-                            event["quiet"] = True
-                        self.ui.emit(event)
+                    self._finish_run(thread, purpose, final.strip(), quiet)
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:  # noqa: BLE001
@@ -545,6 +533,29 @@ class MuseService:
                     self.bus.publish({"kind": "thread", "thread": thread.meta()})
         finally:
             current_thread.reset(token)
+
+    def _finish_run(self, thread: Thread, purpose: str | None, final: str, quiet: bool) -> None:
+        """The run's last word: shown as the assistant bubble unless it is on screen
+        already, and flagged ``final`` so clients can tell it from the step narration
+        before it. Background runs push it once, here, not per step."""
+        event: dict[str, Any] | None = None
+        if (
+            final
+            and thread.id not in self.ui.reply_shown
+            and final != self.ui.last_assistant_text.get(thread.id)
+        ):
+            event = {"type": "assistant", "text": final, "thread": thread.id, "final": True}
+            if quiet:
+                event["quiet"] = True
+            event = self.ui.emit(event)
+        else:
+            eid = self.ui.last_assistant_event.get(thread.id)
+            if eid and (existing := self.ui.get_timeline(thread.id).get(eid)):
+                if not existing.get("final"):
+                    self.ui.patch(thread.id, eid, final=True)
+                event = existing
+        if purpose and event and event.get("text") and not event.get("quiet"):
+            self._push_background(event)
 
     # ------------------------------------------------------------------ approvals
     def decide(
@@ -602,22 +613,26 @@ class MuseService:
         """Cards waiting for the user, across threads — the app badge number."""
         return len(self.ui.pending_approvals) + len(self.ui.pending_questions)
 
+    @staticmethod
+    def _push_url(thread: str) -> str:
+        return "/" if thread == MAIN_THREAD else f"/?thread={thread}"
+
     def _maybe_push(self, event: dict[str, Any]) -> None:
-        """Called with every persisted event. Pushes: a card that needs you, a background
-        result worth surfacing, a check-in. Quiet passes and step narration stay in the
-        app; the service worker drops the notification anyway if the app is on screen."""
+        """Called with every persisted event: a card that needs you gets a push. Background
+        results go through ``_push_background`` once the run is over, so the step-by-step
+        narration never leaves the app; the service worker drops the notification anyway
+        if the app is on screen."""
         if not self.push.enabled or not self.push.subscriptions:
             return
         kind = event.get("type")
         thread = event.get("thread") or MAIN_THREAD
-        url = "/" if thread == MAIN_THREAD else f"/?thread={thread}"
         name = self.profile.name
         if kind == "approval" and event.get("status") == "pending":
             self.push.notify(
                 f"{name} needs your approval",
                 event.get("summary") or event.get("tool") or "",
                 tag=f"approval-{event['id']}",
-                url=url,
+                url=self._push_url(thread),
                 badge=self.pending_count(),
                 kind="approval",
             )
@@ -626,28 +641,29 @@ class MuseService:
                 f"{name} has a question",
                 event.get("text") or "",
                 tag=f"question-{event['id']}",
-                url=url,
+                url=self._push_url(thread),
                 badge=self.pending_count(),
                 kind="question",
             )
-        elif (
-            kind == "assistant"
-            and event.get("source") == "background"
-            and not event.get("quiet")
-            and event.get("text")
-        ):
-            about = str(event.get("about") or "")
-            title = about.replace("Working on your goal: ", "") or name
-            if about.startswith("Check-in: "):
-                title = f"{name} · check-in"
-            self.push.notify(
-                title,
-                _first_lines(str(event["text"])),
-                tag=f"background-{thread}",
-                url=url,
-                badge=self.pending_count(),
-                kind="background",
-            )
+
+    def _push_background(self, event: dict[str, Any]) -> None:
+        """The last word of a background run (a goal pass, a check-in) worth surfacing."""
+        if not self.push.enabled or not self.push.subscriptions:
+            return
+        thread = event.get("thread") or MAIN_THREAD
+        name = self.profile.name
+        about = str(event.get("about") or "")
+        title = about.replace("Working on your goal: ", "") or name
+        if about.startswith("Check-in: "):
+            title = f"{name} · check-in"
+        self.push.notify(
+            title,
+            _first_lines(str(event["text"])),
+            tag=f"background-{thread}",
+            url=self._push_url(thread),
+            badge=self.pending_count(),
+            kind="background",
+        )
 
     # ------------------------------------------------------------------ goals
     def advance_goal(self, goal_id: str) -> Goal:

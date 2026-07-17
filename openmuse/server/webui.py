@@ -102,6 +102,7 @@ class WebUI:
         self._stream_buf: dict[str, str] = {}
         self._tool_events: dict[str, str] = {}  # tool call id -> event id
         self.last_assistant_text: dict[str, str] = {}
+        self.last_assistant_event: dict[str, str] = {}  # thread -> id of that bubble
         self._step_text: dict[str, str] = {}  # text of the response currently being handled
         # threads whose final reply is already on screen (text + terminate in one response)
         self.reply_shown: set[str] = set()
@@ -120,6 +121,7 @@ class WebUI:
     def begin_run(self, thread: str, background: str | None = None) -> None:
         """Called by the service before each agent run in ``thread``."""
         self.reply_shown.discard(thread)
+        self.last_assistant_event.pop(thread, None)
         self._artifacts[thread] = {}
         self._browser_card.pop(thread, None)
         if background:
@@ -290,7 +292,7 @@ class WebUI:
             event["reasoning"] = reasoning.strip()
         self.last_assistant_text[thread] = text
         self._step_text[thread] = text
-        self.emit(event)
+        self.last_assistant_event[thread] = self.emit(event)["id"]
 
     def on_tool_call(self, call: ToolCall, summary: str) -> None:
         thread = self.thread()
