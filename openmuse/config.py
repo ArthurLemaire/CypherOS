@@ -43,10 +43,13 @@ class LLMSettings(BaseModel):
     timeout: float = 180.0
     max_retries: int = 5
     stream: bool = True
-    # "native": use the provider's function-calling API.
+    # "auto":   the provider's function-calling API; if the endpoint rejects the `tools`
+    #           field (Ollama for a model without a tool template, vLLM without a tool
+    #           parser) switch to prompt mode for the rest of the run.
+    # "native": always the function-calling API.
     # "prompt": describe tools in the prompt and parse <tool_call> blocks — works with
-    #           any chat model, including endpoints that ignore the `tools` field.
-    tool_mode: Literal["native", "prompt"] = "native"
+    #           any chat model, including endpoints that silently ignore `tools`.
+    tool_mode: Literal["auto", "native", "prompt"] = "auto"
     # Send `reasoning_content` back with assistant messages (DeepSeek thinking-mode
     # tool calling wants this on some endpoints).
     pass_reasoning: bool = False

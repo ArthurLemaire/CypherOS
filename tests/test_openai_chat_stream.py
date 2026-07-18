@@ -73,3 +73,43 @@ async def test_reasoning_content_field_and_tool_call_deltas():
     assert [tc.id for tc in resp.tool_calls] == ["call_1", "call_2"]
     assert resp.tool_calls[0].arguments == {"city": "北京"}
     assert resp.finish_reason == "tool_calls"
+
+
+async def test_tools_rejection_becomes_tools_unsupported():
+    import httpx
+    import openai
+    import pytest
+
+    from openmuse.llm.base import ToolsUnsupported
+    from openmuse.schema import Message
+
+    def bad_request(message: str):
+        req = httpx.Request("POST", "http://localhost/chat/completions")
+        resp = httpx.Response(400, request=req, json={"error": {"message": message}})
+        return openai.BadRequestError(
+            f"Error code: 400 - {{'error': {{'message': '{message}'}}}}",
+            response=resp,
+            body={"error": {"message": message}},
+        )
+
+    def llm_raising(message: str) -> OpenAIChatLLM:
+        llm = OpenAIChatLLM(LLMSettings(api_key="x", base_url="http://localhost", stream=False))
+
+        async def fake_create(**_):
+            raise bad_request(message)
+
+        llm.client.chat.completions.create = fake_create  # type: ignore[method-assign]
+        return llm
+
+    tools = [{"type": "function", "function": {"name": "echo", "parameters": {}}}]
+    # Ollama's wording for a model without a tool template
+    with pytest.raises(ToolsUnsupported):
+        await llm_raising("registry.ollama.ai/library/gemma3:4b does not support tools").ask(
+            [Message.user("hi")], tools
+        )
+    # the same error without tools in the request is not about tools
+    with pytest.raises(openai.BadRequestError):
+        await llm_raising("model does not support tools").ask([Message.user("hi")], None)
+    # an unrelated 400 stays what it is
+    with pytest.raises(openai.BadRequestError):
+        await llm_raising("maximum context length is 8192 tokens").ask([Message.user("hi")], tools)

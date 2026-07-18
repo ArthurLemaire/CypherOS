@@ -15,6 +15,8 @@ All notable changes to OpenMuse. The format follows [Keep a Changelog](https://k
 - Sentinel hardening: subprocesses get a scrubbed environment (no API keys or tokens); `python_execute` reads the code and escalates to SENSITIVE for network, processes, environment access, deletion or paths outside the workspace; `web_fetch` follows redirects itself and refuses hops into private networks; any call with warnings asks even in `auto` mode unless an explicit `allow` rule applies; `agent.extra_roots` for files outside the workspace.
 - `SECURITY.md` with the threat model and reporting process; `CODE_OF_CONDUCT.md`; issue and pull request templates; Dependabot.
 - CLI: `/permissions`, `/revoke <key>`; `goals add --category/--due/--check-in`, `goals list --category`.
+- `tool_mode = "auto"` (the new default): the API's function calling, and when the endpoint rejects the `tools` field — Ollama for a model without a tool template, vLLM without a tool parser — tools are described in the prompt for the rest of the run. Prompt mode also accepts the ```` ```tool_call ```` / ```` ```json ```` fences small models emit instead of the tags.
+- `scripts/provider_check.py`: five everyday tasks against any model, one line each; results for Ollama models in `docs/configuration.md`.
 
 ### Changed
 

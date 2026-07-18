@@ -85,7 +85,7 @@ export function ModelCard({ data, onChange, compact }: { data: ConnectionsData; 
   const [model, setModel] = useState(data.llm.model);
   const [baseUrl, setBaseUrl] = useState(data.llm.base_url);
   const [key, setKey] = useState("");
-  const [toolMode, setToolMode] = useState(data.llm.tool_mode || "native");
+  const [toolMode, setToolMode] = useState(data.llm.tool_mode || "auto");
   const [saving, setSaving] = useState(false);
   const [test, setTest] = useState<TestResult | null>(null);
   const [testing, setTesting] = useState(false);
@@ -93,7 +93,7 @@ export function ModelCard({ data, onChange, compact }: { data: ConnectionsData; 
   useEffect(() => {
     setModel(data.llm.model);
     setBaseUrl(data.llm.base_url);
-    setToolMode(data.llm.tool_mode || "native");
+    setToolMode(data.llm.tool_mode || "auto");
     setPreset(currentPreset);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.llm]);
@@ -187,9 +187,9 @@ export function ModelCard({ data, onChange, compact }: { data: ConnectionsData; 
           <input type="password" value={key} onChange={(e) => setKey(e.target.value)} className={inputCls} placeholder={data.llm.key_source === "vault" ? "••••••••" : "sk-…"} autoComplete="off" />
         </Field>
       )}
-      <Field label="Tool calling" hint="Native for most APIs; prompt for small local models that lack function calling.">
+      <Field label="Tool calling" hint="Auto uses the API's function calling and falls back to describing tools in the prompt when the endpoint rejects them. Prompt: for endpoints that silently ignore tools.">
         <div className="flex gap-1.5">
-          {["native", "prompt"].map((m) => (
+          {["auto", "native", "prompt"].map((m) => (
             <button key={m} type="button" onClick={() => setToolMode(m)} className={cx("rounded-full px-3 py-1.5 text-[13px] border", toolMode === m ? "border-accent bg-accent/10 text-accent font-medium" : "border-border text-muted")}>
               {m}
             </button>

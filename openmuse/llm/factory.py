@@ -18,6 +18,8 @@ def create_llm(settings: LLMSettings) -> BaseLLM:
         raise ValueError(f"unknown llm provider: {settings.provider}")
     if settings.tool_mode == "prompt":
         llm = PromptToolAdapter(llm)
+    elif settings.tool_mode == "auto":
+        llm = PromptToolAdapter(llm, native_first=True)
     return llm
 
 

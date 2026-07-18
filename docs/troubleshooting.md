@@ -8,7 +8,9 @@
 
 **The beginning of a streamed reply is missing.** Some proxies that inline `<think>…</think>` into the content drop the first tokens after `</think>` on the server side. Non-streaming responses are complete; set `stream = false` under `[llm]`.
 
-**The model never calls tools.** The endpoint probably ignores the `tools` field. Set `tool_mode = "prompt"`; tools are then described in the system prompt and parsed from `<tool_call>` blocks.
+**The model never calls tools.** The endpoint probably ignores the `tools` field without an error (an endpoint that *rejects* it is handled by the default `tool_mode = "auto"`). Set `tool_mode = "prompt"`; tools are then described in the system prompt and parsed from `<tool_call>` blocks.
+
+**"does not support tools" in the log, then the agent carries on.** That is `auto` doing its job: Ollama refused function calling for this model, so tools are described in the prompt from then on. Pick a model with a tool template (`qwen3:8b`, `llama3.1:8b`) for better results on long tasks.
 
 **429 / rate limits.** Requests retry with exponential back-off (`max_retries`, default 5). Lower `agent.max_steps`, or add `web_fetch` to `always_ask_tools` to slow the loop down.
 

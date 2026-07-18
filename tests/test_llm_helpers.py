@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from openmuse.llm.base import ThinkStreamFilter, split_think
+from openmuse.llm.base import ThinkStreamFilter, ToolsUnsupported, says_no_tools, split_think
 from openmuse.llm.prompt_tools import convert_messages, parse_tool_calls
 from openmuse.schema import Function, Message, ToolCall
 
@@ -80,6 +80,37 @@ def test_parse_tool_calls_ignores_garbage():
     assert visible == "ok"
 
 
+def test_parse_tool_calls_accepts_fenced_calls_from_small_models():
+    known = {"python_execute", "files"}
+    # Gemma: a ```tool_call fence instead of the tags
+    gemma = (
+        "Let me compute that.\n```tool_call\n"
+        '{"name": "python_execute", "arguments": {"code": "print(1)"}}\n```'
+    )
+    visible, calls = parse_tool_calls(gemma, known)
+    assert [c.function.name for c in calls] == ["python_execute"]
+    assert calls[0].arguments["code"] == "print(1)"
+    assert visible == "Let me compute that."
+    # a ```json fence with "parameters" for the arguments
+    fenced_json = '```json\n{"name": "files", "parameters": {"action": "list"}}\n```'
+    _, calls = parse_tool_calls(fenced_json, known)
+    assert [c.function.name for c in calls] == ["files"]
+    assert calls[0].arguments == {"action": "list"}
+    # JSON the model is merely quoting stays text: not a known tool / no arguments
+    quoted = 'The config is:\n```json\n{"name": "openmuse", "version": "0.1.0"}\n```'
+    visible, calls = parse_tool_calls(quoted, known)
+    assert calls == [] and visible == quoted
+    _, calls = parse_tool_calls('```json\n{"name": "rm", "arguments": {}}\n```', known)
+    assert calls == []
+    # without a known set, a fenced call still needs an arguments object
+    _, calls = parse_tool_calls('```json\n{"name": "rm", "arguments": {}}\n```')
+    assert [c.function.name for c in calls] == ["rm"]
+    # the tags win when both are present
+    both = '<tool_call>{"name": "files", "arguments": {}}</tool_call>\n```json\n{"a": 1}\n```'
+    visible, calls = parse_tool_calls(both, known)
+    assert [c.function.name for c in calls] == ["files"] and visible == '```json\n{"a": 1}\n```'
+
+
 def test_convert_messages_flattens_tool_roles():
     tools = [
         {
@@ -105,3 +136,57 @@ def test_convert_messages_flattens_tool_roles():
     assert "Tool calling protocol" in out[0].content
     assert "<tool_call>" in out[2].content
     assert out[3].content.count("<tool_result") == 2
+
+
+def test_says_no_tools_matches_real_endpoint_errors():
+    for msg in (
+        "Error code: 400 - {'error': {'message': 'registry.ollama.ai/library/gemma3:4b does "
+        "not support tools', 'type': 'api_error'}}",
+        '"auto" tool choice requires --enable-auto-tool-choice and --tool-call-parser to be set',
+        "This model does not support function calling.",
+        "tools are not supported by this endpoint",
+        "Tool use is unsupported for model foo",
+    ):
+        assert says_no_tools(msg), msg
+    for msg in (
+        "Invalid parameter: 'tool_choice' must be one of 'none', 'auto'",
+        "This model's maximum context length is 8192 tokens",
+        "Unsupported value: 'temperature' does not support 2.5 with this model",
+    ):
+        assert not says_no_tools(msg), msg
+
+
+async def test_auto_mode_switches_to_prompt_tools_when_the_endpoint_rejects_them():
+    from openmuse.llm.mock import MockLLM
+    from openmuse.llm.prompt_tools import PromptToolAdapter
+    from openmuse.schema import LLMResponse
+
+    tools = [{"type": "function", "function": {"name": "echo", "parameters": {}}}]
+
+    class Rejecting(MockLLM):
+        async def ask(self, messages, tools=None, tool_choice="auto", on_delta=None):
+            if tools:
+                raise ToolsUnsupported("model x does not support tools")
+            return await super().ask(messages, tools, tool_choice, on_delta)
+
+    inner = Rejecting(
+        [LLMResponse(content='<tool_call>{"name": "echo", "arguments": {"x": 1}}</tool_call>')]
+    )
+    llm = PromptToolAdapter(inner, native_first=True)
+    assert llm.supports_native_tools
+    resp = await llm.ask([Message.user("hi")], tools)
+    # the native attempt failed, the prompt-mode retry parsed the call
+    assert [c.function.name for c in resp.tool_calls] == ["echo"]
+    assert not llm.supports_native_tools
+    assert inner.calls[-1]["tools"] is None
+    assert "Tool calling protocol" in inner.calls[-1]["messages"][0].content
+    # sticky: later requests go straight to prompt mode (one native attempt in total)
+    inner.script.append(LLMResponse(content="done"))
+    await llm.ask([Message.user("again")], tools)
+    assert all(c["tools"] is None for c in inner.calls)
+
+    # a provider that supports tools natively is never touched
+    fine = MockLLM([LLMResponse(content="ok")])
+    plain = PromptToolAdapter(fine, native_first=True)
+    await plain.ask([Message.user("hi")], tools)
+    assert fine.calls[0]["tools"] == tools and plain.supports_native_tools

@@ -158,7 +158,7 @@ api_key  = "${DEEPSEEK_API_KEY}"
 # Ollama:      model = "qwen3:32b"    base_url = "http://localhost:11434/v1"   api_key = "ollama"
 # OpenRouter:  model = "deepseek/deepseek-flash"  base_url = "https://openrouter.ai/api/v1"
 # A gateway that needs headers:  extra_headers = { "X-End-User-Id" = "openmuse" }
-# A model that ignores `tools`:  tool_mode = "prompt"
+# An endpoint that silently ignores `tools`:  tool_mode = "prompt"   (rejections are handled by the default "auto")
 ```
 
 The same settings can be set with `OPENMUSE_LLM_MODEL`, `OPENMUSE_LLM_BASE_URL`, `OPENMUSE_LLM_API_KEY`, `OPENMUSE_LLM_PROVIDER`. Full reference: [docs/configuration.md](docs/configuration.md).

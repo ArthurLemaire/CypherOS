@@ -42,10 +42,10 @@ jobs:
           uv pip install -e ".[dev]"
 
       - name: Ruff lint
-        run: uv run ruff check openmuse tests
+        run: uv run ruff check openmuse tests scripts
 
       - name: Ruff format
-        run: uv run ruff format --check openmuse tests
+        run: uv run ruff format --check openmuse tests scripts
 
       - name: Mypy
         run: uv run mypy

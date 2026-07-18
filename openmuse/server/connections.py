@@ -154,8 +154,8 @@ class Connections:
                 llm[key] = str(body[key]).strip()
         if llm.get("provider") not in (None, "openai", "openai_responses"):
             raise ValueError("provider must be 'openai' or 'openai_responses'")
-        if llm.get("tool_mode") not in (None, "", "native", "prompt"):
-            raise ValueError("tool_mode must be 'native' or 'prompt'")
+        if llm.get("tool_mode") not in (None, "", "auto", "native", "prompt"):
+            raise ValueError("tool_mode must be 'auto', 'native' or 'prompt'")
         api_key = body.get("api_key")
         if api_key:
             self.vault.set(LLM_KEY, str(api_key).strip())

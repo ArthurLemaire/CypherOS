@@ -158,7 +158,7 @@ api_key  = "${DEEPSEEK_API_KEY}"
 # Ollama:      model = "qwen3:32b"    base_url = "http://localhost:11434/v1"   api_key = "ollama"
 # OpenRouter:  model = "deepseek/deepseek-flash"  base_url = "https://openrouter.ai/api/v1"
 # 需要自定义请求头的网关：  extra_headers = { "X-End-User-Id" = "openmuse" }
-# 忽略 `tools` 字段的模型：  tool_mode = "prompt"
+# 静默忽略 `tools` 字段的端点：  tool_mode = "prompt"   （直接拒绝 tools 的端点由默认的 "auto" 自动降级处理）
 ```
 
 同样的设置也可以用 `OPENMUSE_LLM_MODEL`、`OPENMUSE_LLM_BASE_URL`、`OPENMUSE_LLM_API_KEY`、`OPENMUSE_LLM_PROVIDER` 覆盖。完整参考：[docs/configuration.md](docs/configuration.md)。

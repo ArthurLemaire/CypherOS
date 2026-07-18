@@ -41,7 +41,7 @@ temperature   = 0.3
 timeout       = 180                # seconds per request
 max_retries   = 5                  # exponential back-off on 429 / 5xx / timeouts
 stream        = true
-tool_mode     = "native"           # "prompt": describe tools in the prompt, parse <tool_call> blocks
+tool_mode     = "auto"             # "auto" | "native" | "prompt" — see below
 pass_reasoning = false             # send reasoning_content back with assistant turns (some DeepSeek endpoints)
 extra_headers = {}                 # e.g. { "X-End-User-Id" = "openmuse" }
 extra_body    = {}                 # e.g. { "thinking" = { "type" = "enabled" } }
@@ -54,9 +54,29 @@ Provider recipes:
 | DeepSeek | `deepseek-flash` | `https://api.deepseek.com` | default |
 | OpenAI | `gpt-5.6-sol` | `https://api.openai.com/v1` | `provider = "openai_responses"` also works |
 | OpenRouter | `deepseek/deepseek-flash` | `https://openrouter.ai/api/v1` | |
-| Ollama | `qwen3:32b` | `http://localhost:11434/v1` | `api_key = "ollama"` |
+| Ollama | `qwen3:8b` | `http://localhost:11434/v1` | `api_key = "ollama"`; see [Local models](#local-models) |
 | vLLM / LM Studio | your served name | `http://localhost:8000/v1` | set `tool_mode = "prompt"` if the server ignores `tools` |
 | Company gateway | as required | as required | use `extra_headers` / `extra_body`; pick the provider by the API shape the gateway speaks |
+
+### Tool calling modes
+
+| `tool_mode` | What happens |
+|---|---|
+| `auto` (default) | The API's function calling. If the endpoint *rejects* the `tools` field — Ollama for a model without a tool template ("does not support tools"), vLLM started without a tool parser — OpenMuse logs one warning and describes the tools in the prompt for the rest of the run. |
+| `native` | Always the function-calling API; a rejection is an error. |
+| `prompt` | Tools are described in the system prompt and calls are parsed from `<tool_call>` blocks. The only mode that works with endpoints that silently *ignore* `tools` (no error, the model just never calls anything) — some "agent app" gateways do this. |
+
+### Local models
+
+Ollama serves an OpenAI-compatible API at `http://localhost:11434/v1`; models with a tool template (Qwen 3, Llama 3.1+, Mistral, DeepSeek-R1 distills) call tools natively, the rest work through `auto`'s prompt fallback. [`scripts/provider_check.py`](../scripts/provider_check.py) runs five everyday tasks (chat, a calculation through `python_execute`, writing a file, remembering a preference, a multi-step job) against any model; results on an RTX 4070 (12 GB), Ollama 0.34:
+
+| Model | Tool calling | provider_check | Notes |
+|---|---|---|---|
+| `qwen3:8b` | native (also 5/5 with `tool_mode = "prompt"`) | 5/5 | the default preset; 7–20 s per task |
+| `gemma3:4b` | prompt, via the `auto` fallback | 5/5 | Ollama rejects `tools` for it; emits ```` ```tool_call ```` fences, which the prompt parser accepts |
+| DeepSeek V4.1 Flash (hosted) | native | 5/5 | 1–4 s per task |
+
+Set `max_tokens` to what the model can produce in one turn (4096 is fine for these) and keep `agent.max_context_messages` modest — a local 8B model with an 8k context window fills up fast once tool results start coming back.
 
 Models that emit `<think>…</think>` inside the content are handled: the reasoning is separated and shown only with `agent.show_thinking = true`.
 
