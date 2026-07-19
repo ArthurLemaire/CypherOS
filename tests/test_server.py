@@ -6,6 +6,7 @@ import json
 import time
 from collections.abc import Iterator
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -597,6 +598,30 @@ def test_any_tool_that_writes_a_file_yields_one_artifact_card(server, settings: 
     assert cards[0]["updated_ts"]
     assert (settings.agent.workspace / "report.html").read_text() == "<h1>v2</h1>"
     assert client.get("/api/feed").json() == []  # your own request is not "while you were away"
+
+
+def test_workspace_scan_ignores_only_excludes_inside_it(tmp_path: Path):
+    from openmuse.server.events import EventBus
+    from openmuse.server.webui import WebUI
+
+    def make(workspace: Path, exclude: Path) -> WebUI:
+        return WebUI(EventBus(), lambda _t: None, workspace=workspace, exclude=(exclude,))  # type: ignore[arg-type]
+
+    # the data dir inside the workspace: its files are not artifacts
+    ws = tmp_path / "ws"
+    (ws / "data").mkdir(parents=True)
+    (ws / "data" / "memory.db").write_text("x")
+    (ws / "page.html").write_text("<p>")
+    assert make(ws, ws / "data")._scan_workspace() == {
+        "page.html": pytest.approx((ws / "page.html").stat().st_mtime)
+    }
+    # the data dir *containing* the workspace (~/.openmuse and ~/.openmuse/workspace): the
+    # workspace is scanned as usual
+    data = tmp_path / "home"
+    inner = data / "workspace"
+    inner.mkdir(parents=True)
+    (inner / "list.html").write_text("<p>")
+    assert list(make(inner, data)._scan_workspace() or {}) == ["list.html"]
 
 
 def test_html_artifacts_are_served_sandboxed(server, settings: Settings):

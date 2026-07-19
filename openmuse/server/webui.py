@@ -82,8 +82,13 @@ class WebUI:
         self.show_thinking = show_thinking
         self.workspace = workspace
         # directories inside the workspace that are OpenMuse's own (the data dir, when
-        # someone points both at the same place) — never artifacts
-        self.exclude = tuple(p.resolve() for p in exclude)
+        # someone points both at the same place) — never artifacts. A data dir that
+        # *contains* the workspace (~/.openmuse and ~/.openmuse/workspace) is not inside
+        # it and must not blank the whole scan.
+        ws = workspace.resolve() if workspace is not None else None
+        self.exclude = tuple(
+            p.resolve() for p in exclude if ws is None or ws in p.resolve().parents
+        )
         # workspace snapshot taken before a tool ran, per thread; files that are new or
         # changed afterwards become artifact cards — whatever tool wrote them
         self._ws_before: dict[str, dict[str, float] | None] = {}
