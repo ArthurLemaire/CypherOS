@@ -103,9 +103,23 @@ _REACH_LABELS = {
 }
 
 
-def code_reach(code: str) -> dict[str, str]:
-    """``{kind: human label}`` for everything a script reaches beyond the workspace."""
-    return {kind: _REACH_LABELS[kind] for kind, pattern in _REACH if pattern.search(code)}
+_ABS_PATH = re.compile(r"['\"](/[^'\"\n]*)")
+_HOME = re.compile(r"['\"]~|Path\.home\(\)|expanduser\(")
+
+
+def code_reach(code: str, workspace: Path | None = None) -> dict[str, str]:
+    """``{kind: human label}`` for everything a script reaches beyond the workspace.
+
+    With ``workspace`` given, absolute paths that stay inside it do not count as
+    "outside" (a workspace under ``/tmp`` or ``/home`` would otherwise flag every write).
+    """
+    reach = {kind: _REACH_LABELS[kind] for kind, pattern in _REACH if pattern.search(code)}
+    if "outside the workspace" in reach and workspace is not None and not _HOME.search(code):
+        root = workspace.resolve().as_posix().rstrip("/") + "/"
+        paths = [m.group(1) for m in _ABS_PATH.finditer(code)]
+        if paths and all(p.startswith(root) or p + "/" == root for p in paths):
+            del reach["outside the workspace"]
+    return reach
 
 
 def programs_of(command: str) -> str | None:
@@ -233,7 +247,7 @@ class PythonExecute(BaseTool):
         approval, with the reason on the card."""
         code = str(args.get("code", ""))
         first = code.strip().splitlines()[0][:100] if code.strip() else ""
-        reach = code_reach(code)
+        reach = code_reach(code, self.workspace)
         return CallAssessment(
             risk=RiskLevel.SENSITIVE if reach else RiskLevel.MODERATE,
             egress=bool(reach.get("network")) or bool(reach.get("processes")),
