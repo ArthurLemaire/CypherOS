@@ -104,7 +104,7 @@ Prefer a terminal? `openmuse chat` gives you the same agent with approvals in th
 
 | Screen | What you get |
 |---|---|
-| Chat | Message-style conversation, streaming replies, tool chips with output, file artifacts, approval and question cards, side chats. You can keep typing while the agent works; new messages are folded into the running turn. |
+| Chat | Message-style conversation, streaming replies, tool chips with output, file artifacts, approval and question cards, side chats. You can keep typing while the agent works; new messages are folded into the running turn. When it browses, a live browser card shows the page after every step — tap it to watch, *take over* to sign in or fix something yourself, hand it back and the agent continues. |
 | Feed | What happened while you were away: the result of each background pass, files it made, and every card still waiting for you, from any chat. *Next up* says what runs next. |
 | Ideas | Five suggested actions, regenerated on demand. Tap one to send it as a message. |
 | Goals | Goals by area of life (health, finance, career, learning…), each with a plan, step status and notes, a target date and an optional check-in cadence — a short message at that time, nothing more. When what the agent learns no longer fits the plan it proposes a change and you accept or keep yours. A proactivity dial (Off / Low / Default / High) and quiet hours decide how often it works on goals while you are away and when it speaks up — a pass with nothing to report stays a one-liner instead of a message. |

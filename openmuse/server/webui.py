@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import os
+from collections import OrderedDict
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -19,11 +20,15 @@ from openmuse.logger import logger
 from openmuse.prompts import split_quiet
 from openmuse.schema import ToolCall, ToolResult
 from openmuse.server.events import MAIN_THREAD, EventBus, Timeline, new_id, now_iso
+from openmuse.tools.browser import BrowserFrame
 from openmuse.ui import ApprovalDecision, ApprovalRequest
 
 current_thread: contextvars.ContextVar[str] = contextvars.ContextVar(
     "openmuse_thread", default=MAIN_THREAD
 )
+
+# browser frames kept per thread (in memory; a restart clears them)
+_FRAMES_KEPT = 12
 
 _TOOL_LABELS = {
     "web_search": "Searching the web",
@@ -101,12 +106,17 @@ class WebUI:
         self.background: dict[str, str] = {}
         # called with every persisted event; the service decides what deserves a push
         self.on_event: Callable[[dict[str, Any]], None] | None = None
+        # the browser as the user sees it: recent frames per thread (id -> jpeg) and the
+        # card of the current run, which is updated in place frame after frame
+        self.browser_frames: dict[str, OrderedDict[str, bytes]] = {}
+        self._browser_card: dict[str, str] = {}
 
     # ------------------------------------------------------------------ run lifecycle
     def begin_run(self, thread: str, background: str | None = None) -> None:
         """Called by the service before each agent run in ``thread``."""
         self.reply_shown.discard(thread)
         self._artifacts[thread] = {}
+        self._browser_card.pop(thread, None)
         if background:
             self.background[thread] = background
         else:
@@ -115,6 +125,47 @@ class WebUI:
     def end_run(self, thread: str) -> None:
         self.background.pop(thread, None)
         self._ws_before.pop(thread, None)
+        card = self._browser_card.pop(thread, None)
+        if card is not None:
+            self.patch(thread, card, status="done", updated_ts=now_iso())
+
+    # ------------------------------------------------------------------ browser view
+    def on_browser_frame(self, frame: BrowserFrame) -> None:
+        """A new picture of the browser: keep it, and show/update the browser card."""
+        thread = frame.thread or self.thread()
+        frames = self.browser_frames.setdefault(thread, OrderedDict())
+        fid = new_id("f")
+        frames[fid] = frame.jpeg
+        while len(frames) > _FRAMES_KEPT:
+            frames.popitem(last=False)
+        fields = {
+            "url": frame.url,
+            "title": frame.title,
+            "action": frame.action,
+            "frame": fid,
+            "by_user": frame.by_user,
+            "status": "live",
+            "updated_ts": now_iso(),
+        }
+        card = self._browser_card.get(thread)
+        if card is None and frame.by_user:
+            # the user is driving between runs: refresh the last browser card if there is one
+            for ev in reversed(self.get_timeline(thread).events):
+                if ev.get("type") == "browser":
+                    card = ev["id"]
+                    break
+        if card is not None:
+            existing = self.get_timeline(thread).get(card)
+            fields["frames"] = int((existing or {}).get("frames", 0)) + 1
+            fields["status"] = "live" if thread in self._browser_card else "done"
+            self.patch(thread, card, **fields)
+            return
+        ev = self.emit({"type": "browser", "thread": thread, "frames": 1, **fields})
+        self._browser_card[thread] = ev["id"]
+
+    def browser_frame(self, thread: str, fid: str) -> bytes | None:
+        frames = self.browser_frames.get(thread)
+        return frames.get(fid) if frames is not None else None
 
     # ------------------------------------------------------------------ helpers
     @staticmethod

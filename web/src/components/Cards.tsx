@@ -21,9 +21,11 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { frameUrl } from "../api";
 import type {
   ApprovalEvent,
   ArtifactEvent,
+  BrowserEvent,
   NoticeEvent,
   QuestionEvent,
   RiskLevel,
@@ -345,6 +347,66 @@ export function Notice({ event }: { event: NoticeEvent }) {
 
 // ------------------------------------------------------------------ artifact
 /** A file the agent made. Opens in the in-app viewer (pages render sandboxed, never with the app's origin). */
+/** The agent's browser, as a card: the latest frame, where it is, what it just did. */
+export function BrowserCard({ event, onOpen }: { event: BrowserEvent; onOpen: (id: string) => void }) {
+  const [gone, setGone] = useState(false);
+  const live = event.status === "live";
+  let host = event.url;
+  try {
+    host = new URL(event.url).host;
+  } catch {
+    /* keep the raw url */
+  }
+  return (
+    <div className="rise flex justify-start pl-11 pr-8">
+      <button
+        type="button"
+        onClick={() => onOpen(event.id)}
+        aria-label={`Browser: ${event.title || host}`}
+        className="w-full max-w-[340px] overflow-hidden rounded-3xl rounded-tl-lg border border-border bg-surface shadow-sm hover:bg-surface-2 transition text-left"
+      >
+        <div className="relative aspect-[16/10] bg-surface-2">
+          {gone ? (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-muted">
+              <Globe size={22} />
+              <span className="text-[12px]">Frame no longer available</span>
+            </div>
+          ) : (
+            <img
+              key={event.frame}
+              src={frameUrl(event.thread, event.frame)}
+              alt={event.title || host}
+              onError={() => setGone(true)}
+              className="absolute inset-0 h-full w-full object-cover object-top"
+            />
+          )}
+          <div className="absolute left-2.5 top-2.5 flex items-center gap-1.5 rounded-full bg-black/60 px-2 py-0.5 text-[10.5px] font-semibold text-white">
+            {live ? (
+              <>
+                <span className="h-1.5 w-1.5 rounded-full bg-rose-400 animate-pulse" /> LIVE
+              </>
+            ) : (
+              <>
+                <Globe size={11} /> BROWSER
+              </>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 px-3.5 py-2.5">
+          <div className="min-w-0 flex-1">
+            <div className="text-[13.5px] font-medium truncate">{event.title || host}</div>
+            <div className="text-[12px] text-muted truncate">
+              {event.by_user ? "You" : ""}
+              {event.by_user && event.action.startsWith("You") ? event.action.slice(3) : event.action} · {host}
+            </div>
+          </div>
+          <ChevronRight size={16} className="text-muted shrink-0" />
+        </div>
+      </button>
+    </div>
+  );
+}
+
 export function ArtifactCard({ event, onOpen }: { event: ArtifactEvent; onOpen: (path: string) => void }) {
   const kind = fileKind(event.name);
   const what = kind === "html" ? "Page" : kind === "image" ? "Image" : kind === "data" ? "Data" : kind === "code" ? "Code" : "Document";

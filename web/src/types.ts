@@ -86,6 +86,21 @@ export interface ArtifactEvent extends BaseEvent {
   action: string;
 }
 
+/** The browser as the agent sees it: one card per run, updated frame after frame. */
+export interface BrowserEvent extends BaseEvent {
+  type: "browser";
+  url: string;
+  title: string;
+  /** caption of the last action: "Opened example.com", "Clicked 'Sign in'", "You typed" */
+  action: string;
+  /** id of the latest frame; fetch with frameUrl() — frames live in memory on the server */
+  frame: string;
+  frames: number;
+  status: "live" | "done";
+  by_user?: boolean;
+  updated_ts?: string;
+}
+
 export type TimelineEvent =
   | UserEvent
   | AssistantEvent
@@ -93,7 +108,8 @@ export type TimelineEvent =
   | ApprovalEvent
   | QuestionEvent
   | NoticeEvent
-  | ArtifactEvent;
+  | ArtifactEvent
+  | BrowserEvent;
 
 export interface ThreadMeta {
   id: string;

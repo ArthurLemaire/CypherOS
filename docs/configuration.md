@@ -24,6 +24,7 @@ These win over the file. They cover the settings people change most often and wh
 | `OPENMUSE_WORKSPACE` | `agent.workspace` (default `./workspace`) |
 | `OPENMUSE_SENTINEL_MODE` | `sentinel.mode` |
 | `OPENMUSE_SERVER_HOST`, `OPENMUSE_SERVER_PORT`, `OPENMUSE_SERVER_TOKEN` | `[server]` |
+| `OPENMUSE_BROWSER_ENABLED=1` | `browser.enabled = true` (only ever turns it on; the browser Docker image sets it) |
 | `OPENMUSE_VAULT_KEY` | Fernet key for the vault (default: `<data_dir>/vault.key`) |
 | `OPENMUSE_LOG_LEVEL` | `log_level` |
 
