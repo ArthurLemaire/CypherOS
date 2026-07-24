@@ -85,6 +85,9 @@ jobs:
         run: npm run build
         working-directory: web
       - name: Built app is committed
+        # a dependency bump changes the bundle by definition; the rebuild lands right after
+        # the merge (see CONTRIBUTING.md, "Releasing")
+        if: github.actor != 'dependabot[bot]'
         run: |
           if [ -n "$(git status --porcelain openmuse/server/static)" ]; then
             echo "openmuse/server/static is out of date — run 'cd web && npm run build' and commit the result"
