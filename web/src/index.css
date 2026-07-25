@@ -59,6 +59,32 @@ body {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
+/* Scrollbars: thin and quiet on a desktop, none at all at phone widths or on touch screens —
+   the app is laid out like a phone app and a grey gutter next to the bubbles is not part of it. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--om-border) transparent;
+}
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--om-border);
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+@media (pointer: coarse), (max-width: 480px) {
+  * {
+    scrollbar-width: none;
+  }
+  *::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
