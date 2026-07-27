@@ -99,6 +99,8 @@ class WebUI:
         # Events emitted meanwhile are tagged so the Feed can show what happened while you
         # were away.
         self.background: dict[str, str] = {}
+        # called with every persisted event; the service decides what deserves a push
+        self.on_event: Callable[[dict[str, Any]], None] | None = None
 
     # ------------------------------------------------------------------ run lifecycle
     def begin_run(self, thread: str, background: str | None = None) -> None:
@@ -173,6 +175,11 @@ class WebUI:
             event.setdefault("id", new_id())
             event.setdefault("ts", now_iso())
         self.bus.publish({"kind": "event", "event": event})
+        if persist and self.on_event is not None:
+            try:
+                self.on_event(event)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("event hook failed: {}", exc)
         return event
 
     def patch(self, thread: str, event_id: str, **fields: Any) -> None:
@@ -320,6 +327,11 @@ class WebUI:
     async def ask_approval(self, request: ApprovalRequest) -> ApprovalDecision:
         thread = self.thread()
         approval_id = new_id("ap")
+        loop = asyncio.get_running_loop()
+        fut: asyncio.Future[ApprovalDecision] = loop.create_future()
+        # registered before the card goes out, so whoever reacts to the event (push badge)
+        # already counts it
+        self.pending_approvals[approval_id] = fut
         ev = self.emit(
             {
                 "id": approval_id,
@@ -339,9 +351,6 @@ class WebUI:
             }
         )
         self.set_status("waiting", f"Needs your approval: {request.summary}", thread)
-        loop = asyncio.get_running_loop()
-        fut: asyncio.Future[ApprovalDecision] = loop.create_future()
-        self.pending_approvals[approval_id] = fut
         try:
             decision = await asyncio.wait_for(fut, timeout=self.approval_timeout)
         except TimeoutError:
@@ -374,11 +383,11 @@ class WebUI:
 
     async def ask_user(self, question: str) -> str:
         thread = self.thread()
-        ev = self.emit({"type": "question", "text": question, "status": "pending"})
-        self.set_status("waiting", "Waiting for your answer", thread)
         loop = asyncio.get_running_loop()
         fut: asyncio.Future[str] = loop.create_future()
         self.pending_questions[thread] = fut
+        ev = self.emit({"type": "question", "text": question, "status": "pending"})
+        self.set_status("waiting", "Waiting for your answer", thread)
         try:
             answer = await asyncio.wait_for(fut, timeout=self.approval_timeout)
         except TimeoutError:

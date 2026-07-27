@@ -6,6 +6,7 @@ import type {
   Goal,
   IdeasData,
   MemoryItem,
+  PushInfo,
   SettingsView,
   StateSnapshot,
   TestResult,
@@ -142,6 +143,11 @@ export const api = {
     request<string[]>(`/api/vault/${encodeURIComponent(name)}`, { method: "PUT", body: JSON.stringify({ value }) }),
   vaultDelete: (name: string) => request<{ ok: boolean }>(`/api/vault/${encodeURIComponent(name)}`, { method: "DELETE" }),
   onboarded: (done = true) => request<{ onboarded: boolean }>("/api/onboarded", json({ done })),
+  // push
+  push: () => request<PushInfo>("/api/push"),
+  pushSubscribe: (subscription: Record<string, unknown>) => request<PushInfo>("/api/push/subscribe", json({ subscription })),
+  pushUnsubscribe: (endpoint: string) => request<PushInfo>("/api/push/unsubscribe", json({ endpoint })),
+  pushTest: () => request<TestResult & { sent?: number }>("/api/push/test", { method: "POST" }),
 };
 
 /** WebSocket with automatic reconnect. Returns a disposer. */

@@ -147,6 +147,15 @@ class OnboardedBody(BaseModel):
     done: bool = True
 
 
+class PushSubscribeBody(BaseModel):
+    # the PushSubscription.toJSON() of the browser: {endpoint, expirationTime, keys{p256dh, auth}}
+    subscription: dict[str, Any]
+
+
+class PushUnsubscribeBody(BaseModel):
+    endpoint: str
+
+
 # ----------------------------------------------------------------------------- app factory
 def create_app(settings: Settings, service: MuseService | None = None) -> FastAPI:
     svc = service or MuseService(settings)
@@ -509,6 +518,28 @@ def create_app(settings: Settings, service: MuseService | None = None) -> FastAP
         conn.set_onboarded(body.done)
         return {"onboarded": body.done}
 
+    # ------------------------------------------------------------------ push
+    @app.get("/api/push", dependencies=dep)
+    async def push_view() -> dict[str, Any]:
+        return svc.push.view()
+
+    @app.post("/api/push/subscribe", dependencies=dep)
+    async def push_subscribe(body: PushSubscribeBody, request: Request) -> dict[str, Any]:
+        try:
+            svc.push.subscribe(body.subscription, ua=request.headers.get("user-agent", ""))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return svc.push.view()
+
+    @app.post("/api/push/unsubscribe", dependencies=dep)
+    async def push_unsubscribe(body: PushUnsubscribeBody) -> dict[str, Any]:
+        svc.push.unsubscribe(body.endpoint)
+        return svc.push.view()
+
+    @app.post("/api/push/test", dependencies=dep)
+    async def push_test() -> dict[str, Any]:
+        return await svc.push.test(svc.profile.name)
+
     @app.get("/api/feed", dependencies=dep)
     async def feed(limit: int = Query(60, ge=1, le=500)) -> list[dict[str, Any]]:
         return svc.feed(limit)
@@ -593,6 +624,13 @@ def create_app(settings: Settings, service: MuseService | None = None) -> FastAP
         async def spa(full_path: str) -> Response:
             candidate = (STATIC_DIR / full_path).resolve() if full_path else None
             if candidate and STATIC_DIR.resolve() in candidate.parents and candidate.is_file():
+                if candidate.name == "sw.js":
+                    # the service worker: always revalidated, so a new build reaches phones
+                    return FileResponse(
+                        candidate,
+                        media_type="application/javascript",
+                        headers={"Cache-Control": "no-cache"},
+                    )
                 return FileResponse(candidate)
             index = STATIC_DIR / "index.html"
             if index.is_file():

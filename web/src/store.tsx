@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { api, AuthError, connectWs, getToken } from "./api";
+import { registerWorker, setAppBadge } from "./push";
 import type {
   ApprovalEvent,
   Goal,
@@ -392,6 +393,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const t = window.setTimeout(() => dispatch({ type: "toast", toast: null }), 3500);
     return () => window.clearTimeout(t);
   }, [state.toast]);
+
+  // The service worker (push + app badge) and where a notification tap should land.
+  useEffect(() => {
+    void registerWorker();
+    const openFromUrl = (href: string) => {
+      const url = new URL(href, window.location.origin);
+      const thread = url.searchParams.get("thread");
+      if (thread) dispatch({ type: "activeThread", thread });
+      dispatch({ type: "tab", tab: "chat" });
+    };
+    const initial = new URL(window.location.href);
+    if (initial.searchParams.get("thread")) {
+      openFromUrl(initial.href);
+      initial.searchParams.delete("thread");
+      window.history.replaceState({}, "", initial.toString());
+    }
+    const onMessage = (ev: MessageEvent) => {
+      if (ev.data && ev.data.type === "open") openFromUrl(String(ev.data.url || "/"));
+    };
+    navigator.serviceWorker?.addEventListener("message", onMessage);
+    return () => navigator.serviceWorker?.removeEventListener("message", onMessage);
+  }, []);
+
+  // The number on the app icon: cards waiting for you.
+  useEffect(() => {
+    if (state.loaded) setAppBadge(state.pendingApprovals.length);
+  }, [state.loaded, state.pendingApprovals.length]);
 
   const value = useMemo<StoreValue>(
     () => ({

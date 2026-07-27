@@ -74,6 +74,14 @@ Do not expose port 8787 to the internet directly. Options that keep the token sc
 - **Tailscale / WireGuard**: bind to `0.0.0.0`, open the tailnet address on your phone.
 - **Reverse proxy with TLS** (Caddy, nginx): proxy `/` and `/ws` (WebSocket upgrade) to `127.0.0.1:8787`. The token still applies.
 
+TLS is also what turns on push notifications on the phone: browsers only allow a service worker and Web Push in a secure context (`https://` or `localhost`). A Tailscale address with [`tailscale serve`](https://tailscale.com/kb/1312/serve) or a Caddy block like the one below is enough:
+
+```
+muse.example.com {
+    reverse_proxy 127.0.0.1:8787
+}
+```
+
 ## Updating
 
 ```bash

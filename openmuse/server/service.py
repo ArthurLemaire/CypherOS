@@ -29,6 +29,7 @@ from openmuse.schema import Message
 from openmuse.sentinel.grants import SCOPES
 from openmuse.server.connections import Connections
 from openmuse.server.events import MAIN_THREAD, EventBus, Timeline, new_id, now_iso
+from openmuse.server.push import PushService
 from openmuse.server.webui import WebUI, current_thread
 
 IDEAS_PROMPT = """You are {name}, the user's personal agent. Based on what you know about them, propose {n} concrete, genuinely useful things you could do for them right now. Prefer tasks you can actually complete with your tools (research, comparisons, planning, drafting, tracking, reminders, organising files, advancing their goals).
@@ -210,6 +211,8 @@ class MuseService:
             exclude=(settings.data_dir,),
         )
         self.ui._timelines_provider = lambda: [(t.id, t.timeline) for t in self.threads.values()]
+        self.push = PushService(settings.data_dir)
+        self.ui.on_event = self._maybe_push
         self.app = OpenMuseApp(settings, ui=self.ui, llm=llm, session_id="app")
         self.connections = Connections(self)
         self.token = self._load_token()
@@ -555,6 +558,58 @@ class MuseService:
         if ok:
             self.bus.publish({"kind": "approvals_reset"})
         return ok
+
+    # ------------------------------------------------------------------ push
+    def pending_count(self) -> int:
+        """Cards waiting for the user, across threads — the app badge number."""
+        return len(self.ui.pending_approvals) + len(self.ui.pending_questions)
+
+    def _maybe_push(self, event: dict[str, Any]) -> None:
+        """Called with every persisted event. Pushes: a card that needs you, a background
+        result worth surfacing, a check-in. Quiet passes and step narration stay in the
+        app; the service worker drops the notification anyway if the app is on screen."""
+        if not self.push.enabled or not self.push.subscriptions:
+            return
+        kind = event.get("type")
+        thread = event.get("thread") or MAIN_THREAD
+        url = "/" if thread == MAIN_THREAD else f"/?thread={thread}"
+        name = self.profile.name
+        if kind == "approval" and event.get("status") == "pending":
+            self.push.notify(
+                f"{name} needs your approval",
+                event.get("summary") or event.get("tool") or "",
+                tag=f"approval-{event['id']}",
+                url=url,
+                badge=self.pending_count(),
+                kind="approval",
+            )
+        elif kind == "question" and event.get("status") == "pending":
+            self.push.notify(
+                f"{name} has a question",
+                event.get("text") or "",
+                tag=f"question-{event['id']}",
+                url=url,
+                badge=self.pending_count(),
+                kind="question",
+            )
+        elif (
+            kind == "assistant"
+            and event.get("source") == "background"
+            and not event.get("quiet")
+            and event.get("text")
+        ):
+            about = str(event.get("about") or "")
+            title = about.replace("Working on your goal: ", "") or name
+            if about.startswith("Check-in: "):
+                title = f"{name} · check-in"
+            self.push.notify(
+                title,
+                _first_lines(str(event["text"])),
+                tag=f"background-{thread}",
+                url=url,
+                badge=self.pending_count(),
+                kind="background",
+            )
 
     # ------------------------------------------------------------------ goals
     def advance_goal(self, goal_id: str) -> Goal:
@@ -958,6 +1013,15 @@ class MuseService:
             "goals": [goal_to_dict(g) for g in self.app.goals.list()],
             "settings": self.settings_view(),
         }
+
+
+def _first_lines(text: str, limit: int = 200) -> str:
+    """The first sentence or two of a reply, without markdown, for a notification body."""
+    text = re.sub(r"```.*?```", " ", text, flags=re.S)
+    text = re.sub(r"[*_`#>]+", "", text)
+    text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)
+    text = " ".join(text.split())
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 
 def goal_to_dict(g: Goal) -> dict[str, Any]:

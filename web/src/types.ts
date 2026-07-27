@@ -357,6 +357,15 @@ export interface UpcomingData {
   busy: boolean;
 }
 
+export interface PushInfo {
+  /** pywebpush is installed on the server. */
+  available: boolean;
+  /** VAPID public key (base64url) the browser subscribes with. */
+  public_key: string;
+  subscriptions: number;
+  devices: Array<{ endpoint: string; created_at: string | null; ua: string }>;
+}
+
 export interface FileInfo {
   path: string;
   name: string;
