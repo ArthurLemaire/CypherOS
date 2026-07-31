@@ -88,8 +88,17 @@ async def test_python_and_shell_children_cannot_read_secrets(tmp_path: Path, mon
         "os.environ.get('OPENMUSE_VAULT_KEY'), os.environ.get('PLAIN_SETTING'))"
     )
     assert r.ok and r.output.startswith("None None yes")
-    r = await Shell(workspace=tmp_path).execute(command="echo [$MY_SECRET_TOKEN] [$PLAIN_SETTING]")
-    assert r.ok and r.output.startswith("[] [yes]")
+    if sys.platform == "win32":
+        # cmd.exe leaves an unset %VAR% as it is — which shows the secret is not there
+        r = await Shell(workspace=tmp_path).execute(
+            command="echo [%MY_SECRET_TOKEN%] [%PLAIN_SETTING%]"
+        )
+        assert r.ok and r.output.startswith("[%MY_SECRET_TOKEN%] [yes]")
+    else:
+        r = await Shell(workspace=tmp_path).execute(
+            command="echo [$MY_SECRET_TOKEN] [$PLAIN_SETTING]"
+        )
+        assert r.ok and r.output.startswith("[] [yes]")
 
 
 def test_python_reach_decides_the_risk(tmp_path: Path):
