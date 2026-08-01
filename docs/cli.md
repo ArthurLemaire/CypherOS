@@ -44,9 +44,10 @@ Advance every active goal, sleep, repeat. Runs in Sentinel `auto` mode, so pair 
 ## Goals
 
 ```bash
-openmuse goals list [--status active|paused|done]
+openmuse goals list [--status active|paused|done] [--category health|finance|career|learning|…]
 openmuse goals show g_1a2b3c
-openmuse goals add "Learn Rust" -s "Read the book, ch. 1–4" -s "Build a CLI" -s "Publish a crate"
+openmuse goals add "Learn Rust" -s "Read the book, ch. 1–4" -s "Build a CLI" -s "Publish a crate" \
+    --category learning --due 2026-12-31 --check-in "weekly sun 19:00"
 openmuse goals run g_1a2b3c            # one background pass now
 openmuse goals status g_1a2b3c paused
 openmuse goals delete g_1a2b3c

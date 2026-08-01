@@ -22,7 +22,8 @@ import { ApprovalCard, RiskBadge, grantSubject, scopeLabel, toolIcon } from "../
 import { Sheet } from "../components/Sheet";
 import { useStore } from "../store";
 import type { ActivityData, AuditEntry, Grant, RiskLevel, UpcomingData } from "../types";
-import { cx, timeShort } from "../util";
+import { cx, relativeTime, timeShort } from "../util";
+import { describeCadence } from "./GoalsScreen";
 
 type View = "menu" | "activity" | "approvals" | "permissions" | "upcoming";
 
@@ -299,6 +300,26 @@ function UpcomingView({ onSettings }: { onSettings: () => void }) {
           </ul>
         )}
       </div>
+
+      {data.check_ins.length > 0 && (
+        <div>
+          <div className="text-[12px] uppercase tracking-wide text-muted font-semibold mb-1.5">Check-ins</div>
+          <ul className="space-y-1.5">
+            {data.check_ins.map((c) => (
+              <li key={c.goal_id} className="flex items-center gap-2.5 rounded-2xl bg-surface-2/60 px-3 py-2">
+                <Bell size={15} className="text-muted shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[13.5px] font-medium truncate">{c.title}</div>
+                  <div className="text-[11.5px] text-muted truncate">
+                    {relativeTime(c.at)} · {timeShort(c.at)} · {describeCadence(c.cadence).toLowerCase()}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-1.5 text-[12px] text-muted">Reminders you asked for; they arrive whatever the proactivity level, but wait out quiet hours.</div>
+        </div>
+      )}
     </div>
   );
 }

@@ -138,12 +138,40 @@ export interface GoalStep {
   updated_at: string;
 }
 
+export type GoalCategory =
+  | ""
+  | "health"
+  | "finance"
+  | "career"
+  | "learning"
+  | "relationships"
+  | "family"
+  | "home"
+  | "travel"
+  | "creative"
+  | "other";
+
+/** A plan change the agent suggested; the user accepts or dismisses it. */
+export interface GoalProposal {
+  reason: string;
+  steps: string[];
+  created_at: string;
+}
+
 export interface Goal {
   id: string;
   title: string;
   description: string;
   status: "active" | "paused" | "done" | "cancelled";
   notes: string;
+  category: GoalCategory;
+  /** Target date, YYYY-MM-DD, or "". */
+  due: string;
+  overdue: boolean;
+  /** Reminder cadence such as "daily 08:00" or "weekly mon 09:00", or "". */
+  check_in: string;
+  next_check_in: string | null;
+  proposal: GoalProposal | null;
   created_at: string;
   updated_at: string;
   progress: { done: number; total: number };
@@ -318,9 +346,14 @@ export interface UpcomingData {
   queue: Array<{
     goal_id: string;
     title: string;
+    category: GoalCategory;
+    due: string | null;
+    overdue: boolean;
     next_step: string | null;
     progress: { done: number; total: number };
   }>;
+  /** Reminders the user asked for, soonest first. */
+  check_ins: Array<{ goal_id: string; title: string; at: string; cadence: string }>;
   busy: boolean;
 }
 

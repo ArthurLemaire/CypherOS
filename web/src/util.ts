@@ -9,18 +9,18 @@ export function timeShort(ts: string | undefined): string {
   return `${d.toLocaleDateString([], { month: "short", day: "numeric" })} ${time}`;
 }
 
+/** "3 min ago" for the past, "in 2 h" / "in 9 d" for the future. */
 export function relativeTime(ts: string | null | undefined): string {
   if (!ts) return "";
   const diff = Date.now() - new Date(ts).getTime();
   if (Number.isNaN(diff)) return "";
-  const s = Math.round(diff / 1000);
-  if (s < 45) return "just now";
+  const s = Math.round(Math.abs(diff) / 1000);
+  if (s < 45) return diff >= 0 ? "just now" : "any moment";
   const m = Math.round(s / 60);
-  if (m < 60) return `${m} min ago`;
   const h = Math.round(m / 60);
-  if (h < 24) return `${h} h ago`;
   const d = Math.round(h / 24);
-  return `${d} d ago`;
+  const span = m < 60 ? `${m} min` : h < 24 ? `${h} h` : `${d} d`;
+  return diff >= 0 ? `${span} ago` : `in ${span}`;
 }
 
 export function cx(...parts: Array<string | false | null | undefined>): string {

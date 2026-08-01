@@ -92,12 +92,15 @@ export const api = {
   revokeGrant: (key: string) =>
     request<{ ok: boolean }>(`/api/approvals/grants/${encodeURIComponent(key)}`, { method: "DELETE" }),
   goals: () => request<Goal[]>("/api/goals"),
-  createGoal: (title: string, description: string, steps: string[]) =>
-    request<Goal>("/api/goals", json({ title, description, steps })),
+  createGoal: (body: { title: string; description?: string; steps?: string[]; category?: string; due?: string; check_in?: string }) =>
+    request<Goal>("/api/goals", json(body)),
   patchGoal: (id: string, patch: Record<string, unknown>) =>
     request<Goal>(`/api/goals/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   addStep: (id: string, title: string) => request<Goal>(`/api/goals/${id}/steps`, json({ title })),
   advanceGoal: (id: string) => request<Goal>(`/api/goals/${id}/advance`, { method: "POST" }),
+  checkInGoal: (id: string) => request<Goal>(`/api/goals/${id}/check-in`, { method: "POST" }),
+  acceptProposal: (id: string) => request<Goal>(`/api/goals/${id}/proposal/accept`, { method: "POST" }),
+  dismissProposal: (id: string) => request<Goal>(`/api/goals/${id}/proposal`, { method: "DELETE" }),
   deleteGoal: (id: string) => request<{ ok: boolean }>(`/api/goals/${id}`, { method: "DELETE" }),
   memory: () => request<MemoryItem[]>("/api/memory"),
   addMemory: (content: string, category: string) =>

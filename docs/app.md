@@ -38,7 +38,11 @@ Five tabs — Chat, Feed, Ideas, Goals, Library — and a menu behind the avatar
 
 **Ideas.** Five suggestions generated from your goals, memory and recent conversation. Tap one to send it as a message; *Refresh* regenerates.
 
-**Goals.** Goals created by the agent or by you (the `+` button). Each has a plan; steps are pending, in progress, done or blocked, with notes. *Work on it now* runs one background pass on that goal and posts the result to the main chat.
+**Goals.** Goals created by the agent or by you (the `+` button), filed under an area of life — health, finance, career, learning, relationships, family, home, travel, creative — with an optional target date and an optional check-in cadence. Filter chips at the top show one area at a time. Each goal has a plan; steps are pending, in progress, done or blocked, with notes. *Work on it now* runs one background pass on that goal and posts the result to the main chat; *Check in with me now* sends the reminder message right away.
+
+- *Target date.* Cards say "Due in 5 days" / "Was due Sep 12"; overdue goals go first when the background pass picks what to work on, and the agent is told about them.
+- *Check-ins.* "Every day at 08:00", "Weekdays at 07:30", "Mondays at 09:00", "Monthly on the 1st": at that time the agent sends one short message — what the goal is about, what the next small step is, how is it going — and does no work. Check-ins arrive at any proactivity level (you asked for them) but wait out quiet hours. The *Upcoming* view lists the next ones.
+- *Plan changes.* When the agent learns the plan no longer fits, it does not edit it; it proposes a revised set of remaining steps with a reason. The proposal shows as a card at the top of Goals and inside the goal — *Use Muse's plan* keeps the finished steps and swaps the rest, *Keep my plan* leaves everything as it is. Either way a note lands on the goal.
 
 **Library.** Every file in the agent's workspace, newest first, filtered by kind (pages, documents, images, data, code) and searchable. Files open in the app: pages render live, Markdown is formatted, CSV becomes a table, images and PDFs display inline. A page the agent wrote runs in a sandboxed frame with an opaque origin — it cannot read the access token or call the API — and the server sends `Content-Security-Policy: sandbox` with every HTML file for the same reason.
 
@@ -87,15 +91,17 @@ Everything the app does goes through this API, so another front-end (a Telegram 
 | POST | `/api/approvals/{id}` `{approved, scope, reason}` | answer a card; `scope` is one of the card's `grant_options` (`once`, `task`, `session`, `24h`, `always`) |
 | DELETE | `/api/approvals` | forget every granted permission |
 | DELETE | `/api/approvals/grants/{key}` | revoke one permission (`key` as listed by `/api/activity`, e.g. `shell:git`) |
-| GET / POST | `/api/goals` | list / create `{title, description, steps[]}` |
-| GET / PATCH / DELETE | `/api/goals/{id}` | read / update `{status, note, step_index (1-based), step_status, step_note}` / delete |
+| GET / POST | `/api/goals[?status=&category=]` | list / create `{title, description, steps[], category, due (YYYY-MM-DD), check_in ("daily 08:00", "weekdays 07:30", "weekly mon 09:00", "monthly 1 09:00")}` |
+| GET / PATCH / DELETE | `/api/goals/{id}` | read / update `{status, note, step_index (1-based), step_status, step_note, title, description, category, due, check_in}` (`""` clears due / check_in) / delete |
 | POST | `/api/goals/{id}/steps` `{title}` | add a step |
 | POST | `/api/goals/{id}/advance` | run one background pass now |
+| POST | `/api/goals/{id}/check-in` | send the reminder message now |
+| POST / DELETE | `/api/goals/{id}/proposal/accept`, `/api/goals/{id}/proposal` | accept / dismiss the agent's proposed plan change |
 | GET / POST | `/api/memory` · DELETE `/api/memory/{id}` | list / add `{content, category}` / forget |
 | GET | `/api/ideas?refresh=1` | cached or regenerated suggestions |
 | GET | `/api/activity` | audit tail, granted permissions (`grants[]` with `key`, `tool`, `target`, `scope`, `expires_at`), taint flag |
 | GET | `/api/feed?limit=` | the Feed: `{id, ts, kind (background · artifact · approval · question), title, text, thread, thread_title, path}` newest first |
-| GET | `/api/upcoming` | `{proactive, interval_minutes, next_pass_at, queue[{goal_id, title, next_step, progress}], busy}` |
+| GET | `/api/upcoming` | `{proactivity, proactive, interval_minutes, effective_interval_minutes, quiet_hours, quiet_until, next_pass_at, queue[{goal_id, title, category, due, overdue, next_step, progress}], check_ins[{goal_id, title, at, cadence}], busy}` |
 | GET | `/api/files` · `/api/files/{path}?download=1` | list / read workspace files (HTML and SVG are served with `Content-Security-Policy: sandbox`) |
 | GET / PUT | `/api/settings` | view / change `{profile{name, emoji, color, style, user_name, proactive, goal_interval_minutes}, sentinel_mode, show_thinking, language}`; the view includes `onboarded` and `llm_ready` |
 | GET | `/api/connections` | model (`key_source`: vault · config · missing · none), provider presets, email, browser, MCP servers (`connected`, `tools`, `from_app`), vault names, `onboarded` |

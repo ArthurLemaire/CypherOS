@@ -120,7 +120,14 @@ function NextUp({
                 : "Soon"}
           : <span className="font-medium">{next.title}</span>
           {next.next_step && <span className="text-muted"> — {next.next_step}</span>}
+          {next.overdue && <span className="text-rose-500 font-medium"> · overdue</span>}
           {data.queue.length > 1 && <span className="text-muted"> · {data.queue.length - 1} more in line</span>}
+        </div>
+      )}
+      {data.check_ins[0] && (
+        <div className="mt-1.5 text-[12.5px] text-muted">
+          Check-in on <span className="font-medium text-fg">{data.check_ins[0].title}</span> {relativeTime(data.check_ins[0].at)}
+          {data.check_ins.length > 1 && ` · ${data.check_ins.length - 1} more`}
         </div>
       )}
     </div>
