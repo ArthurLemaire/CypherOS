@@ -21,7 +21,7 @@ from tenacity import (
 from openmuse.config import LLMSettings
 from openmuse.llm.base import BaseLLM, DeltaCallback, ThinkStreamFilter, split_think
 from openmuse.logger import logger
-from openmuse.schema import Function, LLMResponse, Message, ToolCall
+from openmuse.schema import Function, LLMResponse, Message, ToolCall, new_id
 
 _RETRYABLE = (
     openai.APIConnectionError,
@@ -97,7 +97,7 @@ class OpenAIChatLLM(BaseLLM):
         reasoning = getattr(msg, "reasoning_content", None) or think_reasoning
         tool_calls = [
             ToolCall(
-                id=tc.id or ToolCall().id,
+                id=tc.id or new_id(),
                 function=Function(name=tc.function.name, arguments=tc.function.arguments or "{}"),
             )
             for tc in (msg.tool_calls or [])
@@ -167,7 +167,7 @@ class OpenAIChatLLM(BaseLLM):
 
         tool_calls = [
             ToolCall(
-                id=acc["id"] or ToolCall().id,
+                id=acc["id"] or new_id(),
                 function=Function(name=acc["name"], arguments=acc["arguments"] or "{}"),
             )
             for _, acc in sorted(tool_acc.items())

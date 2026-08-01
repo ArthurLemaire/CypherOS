@@ -13,6 +13,7 @@ rewritten behind the user's back.
 
 from __future__ import annotations
 
+import builtins  # ``list`` is a method name below; the class body needs the type
 import json
 import re
 import sqlite3
@@ -381,7 +382,7 @@ class GoalStore:
         return cur.rowcount > 0
 
     # ------------------------------------------------------------------ check-ins
-    def due_check_ins(self, now: datetime | None = None) -> list[Goal]:
+    def due_check_ins(self, now: datetime | None = None) -> builtins.list[Goal]:
         """Active goals whose reminder time has come."""
         now_iso = (now or datetime.now(UTC)).astimezone(UTC).isoformat(timespec="seconds")
         rows = self._conn.execute(
@@ -410,7 +411,7 @@ class GoalStore:
         return self.get(goal_id)
 
     # ------------------------------------------------------------------ proposals
-    def propose(self, goal_id: str, reason: str, steps: list[str]) -> Goal | None:
+    def propose(self, goal_id: str, reason: str, steps: builtins.list[str]) -> Goal | None:
         """Suggest a revised plan: the remaining steps to replace the current pending ones."""
         goal = self.get(goal_id)
         if not goal:

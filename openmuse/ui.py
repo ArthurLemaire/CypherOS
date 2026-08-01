@@ -15,6 +15,10 @@ from openmuse.schema import RiskLevel, ToolCall, ToolResult
 ApprovalScope = Literal["once", "task", "session", "24h", "always"]
 
 
+def _once() -> list[ApprovalScope]:
+    return ["once"]
+
+
 class ApprovalRequest(BaseModel):
     tool: str
     args: dict[str, Any]
@@ -29,7 +33,7 @@ class ApprovalRequest(BaseModel):
     target: str | None = None
     grant_key: str = ""
     # Scopes the Sentinel is willing to grant for this call, in display order.
-    grant_options: list[ApprovalScope] = Field(default_factory=lambda: ["once"])
+    grant_options: list[ApprovalScope] = Field(default_factory=_once)
 
 
 class ApprovalDecision(BaseModel):

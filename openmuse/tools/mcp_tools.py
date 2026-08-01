@@ -124,8 +124,8 @@ class MCPManager:
             try:  # mcp >= 2
                 from mcp.client.streamable_http import streamable_http_client as http_client
             except ImportError:  # mcp 1.x
-                from mcp.client.streamable_http import (
-                    streamablehttp_client as http_client,  # type: ignore
+                from mcp.client.streamable_http import (  # type: ignore[attr-defined,no-redef]
+                    streamablehttp_client as http_client,
                 )
             try:
                 streams = await self._stack.enter_async_context(http_client(cfg.url))

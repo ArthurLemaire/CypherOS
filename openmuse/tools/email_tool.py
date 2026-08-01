@@ -57,7 +57,7 @@ def _body_of(msg: email.message.Message) -> str:
         if part.get_content_disposition() == "attachment":
             continue
         payload = part.get_payload(decode=True)
-        if payload is None:
+        if not isinstance(payload, bytes):
             continue
         charset = part.get_content_charset() or "utf-8"
         try:

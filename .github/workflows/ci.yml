@@ -47,6 +47,9 @@ jobs:
       - name: Ruff format
         run: uv run ruff format --check openmuse tests
 
+      - name: Mypy
+        run: uv run mypy
+
       - name: Tests (no live LLM calls)
         run: uv run python -m pytest -q -m "not live"
 
