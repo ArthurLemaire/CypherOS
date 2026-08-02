@@ -1,4 +1,4 @@
-# Dependency updates, batched so they do not flood the PR list.
+# Dependency updates, batched so they do not flood the PR list: one PR per ecosystem.
 version: 2
 updates:
   - package-ecosystem: pip
@@ -25,6 +25,9 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
     labels: ["dependencies"]
 
   - package-ecosystem: docker
@@ -32,3 +35,8 @@ updates:
     schedule:
       interval: monthly
     labels: ["dependencies"]
+    ignore:
+      # the base image follows the Python line we test against; bumping the interpreter is a
+      # deliberate change, not a dependency update
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
