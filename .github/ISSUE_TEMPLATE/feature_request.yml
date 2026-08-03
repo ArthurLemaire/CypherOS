@@ -1,0 +1,41 @@
+name: Feature request
+description: Something Muse does that OpenMuse does not yet, or something OpenMuse should do.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        OpenMuse follows Meta's Muse closely. If your request is "Muse does X", say so and link to
+        where it is described — those are the requests most likely to land. Ideas outside Muse are
+        welcome too; just say what problem they solve.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you are trying to do
+      description: The task or situation, in a sentence or two. Not the solution yet.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like to happen
+      description: How it should look in the app, the CLI or the API. Mock-ups and examples help.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do today instead
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Phone / web app
+        - Agent behaviour and prompts
+        - Sentinel, approvals, vault
+        - Tools and connections (email, browser, MCP, …)
+        - Goals, memory, proactivity
+        - Models and providers
+        - Docs
+        - Other

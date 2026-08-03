@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/OpenMuseAgent/OpenMuse/discussions
+    about: Setup help, "how do I…", and half-formed ideas go to Discussions.
+  - name: Security issue
+    url: https://github.com/OpenMuseAgent/OpenMuse/blob/main/SECURITY.md
+    about: A way past the Sentinel, a leaked secret, an SSRF — report privately, see SECURITY.md.
