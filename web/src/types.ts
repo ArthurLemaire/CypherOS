@@ -20,6 +20,8 @@ export interface AssistantEvent extends BaseEvent {
   type: "assistant";
   text: string;
   reasoning?: string;
+  /** A background pass that found nothing worth interrupting you for. */
+  quiet?: boolean;
 }
 
 export interface ToolEvent extends BaseEvent {
@@ -117,9 +119,16 @@ export interface Profile {
   style: string;
   /** What you want to be called. */
   user_name: string;
+  /** How eagerly background work runs and reaches out. */
+  proactivity: Proactivity;
+  /** `proactivity !== "off"`, kept for older clients. */
   proactive: boolean;
   goal_interval_minutes: number;
+  /** "22:00-08:00" in the server's local time, or "" for none. */
+  quiet_hours: string;
 }
+
+export type Proactivity = "off" | "low" | "default" | "high";
 
 export interface GoalStep {
   idx: number;
@@ -293,11 +302,18 @@ export interface FeedItem {
   thread: string;
   thread_title: string;
   path?: string | null;
+  quiet?: boolean;
 }
 
 export interface UpcomingData {
   proactive: boolean;
+  proactivity: Proactivity;
   interval_minutes: number;
+  /** The interval after the level's stretch/shrink. */
+  effective_interval_minutes: number;
+  quiet_hours: string;
+  /** End of the current quiet window, if we are in one. */
+  quiet_until: string | null;
   next_pass_at: string | null;
   queue: Array<{
     goal_id: string;

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from openmuse.logger import logger
+from openmuse.prompts import split_quiet
 from openmuse.schema import ToolCall, ToolResult
 from openmuse.server.events import MAIN_THREAD, EventBus, Timeline, new_id, now_iso
 from openmuse.ui import ApprovalDecision, ApprovalRequest
@@ -213,9 +214,15 @@ class WebUI:
         if sid is not None:
             self.bus.publish({"kind": "stream_end", "thread": thread, "id": sid})
         text = (content or "").strip()
+        quiet = False
+        if thread in self.background:
+            quiet, text = split_quiet(text)
+            text = text.strip()
         if not text and not (self.show_thinking and reasoning):
             return
         event: dict[str, Any] = {"id": sid or new_id("a"), "type": "assistant", "text": text}
+        if quiet:
+            event["quiet"] = True
         if self.show_thinking and reasoning:
             event["reasoning"] = reasoning.strip()
         self.last_assistant_text[thread] = text

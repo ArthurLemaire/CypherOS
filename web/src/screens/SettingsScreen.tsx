@@ -1,9 +1,10 @@
-import { Check, ChevronRight, LogOut, Shield, ShieldAlert, ShieldCheck } from "lucide-react";
+import { Check, ChevronRight, LogOut, Moon, Shield, ShieldAlert, ShieldCheck } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { api, setToken } from "../api";
 import { Avatar } from "../components/Avatar";
 import { BackBar } from "../components/BackBar";
 import { useStore } from "../store";
+import type { Proactivity } from "../types";
 import { cx } from "../util";
 
 const EMOJI = ["✨", "🌙", "🪐", "🌿", "🔥", "🌊", "🦉", "🦊", "🐙", "🎯", "🧭", "💎", "🍀", "🎈", "🤖", "🧠"];
@@ -197,28 +198,33 @@ export function SettingsScreen() {
           )}
         </Section>
 
-        {/* Background work */}
-        <Section title="Background work">
-          <Toggle
-            label="Keep working on goals while I'm away"
-            hint={`Every ${state.profile?.goal_interval_minutes ?? 60} minutes, advance one active goal and post an update in the main chat.`}
-            checked={!!state.profile?.proactive}
-            onChange={(v) => void update({ profile: { proactive: v } })}
-          />
+        {/* Proactivity */}
+        <Section title="Proactivity">
+          <ProactivityDial value={state.profile?.proactivity ?? "default"} onChange={(v) => void update({ profile: { proactivity: v } })} />
           <div className="flex items-center gap-3">
-            <label className="text-[13.5px] flex-1">Check-in interval</label>
+            <label className="text-[13.5px] flex-1">
+              Check-in interval
+              {state.profile && state.profile.proactivity !== "default" && state.profile.proactivity !== "off" && (
+                <span className="block text-[12px] text-muted">
+                  {state.profile.proactivity === "low" ? "Doubled" : "Halved"} at this level
+                </span>
+              )}
+            </label>
             <select
               value={state.profile?.goal_interval_minutes ?? 60}
               onChange={(e) => void update({ profile: { goal_interval_minutes: Number(e.target.value) } })}
               className="rounded-2xl bg-surface-2 px-3 py-2 text-[13.5px] outline-none"
             >
-              {[15, 30, 60, 120, 240, 480, 1440].map((m) => (
-                <option key={m} value={m}>
-                  {m < 60 ? `${m} min` : `${m / 60} h`}
-                </option>
-              ))}
+              {[...new Set([15, 30, 60, 120, 240, 480, 1440, state.profile?.goal_interval_minutes ?? 60])]
+                .sort((a, b) => a - b)
+                .map((m) => (
+                  <option key={m} value={m}>
+                    {m < 60 ? `${m} min` : m % 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m / 60} h`}
+                  </option>
+                ))}
             </select>
           </div>
+          <QuietHours value={state.profile?.quiet_hours ?? ""} onChange={(v) => void update({ profile: { quiet_hours: v } })} />
         </Section>
 
         {/* Model */}
@@ -284,6 +290,77 @@ export function SettingsScreen() {
           </button>
         </Section>
       </div>
+    </div>
+  );
+}
+
+const LEVELS: Array<{ id: Proactivity; title: string; text: string }> = [
+  { id: "off", title: "Off", text: "Only works when you ask." },
+  { id: "low", title: "Low", text: "Checks in half as often; speaks up only when a step is done or it needs you." },
+  { id: "default", title: "Default", text: "Works on goals on schedule; reports real progress, stays quiet otherwise." },
+  { id: "high", title: "High", text: "Checks in twice as often and always reports, even 'still on track'." },
+];
+
+export function ProactivityDial({ value, onChange }: { value: Proactivity; onChange: (v: Proactivity) => void }) {
+  const current = LEVELS.find((l) => l.id === value) ?? LEVELS[2];
+  return (
+    <div>
+      <div className="flex items-center gap-3">
+        <div className="flex-1">
+          <div className="text-[14px]">How much it does on its own</div>
+          <div className="text-[12.5px] text-muted leading-snug">{current.text}</div>
+        </div>
+      </div>
+      <div className="mt-2 grid grid-cols-4 gap-1 rounded-2xl bg-surface-2 p-1">
+        {LEVELS.map((l) => (
+          <button
+            key={l.id}
+            type="button"
+            onClick={() => onChange(l.id)}
+            className={cx(
+              "rounded-xl py-1.5 text-[13px] font-medium transition",
+              value === l.id ? "bg-surface shadow-sm text-accent" : "text-muted",
+            )}
+          >
+            {l.title}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function QuietHours({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [start, end] = value ? value.split("-") : ["", ""];
+  const on = !!value;
+  const set = (s: string, e: string) => onChange(s && e ? `${s}-${e}` : "");
+  return (
+    <div>
+      <label className="flex items-start gap-3 cursor-pointer">
+        <div className="flex-1">
+          <div className="text-[14px] flex items-center gap-1.5">
+            <Moon size={15} className="text-muted" /> Quiet hours
+          </div>
+          <div className="text-[12.5px] text-muted leading-snug">No background work in this window; anything due waits until it ends.</div>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={on}
+          onClick={() => set(on ? "" : "22:00", on ? "" : "08:00")}
+          className={cx("relative mt-0.5 h-7 w-12 shrink-0 rounded-full transition", on ? "bg-accent" : "bg-surface-2 border border-border")}
+        >
+          <span className={cx("absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition", on ? "left-[22px]" : "left-0.5")} />
+        </button>
+      </label>
+      {on && (
+        <div className="mt-2 flex items-center gap-2 text-[13.5px]">
+          <span className="text-muted">From</span>
+          <input type="time" value={start} onChange={(e) => set(e.target.value, end)} className="rounded-xl bg-surface-2 px-2.5 py-1.5 outline-none" />
+          <span className="text-muted">to</span>
+          <input type="time" value={end} onChange={(e) => set(start, e.target.value)} className="rounded-xl bg-surface-2 px-2.5 py-1.5 outline-none" />
+        </div>
+      )}
     </div>
   );
 }

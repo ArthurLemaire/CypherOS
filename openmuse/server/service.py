@@ -67,6 +67,12 @@ STARTER_IDEAS = [
 ]
 
 
+PROACTIVITY = ("off", "low", "default", "high")
+# how the configured interval stretches or shrinks per level
+_INTERVAL_FACTOR = {"low": 2.0, "default": 1.0, "high": 0.5}
+_QUIET_HOURS_RE = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)-([01]?\d|2[0-3]):([0-5]\d)$")
+
+
 @dataclass
 class Profile:
     name: str = "Muse"
@@ -75,8 +81,42 @@ class Profile:
     style: str = ""
     # what the user wants to be called
     user_name: str = ""
-    proactive: bool = False
+    # how eagerly background work runs and reaches out: off · low · default · high
+    proactivity: str = "default"
     goal_interval_minutes: int = 60
+    # "22:00-08:00" (server local time): no background passes in this window
+    quiet_hours: str = ""
+
+    @property
+    def proactive(self) -> bool:
+        return self.proactivity != "off"
+
+    @property
+    def interval_seconds(self) -> int:
+        factor = _INTERVAL_FACTOR.get(self.proactivity, 1.0)
+        return max(60, int(self.goal_interval_minutes * 60 * factor))
+
+    def in_quiet_hours(self, now: datetime | None = None) -> bool:
+        window = _parse_quiet_hours(self.quiet_hours)
+        if window is None:
+            return False
+        start, end = window
+        local = (now or datetime.now()).astimezone()
+        minute = local.hour * 60 + local.minute
+        if start <= end:
+            return start <= minute < end
+        return minute >= start or minute < end  # wraps midnight
+
+    def quiet_hours_end(self, now: datetime | None = None) -> datetime | None:
+        """When the current quiet window ends, or None if we are not in one."""
+        if not self.in_quiet_hours(now):
+            return None
+        _, end = _parse_quiet_hours(self.quiet_hours)  # type: ignore[misc]
+        now = (now or datetime.now()).astimezone()
+        candidate = now.replace(hour=end // 60, minute=end % 60, second=0, microsecond=0)
+        if candidate <= now:
+            candidate += timedelta(days=1)
+        return candidate
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -85,23 +125,42 @@ class Profile:
             "color": self.color,
             "style": self.style,
             "user_name": self.user_name,
+            "proactivity": self.proactivity,
             "proactive": self.proactive,
             "goal_interval_minutes": self.goal_interval_minutes,
+            "quiet_hours": self.quiet_hours,
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Profile:
         p = cls()
         for k, v in data.items():
-            if hasattr(p, k) and v is not None:
+            if k != "proactive" and hasattr(p, k) and v is not None:
                 setattr(p, k, v)
+        if "proactivity" not in data and "proactive" in data:
+            # profiles written before the dial existed
+            p.proactivity = "default" if data["proactive"] else "off"
+        if p.proactivity not in PROACTIVITY:
+            p.proactivity = "default"
         p.name = (str(p.name).strip() or "Muse")[:40]
         p.emoji = str(p.emoji)[:8] or "✨"
         p.color = str(p.color)[:16] or "#7c3aed"
         p.style = str(p.style)[:1000]
         p.user_name = str(p.user_name).strip()[:60]
         p.goal_interval_minutes = max(5, min(int(p.goal_interval_minutes), 24 * 60))
+        p.quiet_hours = str(p.quiet_hours).strip()
+        if p.quiet_hours and _parse_quiet_hours(p.quiet_hours) is None:
+            p.quiet_hours = ""
         return p
+
+
+def _parse_quiet_hours(value: str) -> tuple[int, int] | None:
+    m = _QUIET_HOURS_RE.match(value.strip()) if value else None
+    if not m:
+        return None
+    start = int(m.group(1)) * 60 + int(m.group(2))
+    end = int(m.group(3)) * 60 + int(m.group(4))
+    return (start, end) if start != end else None
 
 
 @dataclass
@@ -227,8 +286,29 @@ class MuseService:
         a.instructions = (self._base_instructions.rstrip() + extra).strip()
 
     def update_profile(self, data: dict[str, Any]) -> Profile:
-        merged = {**self.profile.to_dict(), **{k: v for k, v in data.items() if v is not None}}
+        data = {k: v for k, v in data.items() if v is not None}
+        if "proactive" in data and "proactivity" not in data:
+            # the old switch: off, or back to the default level
+            data["proactivity"] = (
+                "off"
+                if not data["proactive"]
+                else (self.profile.proactivity if self.profile.proactive else "default")
+            )
+        data.pop("proactive", None)
+        merged = {**self.profile.to_dict(), **data}
+        merged.pop("proactive", None)
+        before = (
+            self.profile.proactivity,
+            self.profile.goal_interval_minutes,
+            self.profile.quiet_hours,
+        )
         self.profile = Profile.from_dict(merged)
+        if before != (
+            self.profile.proactivity,
+            self.profile.goal_interval_minutes,
+            self.profile.quiet_hours,
+        ):
+            self.schedule_next_pass()
         self._save_profile()
         self._apply_profile()
         self.bus.publish({"kind": "profile", "profile": self.profile.to_dict()})
@@ -418,15 +498,22 @@ class MuseService:
                     purpose = thread.purposes.pop(text, None)
                     self.ui.begin_run(thread.id, background=purpose)
                     final = await thread.agent.run(text, purpose=purpose)
+                    quiet, final = (
+                        prompts.split_quiet(final or "") if purpose else (False, final or "")
+                    )
                     if (
-                        final
-                        and final.strip()
+                        final.strip()
                         and thread.id not in self.ui.reply_shown
                         and final.strip() != self.ui.last_assistant_text.get(thread.id)
                     ):
-                        self.ui.emit(
-                            {"type": "assistant", "text": final.strip(), "thread": thread.id}
-                        )
+                        event: dict[str, Any] = {
+                            "type": "assistant",
+                            "text": final.strip(),
+                            "thread": thread.id,
+                        }
+                        if quiet:
+                            event["quiet"] = True
+                        self.ui.emit(event)
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:  # noqa: BLE001
@@ -476,21 +563,43 @@ class MuseService:
             raise KeyError(goal_id)
         if goal.status != "active":
             raise ValueError(f"goal is {goal.status}")
+        surfacing = prompts.SURFACING.get(self.profile.proactivity, prompts.SURFACING["default"])
         self.send(
             MAIN_THREAD,
-            prompts.ADVANCE_GOAL_PROMPT.format(goal=goal.render()),
+            prompts.ADVANCE_GOAL_PROMPT.format(goal=goal.render(), surfacing=surfacing),
             source="goal",
             label=f"Working on your goal: {goal.title}",
         )
         return goal
 
+    def _next_pass_delay(self) -> float:
+        """Seconds until the next background pass: the level's interval, pushed past the
+        quiet window if it would land inside one."""
+        delay = float(self.profile.interval_seconds)
+        due = datetime.now().astimezone() + timedelta(seconds=delay)
+        end = self.profile.quiet_hours_end(due)
+        if end is not None:
+            # a second past the end, so the pass does not wake up still inside the window
+            delay = max(delay, (end - datetime.now().astimezone()).total_seconds() + 1)
+        return delay
+
+    def schedule_next_pass(self) -> None:
+        """(Re)compute when the next background pass is due — on start, after a pass, and
+        whenever the level, the interval or the quiet hours change."""
+        self.next_goal_pass_at = datetime.now(UTC) + timedelta(seconds=self._next_pass_delay())
+
     async def _goal_scheduler(self) -> None:
+        self.schedule_next_pass()
         while True:
             try:
-                interval = max(60, self.profile.goal_interval_minutes * 60)
-                self.next_goal_pass_at = datetime.now(UTC) + timedelta(seconds=interval)
-                await asyncio.sleep(interval)
-                if not self.profile.proactive:
+                due = self.next_goal_pass_at or datetime.now(UTC)
+                remaining = (due - datetime.now(UTC)).total_seconds()
+                if remaining > 0:
+                    # short naps so a changed setting takes effect without a restart
+                    await asyncio.sleep(min(remaining, 30))
+                    continue
+                self.schedule_next_pass()
+                if not self.profile.proactive or self.profile.in_quiet_hours():
                     continue
                 main = self.threads.get(MAIN_THREAD)
                 if main is None or main.busy or not main.inbox.empty():
@@ -503,6 +612,7 @@ class MuseService:
                 return
             except Exception as exc:  # noqa: BLE001  pragma: no cover
                 logger.warning("goal scheduler error: {}", exc)
+                await asyncio.sleep(30)
 
     # ------------------------------------------------------------------ ideas
     def _ideas_file(self) -> Path:
@@ -623,6 +733,8 @@ class MuseService:
                 "thread": t.id,
                 "thread_title": t.title,
                 "path": ev.get("path"),
+                # a pass that found nothing worth interrupting you for
+                "quiet": bool(ev.get("quiet")),
             }
 
         # A background pass is the notice that starts it followed by everything the agent
@@ -699,9 +811,14 @@ class MuseService:
             }
             for g in active
         ]
+        quiet_until = self.profile.quiet_hours_end()
         return {
             "proactive": self.profile.proactive,
+            "proactivity": self.profile.proactivity,
             "interval_minutes": self.profile.goal_interval_minutes,
+            "effective_interval_minutes": self.profile.interval_seconds // 60,
+            "quiet_hours": self.profile.quiet_hours,
+            "quiet_until": quiet_until.isoformat(timespec="seconds") if quiet_until else None,
             "next_pass_at": (
                 self.next_goal_pass_at.isoformat(timespec="seconds")
                 if self.next_goal_pass_at and self.profile.proactive

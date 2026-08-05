@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Iterator
+from datetime import datetime
 from typing import Any
 
 import pytest
@@ -478,13 +479,25 @@ def test_html_artifacts_are_served_sandboxed(server, settings: Settings):
 def test_feed_and_upcoming(server):
     client, service, llm = server
     assert client.get("/api/feed").json() == []
+    # background work is on at the default level from the start, like Muse; nothing is
+    # queued until there is a goal
     up = client.get("/api/upcoming").json()
-    assert up["proactive"] is False and up["queue"] == [] and up["next_pass_at"] is None
+    assert up["proactivity"] == "default" and up["proactive"] is True and up["queue"] == []
+    client.put("/api/settings", json={"profile": {"proactivity": "off"}})
+    up = client.get("/api/upcoming").json()
+    assert up["proactive"] is False and up["next_pass_at"] is None
 
     g = client.post("/api/goals", json={"title": "Learn Spanish", "steps": ["Pick an app"]}).json()
     client.put("/api/settings", json={"profile": {"proactive": True, "goal_interval_minutes": 30}})
     up = client.get("/api/upcoming").json()
     assert up["proactive"] is True and up["interval_minutes"] == 30
+    assert up["proactivity"] == "default" and up["effective_interval_minutes"] == 30
+    # the dial stretches or shrinks the interval
+    client.put("/api/settings", json={"profile": {"proactivity": "low"}})
+    assert client.get("/api/upcoming").json()["effective_interval_minutes"] == 60
+    client.put("/api/settings", json={"profile": {"proactivity": "high"}})
+    assert client.get("/api/upcoming").json()["effective_interval_minutes"] == 15
+    client.put("/api/settings", json={"profile": {"proactivity": "default"}})
     assert up["queue"] == [
         {
             "goal_id": g["id"],
@@ -513,6 +526,56 @@ def test_feed_and_upcoming(server):
     client.post(f"/api/approvals/{card['id']}", json={"approved": False})
     wait_for(lambda: events_of(client, side["id"], "assistant"))
     assert client.get("/api/feed").json() == []
+
+
+def test_quiet_passes_stay_out_of_the_way(server, settings: Settings):
+    client, service, llm = server
+    g = client.post(
+        "/api/goals", json={"title": "Water the plants", "steps": ["Check soil"]}
+    ).json()
+    # the pass finds nothing to report: the summary starts with the quiet marker
+    llm.script.append(LLMResponse(content="[quiet] Soil is still damp; nothing to do today."))
+    client.post(f"/api/goals/{g['id']}/advance")
+    said = wait_for(lambda: events_of(client, kind="assistant"))
+    assert said[-1]["quiet"] is True and said[-1]["source"] == "background"
+    assert said[-1]["text"] == "Soil is still damp; nothing to do today."
+    feed = client.get("/api/feed").json()
+    background = [i for i in feed if i["kind"] == "background"]
+    assert background and background[0]["quiet"] is True
+    # the level decides what the pass is told about reaching out
+    client.put("/api/settings", json={"profile": {"proactivity": "high"}})
+    llm.script.append(LLMResponse(content="Still on track."))
+    client.post(f"/api/goals/{g['id']}/advance")
+    wait_for(lambda: len(events_of(client, kind="assistant")) >= 2)
+    sent = llm.calls[-1]["messages"][-1].content
+    assert "Always report" in sent
+    assert not events_of(client, kind="assistant")[-1].get("quiet")
+
+
+def test_quiet_hours_push_the_next_pass_out(server):
+    from openmuse.server.service import Profile
+
+    client, service, _ = server
+    client.put("/api/settings", json={"profile": {"quiet_hours": "22:00-08:00"}})
+    assert service.profile.quiet_hours == "22:00-08:00"
+    assert (
+        client.put("/api/settings", json={"profile": {"quiet_hours": "nope"}}).json()["profile"][
+            "quiet_hours"
+        ]
+        == ""
+    )
+    p = Profile(quiet_hours="22:00-08:00")
+    tz = datetime.now().astimezone().tzinfo
+    assert p.in_quiet_hours(datetime(2026, 1, 1, 23, 30, tzinfo=tz))
+    assert p.in_quiet_hours(datetime(2026, 1, 1, 7, 59, tzinfo=tz))
+    assert not p.in_quiet_hours(datetime(2026, 1, 1, 12, 0, tzinfo=tz))
+    end = p.quiet_hours_end(datetime(2026, 1, 1, 23, 30, tzinfo=tz))
+    assert end is not None and (end.hour, end.minute, end.day) == (8, 0, 2)
+    assert Profile(quiet_hours="09:00-17:00").in_quiet_hours(datetime(2026, 1, 1, 12, 0, tzinfo=tz))
+    assert Profile(proactivity="off").proactive is False
+    # a profile written before the dial existed
+    assert Profile.from_dict({"proactive": True}).proactivity == "default"
+    assert Profile.from_dict({"proactive": False}).proactivity == "off"
 
 
 def test_ideas_fallback_and_parsing(server):

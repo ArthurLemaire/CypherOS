@@ -50,13 +50,26 @@ Five tabs — Chat, Feed, Ideas, Goals, Library — and a menu behind the avatar
 - *Upcoming* — the background-work switch, the next pass time, and the goals in line with a *run now* button.
 - *Memory* — everything the agent has remembered about you, by category, plus an entry box. *Forget* deletes an item; the agent will not see it again.
 - *Connections* — what the agent can reach, plugged in and out from the phone. **Model**: provider presets (DeepSeek, OpenAI, OpenRouter, Ollama, any OpenAI-compatible endpoint), model name, tool-calling mode, and the API key — which is written to the vault as `LLM_API_KEY` and swapped in for every thread on the spot; *Test* asks the model for a one-word reply. **Email**: presets for common providers, address and app password (vault: `EMAIL_ADDRESS`, `EMAIL_PASSWORD`), IMAP/SMTP servers; *Connect* saves and signs in to both servers to prove it works; *Disconnect* removes the credentials and the tools. **Browser**: on/off, with the install hint when Playwright is missing. **MCP servers**: add a server by command (stdio) or URL, choose the risk level of its tools, remove it again; servers from `config.toml` are listed read-only. **Vault**: the names of every stored secret, add or delete one. Only names ever leave the server.
-- *Settings* — the agent's name, avatar, colour and personality, and what it calls you; the Sentinel mode (Balanced = `ask`, Cautious = `strict`, Hands-off = `auto`); background work (advance one active goal every N minutes while the app is closed); *show thinking*; reply language.
+- *Settings* — the agent's name, avatar, colour and personality, and what it calls you; the Sentinel mode (Balanced = `ask`, Cautious = `strict`, Hands-off = `auto`); proactivity (the Off / Low / Default / High dial, the check-in interval, quiet hours — see [Background work](#background-work)); *show thinking*; reply language.
 
 Non-secret choices made in Connections are stored in `<data_dir>/app-settings.json` and layered over `config.toml` on every start — for the CLI too — so a phone-only setup never needs a file edited. Secrets are only ever referenced from there as `{{vault:NAME}}`.
 
 ## Background work
 
-With *Keep working on goals while I'm away* on, the service picks one active goal every `goal_interval_minutes`, runs it with Sentinel in `auto` mode in its own thread, and posts a short update to the main chat. Explicit deny rules still apply. Turn it off for goals that need your judgement at every step, or leave those goals paused.
+Muse "does things on its own, but not too much". The *Proactivity* dial in Settings sets how much:
+
+| Level | Passes | Reaches out |
+|---|---|---|
+| Off | never | — |
+| Low | every 2 × interval | only when a step got finished or it needs you |
+| Default | every interval | when there is real progress or something you would want to know |
+| High | every ½ interval | always, including "still on track" |
+
+On each pass the service picks one active goal with a pending step, runs it in the main chat with the Sentinel in `auto` mode (explicit deny rules and dangerous-call warnings still apply — those turn into cards in the Feed), and lets the model decide whether the result is worth your attention. A pass with nothing to say begins its summary with `[quiet]`: the chat shows one muted line ("Checked on *goal* — nothing new", tap to expand), the Feed lists it as a one-liner, and nothing is badged. Anything else is a normal message from your Muse.
+
+*Quiet hours* ("22:00–08:00", server local time) hold background work; a pass that would fall inside the window runs when it ends. The *Upcoming* view and the Feed's *Next up* card show the level, the effective interval and the next pass time, or the end of the current quiet window.
+
+Turn the dial to Off for goals that need your judgement at every step, or leave those goals paused.
 
 ## API
 
