@@ -96,7 +96,7 @@ class OpenMuseApp:
         tools = ToolCollection(
             Terminate(),
             AskUser(ui=self.ui),
-            Files(workspace=ws),
+            Files(workspace=ws, extra_roots=list(s.agent.extra_roots)),
             Shell(workspace=ws),
             PythonExecute(workspace=ws),
             WebSearch(),

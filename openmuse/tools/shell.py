@@ -1,8 +1,17 @@
-"""Shell and Python execution inside the workspace."""
+"""Shell and Python execution inside the workspace.
+
+Both run as subprocesses with a scrubbed environment: anything that looks like a
+credential (``*_KEY``, ``*TOKEN*``, ``*SECRET*``, ``*PASSWORD*``, ``OPENMUSE_*`` …) is
+removed before the child starts, so a script the model wrote cannot read the model's
+own API key, the vault key or the app token out of ``os.environ``. Secrets a command
+really needs go in as ``{{vault:NAME}}`` arguments instead, which Sentinel fills in
+after approval.
+"""
 
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import sys
 import tempfile
@@ -11,6 +20,30 @@ from typing import Any
 
 from openmuse.schema import RiskLevel, ToolResult
 from openmuse.tools.base import BaseTool, CallAssessment
+
+_SECRET_ENV = re.compile(
+    r"(KEY|TOKEN|SECRET|PASSW|PASSPHRASE|CREDENTIAL|_AUTH|AUTH_|COOKIE|SESSION)", re.IGNORECASE
+)
+_SECRET_ENV_PREFIXES = ("OPENMUSE_", "AWS_", "AZURE_", "GOOGLE_", "GH_", "GITHUB_", "NPM_")
+# the user's ssh agent is a credential too, even though the name does not say so
+_ALWAYS_DROP = {"SSH_AUTH_SOCK", "GPG_AGENT_INFO"}
+
+
+def scrubbed_env(source: dict[str, str] | None = None) -> dict[str, str]:
+    """The parent's environment minus anything that looks like a credential."""
+    env: dict[str, str] = {}
+    for name, value in (source if source is not None else os.environ).items():
+        upper = name.upper()
+        if (
+            name in _ALWAYS_DROP
+            or _SECRET_ENV.search(upper)
+            or upper.startswith(_SECRET_ENV_PREFIXES)
+        ):
+            continue
+        env[name] = value
+    env["OPENMUSE_SANDBOX"] = "1"
+    return env
+
 
 _DANGEROUS = [
     (
@@ -27,6 +60,52 @@ _DANGEROUS = [
 
 
 _SKIP_PROGRAMS = {"cd", "export", "set", "true", "time", "env", "nohup", "exec"}
+
+# What a Python script can reach beyond plain computation and the workspace. Each hit
+# makes the call sensitive and puts its reason on the approval card.
+_REACH: list[tuple[str, re.Pattern[str]]] = [
+    (
+        "network",
+        re.compile(
+            r"\b(import\s+(socket|urllib|http\.client|httpx|requests|aiohttp|ftplib|smtplib|"
+            r"imaplib|telnetlib|websocket|paramiko)|from\s+(urllib|http|httpx|requests|aiohttp|"
+            r"socket)\b)"
+        ),
+    ),
+    (
+        "processes",
+        re.compile(
+            r"\b(import\s+(subprocess|pty|multiprocessing)|from\s+subprocess|os\.(system|popen|"
+            r"exec[lv]p?e?|spawn[lv]p?e?|fork|kill)|ctypes)\b"
+        ),
+    ),
+    ("environment", re.compile(r"\bos\.(environ|getenv|putenv)\b")),
+    (
+        "deletion",
+        re.compile(
+            r"\b(shutil\.rmtree|os\.(remove|unlink|rmdir|removedirs)|Path\([^)]*\)\.unlink)\b"
+        ),
+    ),
+    (
+        "outside the workspace",
+        re.compile(
+            r"(['\"](/(etc|home|root|usr|var|proc|sys|dev|tmp|opt|Users)/|~/?)|"
+            r"Path\.home\(\)|expanduser\()"
+        ),
+    ),
+]
+_REACH_LABELS = {
+    "network": "reaches the network",
+    "processes": "starts other programs",
+    "environment": "reads environment variables",
+    "deletion": "deletes files",
+    "outside the workspace": "touches paths outside the workspace",
+}
+
+
+def code_reach(code: str) -> dict[str, str]:
+    """``{kind: human label}`` for everything a script reaches beyond the workspace."""
+    return {kind: _REACH_LABELS[kind] for kind, pattern in _REACH if pattern.search(code)}
 
 
 def programs_of(command: str) -> str | None:
@@ -53,11 +132,13 @@ def programs_of(command: str) -> str | None:
 
 
 async def _run(cmd: list[str] | str, cwd: Path, timeout: float, shell: bool) -> ToolResult:
+    env = scrubbed_env()
     try:
         if shell:
             proc = await asyncio.create_subprocess_shell(
                 cmd if isinstance(cmd, str) else " ".join(cmd),
                 cwd=str(cwd),
+                env=env,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -65,6 +146,7 @@ async def _run(cmd: list[str] | str, cwd: Path, timeout: float, shell: bool) -> 
             proc = await asyncio.create_subprocess_exec(
                 *cmd,  # type: ignore[misc]
                 cwd=str(cwd),
+                env=env,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -145,16 +227,19 @@ class PythonExecute(BaseTool):
     workspace: Path
 
     def assess(self, args: dict[str, Any]) -> CallAssessment:
+        """Plain computation and files in the workspace are moderate (auto-allowed in the
+        default mode). Anything that reaches further — the network, other processes, the
+        environment, paths outside the workspace, deletions — is sensitive and stops for
+        approval, with the reason on the card."""
         code = str(args.get("code", ""))
         first = code.strip().splitlines()[0][:100] if code.strip() else ""
-        warnings = []
-        if re.search(r"\b(os\.system|subprocess|shutil\.rmtree|os\.remove)\b", code):
-            warnings.append("code performs shell/file-deletion operations")
+        reach = code_reach(code)
         return CallAssessment(
-            risk=RiskLevel.MODERATE,
-            egress=True,
+            risk=RiskLevel.SENSITIVE if reach else RiskLevel.MODERATE,
+            egress=bool(reach.get("network")) or bool(reach.get("processes")),
+            target=None,
             summary=f"python_execute: {first} ({len(code)} chars)",
-            warnings=warnings,
+            warnings=[f"code {what}" for what in reach.values()],
         )
 
     async def execute(self, code: str = "", timeout: float = 60, **_: Any) -> ToolResult:
@@ -178,4 +263,4 @@ class PythonExecute(BaseTool):
             script.unlink(missing_ok=True)
 
 
-__all__ = ["PythonExecute", "Shell", "programs_of"]
+__all__ = ["PythonExecute", "Shell", "code_reach", "programs_of", "scrubbed_env"]

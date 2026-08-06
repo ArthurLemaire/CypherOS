@@ -117,6 +117,34 @@ def test_rules_and_overrides():
     )
 
 
+def test_warnings_escalate_even_in_auto_mode_unless_a_rule_allows():
+    dangerous = CallAssessment(risk=RiskLevel.SENSITIVE, warnings=["command looks dangerous: sudo"])
+    # hands-off mode still stops for a dangerous call…
+    auto = Policy(SentinelSettings(mode="auto"))
+    result = auto.evaluate("shell", {"command": "sudo ls"}, dangerous)
+    assert result.decision == Decision.ASK and "sudo" in result.reasons[-1]
+    # …and so does always_allow_tools
+    allowed = Policy(SentinelSettings(mode="ask", always_allow_tools=["shell"]))
+    assert allowed.evaluate("shell", {"command": "sudo ls"}, dangerous).decision == Decision.ASK
+    assert (
+        allowed.evaluate(
+            "shell", {"command": "ls"}, CallAssessment(risk=RiskLevel.SENSITIVE)
+        ).decision
+        == Decision.ALLOW
+    )
+    # only an explicit rule speaks for the user here
+    ruled = Policy(
+        SentinelSettings(
+            mode="auto",
+            rules=[SentinelRule(tool="shell", match={"command": "sudo apt*"}, action="allow")],
+        )
+    )
+    assert (
+        ruled.evaluate("shell", {"command": "sudo apt update"}, dangerous).decision
+        == Decision.ALLOW
+    )
+
+
 def test_taint_escalates_egress():
     policy = Policy(SentinelSettings(egress_allowlist=["*.wikipedia.org"]))
     clean = policy.evaluate(

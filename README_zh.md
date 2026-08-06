@@ -118,13 +118,14 @@ App 走一套很小的 REST + WebSocket API，见 [docs/app.md](docs/app.md)，�
 
 ## Sentinel
 
-每次工具调用在执行前都要经过 `Sentinel`。工具声明风险等级（`safe` / `moderate` / `sensitive`），并可对特定调用升级（`shell` 遇到 `rm -rf`，`web_fetch` 遇到内网 IP）。裁决顺序，首个匹配生效：
+每次工具调用在执行前都要经过 `Sentinel`。工具声明风险等级（`safe` / `moderate` / `sensitive`），并可对特定调用升级（`shell` 遇到 `rm -rf`，`python_execute` 的代码访问网络或环境变量，`web_fetch` 遇到内网 IP——包括重定向之后）。裁决顺序，首个匹配生效：
 
 1. `deny_tools` → 拒绝
 2. 对参数做 glob 匹配的 `[[sentinel.rules]]` → 规则指定的动作
 3. `always_allow_tools` / `always_ask_tools`
 4. 污点：本会话读过私密数据（邮件、记忆、工作区外文件）**且**本次调用向 `egress_allowlist` 之外的主机发送数据 → 询问
 5. 风险 × 模式：`ask` 对 sensitive 询问，`strict` 对 moderate 也询问，`auto` 放行一切未被拒绝的调用
+6. 带警告的调用（`sudo`、`curl | sh`、会删文件的代码）无论什么模式都会询问；只有显式规则能放行
 
 ```toml
 [sentinel]
@@ -138,7 +139,7 @@ match  = { command = "*rm -rf*" }
 action = "deny"
 ```
 
-密钥存在 Fernet 加密的保险库里（`openmuse vault set EMAIL_PASSWORD`）。配置和工具参数用 `{{vault:EMAIL_PASSWORD}}` 引用；Sentinel 在执行前一刻替换真实值，并在工具输出里把它脱敏，模型始终看不到。每次裁决都追加到 `~/.openmuse/audit.jsonl`。细节见 [docs/sentinel.md](docs/sentinel.md)。
+密钥存在 Fernet 加密的保险库里（`openmuse vault set EMAIL_PASSWORD`，或在 App 的「连接」页填写）。配置和工具参数用 `{{vault:EMAIL_PASSWORD}}` 引用；Sentinel 在执行前一刻替换真实值，并在工具输出里把它脱敏，模型始终看不到。Shell 命令和 Python 脚本运行时会剥掉所有看起来像凭据的环境变量。每次裁决都追加到 `~/.openmuse/audit.jsonl`。细节，以及一份坦白的「不覆盖什么」清单，见 [docs/sentinel.md](docs/sentinel.md)；漏洞报告见 [SECURITY.md](SECURITY.md)。
 
 ## 模型
 
