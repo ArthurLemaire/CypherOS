@@ -109,7 +109,10 @@ Prefer a terminal? `openmuse chat` gives you the same agent with approvals in th
 | Ideas | Five suggested actions, regenerated on demand. Tap one to send it as a message. |
 | Goals | Active / paused / done goals, a plan with step status and notes, "work on it now", and a switch to keep working on goals every N minutes while you are away. |
 | Library | Everything the agent made — pages, documents, trackers, images — opened in the app. Pages render in a sandbox that cannot reach your token or the API. |
-| Avatar | The menu: the approvals queue across all chats, the activity log, permissions you granted (revoke any one), what is upcoming, memory, and settings (name, avatar, personality, Sentinel mode, background work, language). |
+| Avatar | The menu: the approvals queue across all chats, the activity log, permissions you granted (revoke any one), what is upcoming, memory, connections, and settings (name, avatar, personality, Sentinel mode, background work, language). |
+| Connections | Plug things in from the phone: the model (provider presets, key straight into the vault, one-tap test), your mailbox (read and send, with a sign-in check), the browser, MCP servers, and the vault itself. Keys and passwords never reach the model. |
+
+The first time you open it, a short setup runs instead: your name, your Muse's name and style, the model and key, optionally your mail. Skip it if `config.toml` already says it all.
 
 The app talks to a small REST + WebSocket API, documented in [docs/app.md](docs/app.md), so other front-ends can be built on the same server.
 

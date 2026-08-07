@@ -115,6 +115,8 @@ export interface Profile {
   emoji: string;
   color: string;
   style: string;
+  /** What you want to be called. */
+  user_name: string;
   proactive: boolean;
   goal_interval_minutes: number;
 }
@@ -185,6 +187,65 @@ export interface SettingsView {
   memory_enabled: boolean;
   data_dir: string;
   started_at: string;
+  /** First-run setup finished (or skipped) in the app. */
+  onboarded: boolean;
+  /** A model is configured with a key (or a local endpoint that needs none). */
+  llm_ready: boolean;
+}
+
+// ----------------------------------------------------------------------------- connections
+export interface ProviderPreset {
+  label: string;
+  provider: string;
+  base_url: string;
+  models?: string[];
+  no_key?: boolean;
+}
+
+export interface ConnectionsData {
+  llm: {
+    provider: string;
+    model: string;
+    base_url: string;
+    tool_mode: string;
+    stream: boolean;
+    /** vault = key entered in the app; config = from config.toml / env; missing = referenced but not set. */
+    key_source: "vault" | "config" | "missing" | "none";
+    from_app: boolean;
+  };
+  providers: Record<string, ProviderPreset>;
+  email: {
+    enabled: boolean;
+    configured: boolean;
+    address: string;
+    imap_host: string;
+    imap_port: number;
+    smtp_host: string;
+    smtp_port: number;
+    smtp_starttls: boolean;
+    password_set: boolean;
+  };
+  browser: { enabled: boolean; available: boolean };
+  mcp: Array<{
+    name: string;
+    command: string | null;
+    args: string[];
+    url: string | null;
+    risk: string;
+    tools: number;
+    connected: boolean;
+    from_app: boolean;
+  }>;
+  vault: string[];
+  onboarded: boolean;
+}
+
+export interface TestResult {
+  ok: boolean;
+  error?: string;
+  reply?: string;
+  ms?: number;
+  inbox?: number | null;
 }
 
 export interface StateSnapshot {
@@ -270,6 +331,7 @@ export type WsMessage =
   | { kind: "ideas"; ideas: IdeasData }
   | { kind: "profile"; profile: Profile }
   | { kind: "settings"; settings: SettingsView }
+  | { kind: "connections"; connections: ConnectionsData }
   | { kind: "approvals_reset" }
   | { kind: "error"; error: string }
   | { kind: "pong"; status: Status };

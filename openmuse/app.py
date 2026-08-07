@@ -60,7 +60,7 @@ class OpenMuseApp:
             vault=self.vault,
             persistent_approvals_file=settings.data_dir / "approvals.json",
         )
-        self.llm = llm or create_llm(settings.llm)
+        self.llm = llm or self.make_llm()
         self.mcp = MCPManager(settings.mcp.servers) if settings.mcp.servers else None
         self.tools = self._build_tools()
         self.agent = MuseAgent(
@@ -74,6 +74,20 @@ class OpenMuseApp:
             goals=self.goals,
             session_file=settings.data_dir / "sessions" / f"{self.session_id}.json",
         )
+
+    # ------------------------------------------------------------------ llm
+    def make_llm(self) -> BaseLLM:
+        """The model client. ``llm.api_key`` may be a ``{{vault:NAME}}`` reference (that is
+        how a key entered in the app is stored); it is resolved here, for the HTTP client
+        only — the model itself never sees it."""
+        llm_settings = self.settings.llm
+        if self.vault.has_placeholders(llm_settings.api_key):
+            key = self.vault.resolve(llm_settings.api_key, strict=False)
+            if self.vault.has_placeholders(key):
+                logger.warning("llm.api_key refers to a vault secret that is not set: {}", key)
+                key = ""
+            llm_settings = llm_settings.model_copy(update={"api_key": key})
+        return create_llm(llm_settings)
 
     # ------------------------------------------------------------------ tools
     def _build_tools(self) -> ToolCollection:

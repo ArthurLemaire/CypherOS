@@ -3,11 +3,13 @@ import { useEffect, useState, type ReactNode } from "react";
 import { setToken } from "./api";
 import { FileViewer } from "./components/FileViewer";
 import { ChatScreen } from "./screens/ChatScreen";
+import { ConnectionsScreen } from "./screens/ConnectionsScreen";
 import { FeedScreen } from "./screens/FeedScreen";
 import { GoalsScreen } from "./screens/GoalsScreen";
 import { IdeasScreen } from "./screens/IdeasScreen";
 import { LibraryScreen } from "./screens/LibraryScreen";
 import { MemoryScreen } from "./screens/MemoryScreen";
+import { Onboarding } from "./screens/Onboarding";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { useStore, type Tab } from "./store";
 import { cx } from "./util";
@@ -31,6 +33,10 @@ export default function App() {
   }, [state.profile?.color, state.profile?.name]);
 
   if (state.authError) return <TokenGate />;
+  // First run: the server has not seen setup finish and nothing has been said yet.
+  if (state.loaded && state.settings && !state.settings.onboarded && !state.onboardingDismissed && !state.threads.some((t) => t.events > 0)) {
+    return <Onboarding />;
+  }
 
   const pendingApprovals = state.pendingApprovals.length;
   const activeGoals = state.goals.filter((g) => g.status === "active").length;
@@ -55,6 +61,7 @@ export default function App() {
         {state.tab === "goals" && <GoalsScreen />}
         {state.tab === "library" && <LibraryScreen />}
         {state.tab === "memory" && <MemoryScreen />}
+        {state.tab === "connections" && <ConnectionsScreen />}
         {state.tab === "you" && <SettingsScreen />}
       </main>
       <nav className="safe-bottom shrink-0 border-t border-border bg-surface/90 backdrop-blur">

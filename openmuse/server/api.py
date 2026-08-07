@@ -15,6 +15,11 @@
     GET  /api/upcoming                    next background pass and the goals in line
     GET  /api/files  GET /api/files/{path}
     GET|PUT /api/settings
+    GET  /api/connections                 model, email, browser, MCP servers, vault names
+    PUT  /api/connections/llm|email|browser   POST /api/connections/llm|email/test
+    POST /api/connections/mcp  DELETE /api/connections/mcp/{name}
+    GET  /api/vault  PUT|DELETE /api/vault/{name}   (names only ever come back)
+    POST /api/onboarded
     WS   /ws?token=…                     live events
 
 All endpoints require ``Authorization: Bearer <token>`` (or ``?token=``) unless
@@ -26,6 +31,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import mimetypes
+import secrets
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -88,6 +94,49 @@ class SettingsBody(BaseModel):
     language: str | None = None
 
 
+class LLMBody(BaseModel):
+    provider: str | None = None
+    model: str | None = None
+    base_url: str | None = None
+    tool_mode: str | None = None
+    # a new key goes straight into the vault; "" removes the key; None keeps it
+    api_key: str | None = None
+
+
+class EmailBody(BaseModel):
+    enabled: bool | None = None
+    address: str | None = None
+    password: str | None = None
+    imap_host: str | None = None
+    imap_port: int | None = Field(default=None, ge=1, le=65535)
+    smtp_host: str | None = None
+    smtp_port: int | None = Field(default=None, ge=1, le=65535)
+    smtp_starttls: bool | None = None
+
+
+class BrowserBody(BaseModel):
+    enabled: bool
+
+
+class MCPBody(BaseModel):
+    name: str = Field(min_length=1, max_length=60, pattern=r"^[A-Za-z0-9_.-]+$")
+    command: str | None = None
+    args: list[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
+    url: str | None = None
+    risk: str = "moderate"
+    egress: bool = True
+    reads_private_data: bool = False
+
+
+class SecretBody(BaseModel):
+    value: str = Field(min_length=1, max_length=10_000)
+
+
+class OnboardedBody(BaseModel):
+    done: bool = True
+
+
 # ----------------------------------------------------------------------------- app factory
 def create_app(settings: Settings, service: MuseService | None = None) -> FastAPI:
     svc = service or MuseService(settings)
@@ -121,7 +170,7 @@ def create_app(settings: Settings, service: MuseService | None = None) -> FastAP
     def _check_token(token: str | None) -> None:
         if not svc.token:
             return
-        if token != svc.token:
+        if not token or not secrets.compare_digest(token.encode(), svc.token.encode()):
             raise HTTPException(status_code=401, detail="invalid or missing token")
 
     def auth(request: Request) -> None:
@@ -328,6 +377,77 @@ def create_app(settings: Settings, service: MuseService | None = None) -> FastAP
         return svc.update_settings(body.model_dump(exclude_none=True))
 
     # ------------------------------------------------------------------ files
+    # ------------------------------------------------------------------ connections
+    conn = svc.connections
+
+    @app.get("/api/connections", dependencies=dep)
+    async def get_connections() -> dict[str, Any]:
+        return conn.view()
+
+    @app.put("/api/connections/llm", dependencies=dep)
+    async def put_llm(body: LLMBody) -> dict[str, Any]:
+        try:
+            return conn.set_llm(body.model_dump())
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/api/connections/llm/test", dependencies=dep)
+    async def test_llm() -> dict[str, Any]:
+        return await conn.test_llm()
+
+    @app.put("/api/connections/email", dependencies=dep)
+    async def put_email(body: EmailBody) -> dict[str, Any]:
+        return conn.set_email(body.model_dump(exclude_none=True))
+
+    @app.delete("/api/connections/email", dependencies=dep)
+    async def delete_email() -> dict[str, Any]:
+        return conn.disconnect_email()
+
+    @app.post("/api/connections/email/test", dependencies=dep)
+    async def test_email() -> dict[str, Any]:
+        return await conn.test_email()
+
+    @app.put("/api/connections/browser", dependencies=dep)
+    async def put_browser(body: BrowserBody) -> dict[str, Any]:
+        return conn.set_browser(body.enabled)
+
+    @app.post("/api/connections/mcp", dependencies=dep)
+    async def add_mcp(body: MCPBody) -> dict[str, Any]:
+        try:
+            return await conn.add_mcp(body.model_dump())
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(502, str(exc)) from exc
+
+    @app.delete("/api/connections/mcp/{name}", dependencies=dep)
+    async def remove_mcp(name: str) -> dict[str, Any]:
+        if not await conn.remove_mcp(name):
+            raise HTTPException(404, "no such server (servers from config.toml are removed there)")
+        return {"ok": True}
+
+    @app.get("/api/vault", dependencies=dep)
+    async def vault_names() -> list[str]:
+        return svc.app.vault.names()
+
+    @app.put("/api/vault/{name}", dependencies=dep)
+    async def vault_set(name: str, body: SecretBody) -> list[str]:
+        try:
+            return conn.set_secret(name, body.value)
+        except Exception as exc:  # noqa: BLE001 - VaultError on a bad name
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.delete("/api/vault/{name}", dependencies=dep)
+    async def vault_delete(name: str) -> dict[str, Any]:
+        if not conn.delete_secret(name):
+            raise HTTPException(404, "no such secret")
+        return {"ok": True}
+
+    @app.post("/api/onboarded", dependencies=dep)
+    async def onboarded(body: OnboardedBody) -> dict[str, Any]:
+        conn.set_onboarded(body.done)
+        return {"onboarded": body.done}
+
     @app.get("/api/feed", dependencies=dep)
     async def feed(limit: int = Query(60, ge=1, le=500)) -> list[dict[str, Any]]:
         return svc.feed(limit)
