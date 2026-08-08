@@ -142,6 +142,8 @@ class MuseService:
             self.timeline,
             approval_timeout=settings.server.approval_timeout,
             show_thinking=settings.agent.show_thinking,
+            workspace=settings.agent.workspace.resolve(),
+            exclude=(settings.data_dir,),
         )
         self.ui._timelines_provider = lambda: [(t.id, t.timeline) for t in self.threads.values()]
         self.app = OpenMuseApp(settings, ui=self.ui, llm=llm, session_id="app")
@@ -404,10 +406,8 @@ class MuseService:
                 self.bus.publish({"kind": "thread", "thread": thread.meta()})
                 self.ui.set_status("working", "Thinking…", thread.id)
                 try:
-                    self.ui.reply_shown.discard(thread.id)
                     purpose = thread.purposes.pop(text, None)
-                    if purpose:
-                        self.ui.background[thread.id] = purpose
+                    self.ui.begin_run(thread.id, background=purpose)
                     final = await thread.agent.run(text, purpose=purpose)
                     if (
                         final
@@ -433,7 +433,7 @@ class MuseService:
                     if thread.agent.state.value == "error":
                         thread.agent.state = thread.agent.state.__class__.IDLE
                 finally:
-                    self.ui.background.pop(thread.id, None)
+                    self.ui.end_run(thread.id)
                     thread.agent.inbox = None
                     thread.busy = False
                     thread.updated_at = now_iso()

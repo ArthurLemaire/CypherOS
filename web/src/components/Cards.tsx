@@ -347,7 +347,8 @@ export function Notice({ event }: { event: NoticeEvent }) {
 /** A file the agent made. Opens in the in-app viewer (pages render sandboxed, never with the app's origin). */
 export function ArtifactCard({ event, onOpen }: { event: ArtifactEvent; onOpen: (path: string) => void }) {
   const kind = fileKind(event.name);
-  const label = kind === "html" ? "Page" : kind === "image" ? "Image" : kind === "data" ? "Data" : kind === "code" ? "Code" : "Document";
+  const what = kind === "html" ? "Page" : kind === "image" ? "Image" : kind === "data" ? "Data" : kind === "code" ? "Code" : "Document";
+  const label = event.action === "update" ? `${what} · updated` : what;
   return (
     <div className="rise flex justify-start pl-11 pr-8">
       <button
