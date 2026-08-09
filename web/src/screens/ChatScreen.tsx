@@ -8,10 +8,10 @@ import { Sheet } from "../components/Sheet";
 import { useStore } from "../store";
 import type { ThreadMeta, TimelineEvent, UserEvent } from "../types";
 import { cx, timeShort } from "../util";
-import { ActivitySheet } from "./ActivitySheet";
+import { MuseSheet } from "./MuseSheet";
 
 export function ChatScreen() {
-  const { state, send, decide, loadEvents, openThread, toast } = useStore();
+  const { state, send, decide, loadEvents, openThread, openFile, toast } = useStore();
   const { profile, status, activeThread, threads } = state;
   const events = state.events[activeThread] ?? [];
   // undefined until the first fetch for this thread has returned — don't flash the empty state
@@ -48,11 +48,13 @@ export function ChatScreen() {
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   };
 
+  const queued = state.pendingApprovals.length;
   const statusLine = useMemo(() => {
+    if (queued > 0 && status.state !== "working") return `${queued} approval${queued > 1 ? "s" : ""} waiting for you`;
     if (status.state === "idle" && !thread?.busy) return "Idle · tap the avatar for activity";
     if (status.detail) return status.detail;
     return status.state === "waiting" ? "Waiting for you" : "Working…";
-  }, [status, thread]);
+  }, [status, thread, queued]);
 
   const pendingApprovals = events.filter((e) => e.type === "approval" && e.status === "pending").length;
 
@@ -61,7 +63,14 @@ export function ChatScreen() {
       {/* Header */}
       <header className="safe-top shrink-0 border-b border-border bg-surface/85 backdrop-blur">
         <div className="flex items-center gap-3 px-4 py-2.5">
-          <Avatar profile={profile} status={status} size={42} onClick={() => setActivityOpen(true)} />
+          <div className="relative">
+            <Avatar profile={profile} status={status} size={42} onClick={() => setActivityOpen(true)} />
+            {queued > 0 && (
+              <span className="pointer-events-none absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10.5px] font-bold flex items-center justify-center border-2 border-bg">
+                {queued}
+              </span>
+            )}
+          </div>
           <button type="button" className="flex-1 min-w-0 text-left" onClick={() => setActivityOpen(true)}>
             <div className="font-semibold text-[16px] leading-tight truncate">{name}</div>
             <div
@@ -108,6 +117,7 @@ export function ChatScreen() {
             onDecide={(approved, scope) =>
               decide(ev.id, approved, scope).catch((e: Error) => toast(e.message || "Could not send decision"))
             }
+            onOpenFile={openFile}
           />
         ))}
         {stream && stream.text && (
@@ -134,7 +144,7 @@ export function ChatScreen() {
         onSend={(text) => send(activeThread, text).catch((e: Error) => toast(e.message || "Could not send"))}
       />
 
-      <ActivitySheet open={activityOpen} onClose={() => setActivityOpen(false)} />
+      <MuseSheet open={activityOpen} onClose={() => setActivityOpen(false)} />
       <ThreadsSheet
         open={threadsOpen}
         onClose={() => setThreadsOpen(false)}
@@ -190,11 +200,13 @@ function EventView({
   prev,
   name,
   onDecide,
+  onOpenFile,
 }: {
   event: TimelineEvent;
   prev?: TimelineEvent;
   name: string;
   onDecide: (approved: boolean, scope: string) => void;
+  onOpenFile: (path: string) => void;
 }) {
   switch (event.type) {
     case "user":
@@ -210,7 +222,7 @@ function EventView({
     case "notice":
       return <Notice event={event} />;
     case "artifact":
-      return <ArtifactCard event={event} />;
+      return <ArtifactCard event={event} onOpen={onOpenFile} />;
     default:
       return null;
   }

@@ -1,5 +1,7 @@
 import type {
   ActivityData,
+  FeedItem,
+  FileInfo,
   Goal,
   IdeasData,
   MemoryItem,
@@ -7,6 +9,7 @@ import type {
   StateSnapshot,
   ThreadMeta,
   TimelineEvent,
+  UpcomingData,
   WsMessage,
 } from "./types";
 
@@ -100,6 +103,19 @@ export const api = {
   forgetMemory: (id: string) => request<{ ok: boolean }>(`/api/memory/${id}`, { method: "DELETE" }),
   ideas: (refresh = false) => request<IdeasData>(`/api/ideas${refresh ? "?refresh=1" : ""}`),
   activity: (n = 150) => request<ActivityData>(`/api/activity?n=${n}`),
+  feed: (limit = 60) => request<FeedItem[]>(`/api/feed?limit=${limit}`),
+  upcoming: () => request<UpcomingData>("/api/upcoming"),
+  files: (limit = 300) => request<FileInfo[]>(`/api/files?limit=${limit}`),
+  /** Raw contents of a workspace file, fetched with the token in a header (never in a URL). */
+  fileText: async (path: string): Promise<string> => {
+    const headers: Record<string, string> = {};
+    const token = getToken();
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const res = await fetch(`/api/files/${path.split("/").map(encodeURIComponent).join("/")}`, { headers });
+    if (res.status === 401) throw new AuthError();
+    if (!res.ok) throw new Error(res.statusText);
+    return res.text();
+  },
   settings: () => request<SettingsView>("/api/settings"),
   updateSettings: (body: Record<string, unknown>) =>
     request<SettingsView>("/api/settings", { method: "PUT", body: JSON.stringify(body) }),

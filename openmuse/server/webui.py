@@ -65,6 +65,10 @@ class WebUI:
         self._step_text: dict[str, str] = {}  # text of the response currently being handled
         # threads whose final reply is already on screen (text + terminate in one response)
         self.reply_shown: set[str] = set()
+        # threads currently running background work (goal passes…) → the label of that work.
+        # Events emitted meanwhile are tagged so the Feed can show what happened while you
+        # were away.
+        self.background: dict[str, str] = {}
 
     # ------------------------------------------------------------------ helpers
     @staticmethod
@@ -74,6 +78,9 @@ class WebUI:
     def emit(self, event: dict[str, Any], persist: bool = True) -> dict[str, Any]:
         thread = event.get("thread") or self.thread()
         event["thread"] = thread
+        if thread in self.background and "source" not in event:
+            event["source"] = "background"
+            event["about"] = self.background[thread]
         if persist:
             event = self.get_timeline(thread).add(event)
         else:

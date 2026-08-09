@@ -1,24 +1,28 @@
-import { Brain, Lightbulb, MessageCircle, Target, UserRound, WifiOff } from "lucide-react";
+import { FolderOpen, Lightbulb, MessageCircle, Newspaper, Target, WifiOff } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { setToken } from "./api";
+import { FileViewer } from "./components/FileViewer";
 import { ChatScreen } from "./screens/ChatScreen";
+import { FeedScreen } from "./screens/FeedScreen";
 import { GoalsScreen } from "./screens/GoalsScreen";
 import { IdeasScreen } from "./screens/IdeasScreen";
+import { LibraryScreen } from "./screens/LibraryScreen";
 import { MemoryScreen } from "./screens/MemoryScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { useStore, type Tab } from "./store";
 import { cx } from "./util";
 
+/** The tab bar. Memory and Settings are reached through the avatar menu, like in Muse. */
 const TABS: Array<{ id: Tab; label: string; icon: (active: boolean) => ReactNode }> = [
   { id: "chat", label: "Chat", icon: (a) => <MessageCircle size={23} strokeWidth={a ? 2.4 : 1.9} /> },
-  { id: "goals", label: "Goals", icon: (a) => <Target size={23} strokeWidth={a ? 2.4 : 1.9} /> },
+  { id: "feed", label: "Feed", icon: (a) => <Newspaper size={23} strokeWidth={a ? 2.4 : 1.9} /> },
   { id: "ideas", label: "Ideas", icon: (a) => <Lightbulb size={23} strokeWidth={a ? 2.4 : 1.9} /> },
-  { id: "memory", label: "Memory", icon: (a) => <Brain size={23} strokeWidth={a ? 2.4 : 1.9} /> },
-  { id: "you", label: "You", icon: (a) => <UserRound size={23} strokeWidth={a ? 2.4 : 1.9} /> },
+  { id: "goals", label: "Goals", icon: (a) => <Target size={23} strokeWidth={a ? 2.4 : 1.9} /> },
+  { id: "library", label: "Library", icon: (a) => <FolderOpen size={23} strokeWidth={a ? 2.4 : 1.9} /> },
 ];
 
 export default function App() {
-  const { state, setTab } = useStore();
+  const { state, setTab, openFile } = useStore();
 
   // Accent colour follows the avatar colour; document title follows the name.
   useEffect(() => {
@@ -28,10 +32,9 @@ export default function App() {
 
   if (state.authError) return <TokenGate />;
 
-  const pendingApprovals = Object.values(state.events)
-    .flat()
-    .filter((e) => e.type === "approval" && e.status === "pending").length;
+  const pendingApprovals = state.pendingApprovals.length;
   const activeGoals = state.goals.filter((g) => g.status === "active").length;
+  const feedUnseen = state.pendingApprovals.filter((a) => a.ts > state.feedSeenAt).length;
 
   return (
     <div className="mx-auto flex h-[100dvh] max-w-[760px] flex-col bg-bg sm:border-x sm:border-border">
@@ -47,8 +50,10 @@ export default function App() {
       )}
       <main className="min-h-0 flex-1">
         {state.tab === "chat" && <ChatScreen />}
-        {state.tab === "goals" && <GoalsScreen />}
+        {state.tab === "feed" && <FeedScreen />}
         {state.tab === "ideas" && <IdeasScreen />}
+        {state.tab === "goals" && <GoalsScreen />}
+        {state.tab === "library" && <LibraryScreen />}
         {state.tab === "memory" && <MemoryScreen />}
         {state.tab === "you" && <SettingsScreen />}
       </main>
@@ -56,7 +61,7 @@ export default function App() {
         <ul className="grid grid-cols-5">
           {TABS.map((t) => {
             const active = state.tab === t.id;
-            const badge = t.id === "chat" ? pendingApprovals : t.id === "goals" ? activeGoals : 0;
+            const badge = t.id === "chat" ? pendingApprovals : t.id === "feed" ? feedUnseen : t.id === "goals" ? activeGoals : 0;
             return (
               <li key={t.id}>
                 <button
@@ -73,7 +78,7 @@ export default function App() {
                     <span
                       className={cx(
                         "absolute top-1 left-1/2 ml-2 min-w-[17px] h-[17px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center",
-                        t.id === "chat" ? "bg-rose-500 text-white" : "bg-surface-2 text-muted",
+                        t.id === "goals" ? "bg-surface-2 text-muted" : "bg-rose-500 text-white",
                       )}
                     >
                       {badge}
@@ -85,8 +90,9 @@ export default function App() {
           })}
         </ul>
       </nav>
+      <FileViewer path={state.viewer} onClose={() => openFile(null)} />
       {state.toast && (
-        <div className="pointer-events-none fixed inset-x-0 bottom-24 flex justify-center px-4">
+        <div className="pointer-events-none fixed inset-x-0 bottom-24 z-[70] flex justify-center px-4">
           <div className="rise rounded-2xl bg-fg text-bg px-4 py-2 text-[13.5px] shadow-lg max-w-sm text-center">{state.toast}</div>
         </div>
       )}

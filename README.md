@@ -51,7 +51,7 @@ Meta's Muse is an agent that does things rather than answering questions: it res
 
 ## Why OpenMuse
 
-- **It is a Muse, not a bot framework.** One agent with a name and a face, a phone app with Chat / Goals / Ideas / Memory tabs, approval cards, background work. If you want a bot in Telegram or Discord, see [Related projects](#related-projects).
+- **It is a Muse, not a bot framework.** One agent with a name and a face, a phone app with Chat / Feed / Ideas / Goals / Library tabs, approval cards, background work. If you want a bot in Telegram or Discord, see [Related projects](#related-projects).
 - **Safety is the architecture, not a setting.** The agent never touches tools directly. A separate `Sentinel` decides allow / ask / deny per call, resolves `{{vault:NAME}}` placeholders so secrets never reach the model, tracks taint (private data read → new destinations need approval), and logs everything.
 - **Bring your own model.** Chat Completions or Responses API, streaming, `<think>` handling, native or prompt-based tool calling.
 - **Small enough to read.** About 7k lines of typed Python and 3k lines of TypeScript. No orchestration framework underneath.
@@ -105,11 +105,11 @@ Prefer a terminal? `openmuse chat` gives you the same agent with approvals in th
 | Screen | What you get |
 |---|---|
 | Chat | Message-style conversation, streaming replies, tool chips with output, file artifacts, approval and question cards, side chats. You can keep typing while the agent works; new messages are folded into the running turn. |
-| Goals | Active / paused / done goals, a plan with step status and notes, "work on it now", and a switch to keep working on goals every N minutes while you are away. |
+| Feed | What happened while you were away: the result of each background pass, files it made, and every card still waiting for you, from any chat. *Next up* says what runs next. |
 | Ideas | Five suggested actions, regenerated on demand. Tap one to send it as a message. |
-| Memory | Everything the agent remembers about you, by category. Add or forget entries. |
-| You | Name, avatar, colour and personality of your agent; the Sentinel mode; background work; reply language. |
-| Avatar | Tap it for the activity log: every tool call, decision and approval from the audit trail. |
+| Goals | Active / paused / done goals, a plan with step status and notes, "work on it now", and a switch to keep working on goals every N minutes while you are away. |
+| Library | Everything the agent made — pages, documents, trackers, images — opened in the app. Pages render in a sandbox that cannot reach your token or the API. |
+| Avatar | The menu: the approvals queue across all chats, the activity log, permissions you granted (revoke any one), what is upcoming, memory, and settings (name, avatar, personality, Sentinel mode, background work, language). |
 
 The app talks to a small REST + WebSocket API, documented in [docs/app.md](docs/app.md), so other front-ends can be built on the same server.
 
