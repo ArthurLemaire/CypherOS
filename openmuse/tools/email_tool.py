@@ -199,10 +199,21 @@ class SendEmail(_EmailBase):
     egress: bool = True
 
     def assess(self, args: dict[str, Any]) -> CallAssessment:
+        # A standing permission is bound to the recipient(s), never to "any email".
+        recipients = sorted(
+            {
+                addr.strip().lower()
+                for field in (args.get("to"), args.get("cc"))
+                if field
+                for addr in str(field).replace(";", ",").split(",")
+                if addr.strip()
+            }
+        )
         return CallAssessment(
             risk=RiskLevel.SENSITIVE,
             egress=True,
             egress_target=self.settings.smtp_host or None,
+            target=",".join(recipients) or None,
             summary=f"send_email to={args.get('to')} subject={str(args.get('subject', ''))[:80]!r}",
         )
 

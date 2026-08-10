@@ -84,6 +84,8 @@ export const api = {
   decide: (id: string, approved: boolean, scope = "once", reason = "") =>
     request<{ ok: boolean }>(`/api/approvals/${id}`, json({ approved, scope, reason })),
   resetApprovals: () => request<{ ok: boolean }>("/api/approvals", { method: "DELETE" }),
+  revokeGrant: (key: string) =>
+    request<{ ok: boolean }>(`/api/approvals/grants/${encodeURIComponent(key)}`, { method: "DELETE" }),
   goals: () => request<Goal[]>("/api/goals"),
   createGoal: (title: string, description: string, steps: string[]) =>
     request<Goal>("/api/goals", json({ title, description, steps })),

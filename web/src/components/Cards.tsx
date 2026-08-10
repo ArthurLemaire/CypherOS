@@ -20,7 +20,7 @@ import {
   Terminal,
   X,
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { fileUrl } from "../api";
 import type {
   ApprovalEvent,
@@ -133,6 +133,36 @@ export function ToolChip({ event }: { event: ToolEvent }) {
 }
 
 // ------------------------------------------------------------------ approval card
+/** What a permission is for, in words: "git commands", "email to alice@…", "example.com". */
+export function grantSubject(tool: string, target?: string | null): string {
+  if (!target) return tool.replace(/_/g, " ");
+  switch (tool) {
+    case "shell":
+      return `${target.split(",").join(", ")} commands`;
+    case "send_email":
+      return `email to ${target.split(",").join(", ")}`;
+    default:
+      return target;
+  }
+}
+
+export function scopeLabel(scope: string, tool: string, target?: string | null): string {
+  switch (scope) {
+    case "once":
+      return "Once";
+    case "task":
+      return "For this task";
+    case "session":
+      return "Until restart";
+    case "24h":
+      return "For 24 hours";
+    case "always":
+      return `Always for ${grantSubject(tool, target)}`;
+    default:
+      return scope;
+  }
+}
+
 export function ApprovalCard({
   event,
   onDecide,
@@ -142,10 +172,16 @@ export function ApprovalCard({
 }) {
   const [showArgs, setShowArgs] = useState(false);
   const [more, setMore] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
   const pending = event.status === "pending";
   const sensitive = event.risk === "sensitive";
+  const standing = (event.grant_options ?? ["once"]).filter((s) => s !== "once");
+  // Expanding the card near the bottom of the chat must not hide the new buttons under the tab bar.
+  useEffect(() => {
+    if (more || showArgs) cardRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+  }, [more, showArgs]);
   return (
-    <div className="rise flex justify-start pl-11 pr-4">
+    <div className="rise flex justify-start pl-11 pr-4" ref={cardRef}>
       <div
         className={cx(
           "w-full max-w-md rounded-3xl border bg-surface shadow-sm overflow-hidden",
@@ -167,27 +203,27 @@ export function ApprovalCard({
               <RiskBadge risk={event.risk} />
             </div>
             <div className="mt-1 text-[14px] leading-snug break-words">{event.summary}</div>
+            {event.purpose && (
+              <div className="mt-1 text-[12.5px] text-muted italic break-words line-clamp-2">For: {event.purpose}</div>
+            )}
             <div className="mt-1 flex items-center gap-1.5 text-[12px] text-muted">
               {toolIcon(event.tool, 13)} <span>{event.tool}</span>
-              {event.egress_target && (
+              {(event.target || event.egress_target) && (
                 <>
                   <span>·</span>
-                  <Globe size={12} /> <span className="truncate">{event.egress_target}</span>
+                  <Globe size={12} /> <span className="truncate">{event.target || event.egress_target}</span>
                 </>
               )}
             </div>
           </div>
         </div>
-        {(event.warnings?.length > 0 || event.reasons?.length > 0) && (
+        {event.warnings?.length > 0 && (
           <div className="px-4 pb-2 space-y-1">
-            {event.warnings?.map((w) => (
+            {event.warnings.map((w) => (
               <div key={w} className="flex items-start gap-1.5 text-[12.5px] text-rose-600 dark:text-rose-300">
                 <AlertTriangle size={13} className="mt-0.5 shrink-0" /> <span>{w}</span>
               </div>
             ))}
-            {event.reasons?.length > 0 && (
-              <div className="text-[12.5px] text-muted">{event.reasons.join(" · ")}</div>
-            )}
           </div>
         )}
         <div className="px-4 pb-2">
@@ -198,7 +234,14 @@ export function ApprovalCard({
           >
             {showArgs ? <ChevronDown size={13} /> : <ChevronRight size={13} />} Exactly what will run
           </button>
-          {showArgs && <ArgsList args={event.args} />}
+          {showArgs && (
+            <>
+              <ArgsList args={event.args} />
+              {event.reasons?.length > 0 && (
+                <div className="mt-1.5 text-[12px] text-muted">Why it asks: {event.reasons.join(" · ")}</div>
+              )}
+            </>
+          )}
         </div>
         {pending ? (
           <div className="px-3 pb-3 pt-1 flex flex-col gap-2">
@@ -218,28 +261,28 @@ export function ApprovalCard({
                 Allow once
               </button>
             </div>
-            <button type="button" className="text-[12.5px] text-muted self-center" onClick={() => setMore((m) => !m)}>
-              {more ? "Fewer options" : "More options"}
-            </button>
-            {more && (
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => onDecide(true, "session")}
-                  className="flex-1 rounded-2xl bg-surface-2 py-2 text-[13px] font-medium"
-                >
-                  Allow {event.tool} until restart
+            {standing.length > 0 ? (
+              <>
+                <button type="button" className="text-[12.5px] text-muted self-center" onClick={() => setMore((m) => !m)}>
+                  {more ? "Fewer options" : `Allow ${grantSubject(event.tool, event.target)} for longer…`}
                 </button>
-                {!sensitive && (
-                  <button
-                    type="button"
-                    onClick={() => onDecide(true, "always")}
-                    className="flex-1 rounded-2xl bg-surface-2 py-2 text-[13px] font-medium"
-                  >
-                    Always allow {event.tool}
-                  </button>
+                {more && (
+                  <div className="grid grid-cols-2 gap-2">
+                    {standing.map((scope) => (
+                      <button
+                        key={scope}
+                        type="button"
+                        onClick={() => onDecide(true, scope)}
+                        className="rounded-2xl bg-surface-2 px-3 py-2 text-[13px] font-medium text-left leading-snug"
+                      >
+                        {scopeLabel(scope, event.tool, event.target)}
+                      </button>
+                    ))}
+                  </div>
                 )}
-              </div>
+              </>
+            ) : (
+              <div className="text-[12px] text-muted self-center">This kind of action is approved one at a time.</div>
             )}
           </div>
         ) : (
@@ -251,7 +294,7 @@ export function ApprovalCard({
           >
             {event.status === "approved" ? <Check size={15} /> : <X size={15} />}
             {event.status === "approved"
-              ? `Approved${event.scope && event.scope !== "once" ? ` (${event.scope})` : ""}`
+              ? `Approved${event.scope && event.scope !== "once" ? ` · ${scopeLabel(event.scope, event.tool, event.target).toLowerCase()}` : ""}`
               : event.status === "denied"
                 ? "Denied"
                 : "Expired without an answer"}

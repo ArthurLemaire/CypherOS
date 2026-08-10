@@ -55,15 +55,16 @@ Everything the app does goes through this API, so another front-end (a Telegram 
 | POST | `/api/threads/{id}/clear` | clear the conversation |
 | GET | `/api/threads/{id}/events?limit=&before=` | timeline events |
 | POST | `/api/threads/{id}/send` `{text}` | queue a message; returns immediately |
-| POST | `/api/approvals/{id}` `{approved, scope, reason}` | answer a card; `scope` is `once`, `session` or `always` |
-| DELETE | `/api/approvals` | forget granted permissions |
+| POST | `/api/approvals/{id}` `{approved, scope, reason}` | answer a card; `scope` is one of the card's `grant_options` (`once`, `task`, `session`, `24h`, `always`) |
+| DELETE | `/api/approvals` | forget every granted permission |
+| DELETE | `/api/approvals/grants/{key}` | revoke one permission (`key` as listed by `/api/activity`, e.g. `shell:git`) |
 | GET / POST | `/api/goals` | list / create `{title, description, steps[]}` |
 | GET / PATCH / DELETE | `/api/goals/{id}` | read / update `{status, note, step_index (1-based), step_status, step_note}` / delete |
 | POST | `/api/goals/{id}/steps` `{title}` | add a step |
 | POST | `/api/goals/{id}/advance` | run one background pass now |
 | GET / POST | `/api/memory` · DELETE `/api/memory/{id}` | list / add `{content, category}` / forget |
 | GET | `/api/ideas?refresh=1` | cached or regenerated suggestions |
-| GET | `/api/activity` | audit tail and granted approvals |
+| GET | `/api/activity` | audit tail, granted permissions (`grants[]` with `key`, `tool`, `target`, `scope`, `expires_at`), taint flag |
 | GET | `/api/files` · `/api/files/{path}` | list / download workspace files |
 | GET / PUT | `/api/settings` | view / change `{profile, sentinel_mode, show_thinking, language}` |
 | WS | `/ws?token=` | live events |
@@ -74,7 +75,7 @@ On connect the server sends `{"kind": "hello", "state": …}` (the same payload 
 
 | Server → client | Meaning |
 |---|---|
-| `event` | a new timeline event (`user`, `assistant`, `tool`, `approval`, `question`, `artifact`, `notice`) |
+| `event` | a new timeline event (`user`, `assistant`, `tool`, `approval`, `question`, `artifact`, `notice`). An `approval` carries `summary`, `purpose` (what you asked for), `target`, `grant_key`, `grant_options`, `risk`, `warnings`, `args` |
 | `update` | fields changed on an existing event (a tool finished, an approval was decided) |
 | `stream_start` / `delta` / `stream_end` | the assistant reply being generated |
 | `status` | idle / working / waiting, with a short detail line |

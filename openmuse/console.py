@@ -92,6 +92,8 @@ class ConsoleUI:
         self._end_stream()
         body = Text()
         body.append(f"{request.summary}\n", style="bold")
+        if request.purpose:
+            body.append(f"for: {request.purpose}\n", style="italic dim")
         body.append(f"risk: {request.risk.value}", style=RISK_STYLE.get(request.risk.value, ""))
         if request.egress_target:
             body.append(f"   → {request.egress_target}")
@@ -107,19 +109,27 @@ class ConsoleUI:
         self.console.print(
             Panel(body, title="🛡  Sentinel approval required", border_style="yellow")
         )
+        what = request.grant_key
+        labels = {
+            "once": "[y]es, once",
+            "task": "this [t]ask",
+            "session": "this [s]ession",
+            "24h": "24 hours ([d])",
+            "always": f"[a]lways for {what}",
+        }
+        keys = {"once": "y", "task": "t", "session": "s", "24h": "d", "always": "a"}
+        offered = [s for s in request.grant_options if s in labels]
+        prompt = "[bold]Allow?[/bold] " + " / ".join(labels[s] for s in offered) + " / [n]o"
         answer = await asyncio.to_thread(
             Prompt.ask,
-            "[bold]Allow?[/bold] [y]es once / [s]ession / [a]lways for this tool / [n]o",
-            choices=["y", "s", "a", "n"],
+            prompt,
+            choices=[keys[s] for s in offered] + ["n"],
             default="n",
             console=self.console,
         )
-        if answer == "y":
-            return ApprovalDecision(approved=True, scope="once")
-        if answer == "s":
-            return ApprovalDecision(approved=True, scope="session")
-        if answer == "a":
-            return ApprovalDecision(approved=True, scope="always")
+        for scope, key in keys.items():
+            if answer == key and scope in offered:
+                return ApprovalDecision(approved=True, scope=scope)  # type: ignore[arg-type]
         reason = await asyncio.to_thread(
             Prompt.ask, "Reason for the agent (optional)", default="", console=self.console
         )

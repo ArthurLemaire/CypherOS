@@ -8,7 +8,7 @@ from openmuse.config import Settings
 from openmuse.goals import GoalStore
 from openmuse.llm import MockLLM
 from openmuse.memory import MemoryStore
-from openmuse.schema import Function, LLMResponse, Role, ToolCall, ToolResult
+from openmuse.schema import Function, LLMResponse, Message, Role, ToolCall, ToolResult
 from openmuse.sentinel import AuditLog, Sentinel
 from openmuse.tools import Goals, Remember, Terminate, ToolCollection
 from openmuse.tools.base import BaseTool
@@ -163,3 +163,21 @@ async def test_session_roundtrip(settings: Settings, tmp_path):
     agent2, *_ = make_agent(settings, [])
     assert agent2.load_session(tmp_path / "s.json") == 2
     assert agent2.messages[-1].content == "hello"
+
+
+async def test_session_restore_repairs_unanswered_tool_calls(settings: Settings, tmp_path):
+    """A restart while a tool call waited for approval leaves an assistant message whose
+    tool calls have no results; the next request would be rejected by the provider."""
+    agent, *_ = make_agent(settings, [])
+    call = tc("add", a=1, b=2)
+    agent.messages = [Message.user("add"), LLMResponse(content="", tool_calls=[call]).to_message()]
+    agent.session_file = tmp_path / "s.json"
+    agent._save_session()
+    agent2, llm, *_ = make_agent(settings, [LLMResponse(content="ok")])
+    agent2.load_session(tmp_path / "s.json")
+    assert agent2.messages[-1].role == Role.TOOL
+    assert agent2.messages[-1].tool_call_id == call.id
+    assert "restarted" in (agent2.messages[-1].content or "")
+    await agent2.run("continue")
+    roles = [m.role for m in llm.calls[0]["messages"]]
+    assert roles.count(Role.TOOL) == 1, "history sent to the model is well-formed"

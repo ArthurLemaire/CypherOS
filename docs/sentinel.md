@@ -41,16 +41,22 @@ For each call, the first matching step decides:
 
 ## Approvals
 
-When the decision is *ask*, the UI (console, or an approval card in the app) shows the tool, the summarised call, the exact arguments, the risk level and the reasons. You can answer:
+When the decision is *ask*, the UI (console, or an approval card in the app) shows the tool, the summarised call, what you asked for that led to it (the *purpose*), the exact arguments, the risk level and the reasons. You can deny, or allow with a scope:
 
 | Answer | Effect |
 |---|---|
 | Deny | the tool is not run; the model gets a "Sentinel blocked" result and is told not to retry the same call |
-| Allow once | this call only |
-| Allow for this session | the same tool + argument summary is allowed until the process exits |
-| Always allow | persisted in `<data_dir>/approvals.json`; the activity sheet in the app (tap the avatar) can forget every granted permission, as can `DELETE /api/approvals` or deleting the file |
+| Once | this call only; nothing is remembered |
+| For this task | until the agent finishes what it is doing now (the current run) |
+| Until restart | until the process exits |
+| For 24 hours | persisted in `<data_dir>/approvals.json` with an expiry |
+| Always | persisted until you revoke it |
 
-In the app an unanswered card times out after `server.approval_timeout` seconds (default one hour) and counts as deny. The agent keeps accepting new messages while a card is waiting.
+An approval is a capability, not a mood. It is bound to a **grant key**: the tool plus what the call touches — `web_fetch:example.com`, `send_email:alice@example.com`, `shell:git`, `browser:booking.com`. Allowing `git` commands for the session says nothing about `curl`; a pipeline such as `git status | head` needs every program covered (approving it grants each program separately), and an email to two people needs both recipients. Tools without a meaningful target (`python_execute`, an MCP tool) are granted as a whole, and the Sentinel only offers *once* and *for this task* for arbitrary code with network access. A call that carries a warning (`rm -rf`, `sudo`, `curl | sh`) is approved one at a time — standing permissions never cover it.
+
+Everything you granted is listed under the avatar in the app (Permissions), each with its own revoke button; `DELETE /api/approvals/grants/{key}` and `DELETE /api/approvals` do the same from the API, and `openmuse chat`'s `/forget-approvals` clears them in the console.
+
+In the app an unanswered card times out after `server.approval_timeout` seconds (default one hour) and counts as deny. The agent keeps accepting new messages while a card is waiting. Cards that were still pending when the server stopped are marked expired on restart; the run behind them is gone.
 
 ## Taint tracking
 

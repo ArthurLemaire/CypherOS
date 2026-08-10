@@ -140,7 +140,12 @@ class MuseAgent:
         return len({sig(m) for m in assistants}) == 1
 
     # ------------------------------------------------------------------ main loop
-    async def run(self, user_input: str) -> str:
+    async def run(self, user_input: str, purpose: str | None = None) -> str:
+        """One task: a user message (or a background prompt) worked to completion.
+
+        ``purpose`` is what approval cards show as the reason for an action; it defaults
+        to the message itself. Task-scoped approvals end when this call returns.
+        """
         if self.state == AgentState.RUNNING:
             raise RuntimeError("agent is already running")
         self.state = AgentState.RUNNING
@@ -152,6 +157,7 @@ class MuseAgent:
         final: str | None = None
         step = 0
         empty_replies = 0
+        task_token = self.sentinel.begin_task(purpose or user_input)
         try:
             while step < self.settings.agent.max_steps:
                 step += 1
@@ -224,6 +230,7 @@ class MuseAgent:
             self.state = AgentState.ERROR
             raise
         finally:
+            self.sentinel.end_task(task_token)
             self._save_session()
         return final or ""
 
@@ -251,7 +258,38 @@ class MuseAgent:
         data = json.loads(Path(path).read_text("utf-8"))
         self.messages = [Message.model_validate(m) for m in data.get("messages", [])]
         self.turns = int(data.get("turns", 0))
+        self._repair_dangling_tool_calls()
         return len(self.messages)
+
+    def _repair_dangling_tool_calls(self) -> None:
+        """A restart in the middle of a tool call (say, while an approval was pending)
+        leaves an assistant message whose tool calls have no results. Providers reject
+        that history outright, so give every orphan a result that says what happened."""
+        repaired: list[Message] = []
+        i = 0
+        while i < len(self.messages):
+            msg = self.messages[i]
+            repaired.append(msg)
+            i += 1
+            if msg.role != Role.ASSISTANT or not msg.tool_calls:
+                continue
+            answered: set[str] = set()
+            while i < len(self.messages) and self.messages[i].role == Role.TOOL:
+                repaired.append(self.messages[i])
+                answered.add(self.messages[i].tool_call_id or "")
+                i += 1
+            for call in msg.tool_calls:
+                if call.id not in answered:
+                    repaired.append(
+                        Message.tool(
+                            "(no result: the app was restarted before this call finished)",
+                            call.id,
+                            call.function.name,
+                        )
+                    )
+        if len(repaired) != len(self.messages):
+            logger.info("repaired {} unanswered tool call(s)", len(repaired) - len(self.messages))
+            self.messages = repaired
 
 
 __all__ = ["MuseAgent"]

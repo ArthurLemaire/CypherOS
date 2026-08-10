@@ -35,9 +35,28 @@ export interface ApprovalEvent extends BaseEvent {
   reasons: string[];
   warnings: string[];
   egress_target?: string | null;
+  /** What the user asked for — why this action is happening. */
+  purpose?: string;
+  /** What a standing permission would be bound to (host, recipient, program). */
+  target?: string | null;
+  grant_key?: string;
+  /** Scopes the Sentinel offers for this call, in display order. */
+  grant_options?: GrantScope[];
   args: Record<string, unknown>;
   status: "pending" | "approved" | "denied" | "expired";
   scope?: string | null;
+}
+
+export type GrantScope = "once" | "task" | "session" | "24h" | "always";
+
+export interface Grant {
+  key: string;
+  tool: string;
+  target: string | null;
+  scope: GrantScope;
+  granted_at: string;
+  expires_at: string | null;
+  task_id?: string | null;
 }
 
 export interface QuestionEvent extends BaseEvent {
@@ -195,7 +214,7 @@ export interface AuditEntry {
 
 export interface ActivityData {
   audit: AuditEntry[];
-  approvals: { session: string[]; persistent: string[] };
+  grants: Grant[];
   tainted: boolean;
 }
 

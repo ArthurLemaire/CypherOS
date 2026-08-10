@@ -41,7 +41,7 @@
 Meta's Muse is an agent that does things rather than answering questions: it researches, plans, writes files, sends mail, works on goals over weeks, and every risky action passes through a separate gatekeeper. OpenMuse rebuilds that shape in the open:
 
 - One long conversation with your agent, plus side chats for separate tasks. Tool calls show up inline as chips you can expand.
-- Approval cards. Anything hard to undo (a shell command, an email, a network call after reading private data) stops and waits for a tap: deny, allow once, allow for the session, always allow.
+- Approval cards. Anything hard to undo (a shell command, an email, a network call after reading private data) stops and waits for a tap. An approval is scoped — once, this task, until restart, 24 hours, always — and bound to what it was for: `git` commands, email to one address, one website. Every permission you granted is listed under the avatar and can be revoked on its own.
 - Goals that outlive the chat. The agent breaks a goal into steps, updates them as it works, and can keep advancing goals on a timer while the app is closed, posting updates to the main chat.
 - Ideas: suggested next actions based on your goals, memory and recent conversations.
 - Memory you can read and edit. Durable facts about you are saved by the agent and shown in a tab; anything can be forgotten with one tap.
