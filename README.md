@@ -10,6 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/OpenMuseAgent/OpenMuse/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/OpenMuseAgent/OpenMuse/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://pypi.org/project/openmuse/"><img alt="PyPI" src="https://img.shields.io/pypi/v/openmuse.svg"></a>
   <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
   <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-blue.svg">
   <br>
@@ -60,11 +61,11 @@ Meta's Muse is an agent that does things rather than answering questions: it res
 Python 3.11 or newer. The phone app is pre-built and included in the package; Node is only needed if you change `web/`.
 
 ```bash
-uv tool install git+https://github.com/OpenMuseAgent/OpenMuse.git
-# or: pip install git+https://github.com/OpenMuseAgent/OpenMuse.git
+uv tool install openmuse
+# or: pip install openmuse
 ```
 
-From a checkout, for development:
+Latest from git: `uv tool install git+https://github.com/OpenMuseAgent/OpenMuse.git`. From a checkout, for development:
 
 ```bash
 git clone https://github.com/OpenMuseAgent/OpenMuse.git && cd OpenMuse
@@ -72,7 +73,7 @@ uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
 ```
 
-Optional: `openmuse[browser]` adds the Playwright browser tool (then `playwright install chromium`). A PyPI release follows the first tagged version.
+Optional: `openmuse[browser]` adds the Playwright browser tool (then `playwright install chromium`).
 
 ## Quick start
 

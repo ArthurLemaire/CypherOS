@@ -50,6 +50,12 @@ CI runs the Python checks on 3.11 and 3.12, builds the web app and checks that t
 
 Prefer an [MCP server](https://modelcontextprotocol.io) for integrations with an existing protocol; it plugs in through `[[mcp.servers]]` with no code.
 
+## Releasing (maintainers)
+
+1. Bump `version` in `pyproject.toml` and `openmuse/__init__.py`, note the changes in the GitHub release draft, commit.
+2. `git tag vX.Y.Z && git push origin main vX.Y.Z`.
+3. The [Release](.github/workflows/release.yml) workflow checks the tag against the version, builds and smoke-tests the wheel, then publishes to PyPI through Trusted Publishing (`pypi` environment, no stored token).
+
 ## Security issues
 
 Open a private security advisory on GitHub rather than a public issue.

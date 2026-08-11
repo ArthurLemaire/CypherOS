@@ -10,6 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/OpenMuseAgent/OpenMuse/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/OpenMuseAgent/OpenMuse/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://pypi.org/project/openmuse/"><img alt="PyPI" src="https://img.shields.io/pypi/v/openmuse.svg"></a>
   <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
   <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-blue.svg">
   <br>
@@ -60,11 +61,11 @@ Meta 的 Muse 不是聊天机器人，而是一个动手的 Agent：查资料、
 需要 Python 3.11 或更新。手机 App 已预先构建并打进包里，只有改 `web/` 时才需要 Node。
 
 ```bash
-uv tool install git+https://github.com/OpenMuseAgent/OpenMuse.git
-# 或：pip install git+https://github.com/OpenMuseAgent/OpenMuse.git
+uv tool install openmuse
+# 或：pip install openmuse
 ```
 
-从源码开发：
+要最新的 git 版本：`uv tool install git+https://github.com/OpenMuseAgent/OpenMuse.git`。从源码开发：
 
 ```bash
 git clone https://github.com/OpenMuseAgent/OpenMuse.git && cd OpenMuse
@@ -72,7 +73,7 @@ uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
 ```
 
-可选：`openmuse[browser]` 增加 Playwright 浏览器工具（然后 `playwright install chromium`）。第一个打 tag 的版本之后会发到 PyPI。
+可选：`openmuse[browser]` 增加 Playwright 浏览器工具（然后 `playwright install chromium`）。
 
 ## 快速开始
 
