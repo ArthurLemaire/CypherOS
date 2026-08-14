@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "openmuse"
 version = "0.1.0"
-description = "OpenMuse — an open-source personal AI agent with a Sentinel gatekeeper, credential vault, approvals, audit trail, memory and goals. Bring your own model."
+description = "Open-source version of Meta's Muse: a personal agent with a phone app, a Sentinel gatekeeper, a credential vault, memory and goals. Bring your own model."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"
@@ -54,6 +54,9 @@ Issues = "https://github.com/OpenMuseAgent/OpenMuse/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["openmuse"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"config/config.example.toml" = "openmuse/config.example.toml"
 
 [tool.hatch.build.targets.sdist]
 include = ["openmuse", "config/config.example.toml", "README.md", "README_zh.md", "LICENSE"]

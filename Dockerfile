@@ -1,7 +1,8 @@
-# OpenMuse — run the agent in an isolated container (the "Secure VM").
+# OpenMuse in a container: the agent sees only /data and /workspace.
 #
 #   docker build -t openmuse .
-#   docker run -it --rm --env-file .env -v openmuse-data:/data -v $PWD/workspace:/workspace openmuse
+#   docker run -d -p 8787:8787 --env-file .env -v openmuse-data:/data -v $PWD/workspace:/workspace openmuse
+#   docker run -it --rm --env-file .env -v openmuse-data:/data -v $PWD/workspace:/workspace openmuse chat
 #
 FROM python:3.12-slim
 
@@ -32,6 +33,8 @@ RUN pip install --no-cache-dir . \
 
 USER muse
 VOLUME ["/data", "/workspace"]
+EXPOSE 8787
 
 ENTRYPOINT ["openmuse"]
-CMD ["chat"]
+# The phone app. Override with `chat`, `run "..."`, `daemon`, ...
+CMD ["serve", "--host", "0.0.0.0", "--no-qr"]

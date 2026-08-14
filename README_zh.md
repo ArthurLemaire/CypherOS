@@ -1,290 +1,244 @@
 <p align="center">
-  <h1 align="center">OpenMuse</h1>
-  <p align="center">
-    Meta <b>Muse</b> 的开源复现：一个带 <b>Sentinel 守门人</b>、加密凭据保险库、审批、审计日志、长期记忆与目标的个人 AI Agent。<br/>
-    模型自带，任意 OpenAI 兼容接口皆可。
-  </p>
+  <img src="web/public/icon.svg" width="88" alt="OpenMuse">
+</p>
+
+<h1 align="center">OpenMuse</h1>
+
+<p align="center">
+  Meta <a href="https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/">Muse</a> 的开源实现：一个在手机上替你做事的个人 Agent，关掉 App 也会继续干活，做任何不可撤销的事之前先问你。自托管，模型任选。
 </p>
 
 <p align="center">
   <a href="https://github.com/OpenMuseAgent/OpenMuse/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/OpenMuseAgent/OpenMuse/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
-  <img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-blue.svg">
-  <a href="README.md">English</a>
+  <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
+  <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-blue.svg">
+  <br>
+  <a href="README.md">English</a> · 简体中文
 </p>
 
----
+<p align="center">
+  <img src="docs/screenshots/chat-approval.png" width="24%" alt="带审批卡片的聊天">
+  <img src="docs/screenshots/goal-detail.png" width="24%" alt="目标与计划">
+  <img src="docs/screenshots/ideas.png" width="24%" alt="Ideas 页签">
+  <img src="docs/screenshots/settings.png" width="24%" alt="Sentinel 设置">
+</p>
 
-**OpenMuse 是 [Meta Muse](https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/) 的开源复刻**——Muse 是 Meta 于 2026 年 9 月 8 日发布的个人 AI Agent。Muse 的卖点是一个真正*替你做事*的 Agent：读邮件、上网、跑代码、记住你的偏好、跨越数天推进目标——同时保持安全：每个动作都要经过守门人（Meta 称之为 *Sentinel*），凭据永远不进模型。OpenMuse 用约 5k 行带类型标注的 Python 复刻了这套架构，一个下午就能读完，并且可以接 **任何 OpenAI 兼容模型**：DeepSeek、OpenAI、Anthropic、OpenRouter、Ollama、vLLM 或公司内部网关。
+## 从这里开始
 
-> 状态：**v0.1.0 — alpha**。核心循环、Sentinel、保险库、记忆、目标、工具和 CLI 已可端到端运行；API 仍可能变动。
-
-## 特性
-
-| | |
+| 你想… | 看这里 |
 |---|---|
-| 🛡️ **Sentinel 守门人** | 所有工具调用都经策略引擎裁决：`allow` / `ask` / `deny`，三种模式（`ask`、`strict`、`auto`），按工具的风险等级、对参数的 glob 规则，会话级或持久化审批。 |
-| 🧪 **污点追踪 + 出站白名单** | 一旦 Agent 接触过私密数据（邮件、记忆、工作区外文件），会话即被标记为 *tainted*，此后对白名单之外主机的任何网络出站都需要明确审批——这是对提示注入导致数据外泄的实用防线。 |
-| 🔐 **凭据保险库** | Fernet 加密的密钥存储。配置和工具里写 `{{vault:NAME}}`，Sentinel 在执行前解析占位符，模型永远看不到真实值，输出中也会被脱敏。 |
-| 📜 **审计日志** | 只追加的 JSONL，记录每次裁决、审批、工具调用与结果。`openmuse audit`。 |
-| 🧠 **记忆** | SQLite 支撑的 `remember` / `recall` / `forget`，相关记忆自动注入系统提示。 |
-| 🎯 **目标 + 守护进程** | 多步骤长周期目标，含计划、进度与笔记。`openmuse daemon` 在无人值守时持续推进活跃目标（Sentinel `auto` 模式 + deny 规则）。 |
-| 🧰 **工具与 MCP** | 文件（限定工作区）、shell、Python、网页搜索/抓取（防 SSRF）、邮件、浏览器——以及任何 [Model Context Protocol](https://modelcontextprotocol.io) 服务器（stdio / HTTP / SSE）。 |
-| ✉️ **邮件连接器 + OTP 扰除** | 通过保险库凭据走 IMAP/SMTP。一次性验证码与重置链接在模型读取*之前*就被剥离。 |
-| 🌐 **可选 Playwright 浏览器** | `pip install "openmuse[browser]"`，支持 navigate / extract / click / type / screenshot。 |
-| 🔌 **任意模型** | Chat Completions 或 Responses API，流式输出，`<think>` 处理，原生或基于提示词的工具调用，`extra_headers` / `extra_body` 适配网关。 |
+| 安装并在手机上打开 | [安装](#安装) → [快速开始](#快速开始) |
+| 在终端里用 | [CLI](docs/cli.md) |
+| 接 DeepSeek、OpenAI、Ollama 或公司网关 | [模型](#模型) · [配置](docs/configuration.md) |
+| 搞清楚它什么会直接做、什么会先问 | [Sentinel](#sentinel) · [docs/sentinel.md](docs/sentinel.md) |
+| 接邮箱、浏览器或 MCP 服务器 | [配置 → Connectors](docs/configuration.md#connectors) |
+| 读代码 | [架构](#架构) · [docs/architecture.md](docs/architecture.md) |
+| 用 Docker 跑 | [部署](docs/deployment.md) |
+
+## 它能做什么
+
+Meta 的 Muse 不是聊天机器人，而是一个动手的 Agent：查资料、做计划、写文件、发邮件、花几周推进一个目标，而每个有风险的动作都要经过一个独立的守门人。OpenMuse 把这套东西在开源世界里重做了一遍：
+
+- 一条和你的 Agent 之间的长对话，外加处理独立任务的侧边聊天。工具调用以内联小块展示，点开可看参数和输出。
+- 审批卡片。任何难以撤销的事（一条 shell 命令、一封邮件、读过私密数据之后的网络请求）都会停下来等你点一下：拒绝、允许一次、本次会话允许、始终允许。
+- 比对话活得更久的目标。Agent 把目标拆成步骤，边做边更新，还能在 App 关闭时按定时器继续推进，并把进展发到主聊天里。
+- Ideas：基于你的目标、记忆和近期对话给出的下一步建议。
+- 你能看、能改的记忆。Agent 记下的关于你的长期事实在页签里一览无余，点一下就能让它忘掉。
+- Sentinel 守门人、凭据保险库、污点追踪和只追加的审计日志。见 [Sentinel](#sentinel)。
+- 工具：文件、shell、Python、网页搜索与抓取、邮件（一次性验证码在模型看到之前就被抹掉）、可选的 Playwright 浏览器，以及任何 [MCP](https://modelcontextprotocol.io) 服务器。
+- 任何 OpenAI 兼容模型都能跑：DeepSeek、OpenAI、OpenRouter、Ollama、vLLM，或者带自定义请求头的公司网关。
+
+## 为什么是 OpenMuse
+
+- **它是一个 Muse，不是 bot 框架。** 一个有名字有头像的 Agent，一个带 Chat / Goals / Ideas / Memory 页签的手机 App，审批卡片，后台干活。如果你想要的是 Telegram 或 Discord 里的机器人，看看[相关项目](#相关项目)。
+- **安全是架构，不是一个开关。** Agent 从不直接碰工具。独立的 `Sentinel` 对每次调用裁决 allow / ask / deny，在执行前替换 `{{vault:NAME}}` 占位符（密钥不进模型），追踪污点（读过私密数据后，新的网络目的地需要审批），并记录一切。
+- **模型自带。** Chat Completions 或 Responses API，流式输出，`<think>` 处理，原生或基于提示词的工具调用。
+- **小到能读完。** 约 7k 行带类型标注的 Python 和 3k 行 TypeScript，底下没有编排框架。
+
+## 安装
+
+需要 Python 3.11 或更新。手机 App 已预先构建并打进包里，只有改 `web/` 时才需要 Node。
+
+```bash
+uv tool install git+https://github.com/OpenMuseAgent/OpenMuse.git
+# 或：pip install git+https://github.com/OpenMuseAgent/OpenMuse.git
+```
+
+从源码开发：
+
+```bash
+git clone https://github.com/OpenMuseAgent/OpenMuse.git && cd OpenMuse
+uv venv && source .venv/bin/activate
+uv pip install -e ".[dev]"
+```
+
+可选：`openmuse[browser]` 增加 Playwright 浏览器工具（然后 `playwright install chromium`）。第一个打 tag 的版本之后会发到 PyPI。
+
+## 快速开始
+
+```bash
+openmuse config init                 # 生成 config/config.toml
+export DEEPSEEK_API_KEY=sk-...       # 默认配置用 DeepSeek，其他见下方“模型”
+openmuse serve --host 0.0.0.0        # 打印链接和二维码
+```
+
+用手机扫码（同一 Wi-Fi），或在本机打开链接。链接里带一次性访问令牌；把页面添加到主屏幕，它就像一个 App。然后试试：
+
+- *“对比 Sony WH-1000XM6 和 Bose QuietComfort Ultra 哪个更适合长途飞行，把简短对比写到 headphones.md”*
+- *“看看这台机器还有多少磁盘空间”*——这一条会弹出审批卡片。
+- *“建一个目标：12 月去京都之前学会日常日语对话，每天 30 分钟”*——然后打开 Goals 页签。
+
+更习惯终端？`openmuse chat` 给你同一个 Agent，审批在控制台里完成；`openmuse run "任务"` 跑一件事就退出。见 [docs/cli.md](docs/cli.md)。
+
+## App
+
+`openmuse serve` 启动一个常驻的 Agent，并在同一个进程里提供移动端优先的 Web App（FastAPI + WebSocket 推送实时事件；客户端是 React，打进 Python 包里）。
+
+<p align="center">
+  <img src="docs/screenshots/chat-research.png" width="24%" alt="带工具小块和文件产物的调研">
+  <img src="docs/screenshots/chat-approval.png" width="24%" alt="审批卡片">
+  <img src="docs/screenshots/memory.png" width="24%" alt="Memory 页签">
+  <img src="docs/screenshots/goal-detail.png" width="24%" alt="目标计划">
+</p>
+
+| 页面 | 内容 |
+|---|---|
+| Chat | 消息式对话、流式回复、可展开的工具小块、文件产物、审批与提问卡片、侧边聊天。Agent 干活时你可以继续输入，新消息会并入正在进行的这一轮。 |
+| Goals | 进行中 / 暂停 / 完成的目标，含步骤状态与备注的计划，“现在推进”，以及一个“我不在时每 N 分钟继续推进目标”的开关。 |
+| Ideas | 五条建议，按需重新生成。点一下就作为消息发出。 |
+| Memory | Agent 记住的关于你的一切，按类别分组。可添加、可遗忘。 |
+| You | Agent 的名字、头像、颜色和性格；Sentinel 模式；后台工作；回复语言。 |
+| 头像 | 点一下打开活动记录：审计日志里的每次工具调用、裁决与审批。 |
+
+App 走一套很小的 REST + WebSocket API，见 [docs/app.md](docs/app.md)，其他前端可以基于同一个服务端构建。
+
+## Sentinel
+
+每次工具调用在执行前都要经过 `Sentinel`。工具声明风险等级（`safe` / `moderate` / `sensitive`），并可对特定调用升级（`shell` 遇到 `rm -rf`，`web_fetch` 遇到内网 IP）。裁决顺序，首个匹配生效：
+
+1. `deny_tools` → 拒绝
+2. 对参数做 glob 匹配的 `[[sentinel.rules]]` → 规则指定的动作
+3. `always_allow_tools` / `always_ask_tools`
+4. 污点：本会话读过私密数据（邮件、记忆、工作区外文件）**且**本次调用向 `egress_allowlist` 之外的主机发送数据 → 询问
+5. 风险 × 模式：`ask` 对 sensitive 询问，`strict` 对 moderate 也询问，`auto` 放行一切未被拒绝的调用
+
+```toml
+[sentinel]
+mode = "ask"                              # ask | strict | auto
+always_ask_tools = ["send_email", "shell"]
+egress_allowlist = ["*.wikipedia.org", "github.com", "*.github.com"]
+
+[[sentinel.rules]]
+tool   = "shell"
+match  = { command = "*rm -rf*" }
+action = "deny"
+```
+
+密钥存在 Fernet 加密的保险库里（`openmuse vault set EMAIL_PASSWORD`）。配置和工具参数用 `{{vault:EMAIL_PASSWORD}}` 引用；Sentinel 在执行前一刻替换真实值，并在工具输出里把它脱敏，模型始终看不到。每次裁决都追加到 `~/.openmuse/audit.jsonl`。细节见 [docs/sentinel.md](docs/sentinel.md)。
+
+## 模型
+
+编辑 `config/config.toml` 里的 `[llm]`，任何 OpenAI 兼容接口都行：
+
+```toml
+[llm]
+provider = "openai"                    # Chat Completions；Responses API 用 "openai_responses"
+model    = "deepseek-flash"
+base_url = "https://api.deepseek.com"
+api_key  = "${DEEPSEEK_API_KEY}"
+
+# OpenAI:      model = "gpt-5.6-sol"  base_url = "https://api.openai.com/v1"   api_key = "${OPENAI_API_KEY}"
+# Ollama:      model = "qwen3:32b"    base_url = "http://localhost:11434/v1"   api_key = "ollama"
+# OpenRouter:  model = "deepseek/deepseek-flash"  base_url = "https://openrouter.ai/api/v1"
+# 需要自定义请求头的网关：  extra_headers = { "X-End-User-Id" = "openmuse" }
+# 忽略 `tools` 字段的模型：  tool_mode = "prompt"
+```
+
+同样的设置也可以用 `OPENMUSE_LLM_MODEL`、`OPENMUSE_LLM_BASE_URL`、`OPENMUSE_LLM_API_KEY`、`OPENMUSE_LLM_PROVIDER` 覆盖。完整参考：[docs/configuration.md](docs/configuration.md)。
 
 ## 架构
 
 ```mermaid
 flowchart LR
-    U([你]) <--> CLI[CLI / 控制台 UI]
-    CLI <--> A[MuseAgent 循环]
-    A <--> LLM[(LLM<br/>任意 OpenAI 兼容)]
-    A --> S{{Sentinel}}
-    S -- allow --> T[工具]
-    S -- ask --> U
-    S -- deny --> A
-    S --> AU[(审计日志)]
-    S <--> V[(凭据保险库<br/>Fernet)]
-    T --> F[files / shell / python]
-    T --> W[web_search / web_fetch / browser]
-    T --> E[read_emails / send_email]
-    T --> M[(记忆)]
-    T --> G[(目标)]
+    P([手机 / 浏览器]) <-- WebSocket + REST --> S[MuseService<br/>线程、调度器、Ideas]
+    C([终端]) <--> A
+    S <--> A[MuseAgent 循环]
+    A <--> LLM[(任意 OpenAI 兼容模型)]
+    A --> G{{Sentinel}}
+    G -- allow --> T[工具]
+    G -- ask --> P
+    G --> AU[(audit.jsonl)]
+    G <--> V[(vault.enc)]
+    T --> F[files · shell · python]
+    T --> W[web_search · web_fetch · browser]
+    T --> E[email]
     T --> MCP[MCP 服务器]
-    M -. 注入 .-> A
-    G -. 注入 .-> A
+    T <--> M[(memory.db)]
+    T <--> GO[(goals.db)]
 ```
 
-* **MuseAgent** – 思考 → 行动循环，带上下文裁剪、卡死检测与会话持久化（`openmuse/agent/core.py`）。
-* **Sentinel** – `Policy`（规则、风险 × 模式、污点）+ `AuditLog` + 审批 + 保险库解析（`openmuse/sentinel/`）。
-* **Vault** – `CredentialVault`，`{{vault:NAME}}` 解析与输出脱敏（`openmuse/vault/`）。
-* **Tools** – `BaseTool` 声明静态 `risk`，并可通过 `assess()` 按调用动态升级（如 `shell` 遇 `rm -rf` 升级，`web_fetch` 拦截内网 IP）（`openmuse/tools/`）。
-* **LLM** – `OpenAIChatLLM`、`OpenAIResponsesLLM`、`PromptToolAdapter` 兜底、测试用 `MockLLM`（`openmuse/llm/`）。
+| 模块 | 文件 |
+|---|---|
+| Agent 循环、系统提示、上下文窗口 | `openmuse/agent/core.py`、`openmuse/prompts.py` |
+| Sentinel：策略、审批、污点、审计 | `openmuse/sentinel/` |
+| 凭据保险库 | `openmuse/vault/` |
+| 工具与 MCP 适配 | `openmuse/tools/` |
+| LLM 提供方、`<think>` 过滤、提示词工具调用 | `openmuse/llm/` |
+| 记忆与目标（SQLite） | `openmuse/memory/`、`openmuse/goals/` |
+| App 服务端：服务、REST/WebSocket API、时间线 | `openmuse/server/` |
+| 手机 App（React、Vite、Tailwind） | `web/` → 构建到 `openmuse/server/static/` |
+| 终端 UI 与 CLI | `openmuse/console.py`、`openmuse/cli.py` |
 
-### 与 Meta Muse 对照
+更多见 [docs/architecture.md](docs/architecture.md)。
+
+## OpenMuse 与 Meta Muse
 
 | Meta Muse | OpenMuse |
 |---|---|
-| 运行在 *Secure VM* 中 | 用 Docker 运行（`docker compose run muse`）或任何你喜欢的沙箱 |
-| *Sentinel* 审批敏感操作 | `Sentinel` 策略引擎：allow / ask / deny、污点追踪、出站白名单 |
-| 凭据与模型隔离 | 加密保险库 + `{{vault:NAME}}` 占位符，绝不进入提示词 |
-| 记住用户偏好 | SQLite 记忆，`remember` / `recall` / `forget` |
-| 后台推进长任务 | `goals` 存储 + `openmuse daemon` |
-| 连接邮件、日历、浏览器 | 邮件（IMAP/SMTP）、Playwright 浏览器、其余一切走 MCP |
-| 仅限 Meta 自家模型 | 任意 OpenAI 兼容端点，含本地模型 |
+| 每个用户一台 Secure VM | 跑在你的机器或 Docker 里；工作区和数据目录就是边界 |
+| Sentinel 审批敏感动作 | `Sentinel` 策略引擎：allow / ask / deny、规则、污点追踪、出站白名单 |
+| 凭据不进模型 | 加密保险库 + `{{vault:NAME}}` 占位符 + 输出脱敏 |
+| 记得你 | Agent 维护、你可编辑的 SQLite 记忆 |
+| 后台推进目标 | 带步骤的目标；调度器推进并向聊天汇报 |
+| 带聊天、目标、审批的手机 App | `openmuse serve` 提供的移动端优先 Web App，可添加到主屏幕 |
+| Meta 自家模型 | 任意 OpenAI 兼容模型 |
 | 闭源 | MIT |
 
-## 快速开始
+## 文档
 
-```bash
-# 1. 安装（Python 3.11+）
-uv pip install openmuse            # 或 pip install openmuse
-# 源码安装：
-git clone https://github.com/OpenMuseAgent/OpenMuse.git && cd OpenMuse
-uv venv && source .venv/bin/activate && uv pip install -e ".[dev]"
+- [配置](docs/configuration.md)：所有设置、环境变量覆盖、连接器、MCP
+- [Sentinel](docs/sentinel.md)：裁决顺序、规则、污点追踪、保险库、审计
+- [App 与 API](docs/app.md)：手机访问、令牌、线程、审批、接口
+- [CLI](docs/cli.md)：`chat`、`run`、`serve`、`daemon`、`goals`、`memory`、`vault`、`audit`、`config`
+- [架构](docs/architecture.md)：源码地图与扩展点
+- [部署](docs/deployment.md)：Docker、Compose、常驻运行
+- [排障](docs/troubleshooting.md)
 
-# 2. 生成配置并指向一个模型
-openmuse config init               # 写入 config/config.toml
-export DEEPSEEK_API_KEY=sk-...     # 默认配置使用 DeepSeek
+## 路线图
 
-# 3. 和你的 Agent 对话
-openmuse chat
-openmuse run "把 Hacker News 前 3 条整理到 workspace/hn.md"
-```
-
-配置文件查找顺序：`--config PATH`、`$OPENMUSE_CONFIG`、`./config/config.toml`、`~/.openmuse/config.toml`。字符串值支持 `${ENV_VAR}` 或 `${ENV_VAR:-default}`。
-
-### 选择模型
-
-任何 OpenAI 兼容端点都可以。编辑 `config/config.toml` 的 `[llm]`：
-
-```toml
-[llm]
-# DeepSeek（默认）
-provider = "openai"                # Chat Completions API
-model    = "deepseek-flash"
-base_url = "https://api.deepseek.com"
-api_key  = "${DEEPSEEK_API_KEY}"
-
-# OpenAI
-# model = "gpt-5.6-sol"          base_url = "https://api.openai.com/v1"   api_key = "${OPENAI_API_KEY}"
-
-# Ollama / vLLM / LM Studio（完全本地、私有）
-# model = "qwen3:32b"          base_url = "http://localhost:11434/v1"  api_key = "ollama"
-
-# OpenRouter
-# model = "deepseek/deepseek-flash"  base_url = "https://openrouter.ai/api/v1"  api_key = "${OPENROUTER_API_KEY}"
-
-# 需要额外请求头 / 请求体字段的网关
-# base_url      = "https://gateway.example.com/v1"
-# extra_headers = { "X-End-User-Id" = "openmuse" }
-# extra_body    = { "thinking" = { "type" = "enabled" } }
-# provider      = "openai_responses"   # 网关若使用 Responses API
-# tool_mode     = "prompt"             # 端点若忽略 `tools`（改为在提示词中描述工具）
-```
-
-不改文件的快捷覆盖：`OPENMUSE_LLM_MODEL`、`OPENMUSE_LLM_BASE_URL`、`OPENMUSE_LLM_API_KEY`、`OPENMUSE_LLM_PROVIDER`、`OPENMUSE_LLM_TOOL_MODE`、`OPENMUSE_SENTINEL_MODE`、`OPENMUSE_DATA_DIR`、`OPENMUSE_LOG_LEVEL`（见 [`.env.example`](.env.example)）。
-
-## CLI
-
-```text
-openmuse chat  [--auto] [--show-thinking] [--resume]   交互会话（/help、/memory、/goals、/audit、/tools、/tainted、/reset）
-openmuse run   "任务"  [--auto]                         单次任务
-openmuse daemon [--interval 3600] [--once]              持续推进活跃目标（Sentinel auto 模式）
-
-openmuse goals   list|show|add|run|status|delete
-openmuse memory  list|add|forget|clear
-openmuse vault   set|list|delete                        模型永远看不到的密钥
-openmuse audit   [-n 20] [--json]                       最近的审计记录
-openmuse config  init|show|path
-openmuse version
-```
-
-所有命令都接受 `--config PATH`。`--auto` 在本次运行中把 Sentinel 切到 `auto` 模式（显式 `deny` 规则仍然生效）。
-
-## Sentinel
-
-Sentinel 位于 Agent 与每个工具之间。每个工具声明静态风险等级（`safe` / `moderate` / `sensitive`），并可按调用动态升级。策略按以下顺序评估——首个匹配生效：
-
-1. `deny_tools` → **deny**
-2. `[[sentinel.rules]]` 中参数 glob 匹配的规则 → 规则的 `action`
-3. `always_allow_tools` / `always_ask_tools`
-4. 污点：会话已读取私密数据 **且** 本次调用向 `egress_allowlist` 之外的主机发送数据 → **ask**
-5. 风险 × 模式：`ask` 模式对 `sensitive` 询问；`strict` 对 `moderate` 与 `sensitive` 都询问；`auto` 全部放行
-
-```toml
-[sentinel]
-mode = "ask"                              # ask | strict | auto
-always_ask_tools   = ["send_email", "shell"]
-deny_tools         = []
-taint_tracking     = true
-egress_allowlist   = ["duckduckgo.com", "*.duckduckgo.com", "*.wikipedia.org", "github.com", "*.github.com"]
-
-[[sentinel.rules]]                        # 首个匹配生效；值为 glob 模式
-tool   = "shell"
-match  = { command = "*rm -rf*" }
-action = "deny"
-reason = "不允许递归删除"
-
-[[sentinel.rules]]
-tool   = "files"
-match  = { action = "write", path = "*.env" }
-action = "ask"
-```
-
-Sentinel 询问时，你可以选择 **仅此一次**、**本会话** 或 **始终**（持久化）批准。每个裁决都会写入 `~/.openmuse/audit.jsonl`。
-
-## 凭据保险库
-
-```bash
-openmuse vault set EMAIL_PASSWORD          # 交互输入，Fernet 加密存到 ~/.openmuse/vault.enc
-openmuse vault list                        # 只列名字
-```
-
-```toml
-[connectors.email]
-enabled  = true
-address  = "{{vault:EMAIL_ADDRESS}}"
-password = "{{vault:EMAIL_PASSWORD}}"
-```
-
-占位符在工具执行前由 Sentinel 解析。模型只会看到 `{{vault:EMAIL_PASSWORD}}`；若密钥值意外出现在工具结果中，会在模型读取前被脱敏。密钥保存在 `~/.openmuse/vault.key` 或 `$OPENMUSE_VAULT_KEY`。
-
-## 记忆与目标
-
-```bash
-openmuse memory add "我喜欢简洁的中文回答" --category preference
-openmuse goals add "学习 Rust" -s "读完官方书 1-4 章" -s "写一个 CLI" -s "发布一个 crate"
-openmuse goals run g_xxxx               # 立刻推进一个目标
-openmuse daemon --interval 1800         # 每 30 分钟推进所有活跃目标
-```
-
-对话中 Agent 也会自行管理记忆（`remember` / `recall` / `forget`）与目标（`goals` 工具）。`recall` 与 `read_emails` 会把会话标记为 tainted。
-
-## 工具
-
-| 工具 | 风险 | 说明 |
-|---|---|---|
-| `files` | safe | read / write / append / list / search，限定在 `agent.workspace` 内 |
-| `shell` | sensitive | 危险模式会升级；默认在 `always_ask_tools` 中 |
-| `python_execute` | moderate | 带超时的子进程 |
-| `web_search` | safe | DuckDuckGo |
-| `web_fetch` | moderate | HTML → Markdown，拦截内网 / 回环地址 |
-| `read_emails` / `send_email` | moderate / sensitive | IMAP / SMTP，OTP 与重置链接扰除 |
-| `browser` | moderate | 可选 Playwright |
-| `remember` / `recall` / `forget` | safe / safe / moderate | 长期记忆 |
-| `goals` | safe | 创建 / 列出 / 更新步骤 / 笔记 |
-| `ask_user`、`terminate` | safe | 流程控制 |
-| MCP 工具 | 可配置 | 按服务器设置风险等级 |
-
-### MCP 服务器
-
-```toml
-[[mcp.servers]]
-name = "filesystem"
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-filesystem", "./workspace"]
-risk = "moderate"
-
-[[mcp.servers]]
-name = "calendar"
-url = "http://localhost:8000/mcp"      # streamable HTTP，自动回退到 SSE
-risk = "sensitive"
-reads_private_data = true
-```
-
-远端工具以 `<server>__<tool>` 出现，并像其他工具一样经过 Sentinel。
-
-## Docker（"Secure VM"）
-
-```bash
-cp .env.example .env && $EDITOR .env
-docker compose run --rm muse                      # 交互聊天
-docker compose run --rm muse run "规划我这一周"   # 单次任务
-docker compose up daemon                          # 后台目标推进
-```
-
-状态（`/data`）与 Agent 的文件（`/workspace`）都是卷；容器以非 root 用户运行，除这两个挂载点外无法访问宿主机。
-
-## 开发
-
-```bash
-uv pip install -e ".[dev]"
-ruff check openmuse tests && ruff format --check openmuse tests
-python -m pytest -q                           # 单元测试，MockLLM，无网络
-OPENMUSE_LIVE=1 python -m pytest -q -m live   # 对已配置模型做冒烟测试
-```
-
-见 [CONTRIBUTING.md](CONTRIBUTING.md)。
-
-### 疑难排解
-
-* **流式输出时回复开头缺字**（例如得到"帮你写作…"而非"你好！我能帮你写作…"）。部分代理会把 `<think>…</think>` 内联到 `content` 里，并在流式传输时于*服务端*丢掉 `</think>` 之后的首批 token；非流式响应是完整的。请在 `[llm]` 下设置 `stream = false`。
-* **模型忽略工具。** 设置 `tool_mode = "prompt"`——工具会被描述在系统提示中，并从 `<tool_call>` 块解析。
-* **429 / 限流。** 请求会以指数退避重试（`max_retries`，默认 5）。可降低 `max_steps`，或把 `web_fetch` 加入 `always_ask_tools` 来放慢循环。
-
-## Roadmap
-
-- [ ] **移动端优先的聊天 App（高优先级）**——复现 Meta Muse 发布页的手机端 showcase：消息式对话、后台任务、审批卡片、Goals 页签
-- [ ] Web UI（在手机上审批）与 Telegram / Slack 前端
-- [ ] 目标的定时触发（cron、webhook、新邮件事件）
+- [x] Agent 循环、Sentinel、保险库、审计、记忆、目标、工具、MCP、CLI
+- [x] 移动端优先 App：聊天、审批卡片、侧边聊天、Goals / Ideas / Memory、后台推进目标
+- [ ] 有审批等待或目标有进展时的推送通知
+- [ ] 目标触发器：cron、webhook、新邮件
 - [ ] 日历与联系人连接器（通过 MCP）
-- [ ] 向量化记忆召回与记忆整合
-- [ ] 长目标的规划器 / 子 Agent 委派
-- [ ] `shell` 与 `python_execute` 的独立沙箱（gVisor / Firecracker）
-- [ ] Skills：可复用、可分享的任务配方
+- [ ] 更好的记忆召回（向量）与定期整理
+- [ ] `shell` 与 `python_execute` 的独立沙箱
+- [ ] Skills：可复用的任务配方
 
-## 致谢
+## 参与
 
-* [browser-use](https://github.com/browser-use/browser-use) —— 浏览器工具元素标注的灵感来源。
-* [Model Context Protocol](https://modelcontextprotocol.io) —— 让我们不必亲手写每个连接器。
-* Meta 的 Muse —— OpenMuse 在开源世界中复现的 Sentinel / 保险库 / Secure VM 架构的来源。
+拿它做一件真事，报告哪里坏了，然后挑一个具体的点改进。开发环境见 [CONTRIBUTING.md](CONTRIBUTING.md)；CI 跑 `ruff`、`pytest` 和前端构建。
 
-## 免责声明
+## 相关项目
 
-OpenMuse 是独立的社区项目，与 Meta Platforms, Inc. 及其 Muse 产品无关联、未获其背书，也非派生自其代码。"Muse" 仅作描述性使用。
+- [nanobot](https://github.com/HKUDS/nanobot)：一个轻量的个人助手框架，活在聊天软件里（Telegram、Discord、Slack、微信……）。想在已有的频道里放一个 bot，选它。OpenMuse 是一个按 Muse 的产品形态和安全模型做的单一 Agent，不打算做频道框架。
+- [OpenClaw](https://github.com/openclaw/openclaw)：很多助手项目沿用的常驻网关思路。
+- [browser-use](https://github.com/browser-use/browser-use)：浏览器工具里元素标注的做法来自这里。
+- [Model Context Protocol](https://modelcontextprotocol.io)：OpenMuse 不用逐个写连接器的原因。
+
+## 声明
+
+OpenMuse 是独立的社区项目，与 Meta Platforms, Inc. 及其 Muse 产品无关，未获其认可，也不派生自它们。
 
 ## 许可证
 

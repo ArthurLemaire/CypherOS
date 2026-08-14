@@ -1,9 +1,9 @@
-"""OpenMuse — an open-source personal AI agent.
+"""OpenMuse: an open-source version of Meta's Muse personal agent.
 
-Inspired by Meta Muse: an agent that *does the work* (browse, search, read and
-send email, manage files, run code) while a separate **Sentinel** gatekeeper
-decides what is allowed to leave the machine, a **credential vault** keeps
-secrets out of the model's sight, and every action is written to an audit trail.
+The agent does the work (search, browse, files, code, email, long-running goals);
+a separate Sentinel decides what may run and what leaves the machine; a credential
+vault keeps secrets out of the model's sight; every action lands in an audit log.
+``openmuse serve`` adds the phone app.
 """
 
 __version__ = "0.1.0"

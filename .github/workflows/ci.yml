@@ -39,6 +39,30 @@ jobs:
       - name: Tests (no live LLM calls)
         run: uv run python -m pytest -q -m "not live"
 
+  web:
+    name: web app build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install
+        run: npm ci
+        working-directory: web
+      - name: Type-check and build
+        run: npm run build
+        working-directory: web
+      - name: Built app is committed
+        run: |
+          if [ -n "$(git status --porcelain openmuse/server/static)" ]; then
+            echo "openmuse/server/static is out of date — run 'cd web && npm run build' and commit the result"
+            git status --porcelain openmuse/server/static
+            exit 1
+          fi
+
   docker:
     name: docker build
     runs-on: ubuntu-latest

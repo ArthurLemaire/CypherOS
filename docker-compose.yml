@@ -1,14 +1,12 @@
-# OpenMuse in a container — the closest thing to Muse's "Secure VM".
+# OpenMuse in a container. The agent sees two mounts: /data (memory, goals,
+# vault, audit log, threads) and /workspace (its files). config/config.toml is
+# mounted read-only — run `openmuse config init` on the host first.
 #
-#   cp .env.example .env && $EDITOR .env          # API keys
-#   docker compose run --rm muse                  # interactive chat
-#   docker compose run --rm muse run "plan my week"
-#   docker compose up -d daemon                   # advance goals in the background
-#
-# The agent only sees two mounts: /data (memory, goals, vault, audit log) and
-# /workspace (its files). ./config/config.toml is mounted read-only over the
-# bundled example — run `openmuse config init` (or copy config.example.toml)
-# on the host first.
+#   cp .env.example .env && $EDITOR .env             # API key, OPENMUSE_SERVER_TOKEN
+#   docker compose up -d app                         # phone app on http://<host>:8787/?token=...
+#   docker compose run --rm muse                     # terminal chat
+#   docker compose run --rm muse run "plan my week"  # one task
+#   docker compose up -d daemon                      # advance goals on a timer, no UI
 
 services:
   muse:
@@ -19,6 +17,7 @@ services:
         required: false
     stdin_open: true
     tty: true
+    command: ["chat"]
     volumes:
       - openmuse-data:/data
       - ./workspace:/workspace
@@ -30,7 +29,15 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    # command: chat            # default; override with `run "..."`, `goals list`, ...
+
+  app:
+    extends: muse
+    stdin_open: false
+    tty: false
+    command: ["serve", "--host", "0.0.0.0", "--no-qr"]
+    ports:
+      - "8787:8787"
+    restart: unless-stopped
 
   daemon:
     extends: muse

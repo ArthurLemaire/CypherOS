@@ -143,3 +143,13 @@ timeout_ms = 30000
 # url = "http://localhost:8000/mcp"
 # risk = "sensitive"
 # reads_private_data = true
+
+# ------------------------------------------------------------------------------
+# App server — `openmuse serve` (the phone app)
+# ------------------------------------------------------------------------------
+[server]
+host = "127.0.0.1"       # 0.0.0.0 to open it on your Wi-Fi, then scan the QR code with your phone
+port = 8787
+auth = true              # access token in the link / QR code; keep it on
+token = ""               # empty → generated once, kept in <data_dir>/server_token
+approval_timeout = 3600  # seconds an approval card waits before it counts as "deny"
