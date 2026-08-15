@@ -68,7 +68,7 @@ class MuseAgent:
     def build_system_prompt(self, user_input: str) -> str:
         a = self.settings.agent
         language_rule = (
-            prompts.LANGUAGE_AUTO
+            prompts.LANGUAGE_AUTO.format(detected=prompts.detect_language(user_input))
             if a.language in ("", "auto")
             else prompts.LANGUAGE_FIXED.format(language=a.language)
         )
@@ -157,6 +157,8 @@ class MuseAgent:
                 step += 1
                 if self._drain_inbox():
                     logger.debug("folded queued user message(s) into the running turn")
+                    # the language rule and the memory section follow the latest message
+                    system_prompt = self.build_system_prompt(self.messages[-1].content or "")
                 context = [Message.system(system_prompt), *self.context_messages()]
                 response = await self.llm.ask(
                     context, tools=tool_params, on_delta=self.ui.on_text_delta

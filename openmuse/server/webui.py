@@ -128,6 +128,11 @@ class WebUI:
 
     def on_tool_call(self, call: ToolCall, summary: str) -> None:
         thread = self.thread()
+        if call.name in ("terminate", "ask_user"):
+            # The final summary becomes the assistant bubble and questions get their own
+            # card — a chip for either would only duplicate them.
+            self.set_status("working", _TOOL_LABELS.get(call.name, "Working…"), thread)
+            return
         args = call.arguments if isinstance(call.arguments, dict) else {}
         ev = self.emit(
             {
