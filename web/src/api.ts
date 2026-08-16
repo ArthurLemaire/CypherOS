@@ -1,0 +1,162 @@
+import type {
+  ActivityData,
+  Goal,
+  IdeasData,
+  MemoryItem,
+  SettingsView,
+  StateSnapshot,
+  ThreadMeta,
+  TimelineEvent,
+  WsMessage,
+} from "./types";
+
+const TOKEN_KEY = "openmuse_token";
+
+export class AuthError extends Error {
+  constructor() {
+    super("unauthorized");
+  }
+}
+
+/** Read the token from `?token=` (first visit via QR code) or localStorage. */
+export function getToken(): string {
+  const url = new URL(window.location.href);
+  const fromUrl = url.searchParams.get("token");
+  if (fromUrl) {
+    localStorage.setItem(TOKEN_KEY, fromUrl);
+    url.searchParams.delete("token");
+    window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+  }
+  return localStorage.getItem(TOKEN_KEY) ?? "";
+}
+
+export function setToken(token: string): void {
+  if (token) localStorage.setItem(TOKEN_KEY, token);
+  else localStorage.removeItem(TOKEN_KEY);
+}
+
+export function fileUrl(path: string, download = false): string {
+  const token = getToken();
+  const params = new URLSearchParams();
+  if (token) params.set("token", token);
+  if (download) params.set("download", "1");
+  const q = params.toString();
+  return `/api/files/${path.split("/").map(encodeURIComponent).join("/")}${q ? `?${q}` : ""}`;
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers: Record<string, string> = { ...(init.headers as Record<string, string>) };
+  const token = getToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  if (init.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+  const res = await fetch(path, { ...init, headers });
+  if (res.status === 401) throw new AuthError();
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const data = await res.json();
+      detail = data.detail ?? JSON.stringify(data);
+    } catch {
+      /* ignore */
+    }
+    throw new Error(detail);
+  }
+  return (await res.json()) as T;
+}
+
+const json = (body: unknown): RequestInit => ({ method: "POST", body: JSON.stringify(body) });
+
+export const api = {
+  state: () => request<StateSnapshot>("/api/state"),
+  health: () => request<{ ok: boolean; version: string; auth: boolean }>("/api/health"),
+  threads: () => request<ThreadMeta[]>("/api/threads"),
+  createThread: (title: string) => request<ThreadMeta>("/api/threads", json({ title })),
+  renameThread: (id: string, title: string) =>
+    request<ThreadMeta>(`/api/threads/${id}`, { method: "PATCH", body: JSON.stringify({ title }) }),
+  deleteThread: (id: string) => request<{ ok: boolean }>(`/api/threads/${id}`, { method: "DELETE" }),
+  clearThread: (id: string) => request<{ ok: boolean }>(`/api/threads/${id}/clear`, { method: "POST" }),
+  events: (thread: string, limit = 200, before?: string) =>
+    request<{ thread: ThreadMeta; events: TimelineEvent[]; has_more: boolean }>(
+      `/api/threads/${thread}/events?limit=${limit}${before ? `&before=${before}` : ""}`,
+    ),
+  send: (thread: string, text: string) =>
+    request<{ event: TimelineEvent; thread: ThreadMeta }>(`/api/threads/${thread}/send`, json({ text })),
+  decide: (id: string, approved: boolean, scope = "once", reason = "") =>
+    request<{ ok: boolean }>(`/api/approvals/${id}`, json({ approved, scope, reason })),
+  resetApprovals: () => request<{ ok: boolean }>("/api/approvals", { method: "DELETE" }),
+  goals: () => request<Goal[]>("/api/goals"),
+  createGoal: (title: string, description: string, steps: string[]) =>
+    request<Goal>("/api/goals", json({ title, description, steps })),
+  patchGoal: (id: string, patch: Record<string, unknown>) =>
+    request<Goal>(`/api/goals/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  addStep: (id: string, title: string) => request<Goal>(`/api/goals/${id}/steps`, json({ title })),
+  advanceGoal: (id: string) => request<Goal>(`/api/goals/${id}/advance`, { method: "POST" }),
+  deleteGoal: (id: string) => request<{ ok: boolean }>(`/api/goals/${id}`, { method: "DELETE" }),
+  memory: () => request<MemoryItem[]>("/api/memory"),
+  addMemory: (content: string, category: string) =>
+    request<MemoryItem>("/api/memory", json({ content, category })),
+  forgetMemory: (id: string) => request<{ ok: boolean }>(`/api/memory/${id}`, { method: "DELETE" }),
+  ideas: (refresh = false) => request<IdeasData>(`/api/ideas${refresh ? "?refresh=1" : ""}`),
+  activity: (n = 150) => request<ActivityData>(`/api/activity?n=${n}`),
+  settings: () => request<SettingsView>("/api/settings"),
+  updateSettings: (body: Record<string, unknown>) =>
+    request<SettingsView>("/api/settings", { method: "PUT", body: JSON.stringify(body) }),
+};
+
+/** WebSocket with automatic reconnect. Returns a disposer. */
+export function connectWs(handlers: {
+  onMessage: (msg: WsMessage) => void;
+  onOpen?: () => void;
+  onClose?: () => void;
+  onAuthError?: () => void;
+}): { send: (msg: unknown) => boolean; close: () => void } {
+  let ws: WebSocket | null = null;
+  let closed = false;
+  let attempt = 0;
+  let timer: number | undefined;
+
+  const open = () => {
+    const proto = window.location.protocol === "https:" ? "wss" : "ws";
+    const token = getToken();
+    const url = `${proto}://${window.location.host}/ws${token ? `?token=${encodeURIComponent(token)}` : ""}`;
+    ws = new WebSocket(url);
+    ws.onopen = () => {
+      attempt = 0;
+      handlers.onOpen?.();
+    };
+    ws.onmessage = (ev) => {
+      try {
+        handlers.onMessage(JSON.parse(ev.data) as WsMessage);
+      } catch {
+        /* ignore malformed frames */
+      }
+    };
+    ws.onclose = (ev) => {
+      handlers.onClose?.();
+      if (ev.code === 4401) {
+        handlers.onAuthError?.();
+        return;
+      }
+      if (closed) return;
+      const delay = Math.min(15000, 500 * 2 ** attempt++);
+      timer = window.setTimeout(open, delay);
+    };
+    ws.onerror = () => ws?.close();
+  };
+  open();
+
+  return {
+    send: (msg) => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(msg));
+        return true;
+      }
+      return false;
+    },
+    close: () => {
+      closed = true;
+      if (timer) window.clearTimeout(timer);
+      ws?.close();
+    },
+  };
+}

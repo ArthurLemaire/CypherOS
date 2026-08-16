@@ -164,6 +164,11 @@ class WebUI:
                         "action": args["action"],
                     }
                 )
+        # Let the Goals / Memory tabs refresh when the agent changed them.
+        if result.ok and call.name == "goals":
+            self.bus.publish({"kind": "goals"})
+        elif result.ok and call.name in ("remember", "forget"):
+            self.bus.publish({"kind": "memory"})
         if call.name != "terminate":
             self.set_status("working", "Thinking…", thread)
 
