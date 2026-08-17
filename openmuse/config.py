@@ -153,6 +153,20 @@ class MCPSettings(BaseModel):
     servers: list[MCPServerSettings] = Field(default_factory=list)
 
 
+class ServerSettings(BaseModel):
+    """``openmuse serve`` — the always-on agent behind the mobile-first web app."""
+
+    host: str = "127.0.0.1"  # use 0.0.0.0 to reach it from your phone on the same network
+    port: int = 8787
+    # Require an access token (printed with a QR code on start). Never disable on a shared network.
+    auth: bool = True
+    token: str = ""  # empty → generated once and stored in <data_dir>/server_token
+    # How long an approval card / question may wait for you before it is treated as "deny".
+    approval_timeout: float = 3600.0
+    # Extra origins allowed to call the API (only needed for the Vite dev server).
+    cors_origins: list[str] = Field(default_factory=list)
+
+
 class Settings(BaseModel):
     data_dir: Path = DEFAULT_DATA_DIR
     log_level: str = "INFO"
@@ -163,6 +177,7 @@ class Settings(BaseModel):
     connectors: ConnectorSettings = Field(default_factory=ConnectorSettings)
     browser: BrowserSettings = Field(default_factory=BrowserSettings)
     mcp: MCPSettings = Field(default_factory=MCPSettings)
+    server: ServerSettings = Field(default_factory=ServerSettings)
     # Where the settings came from (informational).
     source: str | None = None
 
@@ -249,6 +264,13 @@ def _apply_env_overrides(raw: dict[str, Any]) -> None:
         raw.setdefault("sentinel", {})["mode"] = val
     if val := os.environ.get("OPENMUSE_LOG_LEVEL"):
         raw["log_level"] = val
+    server = raw.setdefault("server", {})
+    if val := os.environ.get("OPENMUSE_SERVER_HOST"):
+        server["host"] = val
+    if val := os.environ.get("OPENMUSE_SERVER_PORT"):
+        server["port"] = int(val)
+    if val := os.environ.get("OPENMUSE_SERVER_TOKEN"):
+        server["token"] = val
 
 
 def load_settings(path: str | Path | None = None) -> Settings:
@@ -279,6 +301,7 @@ __all__ = [
     "MemorySettings",
     "SentinelRule",
     "SentinelSettings",
+    "ServerSettings",
     "Settings",
     "find_config_file",
     "load_settings",

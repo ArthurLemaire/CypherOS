@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
@@ -44,6 +45,24 @@ class MuseAgent:
         self.messages: list[Message] = []
         self.state = AgentState.IDLE
         self.turns = 0
+        # Optional queue of user messages that arrive *while* a run is in progress (the app
+        # lets you interrupt or pile on requests). They are folded into the conversation
+        # before the next model call instead of waiting for the current run to finish.
+        self.inbox: asyncio.Queue[str] | None = None
+
+    def _drain_inbox(self) -> int:
+        if self.inbox is None:
+            return 0
+        count = 0
+        while not self.inbox.empty():
+            try:
+                text = self.inbox.get_nowait()
+            except asyncio.QueueEmpty:  # pragma: no cover
+                break
+            self.messages.append(Message.user(text))
+            self.audit.record("user_message", content=text, interjected=True)
+            count += 1
+        return count
 
     # ------------------------------------------------------------------ prompt
     def build_system_prompt(self, user_input: str) -> str:
@@ -136,6 +155,8 @@ class MuseAgent:
         try:
             while step < self.settings.agent.max_steps:
                 step += 1
+                if self._drain_inbox():
+                    logger.debug("folded queued user message(s) into the running turn")
                 context = [Message.system(system_prompt), *self.context_messages()]
                 response = await self.llm.ask(
                     context, tools=tool_params, on_delta=self.ui.on_text_delta

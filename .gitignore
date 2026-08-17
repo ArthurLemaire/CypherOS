@@ -29,6 +29,12 @@ venv/
 .coverage
 htmlcov/
 
+# web app sources (the production build in openmuse/server/static IS committed)
+web/node_modules/
+web/dist/
+web/.vite/
+npm-debug.log*
+
 # editors / OS
 .vscode/
 .idea/

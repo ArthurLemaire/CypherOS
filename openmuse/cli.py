@@ -1,4 +1,4 @@
-"""Command-line interface: ``openmuse chat | run | goals | memory | vault | audit | config | daemon``."""
+"""Command-line interface: ``openmuse chat | run | serve | goals | memory | vault | audit | config | daemon``."""
 
 from __future__ import annotations
 
@@ -220,6 +220,38 @@ def daemon(
             await asyncio.sleep(interval)
 
     _run_async(_loop())
+
+
+@app.command()
+def serve(
+    config: ConfigOpt = None,
+    host: Annotated[
+        str | None,
+        typer.Option("--host", help="Bind address (0.0.0.0 to reach it from your phone)"),
+    ] = None,
+    port: Annotated[int | None, typer.Option("--port", "-p", help="Port (default 8787)")] = None,
+    no_auth: Annotated[
+        bool, typer.Option("--no-auth", help="Disable the access token (local development only)")
+    ] = False,
+    no_qr: Annotated[bool, typer.Option("--no-qr", help="Do not print the QR code")] = False,
+    auto: AutoOpt = False,
+) -> None:
+    """Run the always-on Muse with the mobile-first web app (chat, goals, ideas, memory, approvals)."""
+    settings = _settings(config, auto=auto)
+    if no_auth:
+        settings.server.auth = False
+    _banner(settings)
+    try:
+        from openmuse.server import serve as _serve
+    except ImportError as exc:  # pragma: no cover
+        console.print(
+            f"[red]server dependencies missing: {exc}[/red]  →  pip install 'openmuse[server]'"
+        )
+        raise typer.Exit(1) from exc
+    try:
+        _serve(settings, host=host, port=port, print_qr=not no_qr)
+    except KeyboardInterrupt:  # pragma: no cover
+        console.print("\n[yellow]stopped[/yellow]")
 
 
 # ============================================================================ goals
