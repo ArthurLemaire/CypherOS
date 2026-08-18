@@ -103,6 +103,15 @@ enum class RecognitionError {
     /** No speech detected / silence. Recoverable — the user can try again. */
     NO_MATCH,
 
+    /**
+     * [T-android-asr-silent-failure] Speech WAS detected (our VAD saw a
+     * voiced segment) but the recognizer produced no text. Distinct from
+     * [NO_MATCH] because the UI deliberately swallows NO_MATCH — it means
+     * "you didn't say anything", which is exactly the wrong message when the
+     * user spoke for 30 s and got nothing. This one must be shown.
+     */
+    TRANSCRIPTION_FAILED,
+
     /** Engine reported network failure (cloud recognizers). */
     NETWORK,
 

@@ -64,6 +64,22 @@ class LlmCorrectionStrategy(
         val apiKey = repository.loadApiKey(instance.id) ?: throw CorrectionError.NoModelAvailable
         val provider = ProviderFactory.create(instance, apiKey, entry.model, this.context)
 
+        // [T-android-voice-correction-diag] Name the resolved model BEFORE the
+        // request. A field report on 2026-08-15 showed only
+        // "correction failed / LLMError$InvalidApiKey" with a stack — which
+        // provider instance was actually used had to be reverse-engineered by
+        // matching the stack's provider class against every configured
+        // instance on the device (it turned out to be one with no API key
+        // saved). A user's log will never support that, so the identity has to
+        // be in the line itself. Logged at the call site because only here are
+        // the instance and entry both in scope.
+        Log.i(
+            TAG,
+            "[correction] resolved instance=${instance.label} (${instance.id}) " +
+                "type=${instance.providerType} model=${entry.model.id} " +
+                "group=${groupKind} hasKey=${apiKey.isNotBlank()}",
+        )
+
         val prompt = buildPrompt(transcript, candidates, context)
         val response = provider.sendMessage(
             messages = listOf(LLMMessage(role = LLMMessage.Role.USER, content = prompt)),
