@@ -119,6 +119,15 @@ src/android/app/src/debug/assets/debug-skill/
 src/android/app/src/main/assets/proot-aarch64
 src/android/app/src/main/assets/alpine-minirootfs.tar.gz
 src/android/app/src/main/jniLibs/arm64-v8a/*.so
+# The two proot ELF loaders are TRACKED, as an exception to the rule above.
+# They are vendored Termux builds (proot 5.1.107-70) whose Android-specific
+# loader patches our deps/proot fork does not carry; pairing the fork-built
+# loader with our proot SEGVs the guest on some ROMs (OnePlus 7 Pro /
+# crDroid 12.11: "vpid 1: terminated with signal 11"), and the exact Termux
+# deb has been rotated out of their repo — these bytes cannot be re-downloaded
+# or rebuilt from anything in this tree. See deps/build_proot.sh.
+!src/android/app/src/main/jniLibs/arm64-v8a/libproot-loader.so
+!src/android/app/src/main/jniLibs/arm64-v8a/libproot-loader32.so
 deps/lame-build/
 deps/lame-3.100/**/.libs/
 

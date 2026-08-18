@@ -117,11 +117,17 @@ private let logger = AppLogger(category: "SessionsOffload")
     /// Load a page of messages for a specific session. Returns NSDictionary with "messages" array and pagination info.
     /// `full` switches the per-message text cap from 1000 to 50000 chars; messages whose
     /// stored text exceeds the cap are still truncated and marked with "truncated": true.
+    /// [T-sessions-cli-messages-date-filter] (GH#200) `startDate`/`endDate`
+    /// forward the CLI's `--start`/`--end` down to ChatStore. They were absent
+    /// from this signature entirely, which is why the ObjC layer had nothing to
+    /// pass and the flags were silently dropped.
     @objc public static func loadMessages(
         sessionId: String,
         offset: Int,
         limit: Int,
-        full: Bool
+        full: Bool,
+        startDate: Date?,
+        endDate: Date?
     ) -> NSDictionary {
         let sem = DispatchSemaphore(value: 0)
         var result: [[String: Any]] = []
@@ -133,9 +139,15 @@ private let logger = AppLogger(category: "SessionsOffload")
                 sessionId: sessionId,
                 offset: offset,
                 limit: limit,
-                maxChars: maxChars
+                maxChars: maxChars,
+                startDate: startDate,
+                endDate: endDate
             )
-            totalCount = await ChatStore.shared.messageCount(sessionId: sessionId)
+            // Counted over the SAME range so `total` describes the filtered set
+            // the caller is paging through, not the whole session.
+            totalCount = await ChatStore.shared.messageCount(sessionId: sessionId,
+                                                             startDate: startDate,
+                                                             endDate: endDate)
 
             let dateFmt = DateFormatter()
             dateFmt.dateFormat = "yyyy-MM-dd HH:mm"

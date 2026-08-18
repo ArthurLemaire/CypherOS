@@ -199,6 +199,12 @@ class NotificationOffloadHandler(private val context: Context) : NativeOffloadHa
             .setContentTitle(title)
             .setContentText(body)
             .setAutoCancel(true)
+            // [GH#116] Without this the notification is inert: tapping it did
+            // nothing and setAutoCancel merely dismissed it. The deferred
+            // (--after/--at) path has always set one; this immediate path
+            // never did, so plain `send` — the most common invocation — was
+            // the one broken shape. Same helper both sides, see its KDoc.
+            .setContentIntent(ScheduledNotificationReceiver.contentIntentFor(context, notifId))
             .build()
         nm.notify(notifId, n)
         // The system fans the post to bound listeners on its own thread, so

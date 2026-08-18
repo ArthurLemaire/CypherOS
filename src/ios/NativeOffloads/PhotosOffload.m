@@ -68,7 +68,8 @@ static NSString *const HELP_TEXT =
      "  --size <size>        thumb, medium, or original (default original)\n"
      "\n"
      "IMPORT OPTIONS (alias: save):\n"
-     "  --path <file>        File to import (required). Image or video.\n"
+     "  --path <file>        File to import. Image or video. The flag is\n"
+     "                       optional: `import <file>` works the same.\n"
      "                       Accepts guest paths (/var/minis/attachments/a.jpg),\n"
      "                       relative paths (attachments/a.jpg), or host-absolute\n"
      "                       paths.\n"
@@ -106,6 +107,7 @@ static NSString *const HELP_TEXT =
      "  apple-photos stats\n"
      "  apple-photos export --id ABC123\n"
      "  apple-photos export --id ABC123 --size medium\n"
+     "  apple-photos import /var/minis/offloads/pic.jpg\n"
      "  apple-photos import --path /var/minis/offloads/pic.jpg\n"
      "  apple-photos import --path /var/minis/offloads/pic.jpg --album-name \"My Album\"\n"
      "  apple-photos save --path /var/minis/offloads/clip.mov --album <album-id>\n"
@@ -861,9 +863,16 @@ static int cmd_import(int argc, char **argv, int stdout_fd, int stderr_fd,
 
     NSString *inputPath = noff_find_arg(argc, argv, "--path");
     if (!inputPath) {
+        // `import <path>` without the --path flag — the path is this
+        // subcommand's only natural argument, so accept it positionally
+        // (the form LLMs and humans guess first).
+        inputPath = noff_positional_args(argc, argv).firstObject;
+    }
+    if (!inputPath) {
         noff_emit_help(stderr_fd, HELP_TEXT);
         NSDictionary *err = noff_json_error(TOOL_NAME, action,
-                                             NOFF_ERR_INVALID_ARGS, @"Required: --path");
+                                             NOFF_ERR_INVALID_ARGS,
+                                             @"Required: a file path (positional or --path <file>)");
         noff_emit_json(stdout_fd, err, compact, quiet);
         return NOFF_EXIT_INVALID_ARGS;
     }

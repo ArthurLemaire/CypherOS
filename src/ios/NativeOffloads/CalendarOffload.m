@@ -9,12 +9,19 @@
 #import <Foundation/Foundation.h>
 #import <EventKit/EventKit.h>
 #import <UIKit/UIKit.h>
+#import <CoreLocation/CoreLocation.h>
 #import "NativeOffloadUtils.h"
 #include "kernel/native_offload.h"
 #include <unistd.h>
 
 static NSString *const TOOL_NAME = @"apple-calendar";
 static const NSInteger DEFAULT_LIMIT = 100;
+
+@class EKReminder;
+/// [T-reminders-location-alarm] Defined next to the location-alarm helpers
+/// below; forward-declared so the reminder LIST command (which appears earlier
+/// in this file) can report an existing geofence too.
+static NSDictionary *reminder_location_dict(EKReminder *reminder);
 
 static NSString *const HELP_TEXT =
     @"apple-calendar - Query and manage iOS calendar events and reminders\n"
@@ -58,6 +65,16 @@ static NSString *const HELP_TEXT =
      "  --location <loc>     Event location\n"
      "  --notes <text>       Event notes\n"
      "  --alarm <minutes>    Alarm minutes before event\n"
+     "  --recur <freq>       Repeat: daily, weekly, monthly, or yearly.\n"
+     "                       Omit for a one-off event (default).\n"
+     "  --recur-interval <N> Repeat every N periods (default 1; 2 = every other week)\n"
+     "  --recur-days <days>  Weekdays for weekly/monthly/yearly rules, comma-separated\n"
+     "                       (e.g. fri or mon,wed,fri). Defaults to the --start weekday.\n"
+     "                       Not valid with --recur daily.\n"
+     "  --recur-until <date> Repeat until this date (ISO 8601). Omit both this and\n"
+     "                       --recur-count to repeat forever.\n"
+     "  --recur-count <N>    Stop after N occurrences. Mutually exclusive with\n"
+     "                       --recur-until.\n"
      "\n"
      "REMIND OPTIONS:\n"
      "  --title <title>      Reminder title (required)\n"
@@ -65,6 +82,14 @@ static NSString *const HELP_TEXT =
      "  --list <name>        Reminder list name\n"
      "  --priority <0-9>     Priority level\n"
      "  --notes <text>       Reminder notes\n"
+     "  --lat <deg>          Geofence latitude (WGS-84). Requires --lng.\n"
+     "  --lng <deg>          Geofence longitude (WGS-84). Requires --lat.\n"
+     "  --location-name <t>  Label shown for the place (default: \"lat,lng\")\n"
+     "  --radius <meters>    Geofence radius (omit to use the system default)\n"
+     "  --proximity <p>      enter (default) = alert on arrival; leave = on departure\n"
+     "  --recur <freq>       Repeat: daily, weekly, monthly, yearly (requires --due).\n"
+     "                       Same --recur-interval / --recur-days / --recur-until /\n"
+     "                       --recur-count flags as CREATE.\n"
      "\n"
      "UPDATE OPTIONS:\n"
      "  --id <event_id>      Event ID (required, from list output)\n"
@@ -94,6 +119,11 @@ static NSString *const HELP_TEXT =
      "  --list <name>        Move to a different list\n"
      "  --priority <0-9>     New priority\n"
      "  --notes <text>       New notes\n"
+     "  --lat/--lng/--location-name/--radius/--proximity\n"
+     "                       Add or replace the geofence (same as REMIND)\n"
+     "  --recur/--recur-*    Add or replace the repeat rule (same as REMIND)\n"
+     "  --clear-recur        Make the reminder non-repeating\n"
+     "  --clear-location     Remove an existing geofence alarm\n"
      "\n"
      "COMPLETE-REMINDER OPTIONS:\n"
      "  --id <reminder_id>   Reminder ID (required)\n"
@@ -107,7 +137,16 @@ static NSString *const HELP_TEXT =
      "  apple-calendar list --days 7 --compact -q\n"
      "  apple-calendar freebusy --start 2026-02-24T09:00 --end 2026-02-24T18:00\n"
      "  apple-calendar create --title \"Meeting\" --start 2026-02-25T14:00 --end 2026-02-25T15:00\n"
+     "  # Every Friday at 23:00, forever — one native recurring event, not many copies:\n"
+     "  apple-calendar create --title \"Book train ticket home\" \\\n"
+     "      --start 2026-02-27T23:00 --end 2026-02-27T23:15 --recur weekly --recur-days fri\n"
+     "  # Every other Monday and Wednesday, 10 times:\n"
+     "  apple-calendar create --title \"Standup\" --start 2026-03-02T09:30 --end 2026-03-02T09:45 \\\n"
+     "      --recur weekly --recur-interval 2 --recur-days mon,wed --recur-count 10\n"
      "  apple-calendar remind --title \"Buy groceries\" --due 2026-02-25T18:00\n"
+     "  # Alert on arrival at a place (geofence, no due date needed):\n"
+     "  apple-calendar remind --title \"Pick up parcel\" --location-name \"Shenzhen North\" \\\n"
+     "      --lat 22.6099 --lng 114.0289 --radius 200 --proximity enter\n"
      "  apple-calendar calendars\n";
 
 // Shared EKEventStore (thread-safe, single instance is recommended)
@@ -226,6 +265,10 @@ static void resolve_date_range(int argc, char **argv, NSDate **start, NSDate **e
     *end = endStr ? noff_parse_date(endStr) : [NSDate date];
 }
 
+// Defined with the other recurrence helpers near cmd_create; declared here
+// because event_to_dict (below) reports the rule on listed events too.
+static NSDictionary *recurrence_to_dict(EKRecurrenceRule *rule);
+
 static NSDictionary *event_to_dict(EKEvent *event) {
     NSMutableDictionary *d = [NSMutableDictionary dictionary];
     d[@"id"] = event.eventIdentifier ?: @"";
@@ -234,6 +277,11 @@ static NSDictionary *event_to_dict(EKEvent *event) {
     // occurrence. `occurrence_date` (the start of THIS instance) is what disambiguates a
     // single occurrence so update/delete can target it instead of the series master.
     d[@"is_recurring"] = @(event.hasRecurrenceRules);
+    // Mirror the shape `create` returns for a new recurring event, so the rule
+    // is readable without a second call. Only present when there is a rule.
+    if (event.hasRecurrenceRules && event.recurrenceRules.count > 0) {
+        d[@"recurrence"] = recurrence_to_dict(event.recurrenceRules.firstObject);
+    }
     d[@"occurrence_date"] = event.startDate ? noff_format_date(event.startDate) : [NSNull null];
     d[@"start"] = event.startDate ? noff_format_date(event.startDate) : [NSNull null];
     d[@"end"] = event.endDate ? noff_format_date(event.endDate) : [NSNull null];
@@ -416,6 +464,15 @@ int calendar_cmd_reminders(int argc, char **argv, int stdout_fd, BOOL compact, B
             NSDate *due = [[NSCalendar currentCalendar] dateFromComponents:r.dueDateComponents];
             d[@"due"] = due ? noff_format_date(due) : [NSNull null];
         }
+        // [T-reminders-location-alarm] Present only for geofenced reminders, so
+        // existing time-only output is unchanged.
+        NSDictionary *rLoc = reminder_location_dict(r);
+        if (rLoc) d[@"location"] = rLoc;
+        // [T-reminders-recurrence] Likewise present only for repeating
+        // reminders, matching how events report their rule.
+        if (r.hasRecurrenceRules && r.recurrenceRules.count > 0) {
+            d[@"recurrence"] = recurrence_to_dict(r.recurrenceRules.firstObject);
+        }
         [items addObject:d];
         count++;
     }
@@ -530,6 +587,188 @@ static int cmd_calendars(int argc, char **argv, int stdout_fd, BOOL compact, BOO
     return NOFF_EXIT_SUCCESS;
 }
 
+// Map a --recur-days token to an EKWeekday. Accepts the 3-letter abbreviation
+// ("mon"), the full name ("monday"), and the 2-letter iCalendar/RFC 5545 code
+// ("mo") — an LLM writing this flag may reach for any of the three, and all are
+// unambiguous, so accept all rather than make the caller guess ours.
+// Returns 0 when the token matches nothing.
+static EKWeekday weekday_from_token(NSString *token) {
+    NSString *t = [[token stringByTrimmingCharactersInSet:
+                    [NSCharacterSet whitespaceCharacterSet]] lowercaseString];
+    if (t.length == 0) return 0;
+    if ([t hasPrefix:@"su"]) return EKWeekdaySunday;
+    if ([t hasPrefix:@"mo"]) return EKWeekdayMonday;
+    if ([t hasPrefix:@"tu"]) return EKWeekdayTuesday;
+    if ([t hasPrefix:@"we"]) return EKWeekdayWednesday;
+    if ([t hasPrefix:@"th"]) return EKWeekdayThursday;
+    if ([t hasPrefix:@"fr"]) return EKWeekdayFriday;
+    if ([t hasPrefix:@"sa"]) return EKWeekdaySaturday;
+    return 0;
+}
+
+// Build an EKRecurrenceRule from the --recur* flags, or return nil when --recur
+// was not given (the single-event path, unchanged).
+//
+// On a malformed value this writes a message into *errOut and returns nil, so
+// the caller can reject the whole command rather than silently create a
+// non-repeating event — a wrong recurrence is worse than a refused one, since
+// the user would only discover it weeks later when the event failed to repeat.
+//
+// [T-reminders-recurrence] Shared by events AND reminders: EKReminder inherits
+// recurrenceRules from EKCalendarItem, so both get identical flag names,
+// parsing and error text from this one builder. `startDate` is the anchor the
+// rule repeats from — --start for events, --due for reminders — and may be nil
+// (see the --recur-until check below).
+static EKRecurrenceRule *build_recurrence_rule(int argc, char **argv,
+                                               NSDate *startDate,
+                                               NSString **errOut) {
+    NSString *freqStr = noff_find_arg(argc, argv, "--recur");
+    if (!freqStr) return nil;   // not a recurring create
+
+    EKRecurrenceFrequency freq;
+    NSString *f = [freqStr lowercaseString];
+    if ([f isEqualToString:@"daily"] || [f isEqualToString:@"day"]) {
+        freq = EKRecurrenceFrequencyDaily;
+    } else if ([f isEqualToString:@"weekly"] || [f isEqualToString:@"week"]) {
+        freq = EKRecurrenceFrequencyWeekly;
+    } else if ([f isEqualToString:@"monthly"] || [f isEqualToString:@"month"]) {
+        freq = EKRecurrenceFrequencyMonthly;
+    } else if ([f isEqualToString:@"yearly"] || [f isEqualToString:@"year"] ||
+               [f isEqualToString:@"annually"]) {
+        freq = EKRecurrenceFrequencyYearly;
+    } else {
+        *errOut = [NSString stringWithFormat:
+                   @"Invalid --recur value '%@'. Expected: daily, weekly, monthly, or yearly",
+                   freqStr];
+        return nil;
+    }
+
+    NSInteger interval = 1;
+    NSString *intervalStr = noff_find_arg(argc, argv, "--recur-interval");
+    if (intervalStr) {
+        interval = [intervalStr integerValue];
+        if (interval < 1) {
+            *errOut = [NSString stringWithFormat:
+                       @"Invalid --recur-interval '%@'. Must be a positive integer (1 = every occurrence)",
+                       intervalStr];
+            return nil;
+        }
+    }
+
+    // Days of the week. EventKit ignores this for daily rules, so reject it
+    // there instead of accepting a flag that would silently do nothing.
+    NSArray<EKRecurrenceDayOfWeek *> *days = nil;
+    NSString *daysStr = noff_find_arg(argc, argv, "--recur-days");
+    if (daysStr) {
+        if (freq == EKRecurrenceFrequencyDaily) {
+            *errOut = @"--recur-days cannot be combined with --recur daily. "
+                      @"Use --recur weekly --recur-days <days> for specific weekdays";
+            return nil;
+        }
+        NSMutableArray *parsed = [NSMutableArray array];
+        for (NSString *tok in [daysStr componentsSeparatedByString:@","]) {
+            EKWeekday wd = weekday_from_token(tok);
+            if (wd == 0) {
+                *errOut = [NSString stringWithFormat:
+                           @"Invalid --recur-days token '%@'. Expected day names like: mon, tue, wed, thu, fri, sat, sun",
+                           [tok stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]]];
+                return nil;
+            }
+            [parsed addObject:[EKRecurrenceDayOfWeek dayOfWeek:wd]];
+        }
+        if (parsed.count > 0) days = parsed;
+    }
+    // For a weekly rule with no explicit days, EventKit already repeats on the
+    // start date's weekday, so we deliberately leave `days` nil rather than
+    // computing it — same result, and it keeps the rule as the user expressed it.
+
+    // End condition. --recur-count and --recur-until are mutually exclusive;
+    // rejecting both-at-once beats silently honoring one, since the caller
+    // clearly held two different intentions about when this should stop.
+    NSString *untilStr = noff_find_arg(argc, argv, "--recur-until");
+    NSString *countStr = noff_find_arg(argc, argv, "--recur-count");
+    if (untilStr && countStr) {
+        *errOut = @"--recur-until and --recur-count are mutually exclusive. Pass only one";
+        return nil;
+    }
+
+    EKRecurrenceEnd *end = nil;   // nil = repeats forever
+    if (untilStr) {
+        NSDate *until = noff_parse_date(untilStr);
+        if (!until) {
+            *errOut = [NSString stringWithFormat:
+                       @"Invalid --recur-until date '%@'. Expected ISO 8601 (e.g. 2026-12-31T23:59)",
+                       untilStr];
+            return nil;
+        }
+        // [T-reminders-recurrence] `startDate` is the anchor the rule repeats
+        // from — --start for events, --due for reminders. It may be nil when a
+        // reminder omits --due; skip the ordering check then rather than
+        // comparing against nil (which reports NSOrderedDescending and would
+        // wave an invalid date through). The caller rejects the missing-anchor
+        // case separately, with a message naming the right flag.
+        if (startDate && [until compare:startDate] != NSOrderedDescending) {
+            *errOut = @"--recur-until must be later than the reminder's due date / the event's --start";
+            return nil;
+        }
+        end = [EKRecurrenceEnd recurrenceEndWithEndDate:until];
+    } else if (countStr) {
+        NSInteger count = [countStr integerValue];
+        if (count < 1) {
+            *errOut = [NSString stringWithFormat:
+                       @"Invalid --recur-count '%@'. Must be a positive integer",
+                       countStr];
+            return nil;
+        }
+        end = [EKRecurrenceEnd recurrenceEndWithOccurrenceCount:count];
+    }
+
+    return [[EKRecurrenceRule alloc] initRecurrenceWithFrequency:freq
+                                                        interval:interval
+                                                   daysOfTheWeek:days
+                                                  daysOfTheMonth:nil
+                                                 monthsOfTheYear:nil
+                                                  weeksOfTheYear:nil
+                                                   daysOfTheYear:nil
+                                                    setPositions:nil
+                                                             end:end];
+}
+
+// Human-readable summary of a recurrence rule for the create response, so the
+// caller can confirm what was actually stored without a follow-up list call.
+static NSDictionary *recurrence_to_dict(EKRecurrenceRule *rule) {
+    NSString *freq;
+    switch (rule.frequency) {
+        case EKRecurrenceFrequencyDaily:   freq = @"daily"; break;
+        case EKRecurrenceFrequencyWeekly:  freq = @"weekly"; break;
+        case EKRecurrenceFrequencyMonthly: freq = @"monthly"; break;
+        case EKRecurrenceFrequencyYearly:  freq = @"yearly"; break;
+        default:                           freq = @"unknown"; break;
+    }
+    NSMutableDictionary *d = [NSMutableDictionary dictionary];
+    d[@"frequency"] = freq;
+    d[@"interval"] = @(rule.interval);
+
+    if (rule.daysOfTheWeek.count > 0) {
+        NSArray *names = @[@"", @"sun", @"mon", @"tue", @"wed", @"thu", @"fri", @"sat"];
+        NSMutableArray *days = [NSMutableArray array];
+        for (EKRecurrenceDayOfWeek *dw in rule.daysOfTheWeek) {
+            NSInteger idx = dw.dayOfTheWeek;
+            if (idx >= 1 && idx <= 7) [days addObject:names[idx]];
+        }
+        d[@"days_of_week"] = days;
+    }
+
+    if (rule.recurrenceEnd.endDate) {
+        d[@"until"] = noff_format_date(rule.recurrenceEnd.endDate);
+    } else if (rule.recurrenceEnd.occurrenceCount > 0) {
+        d[@"count"] = @(rule.recurrenceEnd.occurrenceCount);
+    } else {
+        d[@"never_ends"] = @YES;
+    }
+    return d;
+}
+
 static int cmd_create(int argc, char **argv, int stdout_fd, int stderr_fd, BOOL compact, BOOL quiet) {
     NSString *authErr = nil;
     if (!requestCalendarAccess(&authErr)) {
@@ -563,10 +802,26 @@ static int cmd_create(int argc, char **argv, int stdout_fd, int stderr_fd, BOOL 
         return NOFF_EXIT_INVALID_ARGS;
     }
 
+    // Parse the recurrence flags BEFORE building the event, so a malformed rule
+    // fails the command outright instead of quietly saving a one-off event that
+    // the user believes repeats.
+    NSString *recurErr = nil;
+    EKRecurrenceRule *recurRule = build_recurrence_rule(argc, argv, startDate, &recurErr);
+    if (recurErr) {
+        noff_emit_help(stderr_fd, HELP_TEXT);
+        NSDictionary *err = noff_json_error(TOOL_NAME, @"create",
+                                             NOFF_ERR_INVALID_ARGS, recurErr);
+        noff_emit_json(stdout_fd, err, compact, quiet);
+        return NOFF_EXIT_INVALID_ARGS;
+    }
+
     EKEvent *event = [EKEvent eventWithEventStore:eventStore()];
     event.title = title;
     event.startDate = startDate;
     event.endDate = endDate;
+    if (recurRule) {
+        [event addRecurrenceRule:recurRule];
+    }
 
     NSString *location = noff_find_arg(argc, argv, "--location");
     if (location) event.location = location;
@@ -595,7 +850,11 @@ static int cmd_create(int argc, char **argv, int stdout_fd, int stderr_fd, BOOL 
     }
 
     NSError *saveErr = nil;
-    BOOL saved = [eventStore() saveEvent:event span:EKSpanThisEvent commit:YES error:&saveErr];
+    // A recurring event must be saved with EKSpanFutureEvents: EKSpanThisEvent
+    // scopes the write to the single occurrence being edited, which on a brand
+    // new series would persist only the first instance and drop the rule.
+    EKSpan saveSpan = recurRule ? EKSpanFutureEvents : EKSpanThisEvent;
+    BOOL saved = [eventStore() saveEvent:event span:saveSpan commit:YES error:&saveErr];
     if (!saved) {
         NSDictionary *err = noff_json_error(TOOL_NAME, @"create",
                                              NOFF_ERR_INTERNAL_ERROR,
@@ -604,13 +863,19 @@ static int cmd_create(int argc, char **argv, int stdout_fd, int stderr_fd, BOOL 
         return NOFF_EXIT_ERROR;
     }
 
-    NSDictionary *data = @{
+    NSMutableDictionary *data = [@{
         @"id": event.eventIdentifier ?: @"",
         @"title": title,
         @"start": noff_format_date(startDate),
         @"end": noff_format_date(endDate),
         @"calendar": event.calendar.title ?: @"",
-    };
+        @"is_recurring": @(event.hasRecurrenceRules),
+    } mutableCopy];
+    // Echo the stored rule back (read from the saved event, not the object we
+    // built) so the caller can confirm what EventKit actually kept.
+    if (event.hasRecurrenceRules && event.recurrenceRules.count > 0) {
+        data[@"recurrence"] = recurrence_to_dict(event.recurrenceRules.firstObject);
+    }
     noff_emit_json(stdout_fd, noff_json_envelope(TOOL_NAME, @"create", data), compact, quiet);
     return NOFF_EXIT_SUCCESS;
 }
@@ -835,6 +1100,188 @@ static int cmd_delete(int argc, char **argv, int stdout_fd, BOOL compact, BOOL q
     return NOFF_EXIT_SUCCESS;
 }
 
+// ── Location-based reminder alarms (EKAlarm.structuredLocation) ──────────────
+//
+// [T-reminders-location-alarm] `apple-reminders create/update` accept
+// --location-name/--lat/--lng/--radius/--proximity and attach a geofence alarm
+// (EKStructuredLocation + EKAlarmProximityEnter/Leave) — the same API the
+// system Reminders app uses for "remind me when I arrive/leave".
+
+/// Authorization observer for the one-shot location permission request below.
+/// CLLocationManager delivers the user's answer via a delegate callback, so a
+/// synchronous CLI handler needs this tiny bridge to wait for it.
+@interface NoffRemindersLocAuthDelegate : NSObject <CLLocationManagerDelegate>
+@property (nonatomic, strong) dispatch_semaphore_t semaphore;
+@end
+@implementation NoffRemindersLocAuthDelegate
+- (instancetype)init {
+    if ((self = [super init])) _semaphore = dispatch_semaphore_create(0);
+    return self;
+}
+- (void)locationManagerDidChangeAuthorization:(CLLocationManager *)manager {
+    // Fires once on delegate assignment (current status) and again when the
+    // user answers the dialog. Signal both; the caller re-reads the status.
+    dispatch_semaphore_signal(self.semaphore);
+}
+@end
+
+/// Check (and if undetermined, request) location authorization for geofence
+/// alarms. Mirrors apple-location's flow: notDetermined → pop the system
+/// dialog and wait for the user's answer; denied/restricted → clear error.
+/// Returns YES when usable (whenInUse or always). On NO, *errMsg is set.
+///
+/// The geofence itself is monitored by the system Reminders service once the
+/// EKReminder is saved, but the permission gate here is what makes a denied
+/// state surface as an actionable CLI error instead of an alarm that silently
+/// never fires.
+static BOOL reminders_location_auth(NSString **errMsg) {
+    __block CLLocationManager *manager = nil;
+    NoffRemindersLocAuthDelegate *delegate = [[NoffRemindersLocAuthDelegate alloc] init];
+
+    // CLLocationManager wants a runloop thread; main queue matches the
+    // apple-location precedent.
+    dispatch_sync(dispatch_get_main_queue(), ^{
+        manager = [[CLLocationManager alloc] init];
+    });
+    CLAuthorizationStatus status = manager.authorizationStatus;
+
+    if (status == kCLAuthorizationStatusNotDetermined) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            manager.delegate = delegate;   // fires the initial callback
+            [manager requestWhenInUseAuthorization];
+        });
+        // First signal = initial status callback; wait again for the answer.
+        // 60s cap mirrors the reminders-access dialog wait: the user is
+        // looking at a system permission alert.
+        dispatch_semaphore_wait(delegate.semaphore, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC));
+        dispatch_semaphore_wait(delegate.semaphore, dispatch_time(DISPATCH_TIME_NOW, 60 * NSEC_PER_SEC));
+        status = manager.authorizationStatus;
+    }
+
+    if (status == kCLAuthorizationStatusAuthorizedWhenInUse ||
+        status == kCLAuthorizationStatusAuthorizedAlways) {
+        return YES;
+    }
+    if (errMsg) {
+        *errMsg = @"Location access is required for location-based reminders. "
+                   "To grant access, open Settings > Privacy & Security > "
+                   "Location Services and enable Minis. "
+                   "Time-based reminders (--due) work without location access.";
+    }
+    return NO;
+}
+
+/// Serialize a reminder's location alarm (if any) for list/create/update
+/// output, so a created geofence is immediately verifiable from the CLI.
+static NSDictionary *reminder_location_dict(EKReminder *reminder) {
+    for (EKAlarm *alarm in reminder.alarms) {
+        EKStructuredLocation *loc = alarm.structuredLocation;
+        if (!loc || alarm.proximity == EKAlarmProximityNone) continue;
+        NSMutableDictionary *d = [NSMutableDictionary dictionary];
+        d[@"name"] = loc.title ?: @"";
+        if (loc.geoLocation) {
+            d[@"latitude"] = @(loc.geoLocation.coordinate.latitude);
+            d[@"longitude"] = @(loc.geoLocation.coordinate.longitude);
+        }
+        d[@"radius_m"] = @(loc.radius);
+        d[@"proximity"] = alarm.proximity == EKAlarmProximityLeave ? @"leave" : @"enter";
+        return d;
+    }
+    return nil;
+}
+
+/// Parse --location-name/--lat/--lng/--radius/--proximity and, when present,
+/// attach a geofence alarm to `reminder` (replacing any existing location
+/// alarm, so update is idempotent).
+///
+/// Returns: 0 = no location args given (no-op) or alarm attached successfully;
+/// nonzero = a NOFF exit code, with *errOut filled with the error envelope.
+/// Strict parsing on purpose: `doubleValue` silently reads garbage as 0, and
+/// 0 is a VALID coordinate (Gulf of Guinea), so numbers are validated with
+/// NSScanner instead.
+static int apply_location_alarm_args(int argc, char **argv, EKReminder *reminder,
+                                      NSString *subcmd, NSDictionary **errOut) {
+    NSString *latStr  = noff_find_arg(argc, argv, "--lat");
+    NSString *lngStr  = noff_find_arg(argc, argv, "--lng");
+    NSString *name    = noff_find_arg(argc, argv, "--location-name");
+    NSString *radStr  = noff_find_arg(argc, argv, "--radius");
+    NSString *proxStr = noff_find_arg(argc, argv, "--proximity");
+
+    if (!latStr && !lngStr && !name && !radStr && !proxStr) return 0;  // no-op
+
+    // A location alarm needs coordinates; anything else present without them
+    // is a mistake worth failing loudly on rather than half-applying.
+    if (!latStr || !lngStr) {
+        *errOut = noff_json_error(TOOL_NAME, subcmd, NOFF_ERR_INVALID_ARGS,
+            @"Location reminders need both --lat and --lng (WGS-84 decimal degrees). "
+             "Optional: --location-name <text>, --radius <meters>, --proximity enter|leave.");
+        return NOFF_EXIT_INVALID_ARGS;
+    }
+
+    double lat = 0, lng = 0;
+    NSScanner *latScan = [NSScanner scannerWithString:latStr];
+    NSScanner *lngScan = [NSScanner scannerWithString:lngStr];
+    if (![latScan scanDouble:&lat] || !latScan.isAtEnd || lat < -90.0 || lat > 90.0 ||
+        ![lngScan scanDouble:&lng] || !lngScan.isAtEnd || lng < -180.0 || lng > 180.0) {
+        *errOut = noff_json_error(TOOL_NAME, subcmd, NOFF_ERR_INVALID_ARGS,
+            [NSString stringWithFormat:
+                @"Invalid coordinates: --lat '%@' --lng '%@'. Expect WGS-84 decimal "
+                 "degrees, lat in [-90,90], lng in [-180,180].", latStr, lngStr]);
+        return NOFF_EXIT_INVALID_ARGS;
+    }
+
+    double radius = 0;  // 0 = let the system apply its default geofence radius
+    if (radStr) {
+        NSScanner *radScan = [NSScanner scannerWithString:radStr];
+        if (![radScan scanDouble:&radius] || !radScan.isAtEnd || radius < 0) {
+            *errOut = noff_json_error(TOOL_NAME, subcmd, NOFF_ERR_INVALID_ARGS,
+                [NSString stringWithFormat:
+                    @"Invalid --radius '%@'. Expect a non-negative number of meters.", radStr]);
+            return NOFF_EXIT_INVALID_ARGS;
+        }
+    }
+
+    EKAlarmProximity proximity = EKAlarmProximityEnter;
+    if (proxStr) {
+        if ([proxStr caseInsensitiveCompare:@"enter"] == NSOrderedSame ||
+            [proxStr caseInsensitiveCompare:@"arrive"] == NSOrderedSame) {
+            proximity = EKAlarmProximityEnter;
+        } else if ([proxStr caseInsensitiveCompare:@"leave"] == NSOrderedSame ||
+                   [proxStr caseInsensitiveCompare:@"exit"] == NSOrderedSame) {
+            proximity = EKAlarmProximityLeave;
+        } else {
+            *errOut = noff_json_error(TOOL_NAME, subcmd, NOFF_ERR_INVALID_ARGS,
+                [NSString stringWithFormat:
+                    @"Invalid --proximity '%@'. Use 'enter' (arrive) or 'leave'.", proxStr]);
+            return NOFF_EXIT_INVALID_ARGS;
+        }
+    }
+
+    NSString *authErr = nil;
+    if (!reminders_location_auth(&authErr)) {
+        *errOut = noff_json_error(TOOL_NAME, subcmd, NOFF_ERR_AUTHORIZATION_DENIED, authErr);
+        return NOFF_EXIT_AUTH_DENIED;
+    }
+
+    // Replace any existing location alarm so repeated updates don't stack
+    // geofences. Time-based alarms are untouched.
+    for (EKAlarm *alarm in [reminder.alarms copy] ?: @[]) {
+        if (alarm.structuredLocation && alarm.proximity != EKAlarmProximityNone) {
+            [reminder removeAlarm:alarm];
+        }
+    }
+
+    EKStructuredLocation *loc = [EKStructuredLocation locationWithTitle:
+        (name.length ? name : [NSString stringWithFormat:@"%.4f,%.4f", lat, lng])];
+    loc.geoLocation = [[CLLocation alloc] initWithLatitude:lat longitude:lng];
+    loc.radius = radius;
+    EKAlarm *alarm = [[EKAlarm alloc] init];
+    alarm.structuredLocation = loc;
+    alarm.proximity = proximity;
+    [reminder addAlarm:alarm];
+    return 0;
+}
+
 int calendar_cmd_remind(int argc, char **argv, int stdout_fd, int stderr_fd, BOOL compact, BOOL quiet) {
     NSString *authErr = nil;
     if (!requestRemindersAccess(&authErr)) {
@@ -857,16 +1304,45 @@ int calendar_cmd_remind(int argc, char **argv, int stdout_fd, int stderr_fd, BOO
     EKReminder *reminder = [EKReminder reminderWithEventStore:eventStore()];
     reminder.title = title;
 
+    NSDate *dueDate = nil;
     NSString *dueStr = noff_find_arg(argc, argv, "--due");
     if (dueStr) {
         NSDate *due = noff_parse_date(dueStr);
         if (due) {
+            dueDate = due;
             reminder.dueDateComponents = [[NSCalendar currentCalendar]
                 components:(NSCalendarUnitYear | NSCalendarUnitMonth | NSCalendarUnitDay |
                             NSCalendarUnitHour | NSCalendarUnitMinute)
                 fromDate:due];
         }
     }
+
+    // [T-reminders-recurrence] EKReminder inherits recurrenceRules from
+    // EKCalendarItem, so the SAME builder (and therefore the same flag names,
+    // parsing and error messages) as `apple-calendar create` applies here.
+    // Parsed BEFORE saving so a malformed rule fails the command instead of
+    // quietly creating a one-off reminder the user believes repeats.
+    //
+    // The recurrence anchor is the due date: EventKit requires a repeating
+    // reminder to have one, otherwise there is no first occurrence to repeat
+    // from and the rule is meaningless (the system Reminders app enforces the
+    // same coupling in its UI).
+    NSString *recurErr = nil;
+    EKRecurrenceRule *recurRule = build_recurrence_rule(argc, argv, dueDate, &recurErr);
+    if (recurErr) {
+        NSDictionary *err = noff_json_error(TOOL_NAME, @"remind",
+                                             NOFF_ERR_INVALID_ARGS, recurErr);
+        noff_emit_json(stdout_fd, err, compact, quiet);
+        return NOFF_EXIT_INVALID_ARGS;
+    }
+    if (recurRule && !dueDate) {
+        NSDictionary *err = noff_json_error(TOOL_NAME, @"remind",
+                                             NOFF_ERR_INVALID_ARGS,
+                                             @"--recur requires --due: a repeating reminder needs a due date to repeat from.");
+        noff_emit_json(stdout_fd, err, compact, quiet);
+        return NOFF_EXIT_INVALID_ARGS;
+    }
+    if (recurRule) reminder.recurrenceRules = @[recurRule];
 
     NSString *notes = noff_find_arg(argc, argv, "--notes");
     if (notes) reminder.notes = notes;
@@ -906,6 +1382,16 @@ int calendar_cmd_remind(int argc, char **argv, int stdout_fd, int stderr_fd, BOO
         reminder.calendar = [eventStore() defaultCalendarForNewReminders];
     }
 
+    // [T-reminders-location-alarm] Attach a geofence alarm when location args
+    // are present. Runs BEFORE save so a permission denial or a bad coordinate
+    // fails without leaving a half-configured reminder behind.
+    NSDictionary *locErr = nil;
+    int locRc = apply_location_alarm_args(argc, argv, reminder, @"remind", &locErr);
+    if (locRc != 0) {
+        noff_emit_json(stdout_fd, locErr, compact, quiet);
+        return locRc;
+    }
+
     NSError *saveErr = nil;
     BOOL saved = [eventStore() saveReminder:reminder commit:YES error:&saveErr];
     if (!saved) {
@@ -916,11 +1402,19 @@ int calendar_cmd_remind(int argc, char **argv, int stdout_fd, int stderr_fd, BOO
         return NOFF_EXIT_ERROR;
     }
 
-    NSDictionary *data = @{
+    NSMutableDictionary *data = [@{
         @"id": reminder.calendarItemIdentifier ?: @"",
         @"title": title,
         @"list": reminder.calendar.title ?: @"",
-    };
+    } mutableCopy];
+    NSDictionary *locInfo = reminder_location_dict(reminder);
+    if (locInfo) data[@"location"] = locInfo;
+    // [T-reminders-recurrence] Echo the stored rule so the caller can confirm
+    // what was actually saved without a follow-up list call (same rationale as
+    // the event create path).
+    if (reminder.hasRecurrenceRules && reminder.recurrenceRules.count > 0) {
+        data[@"recurrence"] = recurrence_to_dict(reminder.recurrenceRules.firstObject);
+    }
     noff_emit_json(stdout_fd, noff_json_envelope(TOOL_NAME, @"remind", data), compact, quiet);
     return NOFF_EXIT_SUCCESS;
 }
@@ -1001,6 +1495,51 @@ int calendar_cmd_update_reminder(int argc, char **argv, int stdout_fd, BOOL comp
         }
     }
 
+    // [T-reminders-recurrence] Same builder / flags as create and as
+    // `apple-calendar`. The anchor is the reminder's EFFECTIVE due date — the
+    // one just set by --due if present, otherwise the stored one — so
+    // --recur-until is validated against the date the rule will really repeat
+    // from. --clear-recur removes an existing rule (no other way to undo one).
+    NSDate *effectiveDue = reminder.dueDateComponents
+        ? [[NSCalendar currentCalendar] dateFromComponents:reminder.dueDateComponents]
+        : nil;
+    NSString *updRecurErr = nil;
+    EKRecurrenceRule *updRecurRule = build_recurrence_rule(argc, argv, effectiveDue, &updRecurErr);
+    if (updRecurErr) {
+        NSDictionary *err = noff_json_error(TOOL_NAME, @"update",
+                                             NOFF_ERR_INVALID_ARGS, updRecurErr);
+        noff_emit_json(stdout_fd, err, compact, quiet);
+        return NOFF_EXIT_INVALID_ARGS;
+    }
+    if (updRecurRule && !effectiveDue) {
+        NSDictionary *err = noff_json_error(TOOL_NAME, @"update",
+                                             NOFF_ERR_INVALID_ARGS,
+                                             @"--recur requires the reminder to have a due date: pass --due, or set one first.");
+        noff_emit_json(stdout_fd, err, compact, quiet);
+        return NOFF_EXIT_INVALID_ARGS;
+    }
+    if (noff_has_flag(argc, argv, "--clear-recur")) {
+        reminder.recurrenceRules = nil;
+    }
+    if (updRecurRule) reminder.recurrenceRules = @[updRecurRule];
+
+    // [T-reminders-location-alarm] --clear-location removes an existing
+    // geofence (there is otherwise no way to undo one from the CLI); the
+    // location args add or replace it.
+    if (noff_has_flag(argc, argv, "--clear-location")) {
+        for (EKAlarm *alarm in [reminder.alarms copy] ?: @[]) {
+            if (alarm.structuredLocation && alarm.proximity != EKAlarmProximityNone) {
+                [reminder removeAlarm:alarm];
+            }
+        }
+    }
+    NSDictionary *locErr = nil;
+    int locRc = apply_location_alarm_args(argc, argv, reminder, @"update", &locErr);
+    if (locRc != 0) {
+        noff_emit_json(stdout_fd, locErr, compact, quiet);
+        return locRc;
+    }
+
     NSError *saveErr = nil;
     BOOL saved = [eventStore() saveReminder:reminder commit:YES error:&saveErr];
     if (!saved) {
@@ -1022,6 +1561,11 @@ int calendar_cmd_update_reminder(int argc, char **argv, int stdout_fd, BOOL comp
     if (reminder.dueDateComponents) {
         NSDate *due = [[NSCalendar currentCalendar] dateFromComponents:reminder.dueDateComponents];
         data[@"due"] = due ? noff_format_date(due) : [NSNull null];
+    }
+    NSDictionary *updLoc = reminder_location_dict(reminder);
+    if (updLoc) data[@"location"] = updLoc;
+    if (reminder.hasRecurrenceRules && reminder.recurrenceRules.count > 0) {
+        data[@"recurrence"] = recurrence_to_dict(reminder.recurrenceRules.firstObject);
     }
     noff_emit_json(stdout_fd, noff_json_envelope(TOOL_NAME, @"update", data), compact, quiet);
     return NOFF_EXIT_SUCCESS;
