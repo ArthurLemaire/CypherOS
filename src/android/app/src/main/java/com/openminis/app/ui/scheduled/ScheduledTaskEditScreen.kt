@@ -564,7 +564,14 @@ private fun EditFormBody(
             onPickMessage(id, preview); showMessagePicker = false
         }
     }
-    if (showModelPicker) {
+    // [T-android-scheduled-lateinit-crash-156] `vm.providerRepository` is null
+    // when the Application is half-built (safe-mode / aborted onCreate); the
+    // editor is reachable in exactly that state via a scheduled-task
+    // notification tap. Gating the whole block here keeps the picker from
+    // reading an unassigned lateinit — the row's label and the "use default
+    // model" behaviour are unaffected.
+    val providerRepo = vm.providerRepository
+    if (showModelPicker && providerRepo != null) {
         // [T-android-scheduled-task-model-binding] Reuse the chat-screen's
         // ModelPickerSheet so groups and individual entries are both
         // selectable; the editor only needs the JSON shape that
@@ -572,7 +579,7 @@ private fun EditFormBody(
         // picker's three callback shapes (group / group+entry / standalone
         // entry). The picker doesn't surface a "default model" option — we
         // model that as null binding via the row's onClear action above.
-        val cfg by vm.providerRepository.config.collectAsState()
+        val cfg by providerRepo.config.collectAsState()
         val entryById: (String) -> com.openminis.app.data.model.ModelEntry? = { id ->
             cfg.modelEntries.firstOrNull { it.id == id }
         }
@@ -608,7 +615,7 @@ private fun EditFormBody(
             activeEntryId = preselectEntryId,
             defaultPrimaryGroupId = cfg.defaultPrimaryGroupId,
             config = cfg,
-            providerRepository = vm.providerRepository,
+            providerRepository = providerRepo,
             onSelectGroup = { groupId ->
                 val name = groupById(groupId)?.name ?: "Group"
                 val json = """{"type":"group","groupId":"$groupId"}"""

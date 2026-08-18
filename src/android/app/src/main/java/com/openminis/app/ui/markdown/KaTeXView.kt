@@ -41,6 +41,16 @@ import kotlinx.coroutines.withContext
 private const val TAG = "KaTeXView"
 
 /**
+ * [GH#206] Hard ceiling on a captured formula bitmap, in PHYSICAL pixels.
+ * Mirrors the constants in KatexWebViewPool — bitmap pixels are NATIVE heap on
+ * Android 8+, and these sites previously had no upper bound at all, so one wide
+ * display formula could cost several MB. Oversized formulas are scaled DOWN
+ * (never clipped), trading sharpness for memory.
+ */
+private const val MAX_BITMAP_EDGE_PX = 2048
+private const val MAX_BITMAP_PIXELS = 4_000_000
+
+/**
  * Renders a LaTeX string using KaTeX in an offscreen WebView, capturing the result as a bitmap.
  * Uses an LRU cache to avoid re-rendering identical expressions.
  */
@@ -58,7 +68,40 @@ object KaTeXRendererCache {
         val cssHeight: Int,
     )
 
-    val cache = LruCache<String, CacheEntry>(200)
+    /**
+     * [GH#206] Byte budget, mirroring KatexWebViewPool.
+     *
+     * This was `LruCache(200)` — capacity in ENTRIES with no `sizeOf`, holding
+     * ARGB_8888 bitmaps whose pixels live in the NATIVE heap on Android 8+.
+     * 200 large formulas could therefore pin hundreds of MB that nothing ever
+     * released: this is a process-lifetime `object`, and Java GC does not
+     * reclaim native bitmap pixels while the cache still references them.
+     *
+     * NOTE: entries are NOT recycled on eviction. The bitmap is handed to
+     * Compose (`asImageBitmap()`) and an on-screen formula may outlive its
+     * cache entry; recycling it would crash the composition. Dropping the
+     * reference lets GC reclaim it once nothing draws it. See the matching
+     * note in KatexWebViewPool.
+     */
+    private val cacheBudgetBytes: Int = run {
+        val maxHeap = Runtime.getRuntime().maxMemory()
+        (maxHeap / 8).coerceIn(8L * 1024 * 1024, 32L * 1024 * 1024).toInt()
+    }
+
+    val cache = object : LruCache<String, CacheEntry>(cacheBudgetBytes) {
+        override fun sizeOf(key: String, value: CacheEntry): Int =
+            value.bitmap.allocationByteCount.coerceAtLeast(1)
+    }
+
+    /** [GH#206] Drop every cached formula. Safe at any time — see the note above. */
+    fun evictAll() {
+        val before = cache.size()
+        cache.evictAll()
+        android.util.Log.i(
+            "KaTeXRendererCache",
+            "evictAll: released ~${before / 1024}KB of cached formula bitmaps",
+        )
+    }
 
     fun cacheKey(latex: String, displayMode: Boolean): String =
         (if (displayMode) "D:" else "I:") + latex
@@ -194,15 +237,53 @@ fun KaTeXRenderView(
                                 layoutParams = ViewGroup.LayoutParams(bitmapW, bitmapH)
                                 requestLayout()
                                 postDelayed({
-                                    val bitmap = Bitmap.createBitmap(bitmapW, bitmapH, Bitmap.Config.ARGB_8888)
+                                    // [GH#206] Clamp the captured bitmap. bitmapW/H
+                                    // were previously unbounded, so a wide display
+                                    // formula allocated multi-MB of NATIVE heap.
+                                    // The WebView keeps its full layout size (above)
+                                    // so the formula still lays out correctly; only
+                                    // the captured bitmap is scaled DOWN, never
+                                    // clipped, trading sharpness for memory.
+                                    val edgeScale = minOf(
+                                        1f,
+                                        MAX_BITMAP_EDGE_PX.toFloat() / bitmapW,
+                                        MAX_BITMAP_EDGE_PX.toFloat() / bitmapH,
+                                    )
+                                    val pixelScale =
+                                        if (bitmapW.toLong() * bitmapH > MAX_BITMAP_PIXELS) {
+                                            kotlin.math.sqrt(
+                                                MAX_BITMAP_PIXELS.toDouble() /
+                                                    (bitmapW.toDouble() * bitmapH),
+                                            ).toFloat()
+                                        } else {
+                                            1f
+                                        }
+                                    val capScale = minOf(edgeScale, pixelScale)
+                                    val capW = (bitmapW * capScale).toInt().coerceAtLeast(1)
+                                    val capH = (bitmapH * capScale).toInt().coerceAtLeast(1)
+                                    if (capScale < 1f) {
+                                        AppLogger.info(
+                                            TAG,
+                                            "bitmap clamped ${bitmapW}x$bitmapH -> ${capW}x$capH " +
+                                                "(scale=$capScale)",
+                                        )
+                                    }
+                                    val bitmap = Bitmap.createBitmap(capW, capH, Bitmap.Config.ARGB_8888)
                                     val canvas = android.graphics.Canvas(bitmap)
+                                    if (capScale < 1f) canvas.scale(capScale, capScale)
                                     draw(canvas)
                                     KaTeXRendererCache.cache.put(
                                         cacheKey,
                                         KaTeXRendererCache.CacheEntry(
+                                            // Record the ACTUAL bitmap size, not the
+                                            // pre-clamp request — `width`/`height`
+                                            // document the bitmap's physical pixels.
+                                            // Display sizing uses cssWidth/cssHeight,
+                                            // which are unchanged, so a clamped
+                                            // formula still lays out identically.
                                             bitmap = bitmap,
-                                            width = bitmapW,
-                                            height = bitmapH,
+                                            width = capW,
+                                            height = capH,
                                             cssWidth = width,
                                             cssHeight = height,
                                         )

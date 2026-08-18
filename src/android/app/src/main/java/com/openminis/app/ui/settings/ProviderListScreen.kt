@@ -46,6 +46,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.key
+import sh.calvin.reorderable.ReorderableColumn
 import com.openminis.app.data.model.ProviderInstance
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.R
@@ -147,38 +151,84 @@ fun ProviderListScreen(
         } else {
             groupedInstances.forEach { (providerType, typeInstances) ->
                 SettingsSection(header = providerType.displayName) {
-                    typeInstances.forEachIndexed { index, instance ->
-                        val modelCount = providerRepository.visibleEntries(instance.id).size
-                        val apiKey = providerRepository.loadApiKey(instance.id)
-                        // Mirrors iOS `isConfigured` on ProviderInstancesView:
-                        // for OAuth providers, having a manual bearer token OR
-                        // a stored OAuth credential counts as "configured" — not
-                        // just the presence of an API key. Without this, OAuth
-                        // instances always show the gray dot even after a
-                        // successful sign-in or manual token paste.
-                        val isConfigured = if (instance.credentialType ==
-                            com.openminis.app.data.model.ProviderCredential.oauth) {
-                            val mgr = com.openminis.app.auth.OAuthManager.forInstance(context, instance)
-                            mgr?.isAuthenticated() == true
-                        } else {
-                            !apiKey.isNullOrBlank()
-                        }
-                        ProviderInstanceRow(
-                            instance = instance,
-                            modelCount = modelCount,
-                            apiKey = apiKey,
-                            isConfigured = isConfigured,
-                            onClick = { onProviderClick(instance.id) },
-                        )
-                        if (index < typeInstances.size - 1) {
-                            val divider = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(start = 38.dp, end = 14.dp)
-                                    .height(0.5.dp)
-                                    .background(divider),
+                    // [T-android-provider-reorder] Long-press a row to drag it
+                    // within its provider-type section (mirrors iOS
+                    // ProviderInstancesView's .onMove).
+                    //
+                    // ReorderableColumn — not the LazyColumn variant used by
+                    // ModelGroupsScreen — because this screen renders inside
+                    // SettingsScaffold's verticalScroll Column, and the lazy
+                    // variant needs a LazyListState. Converting the whole screen
+                    // to a LazyColumn would churn the empty state and the Voice
+                    // Services section for no user-visible gain.
+                    //
+                    // `localOrder` holds the live order during the drag so the
+                    // rows follow the finger; it re-syncs whenever the repository
+                    // emits (keyed on the ids) so an external change — an import,
+                    // a delete — is not overwritten by a stale local copy.
+                    var localOrder by remember(typeInstances.map { it.id }) {
+                        mutableStateOf(typeInstances)
+                    }
+                    ReorderableColumn(
+                        list = localOrder,
+                        onSettle = { fromIndex, toIndex ->
+                            localOrder = localOrder.toMutableList().apply {
+                                add(toIndex, removeAt(fromIndex))
+                            }
+                            // Commit only THIS section's ids: reorderInstances
+                            // keeps every unmentioned instance in its existing
+                            // relative position, so other provider-type sections
+                            // are untouched. This is the Android answer to the
+                            // iOS index-mapping bug (246a8a8e) — there is no
+                            // section-local→global index arithmetic to get wrong.
+                            providerRepository.reorderInstances(localOrder.map { it.id })
+                        },
+                    ) { index, instance, isDragging ->
+                        key(instance.id) {
+                            val modelCount = providerRepository.visibleEntries(instance.id).size
+                            val apiKey = providerRepository.loadApiKey(instance.id)
+                            // Mirrors iOS `isConfigured` on ProviderInstancesView:
+                            // for OAuth providers, having a manual bearer token OR
+                            // a stored OAuth credential counts as "configured" — not
+                            // just the presence of an API key. Without this, OAuth
+                            // instances always show the gray dot even after a
+                            // successful sign-in or manual token paste.
+                            val isConfigured = if (instance.credentialType ==
+                                com.openminis.app.data.model.ProviderCredential.oauth) {
+                                val mgr = com.openminis.app.auth.OAuthManager.forInstance(context, instance)
+                                mgr?.isAuthenticated() == true
+                            } else {
+                                !apiKey.isNullOrBlank()
+                            }
+                            // Lift the dragged row above its neighbours so it
+                            // reads as "picked up" (matches ModelGroupsScreen).
+                            val elevation by animateDpAsState(
+                                targetValue = if (isDragging) 4.dp else 0.dp,
+                                label = "provider_drag_elevation",
                             )
+                            Surface(
+                                shadowElevation = elevation,
+                                color = Color.Transparent,
+                                modifier = Modifier.longPressDraggableHandle(),
+                            ) {
+                                ProviderInstanceRow(
+                                    instance = instance,
+                                    modelCount = modelCount,
+                                    apiKey = apiKey,
+                                    isConfigured = isConfigured,
+                                    onClick = { onProviderClick(instance.id) },
+                                )
+                            }
+                            if (index < localOrder.size - 1) {
+                                val divider = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(start = 38.dp, end = 14.dp)
+                                        .height(0.5.dp)
+                                        .background(divider),
+                                )
+                            }
                         }
                     }
                 }

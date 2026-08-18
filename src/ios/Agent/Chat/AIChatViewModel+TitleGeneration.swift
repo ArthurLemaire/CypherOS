@@ -108,9 +108,32 @@ extension AIChatViewModel {
                 }
 
                 logger.info("[TitleGen] Summary length: \(summary.count) chars, userTurns=\(userTurnCount)")
-                let (title, category) = try await Self.callSubModelForTitle(
+                // Auto-grouping (opt-in, Settings → Appearance): fold the
+                // folder question into THIS call — no second round-trip. With
+                // the toggle off, or with no folders to offer, the prompt and
+                // schema are byte-identical to the title-only form.
+                let autoGroup = UserDefaults.standard.bool(forKey: "autoGroupingEnabled")
+                var folderNames: [String] = []
+                var folderContext: [String] = []
+                if autoGroup {
+                    var seen = Set<String>()
+                    for f in await ChatStore.shared.listFolders() where seen.insert(f.name.lowercased()).inserted {
+                        folderNames.append(f.name)
+                        // "name — one-sentence description" when the group has
+                        // one; the description exists precisely to sharpen
+                        // this judgment.
+                        if let d = f.desc, !d.isEmpty {
+                            folderContext.append("\"\(f.name)\" — \(d)")
+                        } else {
+                            folderContext.append("\"\(f.name)\"")
+                        }
+                    }
+                }
+                let (title, category, folderName) = try await Self.callSubModelForTitle(
                     conversationSummary: summary,
-                    subEntry: subEntry
+                    subEntry: subEntry,
+                    folderNames: folderNames,
+                    folderContext: folderContext
                 )
                 let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
                     .trimmingCharacters(in: CharacterSet(charactersIn: "\""))
@@ -124,6 +147,19 @@ extension AIChatViewModel {
                     return
                 }
                 await ChatStore.shared.updateSessionTitle(sessionId, title: trimmed, category: category)
+                // Folder assignment is best-effort and strictly subordinate to
+                // the title: a name that resolves to nothing is silently
+                // dropped (never create a folder from a model's answer), and
+                // setFolderIfUnfiled means a hand-filed session is never
+                // overridden by the model's guess.
+                if let folderName, !folderName.isEmpty {
+                    if let folder = await ChatStore.shared.findFolderByName(folderName) {
+                        let applied = await ChatStore.shared.setFolderIfUnfiled(folder.id, forSession: sessionId)
+                        logger.info("[TitleGen] Auto-group: '\(folderName)' -> \(folder.id.prefix(8)) applied=\(applied)")
+                    } else {
+                        logger.info("[TitleGen] Auto-group: model offered '\(folderName)' but no folder matches — leaving ungrouped")
+                    }
+                }
                 await MainActor.run {
                     self?.titleGenAttempts = 3
                     self?.isTitleGenerating = false
@@ -222,42 +258,221 @@ extension AIChatViewModel {
 
         guard !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
 
-        // Try to resolve sub-model from session binding
-        let store = ProviderConfigStore.shared
-        var subEntry: ModelEntry? = nil
-        if let binding = store.binding(for: sessionId),
-           let sub = binding.subModelSource {
-            switch sub {
-            case .directEntry(let entryId, _):
-                subEntry = store.entry(for: entryId)
-            case .group(_, let resolvedEntryId):
-                subEntry = store.entry(for: resolvedEntryId)
-            }
-        } else if let binding = store.binding(for: sessionId) {
-            // No sub source — use primary
-            switch binding.primarySource {
-            case .directEntry(let entryId, _):
-                subEntry = store.entry(for: entryId)
-            case .group(_, let resolvedEntryId):
-                subEntry = store.entry(for: resolvedEntryId)
+        // [T-ios-regen-title-model-resolution #112] Model resolution + candidate
+        // fallback. The old inline resolution here was a hand-copied snapshot
+        // of resolveSubEntry from BEFORE #34: it read the binding's cached
+        // resolvedEntryId blindly (no availability check, no re-resolve, no
+        // deleted-entry fall-through) and gave up entirely when the session
+        // had no binding — producing all four #112 symptoms (stale model
+        // after group reorder; silent no-op without a sub model; silent
+        // no-op after delete/disable; no fallback when one model errors).
+        // Resolution now shares the SAME static helpers as the auto path,
+        // and mirrors Android's candidate loop: sub → primary → other
+        // available title-eligible entries, first success wins.
+        let candidates = await regenerateTitleCandidates(sessionId: sessionId)
+        guard !candidates.isEmpty else {
+            logger.error("[TitleGen] regenerate: no usable title-eligible model entry (no binding / all providers disabled)")
+            throw NSError(domain: "TitleGen", code: -1, userInfo: [NSLocalizedDescriptionKey: "No sub model available"])
+        }
+        // Bounded attempts: the fallback pool can span every configured entry
+        // (hundreds on heavy setups); a systemic outage would otherwise spam
+        // each provider in sequence. 5 attempts covers sub + primary + three
+        // alternates — beyond that the cause is systemic, not per-model.
+        let maxAttempts = 5
+        var lastError: Error? = nil
+        for (idx, entry) in candidates.prefix(maxAttempts).enumerated() {
+            do {
+                // Regenerate deliberately IGNORES the folder slot: the user's
+                // intent at this entry point is "give me a better title", and
+                // silently re-filing the session would be a surprise move.
+                let (title, category, _) = try await callSubModelForTitle(
+                    conversationSummary: summary,
+                    subEntry: entry
+                )
+                let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+                guard !trimmed.isEmpty else {
+                    logger.warning("[TitleGen] regenerate candidate \(idx + 1)/\(min(candidates.count, maxAttempts)) (\(entry.model.id)) returned empty title — trying next")
+                    continue
+                }
+                await ChatStore.shared.updateSessionTitle(sessionId, title: trimmed, category: category)
+                if idx > 0 {
+                    logger.info("[TitleGen] regenerate succeeded on fallback candidate \(idx + 1) (\(entry.model.id))")
+                }
+                return
+            } catch {
+                lastError = error
+                logger.warning("[TitleGen] regenerate candidate \(idx + 1)/\(min(candidates.count, maxAttempts)) (\(entry.model.id)) failed: \(error.localizedDescription) — trying next")
             }
         }
-
-        let (title, category) = try await callSubModelForTitle(
-            conversationSummary: summary,
-            subEntry: subEntry
-        )
-        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "\""))
-        guard !trimmed.isEmpty else { return }
-        await ChatStore.shared.updateSessionTitle(sessionId, title: trimmed, category: category)
+        if candidates.count > maxAttempts {
+            logger.warning("[TitleGen] regenerate exhausted \(maxAttempts) attempts (of \(candidates.count) candidates) without success")
+        }
+        if let lastError { throw lastError }
     }
 
     /// Build a lightweight provider for the sub model and call it to generate a title and category.
+    // MARK: - Manual "AI Suggest" folder grouping (picker sheet)
+
+    /// Outcome of the manual "✨ AI Suggest" flow. Unlike automatic grouping,
+    /// this path MAY propose a new folder — but nothing is applied here:
+    /// the picker sheet surfaces the suggestion and the user confirms with a
+    /// tap (a wrong grouping is a batch data move; a wrong title is one edit).
+    enum FolderSuggestion {
+        case merge(folderId: String, folderName: String)
+        case create(name: String, desc: String?)
+    }
+
+    /// Ask the sub model where the given sessions belong. Context is
+    /// deliberately lightweight: existing folder names with a few member
+    /// titles (for the merge judgment) and the selected sessions' titles +
+    /// categories — titles are already AI-written semantic summaries, so no
+    /// message content crosses into the sub model from this path.
+    static func suggestFolder(forSessionIds sessionIds: [String]) async throws -> FolderSuggestion {
+        // [T-ios-folder-suggest-retry] This path had NO logging at all, so a
+        // user report of "works once, then always fails" left nothing in the
+        // log to hunt with (the reporter searched sugg/generateGroupName and
+        // got zero hits). Every exit below is now traced with its reason.
+        logger.info("[FolderSuggest] START sessions=\(sessionIds.count)")
+        guard !sessionIds.isEmpty else {
+            logger.error("[FolderSuggest] FAILED reason=no-sessions-selected")
+            throw NSError(domain: "TitleGen", code: -3, userInfo: [NSLocalizedDescriptionKey: "No sessions selected"])
+        }
+        // [T-ios-folder-suggest-anchor-nondeterminism] Don't let ONE session
+        // decide whether this works. The caller's `sessionIds` originates from
+        // a `Set<String>` (FolderPickerRequest), so `.first` is whatever the
+        // per-process hash seed put there — a different session, and therefore
+        // a different sub model, on each app launch. If that one session's
+        // bound model happens to be unconfigured/uncredentialed,
+        // `regenerateTitleCandidates` comes back empty and the whole feature
+        // throws "No sub model available", silently, for a reason the user
+        // cannot see or influence. Retrying inside the same sheet re-rolls
+        // nothing (same process = same order), which is what makes it look
+        // like a permanent "AI Suggest failed" once it starts.
+        //
+        // Walk the selection in a STABLE order and take the first session that
+        // actually resolves a candidate, so the feature works whenever ANY
+        // selected session can serve it.
+        var entry: ModelEntry?
+        for sid in sessionIds.sorted() {
+            let candidates = await regenerateTitleCandidates(sessionId: sid)
+            if let first = candidates.first {
+                entry = first
+                logger.info("[FolderSuggest] anchor=\(sid.prefix(8)) model=\(first.model.id) candidates=\(candidates.count)")
+                break
+            }
+            logger.info("[FolderSuggest] anchor=\(sid.prefix(8)) has no candidates — trying next session")
+        }
+        guard let entry else {
+            logger.error("[FolderSuggest] FAILED reason=no-sub-model-available (no enabled+credentialed+title-eligible entry across \(sessionIds.count) selected session(s))")
+            throw NSError(domain: "TitleGen", code: -1, userInfo: [NSLocalizedDescriptionKey: "No sub model available"])
+        }
+
+        let folders = await ChatStore.shared.listFolders()
+        var folderLines: [String] = []
+        var seenNames = Set<String>()
+        for f in folders where seenNames.insert(f.name.lowercased()).inserted {
+            var memberTitles: [String] = []
+            for sid in await ChatStore.shared.sessionIdsInFolder(f.id).prefix(3) {
+                if let t = await ChatStore.shared.getSession(sid)?.title { memberTitles.append(t) }
+            }
+            let descPart = (f.desc?.isEmpty == false) ? " (\(f.desc!))" : ""
+            folderLines.append("- \"\(f.name)\"\(descPart): \(memberTitles.joined(separator: " / "))")
+        }
+
+        // [T-ios-folder-suggest-anchor-nondeterminism] Sorted for the same
+        // reason as the anchor loop above: the caller's ids come from a Set, so
+        // an unsorted `prefix(20)` would send a DIFFERENT 20-session sample to
+        // the model on each launch whenever more than 20 are selected — making
+        // the suggestion itself irreproducible.
+        var sessionLines: [String] = []
+        for sid in sessionIds.sorted().prefix(20) {
+            if let sess = await ChatStore.shared.getSession(sid) {
+                sessionLines.append("- \(sess.title ?? "Untitled") [\(sess.category ?? "other")]")
+            }
+        }
+        guard !sessionLines.isEmpty else {
+            logger.error("[FolderSuggest] FAILED reason=no-sessions-found (\(sessionIds.count) id(s) selected, none resolved in ChatStore)")
+            throw NSError(domain: "TitleGen", code: -3, userInfo: [NSLocalizedDescriptionKey: "No sessions found"])
+        }
+
+        let foldersBlock = folderLines.isEmpty
+            ? "The user has no folders yet."
+            : "Existing folders with sample member titles:\n\(folderLines.joined(separator: "\n"))"
+        let prompt = """
+        The user selected these chat sessions to file into a folder:
+        \(sessionLines.joined(separator: "\n"))
+
+        \(foldersBlock)
+
+        Decide: merge them into ONE existing group (only if they clearly fit it), or propose ONE new group name (2-8 characters preferred, in the same language as the session titles). \
+        For a new group also write "description": one sentence (under 100 characters, same language as the name) describing what belongs in it — it will guide future automatic grouping.
+
+        You MUST respond with valid JSON only. Examples:
+        {"decision": "merge", "folder": "Work"}
+        {"decision": "create", "name": "Trip Planning", "description": "Flights, hotels and itineraries for upcoming trips"}
+        """
+
+        let provider = await AIChatViewModel.makeAgentProvider(for: entry)
+        var text = ""
+        do {
+            let stream = try await provider.streamAgentMessage(
+                messages: [AgentMessage(role: .user, parts: [.text(prompt)])],
+                systemPrompt: "You organize chat sessions into folders. Respond with a single valid JSON object only.",
+                tools: [],
+                maxTokens: 256,
+                thinkingLevel: .off
+            )
+            for try await event in stream {
+                if case .textDelta(let d) = event { text += d }
+            }
+        } catch {
+            // The stream error is the one the UI silently swallowed into
+            // "AI Suggest (failed — try again)". Surface it verbatim.
+            logger.error("[FolderSuggest] FAILED reason=stream-error model=\(entry.model.id) error=\(error) partial=\"\(text.prefix(80))\"")
+            throw error
+        }
+        logger.info("[FolderSuggest] stream done chars=\(text.count)")
+        guard let start = text.firstIndex(of: "{"), let end = text.lastIndex(of: "}"),
+              let data = String(text[start...end]).data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            logger.error("[FolderSuggest] FAILED reason=unparseable model=\(entry.model.id) raw=\"\(text.prefix(160))\"")
+            throw NSError(domain: "TitleGen", code: -2, userInfo: [NSLocalizedDescriptionKey: "Unparseable suggestion: \(text.prefix(120))"])
+        }
+
+        let decision = (json["decision"] as? String)?.lowercased()
+        if decision == "merge", let name = json["folder"] as? String,
+           let folder = await ChatStore.shared.findFolderByName(name) {
+            logger.info("[FolderSuggest] OK decision=merge folder=\"\(folder.name)\"")
+            return .merge(folderId: folder.id, folderName: folder.name)
+        }
+        // Everything else — including a "merge" naming a folder that doesn't
+        // exist — degrades to the create branch with the string prefilled, so
+        // the user still gets a one-tap path and nothing is invented silently.
+        let newName = (json["name"] as? String) ?? (json["folder"] as? String) ?? ""
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            logger.error("[FolderSuggest] FAILED reason=no-folder-name json=\(json)")
+            throw NSError(domain: "TitleGen", code: -2, userInfo: [NSLocalizedDescriptionKey: "Suggestion carried no folder name"])
+        }
+        let desc = (json["description"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        logger.info("[FolderSuggest] OK decision=create name=\"\(trimmed)\" hasDesc=\(desc?.isEmpty == false)")
+        return .create(name: trimmed, desc: (desc?.isEmpty == false) ? String(desc!.prefix(100)) : nil)
+    }
+
+    /// Returns (title, category, folderName). folderName is non-nil only when
+    /// `folderNames` was non-empty AND the model chose one of the offered
+    /// EXISTING folder names — the model interface deals in names, never ids
+    /// (a sub-model has no basis for reasoning about opaque ids; the caller
+    /// resolves the name locally, where duplicate names tie-break by most
+    /// recent member activity).
     private static func callSubModelForTitle(
         conversationSummary: String,
-        subEntry: ModelEntry? = nil
-    ) async throws -> (String, String?) {
+        subEntry: ModelEntry? = nil,
+        folderNames: [String] = [],
+        folderContext: [String] = []
+    ) async throws -> (String, String?, String?) {
         guard let entry = subEntry else {
             throw NSError(domain: "TitleGen", code: -1, userInfo: [NSLocalizedDescriptionKey: "No sub model available"])
         }
@@ -278,14 +493,41 @@ extension AIChatViewModel {
 
         let langInjection = titleLanguageInjection()
 
+        // Folder segment exists ONLY when auto-grouping supplied candidates —
+        // with it absent, prompt and schema are byte-identical to the
+        // title-only form. The null path is spelled out and given its own
+        // example: a closed option list pushes sub-models toward always
+        // picking something, and a wrongly-filed session costs far more than
+        // a wrong category (which only drives a row icon).
+        let folderSegment: String
+        let exampleLine: String
+        if folderNames.isEmpty {
+            folderSegment = ""
+            exampleLine = #"{"title": "Debug Login Page Issue", "category": "code"}"#
+        } else {
+            // Context lines are `"name" — description` where the user (or the
+            // suggest flow) wrote one; the description is authored exactly to
+            // sharpen this membership judgment.
+            let list = (folderContext.isEmpty ? folderNames.map { "\"\($0)\"" } : folderContext)
+                .joined(separator: "; ")
+            folderSegment = """
+            The user organizes chats into groups. Existing groups: [\(list)]. \
+            If this conversation clearly belongs to one of these groups, set "folder" to that exact group name. \
+            If it does not clearly match any group, or you are unsure, set "folder" to null. \
+            Never invent a new group name.
+
+            """
+            exampleLine = #"{"title": "Debug Login Page Issue", "category": "code", "folder": null}"#
+        }
+
         let prompt = """
         Based on the following conversation, generate a short title (max 6 words) that captures the topic. \
         Also pick a task category from: code, writing, research, analysis, creative, chat, math, translation, health, finance, travel, education, design, productivity, support, other.
 
-        \(langInjection)
+        \(folderSegment)\(langInjection)
 
         You MUST respond with valid JSON only. Example:
-        {"title": "Debug Login Page Issue", "category": "code"}
+        \(exampleLine)
 
         Conversation:
         \(conversationSummary)
@@ -368,8 +610,19 @@ extension AIChatViewModel {
            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            let title = json["title"] as? String, !title.isEmpty {
             let category = json["category"] as? String
-            logger.info("[TitleGen] Parsed JSON — title: \(title), category: \(category ?? "nil")")
-            return (title, category)
+            // "folder" may be absent, null, or a name; only a non-empty string
+            // that was actually OFFERED counts — anything else (including a
+            // hallucinated new name) collapses to nil. Case-insensitive match
+            // mirrors the local resolution in findFolderByName.
+            var folder: String? = nil
+            if !folderNames.isEmpty, let f = json["folder"] as? String {
+                let t = f.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !t.isEmpty, folderNames.contains(where: { $0.caseInsensitiveCompare(t) == .orderedSame }) {
+                    folder = t
+                }
+            }
+            logger.info("[TitleGen] Parsed JSON — title: \(title), category: \(category ?? "nil"), folder: \(folder ?? "nil")")
+            return (title, category, folder)
         }
 
         logger.warning("[TitleGen] JSON parse failed for extracted: \(jsonString)")
@@ -382,7 +635,7 @@ extension AIChatViewModel {
                let valueEnd = matchStr.lastIndex(of: "\""), valueStart < valueEnd {
                 let title = String(matchStr[valueStart..<valueEnd])
                 logger.info("[TitleGen] Regex fallback — title: \(title)")
-                return (title, nil)
+                return (title, nil, nil)
             }
         }
 
@@ -392,7 +645,7 @@ extension AIChatViewModel {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if !raw.isEmpty && raw.count < 60 && !raw.contains("{") && !raw.contains("}") {
             logger.info("[TitleGen] Plain text fallback — title: \(raw)")
-            return (raw, nil)
+            return (raw, nil, nil)
         }
 
         logger.error("[TitleGen] All parsing strategies failed. Response was: \(responseText)")

@@ -10,7 +10,17 @@ struct SendPromptIntent: AppIntent {
     static var description = IntentDescription("Sends a prompt to the Minis AI agent. Returns session info immediately while the task runs in the background.")
     static var openAppWhenRun = false
 
-    @Parameter(title: "Prompt", requestValueDialog: "What would you like to ask Minis?")
+    // [T-shortcuts-automation-no-prompt-field] `requestValueDialog` alone marks
+    // this as a Siri "ask the user at run time" parameter. In the Automation
+    // editor (Time of Day etc.) there is no one to ask, and with no
+    // `parameterSummary` naming it the parameter was not surfaced at all — the
+    // action card rendered as a bare "Send Prompt" title with no editable
+    // field. Keeping the dialog for Siri is fine; the summary below is what
+    // makes the text field appear. `inputConnectionBehavior` additionally lets
+    // the field accept the previous action's output as a variable.
+    @Parameter(title: "Prompt",
+               requestValueDialog: "What would you like to ask Minis?",
+               inputConnectionBehavior: .connectToPreviousIntentResult)
     var prompt: String
 
     @Parameter(title: "Attachments", description: "Images, videos, or files to attach to the prompt. Accepts output from previous Shortcuts actions (e.g. filtered photos or documents).",
@@ -26,6 +36,9 @@ struct SendPromptIntent: AppIntent {
 
     @Parameter(title: "Wait for Result", description: "When enabled, waits for the AI to finish and returns the full response. Use this to chain the result into subsequent Shortcuts actions.", default: false)
     var waitForResult: Bool
+
+    @Parameter(title: "Send Notifications", description: "When enabled, posts a system notification when the task starts and again when it finishes. Turn this off for automations that run silently. The app's global task-notification setting still applies.", default: true)
+    var sendCompletionNotification: Bool
 
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<SendPromptResult> & ProvidesDialog {
@@ -95,6 +108,13 @@ struct SendPromptIntent: AppIntent {
             isNewSession = true
         }
 
+        // [T-shortcut-duplicate-completion-notification] This intent posts its
+        // own completion notification, so suppress the generic background one for
+        // this run. Set on BOTH branches — a shortcut continuing an existing
+        // session would otherwise still double-notify. Consumed by
+        // endBackgroundProcessing, so it never leaks into a later manual send.
+        vm.suppressGeneralCompletionNotification = true
+
         // For new sessions, create the DB record first
         if isNewSession {
             vm.sessionSource = "shortcut"
@@ -149,14 +169,20 @@ struct SendPromptIntent: AppIntent {
             }
         }
 
-        // Local notification: task started
-        let promptPreview = String(prompt.prefix(50))
-        ShortcutNotification.post(
-            id: "shortcut-start-\(sid)",
-            title: "Minis Task Started",
-            body: "\(modelName): \(promptPreview)\(prompt.count > 50 ? "…" : "")",
-            sessionId: sid
-        )
+        // Local notification: task started. Posted here — the prompt is sent and
+        // the model is resolved — so the user gets immediate confirmation that the
+        // run began; without it a long task reads as "nothing happened". Governed
+        // by the same toggle as the completion notification, so switching
+        // notifications off silences both. Fire-and-forget: nothing below awaits it.
+        if sendCompletionNotification {
+            let promptPreview = String(prompt.prefix(50))
+            ShortcutNotification.post(
+                id: "shortcut-start-\(sid)",
+                title: String(localized: "Minis Task Started"),
+                body: "\(modelName): \(promptPreview)\(prompt.count > 50 ? "…" : "")",
+                sessionId: sid
+            )
+        }
 
         if waitForResult {
             // Synchronous mode: wait for the agent to finish, then return the full response
@@ -169,12 +195,16 @@ struct SendPromptIntent: AppIntent {
 
             let responseText = Self.extractResponseText(from: vm)
 
-            ShortcutNotification.post(
-                id: "shortcut-done-\(sid)",
-                title: "Minis Task Completed",
-                body: "\(modelName): \(String(responseText.prefix(200)))",
-                sessionId: sid
-            )
+            // Per-run opt-out. ANDs with the app-wide toggle, which
+            // ShortcutNotification.post checks internally — do not duplicate it here.
+            if sendCompletionNotification {
+                ShortcutNotification.post(
+                    id: "shortcut-done-\(sid)",
+                    title: String(localized: "Minis Task Completed"),
+                    body: "\(modelName): \(String(responseText.prefix(200)))",
+                    sessionId: sid
+                )
+            }
 
             let result = SendPromptResult(
                 sessionId: sid,
@@ -191,6 +221,7 @@ struct SendPromptIntent: AppIntent {
         let capturedModelName = modelName
         let capturedSid = sid
         let capturedPendingId = pendingId
+        let capturedSendCompletionNotification = sendCompletionNotification
         Task { @MainActor in
             for await processing in vm.$isProcessing.values {
                 if !processing { break }
@@ -201,12 +232,14 @@ struct SendPromptIntent: AppIntent {
 
             let summary = String(Self.extractResponseText(from: vm).prefix(200))
 
-            ShortcutNotification.post(
-                id: "shortcut-done-\(capturedSid)",
-                title: "Minis Task Completed",
-                body: "\(capturedModelName): \(summary)",
-                sessionId: capturedSid
-            )
+            if capturedSendCompletionNotification {
+                ShortcutNotification.post(
+                    id: "shortcut-done-\(capturedSid)",
+                    title: String(localized: "Minis Task Completed"),
+                    body: "\(capturedModelName): \(summary)",
+                    sessionId: capturedSid
+                )
+            }
         }
 
         let result = SendPromptResult(
@@ -217,7 +250,28 @@ struct SendPromptIntent: AppIntent {
             prompt: prompt
         )
 
-        return .result(value: result, dialog: "Task started with \(modelName). I'll notify you when it's done.")
+        return .result(value: result, dialog: IntentDialog(stringLiteral: String(localized: "Task started with \(modelName). I'll notify you when it's done.")))
+    }
+
+    // [T-shortcuts-automation-no-prompt-field] Without a `parameterSummary` the
+    // Shortcuts action card has nothing to render: AppIntents uses the summary
+    // as the card's layout, so an intent that omits it can fall back to a
+    // title-only card with no inline editors — exactly the issue reported for
+    // the Automation editor (#121). `RetryRunIntent` was the only intent here
+    // that defined one, and it was the only one that rendered correctly.
+    //
+    // `prompt` goes on the Summary line so it is always an inline, always-shown
+    // text field. The remaining parameters are optional refinements and live in
+    // the "Show More" section — `\.$files` first so the attachment slot is the
+    // first thing surfaced when chaining from a previous action.
+    static var parameterSummary: some ParameterSummary {
+        Summary("Send \(\.$prompt) to Minis") {
+            \.$files
+            \.$session
+            \.$model
+            \.$waitForResult
+            \.$sendCompletionNotification
+        }
     }
 
     /// Ensures the IntentFile has a usable filename with a correct extension.
@@ -240,7 +294,10 @@ struct SendPromptIntent: AppIntent {
     /// Extracts the full response text from the last assistant message in the VM.
     @MainActor
     static func extractResponseText(from vm: AIChatViewModel) -> String {
-        guard let lastAssistant = vm.messages.last(where: { $0.role == .assistant }) else {
+        // [T-bgnotif-internal-text-leak] Skip internal bridge turns — they are
+        // instructions addressed to the model, not a response, and returning one
+        // to a Shortcut (or any intent caller) leaks prompt text verbatim.
+        guard let lastAssistant = vm.messages.last(where: { $0.role == .assistant && !$0.isInternalBridge }) else {
             return "No response."
         }
         let textBlocks = lastAssistant.blocks
@@ -264,8 +321,21 @@ enum ShortcutNotification {
 
         let center = UNUserNotificationCenter.current()
 
-        // Request permission if needed (no-op if already granted)
-        center.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+        // [T-shortcut-authprompt-midrun] Only ask for permission when the user
+        // has never been asked. iOS suppresses the alert once the status is
+        // decided, so the previous unconditional call was harmless in the steady
+        // state — but on a first run it pops a system dialog, and now that a
+        // "task started" notification fires DURING the shortcut, that dialog can
+        // land in the middle of an automation. Checking first means the prompt
+        // only ever appears in the genuinely-undecided case.
+        //
+        // Both calls are async with completion handlers and nothing awaits them,
+        // so this stays fire-and-forget: post() returns immediately and the
+        // intent's return timing is unchanged.
+        center.getNotificationSettings { settings in
+            guard settings.authorizationStatus == .notDetermined else { return }
+            center.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+        }
 
         // Register category (idempotent)
         let category = UNNotificationCategory(

@@ -25,9 +25,34 @@ class ScheduledTasksViewModel(private val appContext: Context) : ViewModel() {
     private val manager = ScheduledTaskManager(appContext)
     private val app get() = appContext as com.openminis.app.MinisApp
 
+    /**
+     * [T-android-scheduled-lateinit-crash-156] True when the Application's
+     * repositories are actually assigned.
+     *
+     * Every `app.<repository>` read below is a lateinit getter that throws
+     * UninitializedPropertyAccessException if MinisApp.onCreate early-returned
+     * (safe-mode) or aborted partway. The screens backing this ViewModel can be
+     * composed in exactly that state — a scheduled-task notification tap
+     * restores the task into an Activity while the Application behind it is
+     * permanently half-built — so the reads must not be unconditional.
+     *
+     * Callers degrade to empty lists / nulls, which renders an empty picker
+     * instead of taking the process down.
+     */
+    private fun ready(): Boolean =
+        (appContext as? com.openminis.app.MinisApp)?.subsystemsReady() == true
+
     /** Exposed for the editor's ModelPickerSheet — read-only access to the
-     *  same ProviderRepository the chat screen uses. */
-    val providerRepository get() = app.providerRepository
+     *  same ProviderRepository the chat screen uses.
+     *
+     *  [T-android-scheduled-lateinit-crash-156] Nullable, behind the same
+     *  [ready] gate as every other `app.<repository>` read in this file. This
+     *  accessor was the one that read the lateinit unconditionally, so the very
+     *  half-built-Application case the rest of the class defends against
+     *  (a scheduled-task notification tap restoring the editor) crashed here
+     *  instead. Callers render the picker's empty state, matching how
+     *  [listSessions] / [listModels] degrade. */
+    val providerRepository get() = if (ready()) app.providerRepository else null
 
     val tasks: StateFlow<List<ScheduledTask>> = manager.store().observe()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -44,6 +69,7 @@ class ScheduledTasksViewModel(private val appContext: Context) : ViewModel() {
     data class ModelOption(val entryId: String, val modelId: String, val displayName: String, val providerLabel: String)
 
     suspend fun listSessions(limit: Int = 100): List<SessionOption> = withContext(Dispatchers.IO) {
+        if (!ready()) return@withContext emptyList()
         app.chatRepository.querySessionsMeta(
             sessionIds = null, keywords = null, limit = limit, startMs = null, endMs = null,
         ).map {
@@ -52,6 +78,7 @@ class ScheduledTasksViewModel(private val appContext: Context) : ViewModel() {
     }
 
     suspend fun listUserMessages(sessionId: String): List<MessageOption> = withContext(Dispatchers.IO) {
+        if (!ready()) return@withContext emptyList()
         app.chatRepository.loadMessages(sessionId)
             .filter { it.role == "user" }
             .map { MessageOption(it.id, extractPreview(it.partsJson), it.createdAt) }
@@ -79,8 +106,9 @@ class ScheduledTasksViewModel(private val appContext: Context) : ViewModel() {
         }.getOrNull()
     }
 
-    fun listModels(): List<ModelOption> =
-        app.providerRepository.allVisibleEntries().mapNotNull { entry ->
+    fun listModels(): List<ModelOption> {
+        if (!ready()) return emptyList()
+        return app.providerRepository.allVisibleEntries().mapNotNull { entry ->
             val instance = app.providerRepository.instance(entry.providerInstanceId) ?: return@mapNotNull null
             ModelOption(
                 entryId = entry.id,
@@ -89,6 +117,7 @@ class ScheduledTasksViewModel(private val appContext: Context) : ViewModel() {
                 providerLabel = instance.label.ifEmpty { entry.model.provider },
             )
         }
+    }
 
     private fun extractPreview(partsJson: String): String {
         val text = runCatching {

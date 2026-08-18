@@ -990,6 +990,16 @@ final class AgentLiveActivityManager {
 
     /// Collapse a stored last-message body to a single trimmed line, capped.
     private static func collapseLastMessage(_ raw: String) -> String {
+        // [T-bgnotif-internal-text-leak] Never display an internal bridge turn.
+        // Every Live Activity text path funnels through here, including the
+        // `_finishActivity` fallback that reads `ChatStore.getSession()?.lastMessage`
+        // — and that DB value is the latest assistant row with no bridge
+        // exclusion, so a task interrupted by a queued message would put a
+        // model-facing instruction on the lock screen. Substituting a neutral
+        // status keeps the capsule truthful without exposing the prompt.
+        if RawMessage.isInternalBridgeText(raw) {
+            return String(localized: "Task interrupted by a new message")
+        }
         let collapsed = raw
             .replacingOccurrences(of: "\n", with: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)

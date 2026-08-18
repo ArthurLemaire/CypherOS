@@ -487,72 +487,14 @@ private struct MemoryWriteDetailView: View {
         return nil
     }
 
+    /// [T-ios-memory-write-revoke] Delegates to the shared revoker, which the
+    /// tool capsule's long-press menu uses too — the entry-deletion logic must
+    /// not drift between the two entry points.
     private func revokeEntry() -> String {
         guard let written = item.writtenContent else {
-            return "No written content to revoke."
+            return String(localized: "No written content to revoke.")
         }
-
-        let fm = FileManager.default
-        let memDir = AIChatViewModel.minisMemoryPersistentDir
-
-        // Search today and yesterday files for the entry
-        let dateFmt = DateFormatter()
-        dateFmt.dateFormat = "yyyy-MM-dd"
-        let candidates = [
-            dateFmt.string(from: Date()),
-            dateFmt.string(from: Date().addingTimeInterval(-86400))
-        ]
-
-        for dateStr in candidates {
-            let fileURL = memDir.appendingPathComponent("\(dateStr).md")
-            guard fm.fileExists(atPath: fileURL.path),
-                  let fileContent = try? String(contentsOf: fileURL, encoding: .utf8) else {
-                continue
-            }
-
-            // The entry format: "<!-- YYYY-MM-DD HH:mm:ss -->\n{content}\n\n"
-            // Find the block that contains the exact written content.
-            // Split on the comment markers to find entries.
-            let pattern = "<!-- \\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2} -->\n"
-            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
-
-            let nsContent = fileContent as NSString
-            let matches = regex.matches(in: fileContent, range: NSRange(location: 0, length: nsContent.length))
-
-            // Walk through entries: each starts at a comment match and ends at the next (or EOF)
-            for (i, match) in matches.enumerated() {
-                let entryStart = match.range.location
-                let contentStart = match.range.location + match.range.length
-                let entryEnd: Int
-                if i + 1 < matches.count {
-                    entryEnd = matches[i + 1].range.location
-                } else {
-                    entryEnd = nsContent.length
-                }
-
-                let bodyRange = NSRange(location: contentStart, length: entryEnd - contentStart)
-                let body = nsContent.substring(with: bodyRange)
-
-                // The body should be "{content}\n\n" — trim trailing newlines and compare
-                let trimmedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
-                let trimmedWritten = written.trimmingCharacters(in: .whitespacesAndNewlines)
-
-                if trimmedBody == trimmedWritten {
-                    // Remove the entire entry (comment + content + trailing newlines)
-                    let removeRange = NSRange(location: entryStart, length: entryEnd - entryStart)
-                    let newFileContent = nsContent.replacingCharacters(in: removeRange, with: "")
-
-                    do {
-                        try newFileContent.write(to: fileURL, atomically: true, encoding: .utf8)
-                        return "Removed from \(dateStr).md"
-                    } catch {
-                        return "Error writing file: \(error.localizedDescription)"
-                    }
-                }
-            }
-        }
-
-        return "Entry not found in recent daily logs."
+        return MemoryWriteRevoker.revoke(writtenContent: written)
     }
 }
 

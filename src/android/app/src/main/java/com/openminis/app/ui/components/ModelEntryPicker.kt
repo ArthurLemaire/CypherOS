@@ -44,6 +44,7 @@ import com.openminis.app.data.model.ProviderType
 import com.openminis.app.data.model.SystemVoiceEntries
 import com.openminis.app.data.model.hasAudioInput
 import com.openminis.app.data.model.hasAudioOutput
+import com.openminis.app.data.model.hasImageInput
 import com.openminis.app.data.model.normalizeModalities
 
 /**
@@ -66,17 +67,22 @@ import com.openminis.app.data.model.normalizeModalities
  */
 enum class PickerModalityFilter {
     AUDIO_INPUT,
-    AUDIO_OUTPUT;
+    AUDIO_OUTPUT,
+    // [T-android-vision-group] Vision scenario: only image-consuming entries
+    // qualify. No System virtual entry — there is no on-device vision engine.
+    IMAGE_INPUT;
 
     fun matches(model: LLMModel): Boolean = when (this) {
         AUDIO_INPUT -> model.hasAudioInput
         AUDIO_OUTPUT -> model.hasAudioOutput
+        IMAGE_INPUT -> model.hasImageInput
     }
 
     /** System virtual entries that serve this direction, in display order. */
     fun systemEntries(): List<ModelEntry> = when (this) {
         AUDIO_INPUT -> listOf(SystemVoiceEntries.asrOnline, SystemVoiceEntries.asrOffline)
         AUDIO_OUTPUT -> listOf(SystemVoiceEntries.tts)
+        IMAGE_INPUT -> emptyList()
     }
 }
 

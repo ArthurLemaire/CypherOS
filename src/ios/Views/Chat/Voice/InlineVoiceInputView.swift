@@ -111,14 +111,32 @@ struct InlineVoiceInputView: View {
     private var maxPanelHeight: CGFloat { UIScreen.main.bounds.height * 0.6 }
 
     /// Tallest the transcript band may grow before it starts scrolling.
+    /// [T-ios-voice-transcript-blank-band] Subtract the in-frame chrome too, so
+    /// a saturated band still fits inside the 60% panel cap instead of being
+    /// clipped by it (the cap is applied by `min(maxPanelHeight, …)` in
+    /// `effectiveHeight`, which would otherwise silently shave the band).
     private var transcriptMaxHeight: CGFloat {
-        max(40, maxPanelHeight - Self.expandedBaseHeight)
+        max(40, maxPanelHeight - Self.expandedBaseHeight - Self.expandedChromeOverhead)
     }
+
+    /// [T-ios-voice-transcript-blank-band] Chrome that lives INSIDE the panel's
+    /// `.frame(height: effectiveHeight)` but is not part of `expandedBaseHeight`:
+    /// the body's own `.padding(.vertical, 8)` (applied before the frame, so it
+    /// eats into it) plus the `VStack(spacing: 8)` gap between the transcript
+    /// band and the status line. `effectiveHeight` has to reserve these on top
+    /// of the band, or the band is handed less room than it asked for.
+    private static let expandedChromeOverhead: CGFloat = 8 * 2 + 8   // vpad + spacing
+
+    /// Minimum band height. One line of `.body` is ~20-22pt, so the old 28pt
+    /// floor was already tight; it is kept as the floor for the band ITSELF, but
+    /// `effectiveHeight` now budgets the chrome separately so the floor is
+    /// actually delivered instead of being eaten by padding.
+    private static let transcriptMinHeight: CGFloat = 28
 
     /// Visible transcript band height = content height, clamped to the cap.
     private var transcriptBandHeight: CGFloat {
         guard viewModel.isEditingTranscript || !viewModel.transcript.isEmpty else { return 0 }
-        return min(max(transcriptContentHeight, 28), transcriptMaxHeight)
+        return min(max(transcriptContentHeight, Self.transcriptMinHeight), transcriptMaxHeight)
     }
 
     /// [T-voice-scroll-gesture-priority] Should the panel's drag gesture step
@@ -157,7 +175,19 @@ struct InlineVoiceInputView: View {
     private var effectiveHeight: CGFloat {
         guard expanded else { return Self.compactHeight }
         let band = transcriptBandHeight
-        return min(maxPanelHeight, Self.expandedBaseHeight + (band > 0 ? band + 8 : 0))
+        // [T-ios-voice-transcript-blank-band] Reserve the in-frame chrome, not
+        // just `band + 8`.
+        //
+        // The old arithmetic added a bare 8pt for the VStack spacing and ignored
+        // the body's `.padding(.vertical, 8)` — which is applied BEFORE
+        // `.frame(height: effectiveHeight)` and therefore consumes 16pt from
+        // INSIDE that height. The band then asked for more room than the layout
+        // could give it and was squeezed: with a short/not-yet-measured
+        // transcript (the 28pt floor) the panel reserved 196pt but left only
+        // 12pt for the band — less than one line of body text — so the panel
+        // rendered as a tall block with a blank transcript area even though the
+        // text was there. That is the reported "面板展开但看不到文字".
+        return min(maxPanelHeight, Self.expandedBaseHeight + (band > 0 ? band + Self.expandedChromeOverhead : 0))
     }
 
     var body: some View {
@@ -673,11 +703,22 @@ struct InlineVoiceInputView: View {
         // both branches uniformly (if/else is a statement, not chainable).
         Group {
         if viewModel.isEditingTranscript {
-            ScrollView(.vertical, showsIndicators: true) {
-                TextField("", text: Binding(
-                    get: { viewModel.transcript },
-                    set: { viewModel.setTranscript($0); inputText = $0 }
-                ), axis: .vertical)
+            // [T-voice-edit-nested-scroll] NO outer ScrollView here.
+            // `TextField(axis: .vertical)` is backed by a UITextView, which IS a
+            // UIScrollView. Wrapping it in a SwiftUI ScrollView nested two
+            // scrollers: `.fixedSize(vertical:)` asked SwiftUI for the field's
+            // full intrinsic height, but the UITextView still clipped itself to
+            // the band height and kept its own scrolling, while the outer
+            // ScrollView measured content that "fit" and refused to scroll. With
+            // a transcript taller than the band, the text above the caret became
+            // unreachable by EITHER scroller — the reported "can't drag the top
+            // half back into view" freeze. The text view scrolls itself here,
+            // which also restores native caret-tracking that the wrapped form
+            // lost.
+            TextField("", text: Binding(
+                get: { viewModel.transcript },
+                set: { viewModel.setTranscript($0); inputText = $0 }
+            ), axis: .vertical)
                 .focused($editFocused)
                 .font(.body)
                 .multilineTextAlignment(.center)
@@ -699,13 +740,16 @@ struct InlineVoiceInputView: View {
                         }
                     }
                 }
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity)
+                // Fill the band and let the text view scroll inside it. Without
+                // an explicit height the field would size to its content and
+                // overflow the fixed-height band instead of scrolling.
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 // [T-voice-scroll-gesture-priority] Boundary probe (zero-size,
-                // non-interactive) — reports this ScrollView's scroll position to
-                // the panel gesture.
+                // non-interactive) — reports the text view's scroll position to
+                // the panel gesture. In this branch the enclosing UIScrollView
+                // IS the UITextField's text view, which is exactly the scroller
+                // the panel drag must yield to while editing.
                 .background(TranscriptScrollProbe(state: transcriptScroll).frame(width: 0, height: 0))
-            }
             // [T-voice-edit-gesture-exclusive] NO drag recognizer on the editor.
             // While editing, the panel installs no gesture (PanelDragGestureModifier
             // isEditing:true) and this branch adds none either — so the ONLY things

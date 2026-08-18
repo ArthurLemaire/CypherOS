@@ -134,6 +134,20 @@ final class MountedFoldersManager {
     /// Resolved URL for each active mount (key = entry.id). Nil if activation failed.
     private var activeURLs: [UUID: URL] = [:]
 
+    /// Symlink-resolved, standardized host path for each active mount
+    /// (key = entry.id), computed **once** off the main thread when the mount
+    /// activates.
+    ///
+    /// Callers that need to test "is this URL under a mount?" used to call
+    /// `resolvedURL(for:).resolvingSymlinksInPath()` on every check. For a
+    /// mount backed by a network share or a FileProvider extension that is a
+    /// `getattrlist(2)` → synchronous XPC to the provider, and on a slow or
+    /// unreachable volume it parks the calling thread — fatal on the main
+    /// thread, where it tripped the 10s scene-update watchdog. Resolving once
+    /// at activation and reusing the string keeps those checks pure
+    /// string comparisons.
+    private var canonicalMountPaths: [UUID: String] = [:]
+
     /// State per mount, published so UI can reflect reauth needs.
     private(set) var activationStates: [UUID: MountActivationState] = [:]
 
@@ -360,6 +374,7 @@ final class MountedFoldersManager {
             url.stopAccessingSecurityScopedResource()
         }
         activeURLs.removeValue(forKey: id)
+        canonicalMountPaths.removeValue(forKey: id)
         activationStates.removeValue(forKey: id)
 
         removeMountSymlink(name: entry.name)
@@ -531,6 +546,7 @@ final class MountedFoldersManager {
         }
 
         activationStates[entry.id] = .active(resolvedURL: url)
+        cacheCanonicalPath(for: entry.id, url: url)
         mountLog.info("activated '\(entry.name)' [\(idPrefix)] -> \(url.path) (stale=\(stale))")
 
         // Eagerly check whether the host path's contents are actually
@@ -586,6 +602,7 @@ final class MountedFoldersManager {
                     if let dropped = manager.activeURLs.removeValue(forKey: id) {
                         dropped.stopAccessingSecurityScopedResource()
                     }
+                    manager.canonicalMountPaths.removeValue(forKey: id)
                     manager.pushExternalMountSnapshot()
                 }
             }
@@ -721,17 +738,33 @@ final class MountedFoldersManager {
         }
         // [MOUNT-DIAG] Snapshot contents at push time, so we can correlate
         // with the coordinator-side apply log. Each line includes whether the
-        // host path is currently reachable from THIS (main) process —
-        // distinguishes "scope held + readable" from "scope held but XPC
-        // unresponsive" from "scope dropped".
-        for (i, s) in snapshot.enumerated() {
-            var st = stat()
-            let rc = stat(s.hostPath, &st)
-            if rc == 0 {
-                mountLog.info("MOUNT-DIAG push [\(i)] \(s.linuxDir) -> \(s.hostPath) ro=\(s.readOnly) hostStat=OK mode=0o\(String(st.st_mode & 0o777, radix: 8))")
-            } else {
-                let errStr = String(cString: strerror(errno))
-                mountLog.warning("MOUNT-DIAG push [\(i)] \(s.linuxDir) -> \(s.hostPath) ro=\(s.readOnly) hostStat=FAILED errno=\(errno) (\(errStr))")
+        // host path is currently reachable from this process — distinguishes
+        // "scope held + readable" from "scope held but XPC unresponsive" from
+        // "scope dropped".
+        //
+        // **Runs off the main thread.** This whole loop exists only to emit a
+        // log line, but `stat()` on a mount backed by a network share or
+        // another app's FileProvider is a synchronous XPC round-trip to the
+        // owning provider — on a slow or unreachable volume it parks the
+        // calling thread. This type is `@MainActor`, and several callers reach
+        // here from a detached task's `MainActor.run` tail (activateAll's
+        // completion, ensureContentsMaterialized), so the block landed on the
+        // main thread and tripped the 10s scene-update watchdog → SIGKILL
+        // (0x8BADF00D). Nothing below depends on these values, so deferring
+        // them is free.
+        let diagSnapshot = snapshot
+        Task.detached(priority: .utility) {
+            for (i, s) in diagSnapshot.enumerated() {
+                var st = stat()
+                let rc = stat(s.hostPath, &st)
+                // Capture errno immediately — any intervening call can clobber it.
+                let err = errno
+                if rc == 0 {
+                    mountLog.info("MOUNT-DIAG push [\(i)] \(s.linuxDir) -> \(s.hostPath) ro=\(s.readOnly) hostStat=OK mode=0o\(String(st.st_mode & 0o777, radix: 8))")
+                } else {
+                    let errStr = String(cString: strerror(err))
+                    mountLog.warning("MOUNT-DIAG push [\(i)] \(s.linuxDir) -> \(s.hostPath) ro=\(s.readOnly) hostStat=FAILED errno=\(err) (\(errStr))")
+                }
             }
         }
         // Synchronous write to the thread-safe shared storage — visible to
@@ -794,13 +827,39 @@ final class MountedFoldersManager {
 
         let state = MountActivationState.active(resolvedURL: url)
         activationStates[entry.id] = state
+        cacheCanonicalPath(for: entry.id, url: url)
         mountLog.info("activated '\(entry.name)' -> \(url.path)")
         return state
+    }
+
+    /// Resolve `url`'s canonical path off the main thread and memoize it.
+    /// Seeds the cache with the unresolved path immediately so callers have
+    /// something usable before the background resolve lands — for the common
+    /// case where the mount root contains no symlinks the two are identical.
+    private func cacheCanonicalPath(for id: UUID, url: URL) {
+        canonicalMountPaths[id] = url.standardized.path
+        Task.detached(priority: .utility) {
+            let canonical = url.resolvingSymlinksInPath().standardized.path
+            await MainActor.run {
+                let manager = MountedFoldersManager.shared
+                // Only store if the mount is still active — it may have been
+                // removed or deactivated while we were resolving.
+                guard manager.activeURLs[id] != nil else { return }
+                manager.canonicalMountPaths[id] = canonical
+            }
+        }
     }
 
     /// Returns the resolved host URL for a mount, if currently active.
     func resolvedURL(for id: UUID) -> URL? {
         activeURLs[id]
+    }
+
+    /// Canonical (symlink-resolved, standardized) host path for an active
+    /// mount. Precomputed at activation — safe to call on the main thread,
+    /// unlike `resolvedURL(for:)?.resolvingSymlinksInPath()`.
+    func canonicalPath(for id: UUID) -> String? {
+        canonicalMountPaths[id]
     }
 
     /// Returns the resolved host URL for a mount by name.
