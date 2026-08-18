@@ -69,6 +69,17 @@ final class ShareCoordinator: ObservableObject {
         }
     }
 
+    /// True from the moment a raise is accepted until the flag is actually
+    /// flipped 350ms later.
+    ///
+    /// [T-share-double-raise] `hasPendingShare` alone cannot coalesce
+    /// concurrent raises: it stays false for the whole sleep, so a second call
+    /// inside that window passed the guard and scheduled a SECOND flip. The URL
+    /// genuinely arrives twice on every share — MinisApp.onOpenURL and
+    /// AppDelegate's scene openURLContexts both route it to DeepLinkRouter —
+    /// so this is the normal path, not an edge case.
+    private var raiseInFlight = false
+
     /// Single funnel for raising `hasPendingShare`. Before flipping the
     /// flag we ask every fullScreenCover host to dismiss, then wait one
     /// dismiss-animation duration so SwiftUI has actually torn the prior
@@ -77,14 +88,16 @@ final class ShareCoordinator: ObservableObject {
     /// nothing happen.
     @MainActor
     func raisePendingShare() {
-        guard !hasPendingShare else {
-            shareLog.info("[Share] raisePendingShare: already pending — coalescing")
+        guard !hasPendingShare, !raiseInFlight else {
+            shareLog.info("[Share] raisePendingShare: already pending (flag=\(self.hasPendingShare) inFlight=\(self.raiseInFlight)) — coalescing")
             return
         }
+        raiseInFlight = true
         shareLog.info("[Share] raisePendingShare: dismissing immersive covers, then setting flag")
         NotificationCenter.default.post(name: .dismissAllImmersivePresentations, object: nil)
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 350_000_000)
+            self.raiseInFlight = false
             self.hasPendingShare = true
         }
     }

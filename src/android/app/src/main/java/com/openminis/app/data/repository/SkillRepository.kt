@@ -114,8 +114,28 @@ class SkillRepository(private val context: Context) {
         get() = File(context.filesDir, "minis-global/skills")
 
     init {
-        loadAll()
-        installBundledSkills()
+        // [T-android-safemode-lateinit-crash-147] Never let a bad skill take
+        // the whole app down. This constructor runs inline in
+        // MinisApp.onCreate, BEFORE subsystemsInitialized is set, so anything
+        // escaping here aborts onCreate with the repositories half-assigned.
+        // The Application object is then permanently broken (onCreate never
+        // re-runs), every subsequent launch crashes on the first Compose frame
+        // with "lateinit property chatRepository has not been initialized",
+        // and each crash writes a log that re-trips the crash-burst detector —
+        // the self-sustaining loop reported in GH#147, where the user could
+        // only recover by reinstalling.
+        //
+        // loadAll() reads rows written by third-party skill imports and uses
+        // getColumnIndexOrThrow plus SKILL.md parsing, so a malformed skill
+        // from an external hub is exactly the kind of input that can throw.
+        // Degrading to "some skills missing from the list" is always better
+        // than an app that cannot start.
+        runCatching { loadAll() }.onFailure {
+            Log.e(TAG, "loadAll failed — continuing with ${_skills.value.size} skill(s): ${it.message}", it)
+        }
+        runCatching { installBundledSkills() }.onFailure {
+            Log.e(TAG, "installBundledSkills failed — continuing: ${it.message}", it)
+        }
     }
 
     // -- CRUD --
@@ -1163,8 +1183,17 @@ class SkillRepository(private val context: Context) {
     private fun loadAll() {
         // Load from DB
         val dbSkills = mutableListOf<Skill>()
-        val cursor = db.rawQuery("SELECT * FROM skills ORDER BY installed_at DESC", null)
+        // [T-android-safemode-lateinit-crash-147] `use` so the cursor is closed
+        // even when a row throws — the old code only reached close() on the
+        // success path and leaked on any failure.
+        db.rawQuery("SELECT * FROM skills ORDER BY installed_at DESC", null).use { cursor ->
         while (cursor.moveToNext()) {
+            // [T-android-safemode-lateinit-crash-147] Per-row isolation: one
+            // malformed skill (a third-party import with a missing column or
+            // an unparseable SKILL.md) must not discard every OTHER skill, and
+            // must not escape into MinisApp.onCreate. Skip the bad row, keep
+            // the rest.
+            try {
             val id = cursor.getString(cursor.getColumnIndexOrThrow("id"))
             val body = readSkillMdBody(id)
             val sourceUrlIdx = cursor.getColumnIndex("source_url")
@@ -1206,8 +1235,11 @@ class SkillRepository(private val context: Context) {
                 sourceURL = if (sourceUrlIdx >= 0 && !cursor.isNull(sourceUrlIdx)) cursor.getString(sourceUrlIdx) else null,
                 useCount = if (useCountIdx >= 0) cursor.getDouble(useCountIdx) else 0.0,
             ))
+            } catch (t: Throwable) {
+                Log.e(TAG, "skipping unreadable skill row: ${t.message}", t)
+            }
         }
-        cursor.close()
+        }
 
         // Auto-discover skills on disk without DB entries
         val onDisk = skillsDir.listFiles()?.filter { it.isDirectory } ?: emptyList()

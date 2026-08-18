@@ -111,11 +111,62 @@ final class CorrectionAdmissionTests: XCTestCase {
 
     // MARK: - RTU→Retry stays deliberately UNCOLLECTED (per design decision)
 
-    func testRTUNotForced() {
-        // rtu/retry: sim 0.40, not an ordered subsequence, no digits. We chose
-        // NOT to special-case it (risks false positives). Assert it's rejected
-        // so a future change that tries to force it also revisits this test.
-        XCTAssertFalse(judge("RTU", "Retry").isAdmitted)
+    func testRTUNowAdmittedViaLatinPhonetic() {
+        // rtu/retry: sim 0.40, not an ordered subsequence, no digits — so it was
+        // REJECTED before Signal 4 existed, as a deliberately conservative choice.
+        // Signal 4 now admits it: same syllable count (1 each), skeletons rt/rtry
+        // are Levenshtein-similar (0.50) and share "r" at index 0. That is the
+        // correct call — RTU↔Retry is a plausible ASR near-sound, and whether the
+        // correction actually applies is decided downstream by vocabulary evidence.
+        XCTAssertEqual(judge("RTU", "Retry"), .latinPhonetic)
+    }
+
+    // MARK: - Signal 4: Latin phonetic (consonant skeleton)
+
+    func testLatinPhoneticSimilarity() {
+        let f = CorrectionAdmission.isLatinPhoneticSimilar
+
+        // The reported bug: linux→minis. Skeletons lnx/mns — same syllable count
+        // (2), "n" anchored at index 1, skeleton similarity 0.33 ≥ 0.30.
+        XCTAssertTrue(f("linux", "minis"))
+
+        // cursor/claude does NOT fire here: skeletons crsr/cld are only 0.25
+        // similar. It needs no help — Signal 1 already admits it phonetically.
+        XCTAssertFalse(f("cursor", "claude"))
+        XCTAssertTrue(judge("cursor", "claude").isAdmitted)
+
+        // cat/dog: same syllable count, but ct/dg share no consonant at any
+        // index, so the anchor requirement rejects it.
+        XCTAssertFalse(f("cat", "dog"))
+
+        // Syllable-count parity rejects these outright.
+        XCTAssertFalse(f("linux", "python"))    // 2 vs 1
+        XCTAssertFalse(f("minis", "minutes"))   // 2 vs 3 — a rewrite, correctly dropped
+        XCTAssertFalse(f("cloud", "claude"))    // 1 vs 2 — already Signal 1's job
+
+        // Empty / vowel-only inputs must not crash or match.
+        XCTAssertFalse(f("", ""))
+        XCTAssertFalse(f("aeiou", "aeiou"))     // no consonant skeleton at all
+    }
+
+    func testLatinOriginGuardKeepsChineseOnThePinyinPath() {
+        // PinyinNormalizer renders Chinese as toneless a-z, so a guard that
+        // inspected the KEY would see "guazai"/"guize" as ordinary Latin words
+        // with matching syllable counts and admit this unrelated-word rewrite.
+        // The guard tests the ORIGINAL text instead, so Chinese never reaches
+        // Signal 4 and this pair stays rejected.
+        XCTAssertFalse(CorrectionAdmission.isLatinOrigin("挂载"))
+        XCTAssertTrue(CorrectionAdmission.isLatinOrigin("linux"))
+        XCTAssertTrue(CorrectionAdmission.isLatinOrigin("Media Server"))
+        XCTAssertFalse(judge("挂载", "规则").isAdmitted)
+    }
+
+    func testLinuxMinisAdmitted() {
+        // The specific user report, end-to-end through judge().
+        XCTAssertEqual(judge("linux", "minis"), .latinPhonetic)
+        // Case variations — the normalizer lowercases, so these behave the same.
+        XCTAssertEqual(judge("Linux", "minis"), .latinPhonetic)
+        XCTAssertEqual(judge("Linux", "Minis"), .latinPhonetic)
     }
 
     // MARK: - Aggregate: collection rate over the classified real-data spans
@@ -128,6 +179,7 @@ final class CorrectionAdmissionTests: XCTestCase {
             ("审推", "闪退"), ("绘画", "会话"), ("LifeActivity", "LiveActivity"),
             ("cloud", "claude"), ("worker", "work on"), ("I worker", "I work on"),
             ("MediaS", "Media Server"), ("十七", "17"), ("二V三", "v3"),
+            ("linux", "minis"),   // Signal 4 — the GH report; nothing else catches it
         ]
         let shouldReject: [(String, String)] = [
             ("挂载", "规则"), ("secure", "SSH key"),

@@ -58,6 +58,78 @@ import com.openminis.app.ui.MinisImageFetcher
 import kotlinx.coroutines.launch
 
 class MinisApp : Application(), ImageLoaderFactory {
+    /**
+     * T-android-safemode-lateinit-crash: true once the heavy subsystem
+     * block in [onCreate] has fully run (DB + every repository assigned).
+     *
+     * Safe-mode makes [onCreate] early-return BEFORE those assignments,
+     * and that early return is permanent for the life of the process —
+     * the Application object is never re-created just because the user
+     * dismissed the crash dialog. Callers must therefore not use
+     * `CrashFrequencyDetector.isSafeMode()` as a proxy for "are the
+     * repositories usable": that flag flips back to false on dismiss
+     * while the repositories stay unassigned forever.
+     *
+     * This flag is the authoritative signal instead — it only ever goes
+     * false → true, and only after every lateinit below is assigned.
+     */
+    @Volatile
+    var subsystemsInitialized: Boolean = false
+        private set
+
+    /**
+     * [T-android-safemode-lateinit-crash-147] Null-safe view of
+     * [chatRepository] for code that can run BEFORE (or entirely without)
+     * MainActivity.
+     *
+     * GH#147: a user installed a third-party skill and the app then crashed on
+     * every launch with `lateinit property chatRepository has not been
+     * initialized`. MainActivity has guarded this since b72dc591, but that
+     * guard only covers the UI entry point. Alarms, notification taps, the
+     * notification-listener service and the scheduled-task runner can all
+     * start the process with NO Activity at all: Android creates the
+     * Application, `onCreate` early-returns under safe-mode, and the component
+     * then reads a lateinit that will never be assigned for the life of the
+     * process.
+     *
+     * Reading this property instead of the lateinit turns a hard crash into a
+     * null the caller can handle — the process stays alive, the crash-burst
+     * detector is not re-tripped, and the user is not locked out.
+     *
+     * Deliberately checks [subsystemsInitialized] rather than
+     * `::chatRepository.isInitialized`: the latter would report true midway
+     * through onCreate, when chatRepository is assigned but the repositories
+     * assigned after it are not — callers would then trip over the NEXT
+     * uninitialized field instead. One flag, one meaning: "everything the app
+     * layer needs is ready".
+     */
+    val chatRepositoryOrNull: ChatRepository?
+        get() = if (subsystemsInitialized) chatRepository else null
+
+    /**
+     * [T-android-share-launch-crash] Same contract as [chatRepositoryOrNull],
+     * for the share-import path.
+     *
+     * ShareReceiverActivity is reachable from the system share sheet at any
+     * time, including in a process whose [onCreate] early-returned under
+     * safe-mode. Reading the `providerRepository` lateinit there would throw
+     * UninitializedPropertyAccessException from a dialog callback and crash the
+     * app — writing another crash log and feeding the very burst detector that
+     * put the process in safe-mode. Returning null instead lets the caller show
+     * "import failed", which it already does for the missing-Application case.
+     */
+    val providerRepositoryOrNull: ProviderRepository?
+        get() = if (subsystemsInitialized) providerRepository else null
+
+    /**
+     * [T-android-safemode-lateinit-crash-147] True when the app-layer
+     * dependencies are usable. Prefer this over
+     * `CrashFrequencyDetector.isSafeMode()`, which flips back to false the
+     * moment the user dismisses the crash dialog while the repositories stay
+     * unassigned forever (that mismatch was the b72dc591 crash loop).
+     */
+    fun subsystemsReady(): Boolean = subsystemsInitialized
+
     lateinit var database: AppDatabase
         private set
     lateinit var chatRepository: ChatRepository
@@ -170,11 +242,23 @@ class MinisApp : Application(), ImageLoaderFactory {
             return
         }
 
+        // T-android-safemode-lateinit-crash: hand AppLogger a Context before
+        // any early-return below can skip AppLogger.init(). This costs
+        // nothing (no I/O, no prefs, no capture) and is what lets the in-app
+        // log/crash list still find filesDir/logs on a safe-mode launch —
+        // the exact launch where the user is trying to read the crash files.
+        AppLogger.primeContext(this)
+
         // [T-codex-fast-mode] Capture the app context + warm the Fast Mode
         // flag cache so the provider layer (no Context) can read it at
         // request-build time — including offload / title-gen calls that
         // never pass through a ViewModel.
         com.openminis.app.data.FastModePrefs.prime(this)
+
+        // Warm the auto-compact flag the same way: the pre-send context check
+        // and the in-chat one-tap opt-in both read it from places that have no
+        // Activity context.
+        com.openminis.app.data.AutoCompactPrefs.prime(this)
 
         // T283: install NDK signal handler for native crashes (SIGSEGV/
         // SIGABRT/SIGBUS/SIGFPE/SIGILL/SIGSYS). Writes a one-shot text
@@ -283,14 +367,55 @@ class MinisApp : Application(), ImageLoaderFactory {
         // unstuck on the next launch.
         com.openminis.app.diagnostics.HangDetector.start(this)
 
+        // [T-android-safemode-lateinit-crash-147] Structural backstop for the
+        // whole repository block.
+        //
+        // The individual guards below (and inside SkillRepository) close the
+        // known holes, but the failure MODE is what makes this dangerous: any
+        // throw between the first assignment and `subsystemsInitialized = true`
+        // leaves the Application permanently half-built. onCreate never re-runs,
+        // so every later launch crashes reading an unassigned lateinit, each
+        // crash re-trips the crash-burst detector, and the user is locked out
+        // until they reinstall — exactly GH#147.
+        //
+        // Rethrowing here would keep that loop. Instead: log loudly, leave
+        // subsystemsInitialized false, and let MainActivity's existing guard
+        // show the crash-share dialog. The app still cannot do real work this
+        // launch, but it FAILS VISIBLY AND RECOVERABLY instead of dying on the
+        // first Compose frame forever.
+        try {
         database = AppDatabase.getInstance(this)
         chatRepository = ChatRepository(database.chatDao())
         providerRepository = ProviderRepository(this)
         envVarRepository = EnvVarRepository(this)
+        // [T-android-safemode-lateinit-crash-147] SkillRepository parses
+        // third-party content (skills imported from external hubs), which
+        // makes it the realistic source of a throw in this block. Its own
+        // init is now fully guarded, so construction cannot escape here — see
+        // the comment there for why an exception at this point permanently
+        // breaks the Application and produces the GH#147 crash loop.
         skillRepository = SkillRepository(this)
         mcpRepository = MCPRepository(this)
         memoryRepository = MemoryRepository(java.io.File(filesDir, "minis-global/memory"))
         webAppShortcutRepository = WebAppShortcutRepository(database.webAppShortcutDao())
+
+        // T-android-safemode-lateinit-crash: every repository the UI layer
+        // reads is now assigned, so MainActivity may safely compose. Set
+        // here rather than at the end of onCreate: the remaining work
+        // (sandbox, offload handlers, receivers) is all independently
+        // guarded and none of it is required by AppNavigation's
+        // constructor arguments. Setting it early keeps a failure in a
+        // late, non-UI subsystem from permanently locking the user out
+        // of an app whose UI dependencies are in fact ready.
+        subsystemsInitialized = true
+        } catch (t: Throwable) {
+            // subsystemsInitialized stays false — MainActivity will show the
+            // crash-share dialog rather than composing against unassigned
+            // repositories. Do NOT rethrow: that is what turns a one-off init
+            // failure into an unrecoverable launch loop.
+            Log.e("MinisApp", "subsystem init failed — app will start in degraded mode", t)
+            return
+        }
 
         // [T-soul-md] Seed SOUL.md with the default content on first launch
         // so the Soul settings page and chat bubble identity have a real
@@ -708,6 +833,56 @@ class MinisApp : Application(), ImageLoaderFactory {
                 add(MinisImageFetcher.StringMtimeKeyer())
             }
             .build()
+
+    /**
+     * [GH#206] Respond to system memory pressure.
+     *
+     * The app previously implemented NOTHING here (no `onTrimMemory`, no
+     * `onLowMemory` anywhere in the codebase), so every warning the system sent
+     * on the way to an OOM was ignored and the only remaining lever was killing
+     * the process. The reported failure had the app pinned at a ~1.94 GB native
+     * heap while ART ran 478 concurrent-copying GCs in 30 minutes without
+     * recovering — expected, because the memory sat in NATIVE bitmap pixels that
+     * Java GC cannot reclaim. These caches are exactly that memory, and every
+     * entry is reconstructible by re-rendering, so dropping them is free apart
+     * from a re-render.
+     *
+     * Deliberately staged rather than "clear everything on any signal":
+     *   - RUNNING_LOW and above (and any BACKGROUND-class level, which means we
+     *     are on the LRU list and cheap to kill): drop the formula bitmaps.
+     *   - COMPLETE: additionally tear down the offscreen KaTeX WebView, which
+     *     is itself a large native allocation. It is recreated on next render.
+     *
+     * RUNNING_MODERATE is intentionally NOT acted on: it fires routinely on
+     * healthy devices, and re-rendering formulas on every mild dip would trade a
+     * real user-visible cost for little memory.
+     */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+
+        val dropFormulaCaches = when (level) {
+            TRIM_MEMORY_RUNNING_LOW,
+            TRIM_MEMORY_RUNNING_CRITICAL,
+            TRIM_MEMORY_BACKGROUND,
+            TRIM_MEMORY_MODERATE,
+            TRIM_MEMORY_COMPLETE,
+            -> true
+            else -> false
+        }
+        if (!dropFormulaCaches) return
+
+        Log.i("MinisApp", "onTrimMemory(level=$level): releasing formula bitmap caches")
+        runCatching { com.openminis.app.ui.chat.KatexWebViewPool.evictAll() }
+            .onFailure { Log.w("MinisApp", "KatexWebViewPool.evictAll failed: ${it.message}") }
+        runCatching { com.openminis.app.ui.markdown.KaTeXRendererCache.evictAll() }
+            .onFailure { Log.w("MinisApp", "KaTeXRendererCache.evictAll failed: ${it.message}") }
+
+        if (level >= TRIM_MEMORY_COMPLETE) {
+            Log.i("MinisApp", "onTrimMemory(level=$level): tearing down the offscreen KaTeX WebView")
+            runCatching { com.openminis.app.ui.chat.KatexWebViewPool.releaseWebView() }
+                .onFailure { Log.w("MinisApp", "KatexWebViewPool.releaseWebView failed: ${it.message}") }
+        }
+    }
 
     override fun onTerminate() {
         // onTerminate is called only on emulators or when the system

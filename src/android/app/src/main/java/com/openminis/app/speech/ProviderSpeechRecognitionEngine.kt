@@ -71,11 +71,22 @@ class ProviderSpeechRecognitionEngine(private val appContext: Context) : SpeechR
     @Volatile
     private var stickyEntryId: String? = null
 
+    // [T-android-safemode-lateinit-crash-147] subsystemsReady() first — the
+    // safe call rules out a null Application, not an unassigned lateinit,
+    // whose getter throws. Speech recognition can be started from a
+    // shortcut/assistant intent that never went through MainActivity's guard.
+    // Every caller already treats null as "no provider configured".
     private fun repository() =
-        (appContext.applicationContext as? MinisApp)?.providerRepository
+        (appContext.applicationContext as? MinisApp)
+            ?.takeIf { it.subsystemsReady() }
+            ?.providerRepository
 
     override fun markDegraded() {
         degraded = true
+    }
+
+    override fun clearDegraded() {
+        degraded = false
     }
 
     @SuppressLint("MissingPermission") // caller ensures RECORD_AUDIO per interface contract

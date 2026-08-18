@@ -16,7 +16,11 @@ import kotlinx.coroutines.flow.asStateFlow
  */
 object ShareCoordinator {
     private const val TAG = "ShareCoordinator"
-    private const val BUFFER_TTL_MS = 30_000L
+    // [T-android-share-buffer-merge] 30s → 300s, aligned with
+    // LAUNCH_MAX_AGE_MS below and iOS a51e7255. The old 30s window expired
+    // whenever the user lingered on the session list after sharing, so a
+    // perfectly good share was discarded before they ever opened a chat.
+    private const val BUFFER_TTL_MS = 300_000L
     private const val LAUNCH_MAX_AGE_MS = 5L * 60 * 1000
 
     private data class Buffered(val share: PendingShare, val bufferedAtMs: Long)
@@ -48,16 +52,62 @@ object ShareCoordinator {
         if (ageMs > LAUNCH_MAX_AGE_MS) {
             AppLogger.info(TAG, "[Share] processPendingShare: stale (age=${ageMs}ms), discarding")
             SharedShareStore.clearPendingShare(context)
-            SharedShareStore.cleanSharedFiles(context)
+            // [T-android-share-buffer-merge] Preserve files still referenced by a
+            // live in-memory buffer. Discarding THIS stale record must not delete
+            // an earlier share's attachments that are still waiting to be
+            // injected — with a 300s buffer TTL that overlap is entirely
+            // reachable.
+            SharedShareStore.cleanSharedFiles(context, keep = liveBufferFileNames())
             return
         }
-        AppLogger.info(TAG, "[Share] processPendingShare: buffering ${pending.items.size} item(s)")
         SharedShareStore.clearPendingShare(context)
-        buffer = Buffered(pending, System.currentTimeMillis())
+        // [T-android-share-buffer-merge] Append into an unconsumed buffer
+        // instead of replacing it (mirrors iOS a51e7255). The old
+        // single-slot `buffer = Buffered(...)` silently destroyed a share
+        // that had been loaded but not yet injected into the chat — the
+        // exact "shared two screenshots, only the second arrived" report.
+        val now = System.currentTimeMillis()
+        val existing = buffer
+        val mergedShare = if (existing != null && now - existing.bufferedAtMs <= BUFFER_TTL_MS) {
+            val seen = LinkedHashMap<Pair<PendingShare.Item.Kind, String>, PendingShare.Item>()
+            for (item in existing.share.items + pending.items) {
+                seen[item.kind to item.value] = item
+            }
+            AppLogger.info(
+                TAG,
+                "[Share] processPendingShare: merging ${existing.share.items.size} + " +
+                    "${pending.items.size} -> ${seen.size} item(s)",
+            )
+            PendingShare(seen.values.toList(), pending.timestampMs)
+        } else {
+            AppLogger.info(TAG, "[Share] processPendingShare: buffering ${pending.items.size} item(s)")
+            pending
+        }
+        // bufferedAt renews on merge so the combined buffer gets a full TTL.
+        buffer = Buffered(mergedShare, now)
         _bufferVersion.value = _bufferVersion.value + 1
     }
 
-    /** Consume the buffer (one-shot). Returns null if empty or expired. */
+    /**
+     * Attachment file names referenced by the live in-memory buffer, if any.
+     * Used to protect them from a directory-wide cleanup triggered by an
+     * unrelated stale record. Empty when nothing is buffered.
+     */
+    private fun liveBufferFileNames(): Set<String> =
+        buffer?.share?.items
+            ?.filter { it.kind == PendingShare.Item.Kind.ATTACHMENT }
+            ?.map { it.value }
+            ?.toSet()
+            ?: emptySet()
+
+    /**
+     * Consume the buffer (one-shot). Returns null if empty or expired.
+     *
+     * [T-android-share-buffer-merge] An expired buffer used to vanish with
+     * only a log line — the user shared something, opened the app, and
+     * nothing happened with no explanation. Now the discard surfaces a
+     * toast. Mirrors iOS a51e7255's ShareFeedbackToast.
+     */
     fun consumeBuffer(context: Context): PendingShare? {
         val buf = buffer ?: return null
         buffer = null
@@ -65,9 +115,29 @@ object ShareCoordinator {
         if (ageMs > BUFFER_TTL_MS) {
             AppLogger.info(TAG, "[Share] consumeBuffer: expired (age=${ageMs}ms)")
             SharedShareStore.cleanSharedFiles(context)
+            notifyExpired(context)
             return null
         }
         AppLogger.info(TAG, "[Share] consumeBuffer: ${buf.share.items.size} item(s)")
         return buf.share
+    }
+
+    /**
+     * Surface the expiry to the user. Posted on the main looper because
+     * consumeBuffer is reachable from a composition/IO context, and Toast
+     * requires a Looper-backed thread.
+     */
+    private fun notifyExpired(context: Context) {
+        runCatching {
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                runCatching {
+                    android.widget.Toast.makeText(
+                        context.applicationContext,
+                        context.getString(com.openminis.app.R.string.share_expired_toast),
+                        android.widget.Toast.LENGTH_LONG,
+                    ).show()
+                }
+            }
+        }
     }
 }

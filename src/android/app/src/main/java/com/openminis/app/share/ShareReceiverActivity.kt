@@ -61,10 +61,23 @@ class ShareReceiverActivity : ComponentActivity() {
         // choice: import it as a provider, or fall through to the normal
         // chat-attachment flow. Mirrors iOS #678. Only the single-item case is
         // eligible — a multi-file share is unambiguously an attachment batch.
-        val providerJson = items.singleOrNull()?.let { providerExportJsonOrNull(it) }
+        //
+        // [T-android-share-launch-crash] Guarded: anything thrown out of
+        // onCreate becomes "Unable to start activity …ShareReceiverActivity",
+        // i.e. a hard crash of the app the user was merely sharing into. The
+        // provider-JSON prompt is an optional nicety, so a failure here must
+        // degrade to the normal attachment flow rather than take the app down.
+        val providerJson = try {
+            items.singleOrNull()?.let { providerExportJsonOrNull(it) }
+        } catch (t: Throwable) {
+            AppLogger.warning(TAG, "provider-JSON detection failed: ${t.message}")
+            null
+        }
         if (providerJson != null) {
-            promptProviderImportOrAttach(providerJson, items)
-            return
+            // showDialog reports whether the dialog actually reached the
+            // screen; if the window manager refused it, fall through so the
+            // share is not silently dropped.
+            if (promptProviderImportOrAttach(providerJson, items)) return
         }
 
         finishWithAttachmentFlow(items)
@@ -88,8 +101,16 @@ class ShareReceiverActivity : ComponentActivity() {
         } catch (e: Throwable) {
             AppLogger.error(TAG, "savePendingShare failed: ${e.message}")
         }
+        // [T-android-share-launch-crash] launchMainActivity never throws; finish()
+        // is guarded for the same reason the rest of this path is — this runs
+        // from onCreate, where any escaping throwable is reported as "Unable to
+        // start activity" and kills the app.
         launchMainActivity()
-        finish()
+        try {
+            finish()
+        } catch (t: Throwable) {
+            AppLogger.warning(TAG, "finish() failed: ${t.message}")
+        }
     }
 
     /**
@@ -128,32 +149,57 @@ class ShareReceiverActivity : ComponentActivity() {
      * Two-choice dialog: import the JSON as a provider, or add it to the chat as
      * an attachment. Dismiss / back == attachment (the pre-existing behaviour),
      * so the user can't lose the file by dismissing.
+     *
+     * @return true when the dialog was shown and now owns the flow; false when
+     *   it could not be shown, so the caller must run the attachment flow
+     *   itself. [T-android-share-launch-crash] `show()` can throw on an
+     *   Activity the system is tearing down (BadTokenException) — swallowing
+     *   that without reporting it would strand the share with no dialog and no
+     *   hand-off.
      */
     private fun promptProviderImportOrAttach(
         json: String,
         items: List<PendingShare.Item>,
-    ) {
-        android.app.AlertDialog.Builder(this)
-            .setTitle(getString(com.openminis.app.R.string.share_provider_json_title))
-            .setMessage(getString(com.openminis.app.R.string.share_provider_json_message))
-            .setPositiveButton(getString(com.openminis.app.R.string.share_provider_json_import)) { _, _ ->
-                importProviderJson(json)
-                finish()
-            }
-            .setNegativeButton(getString(com.openminis.app.R.string.share_provider_json_attach)) { _, _ ->
-                finishWithAttachmentFlow(items)
-            }
-            .setOnCancelListener {
-                // Back / tap-outside falls through to the attachment flow so
-                // the dropped file still lands somewhere useful.
-                finishWithAttachmentFlow(items)
-            }
-            .show()
+    ): Boolean {
+        return try {
+            android.app.AlertDialog.Builder(this)
+                .setTitle(getString(com.openminis.app.R.string.share_provider_json_title))
+                .setMessage(getString(com.openminis.app.R.string.share_provider_json_message))
+                .setPositiveButton(getString(com.openminis.app.R.string.share_provider_json_import)) { _, _ ->
+                    // Guarded for the same reason as the rest of this flow: a
+                    // failed import must not crash the share.
+                    try {
+                        importProviderJson(json)
+                    } catch (t: Throwable) {
+                        AppLogger.error(TAG, "provider import failed: ${t.message}")
+                    }
+                    finish()
+                }
+                .setNegativeButton(getString(com.openminis.app.R.string.share_provider_json_attach)) { _, _ ->
+                    finishWithAttachmentFlow(items)
+                }
+                .setOnCancelListener {
+                    // Back / tap-outside falls through to the attachment flow so
+                    // the dropped file still lands somewhere useful.
+                    finishWithAttachmentFlow(items)
+                }
+                .show()
+            true
+        } catch (t: Throwable) {
+            AppLogger.warning(TAG, "provider-import dialog could not be shown: ${t.message}")
+            false
+        }
     }
 
     /** Run the existing provider-import logic and toast the outcome. */
     private fun importProviderJson(json: String) {
-        val repo = (applicationContext as? com.openminis.app.MinisApp)?.providerRepository
+        // [T-android-share-launch-crash] `providerRepositoryOrNull`, not the raw
+        // lateinit: a share can arrive in a safe-mode process where the
+        // repositories were never assigned, and reading the lateinit there
+        // throws UninitializedPropertyAccessException — crashing the app and
+        // re-feeding the crash-burst detector. Null takes the existing
+        // "import failed" path instead.
+        val repo = (applicationContext as? com.openminis.app.MinisApp)?.providerRepositoryOrNull
         if (repo == null) {
             AppLogger.warning(TAG, "providerRepository unavailable; cannot import")
             toast(getString(com.openminis.app.R.string.share_provider_json_import_failed))
@@ -258,13 +304,82 @@ class ShareReceiverActivity : ComponentActivity() {
 
     private fun shortId(): String = UUID.randomUUID().toString().take(8)
 
+    /**
+     * [T-android-share-launch-crash] Hand off to MainActivity, tolerating a
+     * failure to start it.
+     *
+     * Field report (vivo V2352A / Android 14): sharing into Minis crashed the
+     * app on launch, repeatedly —
+     *
+     *   RuntimeException: Unable to start activity …ShareReceiverActivity
+     *   Caused by: NullPointerException … String.equals(Object) on null
+     *     at android.os.Parcel.createExceptionOrNull(Parcel.java:3077)
+     *     at IActivityTaskManager$Stub$Proxy.startActivity(…)
+     *   Caused by: RemoteException: Remote stack trace:
+     *     at VivoActivityStarterImpl.generateLaunchFreeFormOption(:2195)
+     *
+     * The fault is entirely inside the OEM's freeform-window logic in
+     * system_server: it NPEs, and the exception it marshals back carries a null
+     * message, so [android.os.Parcel.readException] NPEs a second time while
+     * trying to rebuild it. Both throws land on OUR main thread inside
+     * `startActivity`, so an unguarded call takes the whole app down before the
+     * share can complete.
+     *
+     * Nothing about the intent is wrong and there is no version/model check that
+     * would predict it, so the only available defence is to not let a failed
+     * hand-off kill the process. The share itself is already durable at this
+     * point — [SharedShareStore.savePendingShare] has committed the items to
+     * disk — so the pending share survives and is picked up whenever the user
+     * next opens the app by any route.
+     *
+     * Catches [Throwable], not [Exception]: the observed top-level failure is a
+     * RuntimeException, but the deeper Binder unwrap can surface as other
+     * Errors, and there is no failure mode here worth crashing the process over.
+     *
+     * The retry ladder itself lives in [ShareHandoffPolicy] so it can be
+     * unit-tested — `startActivity` needs a live Context and cannot run on the
+     * JVM, but the decision layer (how many attempts, in what order, what
+     * happens when each throws) can.
+     */
     private fun launchMainActivity() {
-        val mainIntent = Intent(this, Class.forName("com.openminis.app.MainActivity")).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        // The fallback drops FLAG_ACTIVITY_CLEAR_TOP. The OEM crash is raised
+        // while the system decides how to place the task, and the launch flags
+        // are the only part of the request we control, so a plain NEW_TASK
+        // launch is the one meaningfully different request we can make.
+        val outcome = ShareHandoffPolicy.handOff(
+            primary = {
+                startActivity(mainActivityIntent(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP))
+            },
+            fallback = {
+                startActivity(mainActivityIntent(Intent.FLAG_ACTIVITY_NEW_TASK))
+            },
+            onError = { stage, t ->
+                AppLogger.error(TAG, "$stage startActivity(MainActivity) failed: ${t.javaClass.simpleName}: ${t.message}")
+            },
+        )
+
+        when (outcome) {
+            ShareHandoffPolicy.Outcome.LAUNCHED -> Unit
+            ShareHandoffPolicy.Outcome.LAUNCHED_VIA_FALLBACK ->
+                AppLogger.info(TAG, "MainActivity launched via NEW_TASK-only fallback")
+            ShareHandoffPolicy.Outcome.FAILED -> {
+                // The share is already persisted, so tell the user how to
+                // collect it rather than failing silently — from their side the
+                // share otherwise appears to have done nothing.
+                try {
+                    toast(getString(com.openminis.app.R.string.share_open_app_failed))
+                } catch (t: Throwable) {
+                    AppLogger.warning(TAG, "failure toast failed: ${t.message}")
+                }
+            }
+        }
+    }
+
+    private fun mainActivityIntent(flags: Int): Intent =
+        Intent(this, Class.forName("com.openminis.app.MainActivity")).apply {
+            addFlags(flags)
             putExtra("shared_content", true)
         }
-        startActivity(mainIntent)
-    }
 
     @Suppress("DEPRECATION")
     private inline fun <reified T : android.os.Parcelable> getParcelableExtra(

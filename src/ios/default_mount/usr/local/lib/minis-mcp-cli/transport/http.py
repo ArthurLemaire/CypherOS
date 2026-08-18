@@ -143,6 +143,14 @@ class HTTPTransport:
         self.oauth_cfg = server.get("oauth") if isinstance(server.get("oauth"), dict) else None
         self._id = 0
         self._session_id = None
+        # [T-mcp-http-reinit] True once a handshake has completed for this
+        # transport instance. The daemon reuses one HTTPTransport across calls,
+        # so re-running initialize() every call made a STATEFUL streamable-HTTP
+        # server (one that returns Mcp-Session-Id) reject the 2nd+ call with
+        # HTTP 400 "Server already initialized". Tracked separately from
+        # _session_id because a stateless server never sets _session_id yet
+        # still must not be re-initialized.
+        self._initialized = False
 
     def _next_id(self):
         self._id += 1
@@ -295,18 +303,71 @@ class HTTPTransport:
             self._post("notifications/initialized", notify=True)
         except MCPError:
             pass
+        self._initialized = True
         return result
 
+    def _ensure_initialized(self):
+        """[T-mcp-http-reinit] Handshake once per transport lifetime, not once
+        per call. A stateful streamable-HTTP server tracks the session and
+        rejects a duplicate `initialize` (HTTP 400 "Server already
+        initialized"); a stateless server tolerates re-init but gains nothing
+        from it. Either way, one handshake is correct."""
+        if not self._initialized:
+            self.initialize()
+
+    def _reset_session(self):
+        """Forget the current session so the next call re-handshakes from
+        scratch. Used for self-healing when the server reports the session is
+        stale/unknown."""
+        self._session_id = None
+        self._initialized = False
+
+    @staticmethod
+    def _is_session_error(err):
+        """True when an MCPError indicates the session state disagrees with the
+        server — i.e. re-handshaking is the right recovery. Covers a duplicate
+        initialize being rejected AND a server that has forgotten our session
+        (restart / eviction), both of which self-heal by a fresh handshake."""
+        msg = str(err).lower()
+        return (
+            "already initialized" in msg
+            or "session" in msg          # "no valid session", "session expired/not found", …
+        )
+
+    def _call_with_reconnect(self, do_call):
+        """Run `do_call` after ensuring a handshake, and if it fails with a
+        session-state error, drop the session and retry ONCE from a fresh
+        handshake. One retry only, so a persistently broken server surfaces the
+        real error instead of looping."""
+        self._ensure_initialized()
+        try:
+            return do_call()
+        except MCPError as exc:
+            if not self._is_session_error(exc):
+                raise
+            self._reset_session()
+            self.initialize()
+            return do_call()
+
     def list_tools(self):
-        self.initialize()
-        result = self._post("tools/list")
+        result = self._call_with_reconnect(lambda: self._post("tools/list"))
         return (result or {}).get("tools", [])
 
     def call_tool(self, tool, arguments):
-        self.initialize()
-        return self._post("tools/call", {"name": tool, "arguments": arguments or {}})
+        return self._call_with_reconnect(
+            lambda: self._post("tools/call", {"name": tool, "arguments": arguments or {}})
+        )
 
     def ping(self):
-        """Round-trip initialize as a reachability check."""
+        """Reachability check via a fresh anonymous handshake.
+
+        [T-mcp-http-reinit] Ping deliberately does NOT reuse the cached
+        session: it drops any existing session first so a stateful server sees
+        a clean initialize rather than a duplicate one (which it would reject),
+        and it never leaves a half-open session behind for the real calls to
+        trip over. Because it re-inits from scratch, the very next call_tool /
+        list_tools reuses the session ping established — no wasted extra
+        handshake."""
+        self._reset_session()
         self.initialize()
         return True

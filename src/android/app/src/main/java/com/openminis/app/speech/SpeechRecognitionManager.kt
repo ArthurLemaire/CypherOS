@@ -48,8 +48,43 @@ object SpeechRecognitionManager {
     private val _lastError = MutableStateFlow<RecognitionError?>(null)
     val lastError: StateFlow<RecognitionError?> = _lastError.asStateFlow()
 
+    /**
+     * Whether SOME engine can transcribe right now. This is a runtime probe —
+     * it flips as engines degrade, providers get configured, etc.
+     *
+     * [T-android-voice-entry-always-available] Do NOT use this to decide
+     * whether the mic / keyboard-toggle button RENDERS. Gating a control on a
+     * runtime probe is what stranded users inside voice mode when the active
+     * engine degraded mid-session: the toggle was the only way out and it
+     * vanished with the probe. Use [hasMicrophoneHardware] for existence, and
+     * this flow only to decide what the voice panel SHOWS once entered.
+     */
     private val _isAvailable = MutableStateFlow(false)
     val isAvailable: StateFlow<Boolean> = _isAvailable.asStateFlow()
+
+    /**
+     * [T-android-voice-entry-always-available] Structural, device-level fact:
+     * does this device have microphone hardware at all?
+     *
+     * Unlike [isAvailable] this never changes at runtime, so it is the only
+     * thing the composer's voice button existence depends on. A device with no
+     * mic genuinely cannot offer voice input; everything else (no speech
+     * service installed, engine degraded, no ASR provider configured) is a
+     * RECOVERABLE state that must be explained inside the panel rather than by
+     * silently removing the control.
+     */
+    val hasMicrophoneHardware: Boolean
+        get() = if (::appContext.isInitialized) {
+            runCatching {
+                appContext.packageManager.hasSystemFeature(
+                    android.content.pm.PackageManager.FEATURE_MICROPHONE,
+                )
+            }.getOrDefault(true)
+        } else {
+            // Not initialised yet — assume present. Showing the button and
+            // explaining inside the panel beats hiding the entry point.
+            true
+        }
 
     /**
      * Locales the active engine reports as supported. Populated lazily after
@@ -141,6 +176,25 @@ object SpeechRecognitionManager {
         if (_selectedEngineId.value == id) return
         _selectedEngineId.value = id
         prefs.edit().putString(KEY_ENGINE_ID, id).apply()
+        // [T-android-voice-entry-always-available] Deliberately picking an
+        // engine is an explicit "try this one" — clear its degraded flag so a
+        // past transient failure (mic busy, permission not yet granted, a
+        // provider that was misconfigured and has since been fixed) doesn't
+        // leave it permanently unselectable. `degraded` is otherwise
+        // process-scoped with no reset path at all.
+        engines.firstOrNull { it.id == id }?.clearDegraded()
+        refreshAvailability()
+    }
+
+    /**
+     * [T-android-voice-entry-always-available] Give every engine a fresh start.
+     * Called when the user re-enters voice mode, so a transient failure does
+     * not poison the feature for the rest of the process — the user's retry is
+     * the signal that conditions may have changed (permission granted, other
+     * app released the mic, provider configured).
+     */
+    fun clearDegradationAndRefresh() {
+        engines.forEach { it.clearDegraded() }
         refreshAvailability()
     }
 

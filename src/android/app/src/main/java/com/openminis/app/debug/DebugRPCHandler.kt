@@ -1141,19 +1141,58 @@ class DebugRPCHandler(private val context: Context) {
      */
     private fun handleMinisConfigExec(params: JSONObject): JSONObject {
         val sub = params.optString("subcommand", "").takeIf { it.isNotEmpty() }
-            ?: throw RPCException(-32602, "Missing 'subcommand' — one of: set, get, audit-list")
+            ?: throw RPCException(
+                -32602,
+                "Missing 'subcommand' — one of: set, get, topics, topic-help, audit-list",
+            )
 
         return when (sub) {
             "set" -> {
-                val path = params.optString("path", "").takeIf { it.isNotEmpty() }
-                    ?: throw RPCException(-32602, "Missing 'path' for subcommand=set")
-                val valueJson = params.optString("value_json", "").takeIf { it.isNotEmpty() }
-                    ?: throw RPCException(-32602, "Missing 'value_json' for subcommand=set")
-                val items = JSONArray().put(JSONObject().apply {
-                    put("path", path)
-                    put("value_json", valueJson)
-                })
-                AppLogger.info("DebugRPC", "debug.minisConfig.exec set path=$path")
+                // Accepts EITHER a single `path` + `value_json`, or `items:
+                // [{path, value_json}, …]` for a multi-path batch. The batch form
+                // matters because performWriteBatch applies its items as ONE unit
+                // — writing two paths as two calls cannot exercise that.
+                val items = params.optJSONArray("items")?.also { arr ->
+                    if (arr.length() == 0) {
+                        throw RPCException(-32602, "'items' must not be empty for subcommand=set")
+                    }
+                    for (i in 0 until arr.length()) {
+                        val it = arr.optJSONObject(i)
+                            ?: throw RPCException(-32602, "items[$i] must be an object")
+                        if (it.optString("path", "").isEmpty()) {
+                            throw RPCException(-32602, "Missing 'path' in items[$i]")
+                        }
+                        if (it.optString("value_json", "").isEmpty()) {
+                            throw RPCException(-32602, "Missing 'value_json' in items[$i]")
+                        }
+                    }
+                } ?: run {
+                    val path = params.optString("path", "").takeIf { it.isNotEmpty() }
+                        ?: throw RPCException(
+                            -32602,
+                            "Missing 'path' (or 'items') for subcommand=set",
+                        )
+                    val valueJson = params.optString("value_json", "").takeIf { it.isNotEmpty() }
+                        ?: throw RPCException(-32602, "Missing 'value_json' for subcommand=set")
+                    JSONArray().put(
+                        JSONObject().apply {
+                            put("path", path)
+                            put("value_json", valueJson)
+                        },
+                    )
+                }
+                // Default stays TRUE for backward compatibility: existing
+                // harnesses call this unattended and would hang on a sheet that
+                // nobody can tap. Passing `skipConfirmation:false` is what lets a
+                // test drive the REAL confirmation gate — without it that path is
+                // permanently unreachable from automation, which is precisely
+                // what iOS DebugRPCConfig calls out (it defaults the other way,
+                // preferring fidelity over convenience).
+                val skip = params.optBoolean("skipConfirmation", true)
+                AppLogger.info(
+                    "DebugRPC",
+                    "debug.minisConfig.exec set items=${items.length()} skipConfirmation=$skip",
+                )
                 // Hop to the main thread because performWriteBatch is a
                 // suspend fun that uses Dispatchers.Main internally.
                 kotlinx.coroutines.runBlocking {
@@ -1162,26 +1201,73 @@ class DebugRPCHandler(private val context: Context) {
                         caption = "debug.minisConfig.exec",
                         actorRaw = "debug-rpc",
                         sessionId = null,
-                        skipConfirmation = true,
+                        skipConfirmation = skip,
                     )
                 }
             }
             "get" -> {
                 val path = params.optString("path", "").takeIf { it.isNotEmpty() }
                     ?: throw RPCException(-32602, "Missing 'path' for subcommand=get")
+                // filter/page/pageSize were hardcoded to null/0/0, which made
+                // large collections (models, sessions) unreadable from
+                // automation — readField supports all three, so forward them.
+                // 0/0 preserves the previous "no pagination" behaviour.
+                // NOTE: readField's page is 1-BASED (it maps page<=0 to page 1),
+                // so page=0 and page=1 both return the first page.
+                val filter = params.optString("filter", "").takeIf { it.isNotEmpty() }
+                val page = params.optInt("page", 0)
+                val pageSize = params.optInt("pageSize", 0)
                 AppLogger.info("DebugRPC", "debug.minisConfig.exec get path=$path")
                 com.openminis.app.config.ConfigBridge.readField(
                     path = path,
-                    filter = null,
-                    page = 0,
-                    pageSize = 0,
+                    filter = filter,
+                    page = page,
+                    pageSize = pageSize,
                 )
+            }
+            // Discovery. Without these a caller has to know a collection's
+            // writable paths in advance; `topics` is `minis-config --help`'s
+            // index and `topic-help` is `minis-config <topic> --help`.
+            "topics" -> JSONObject().apply {
+                put("ok", true)
+                put("topics", com.openminis.app.config.ConfigBridge.allTopics())
+            }
+            "topic-help" -> {
+                val topic = params.optString("topic", "").takeIf { it.isNotEmpty() }
+                    ?: throw RPCException(-32602, "Missing 'topic' for subcommand=topic-help")
+                // "No fields" has TWO causes that must not be conflated: an
+                // unregistered topic (caller typo — an error), and a registered
+                // COLLECTION that currently has no children, e.g. `thinkingrules`
+                // before the user authors a rule. The latter is a legitimate
+                // empty result; reporting it as "unknown topic" sends the caller
+                // hunting for a name that is in fact correct.
+                //
+                // allTopics() is the authority because it includes every
+                // registered collection basePath regardless of child count.
+                val known = com.openminis.app.config.ConfigBridge.allTopics()
+                    .let { arr -> (0 until arr.length()).any { arr.optString(it) == topic } }
+                if (!known) {
+                    throw RPCException(-32602, "Unknown topic '$topic' — call subcommand=topics")
+                }
+                val fields = com.openminis.app.config.ConfigBridge.fieldsForTopic(topic)
+                JSONObject().apply {
+                    put("ok", true)
+                    put("topic", topic)
+                    // Explicit, so an empty list is unambiguously "registered but
+                    // has no children right now" rather than a silent oddity.
+                    put("empty", fields.length() == 0)
+                    put("fields", fields)
+                }
             }
             "audit-list" -> {
                 val limit = params.optInt("limit", 100).coerceIn(1, 1000)
-                com.openminis.app.config.ConfigBridge.auditList(limit, null)
+                val scope = params.optString("scope", "").takeIf { it.isNotEmpty() }
+                com.openminis.app.config.ConfigBridge.auditList(limit, scope)
             }
-            else -> throw RPCException(-32602, "Unknown subcommand '$sub'")
+            else -> throw RPCException(
+                -32602,
+                "Unknown subcommand '$sub' — one of: set, get, topics, topic-help, audit-list",
+            )
         }
     }
 }
