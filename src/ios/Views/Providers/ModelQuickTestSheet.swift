@@ -254,7 +254,15 @@ final class TestSession: ObservableObject {
             }
             let spoken = "Hello from Minis, testing speech to text."
             let wav = try await synthesizeTestWAV(spoken)
-            let req = VoiceInputRequest(audioData: wav, model: entry.model.id, language: "en", responseFormat: .json, prompt: nil)
+            // `resolvedModel` is what `VoiceProvider.transcribe` gates
+            // chat-based ASR on (`if let model = request.resolvedModel`).
+            // Omitting it made that branch unreachable from Quick Test, so
+            // every audio-capable CHAT model was sent to the Whisper-style
+            // REST endpoint regardless of provider — on OpenRouter that is the
+            // "Model … does not exist" 400.
+            let req = VoiceInputRequest(audioData: wav, model: entry.model.id, language: "en",
+                                        responseFormat: .json, prompt: nil,
+                                        resolvedModel: entry.model)
             let resp = try await voice.transcribe(req)
             let heard = resp.text.trimmingCharacters(in: .whitespacesAndNewlines)
             return .transcript(spoken: spoken, heard: heard.isEmpty ? String(localized: "(empty transcription)") : heard)

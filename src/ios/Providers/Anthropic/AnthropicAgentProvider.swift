@@ -5,6 +5,10 @@ import os.log
 
 private let logger = AppLogger(category: "AnthropicAgent")
 
+/// [T-thinking-rules-phase2] Shared category with the OpenAI path so one grep shows
+/// every provider's thinking resolution (design §8).
+private let thinkingLogger = AppLogger(category: "Thinking")
+
 /// AgentProvider implementation that wraps AnthropicProvider for the unified agent loop.
 final class AnthropicAgentProvider: AgentProvider {
 
@@ -73,19 +77,27 @@ final class AnthropicAgentProvider: AgentProvider {
         // ignores legacy budget_tokens and produces empty thinking on the wire — the
         // exact "thinking enabled but no thoughts" symptom that surfaced in 4.7.
         // Older Claude models still take budget_tokens. Pick the right one per model.
-        if thinkingLevel.isEnabled, model.supportsReasoning ?? false {
-            if AnthropicProvider.modelUsesAdaptiveThinking(model.id) {
-                let effort = Self.thinkingEffort(for: thinkingLevel)
-                RequestBodyPatcher.setThinkingEffort(effort)
-                logger.info("Thinking enabled (adaptive): effort=\(effort)")
-            } else {
-                let budget = Self.thinkingBudget(for: model, maxTokens: maxTokens, level: thinkingLevel)
-                if budget > 0 {
-                    RequestBodyPatcher.setThinkingBudget(budget)
-                    logger.info("Thinking enabled (budget): budget_tokens=\(budget)")
-                }
-            }
-        } else if AnthropicProvider.modelUsesAdaptiveThinking(model.id) {
+        // [T-thinking-rules-phase2] WHICH shape this model takes is decided by
+        // ThinkingRuleResolver.anthropicThinkingShape — one place now owns every
+        // vendor's thinking contract. This site still performs the injection, because
+        // Anthropic's thinking is applied by RequestBodyPatcher rather than written
+        // into the body dictionary the way the OpenAI path does. Behaviour is
+        // byte-for-byte unchanged, pinned by
+        // ThinkingWireGeminiAnthropicSnapshotTests (182 rows from the OLD code).
+        let thinkShape = ThinkingRuleResolver.anthropicThinkingShape(
+            modelId: model.id,
+            supportsReasoning: model.supportsReasoning,
+            level: thinkingLevel,
+            maxTokens: maxTokens
+        )
+        thinkingLogger.info("[resolve] provider=anthropic model=\(model.id) level=\(thinkingLevel.rawValue) shape=[\(thinkShape.keys.sorted().joined(separator: ","))]")
+        if let effort = thinkShape["effort"] as? String {
+            RequestBodyPatcher.setThinkingEffort(effort)
+            logger.info("Thinking enabled (adaptive): effort=\(effort)")
+        } else if let budget = thinkShape["budget_tokens"] as? Int {
+            RequestBodyPatcher.setThinkingBudget(budget)
+            logger.info("Thinking enabled (budget): budget_tokens=\(budget)")
+        } else if thinkShape["disabled"] != nil {
             // Adaptive-generation models (4.6+/5) think by DEFAULT when the
             // request carries no thinking field at all — "off" must be sent
             // explicitly, or small-maxTokens calls burn the whole budget on

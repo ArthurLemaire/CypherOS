@@ -31,8 +31,15 @@ object VoiceProviderFactory {
             // OpenAI-compatible families -------------------------------------
             ProviderType.openAI, ProviderType.openRouter -> {
                 if (instance.providerType == ProviderType.openRouter) {
-                    // Some voice models flow through the OpenAI-compatible path.
-                    return VoiceProvider(instance.id, custom ?: "https://openrouter.ai/api", apiKey)
+                    // OpenRouter. TTS goes through chat.completions + the audio
+                    // modality, NOT /v1/audio/speech — that endpoint does not
+                    // exist there and 400s for every model id. ASR is split per
+                    // model between chat.completions and /v1/audio/transcriptions.
+                    return OpenRouterVoiceProvider(
+                        instance.id,
+                        custom ?: "https://openrouter.ai/api",
+                        apiKey,
+                    )
                 }
                 when {
                     normalizedBase.contains("groq.com") ->

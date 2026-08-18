@@ -101,11 +101,13 @@ enum VoiceProviderFactory {
                                     baseURL: custom ?? "https://api.x.ai",
                                     apiKey: apiKey)
 
-        // OpenRouter (some voice models flow through OpenAI-compatible path)
+        // OpenRouter. TTS goes through chat.completions + audio modality, NOT
+        // /v1/audio/speech — that endpoint does not exist there and 400s for
+        // every model id. ASR still uses the inherited OpenAI-compatible path.
         case .openRouter:
-            return VoiceProvider(providerId: instance.id,
-                                 baseURL: custom ?? "https://openrouter.ai/api",
-                                 apiKey: apiKey)
+            return OpenRouterVoiceProvider(providerId: instance.id,
+                                           baseURL: custom ?? "https://openrouter.ai/api",
+                                           apiKey: apiKey)
 
         // Anthropic — only MiniMax-behind-Anthropic-base serves voice ------
         case .anthropic:

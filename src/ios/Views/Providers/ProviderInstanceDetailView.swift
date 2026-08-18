@@ -11,6 +11,9 @@ struct ProviderInstanceDetailView: View {
     @State private var showKimiLogin = false
     @State private var keyInputText = ""
     @State private var isFetchingModels = false
+    /// [T-thinking-rules-ui-fix] Owned HERE, not inside ThinkingRulesSection: a .sheet on a
+    /// Section inside a Form has no stable host and dismissed the whole settings stack.
+    @State private var thinkingEditorRequest: ThinkingRuleEditorRequest?
     @State private var fetchError: String?
     @State private var fetchWarnings: [String] = []
     @State private var fetchSource: String?
@@ -49,6 +52,20 @@ struct ProviderInstanceDetailView: View {
                     Image(systemName: "square.and.arrow.up")
                 }
             }
+        }
+        .sheet(item: $thinkingEditorRequest) { req in
+            ThinkingRuleEditorView(
+                instanceId: instanceId,
+                existing: req.rule,
+                createsNew: req.isNew,
+                onSave: { rule in
+                    Task {
+                        let existing = await ProviderConfigStore.shared.thinkingRules(for: instanceId)
+                        let order = existing.firstIndex(where: { $0.id == rule.id }) ?? existing.count
+                        await ProviderConfigStore.shared.saveThinkingRule(rule, instanceId: instanceId, sortOrder: order)
+                    }
+                }
+            )
         }
         .sheet(isPresented: $showAddCustomModel) {
             if let instance = instance {
@@ -135,7 +152,13 @@ struct ProviderInstanceDetailView: View {
             // MARK: Label
             Section("Label") {
                 TextField("Label", text: $editingLabel)
+                    // [T-provider-label-keyboard] Same reason as the Add flow: this
+                    // screen also hosts `.numberPad` fields (Context Window, Max
+                    // Output Tokens), and an undeclared keyboardType can inherit
+                    // the numeric type from whichever field was focused last.
+                    .keyboardType(.default)
                     .textContentType(.none)
+                    .textInputAutocapitalization(.words)
                     .onAppear { editingLabel = instance.label }
                     .onSubmit { saveLabel(instance) }
                     .onChange(of: editingLabel) { _ in saveLabel(instance) }
@@ -239,6 +262,16 @@ struct ProviderInstanceDetailView: View {
                     }
                 ))
             }
+
+            // MARK: Thinking Rules (Phase 2 §3)
+            // Placed directly above Models because a rule's scope is written against
+            // model ids — having the model list in view while authoring a pattern is
+            // what makes the pattern easy to get right.
+            ThinkingRulesSection(
+                instanceId: instance.id,
+                sampleModelId: store.entries(for: instance.id).first?.baseModel.id,
+                editorRequest: $thinkingEditorRequest
+            )
 
             // MARK: Models
             Section {
@@ -1153,7 +1186,18 @@ struct AddCustomModelSheet: View {
         guard let instance else { return }
         let trimmedId = modelId.trimmingCharacters(in: .whitespaces)
         guard !trimmedId.isEmpty else { return }
-        let name = displayName.trimmingCharacters(in: .whitespaces)
+        // [T-custom-model-name-trailing-space] The DISPLAY NAME keeps the user's
+        // spacing verbatim; only a whitespace-ONLY entry collapses to empty (which
+        // then falls back to the id downstream, as before).
+        //
+        // The model ID above is still trimmed, deliberately: it goes on the wire as
+        // the `model` field, where a stray space is a request failure rather than a
+        // styling choice. The display name is pure presentation, so trimming it was
+        // overreach — a user naming a model "GPT-5 " (padding it to align with a
+        // neighbour, or to mark a variant) had the space silently eaten on save and
+        // could never reproduce what they typed.
+        let rawName = displayName
+        let name = rawName.trimmingCharacters(in: .whitespaces).isEmpty ? "" : rawName
 
         var modality: ModelModality = [.textInput, .textOutput]
         if imageInput { modality.insert(.imageInput) }
@@ -1165,10 +1209,15 @@ struct AddCustomModelSheet: View {
 
         let parsedContextWindow = Int(contextWindowText.trimmingCharacters(in: .whitespaces))
 
+        // Store the INSTANCE's label, not the protocol type's name: a provider
+        // the user labelled "Zhipu AI" but configured over the OpenAI-compatible
+        // protocol would otherwise record (and, before the detail row started
+        // resolving this live, display) "OpenAI".
+        let instanceLabel = instance.label.trimmingCharacters(in: .whitespacesAndNewlines)
         let model = LLMModel(
             id: trimmedId,
             displayName: name.isEmpty ? trimmedId : name,
-            provider: instance.providerType.displayName,
+            provider: instanceLabel.isEmpty ? instance.providerType.displayName : instanceLabel,
             modalityOverride: modality,
             contextWindow: parsedContextWindow,
             supportsReasoning: supportsThinking
@@ -1188,6 +1237,33 @@ struct ModelEntryDetailSheet: View {
     let entry: ModelEntry
     @ObservedObject private var store = ProviderConfigStore.shared
     @Environment(\.dismiss) private var dismiss
+
+    /// Human-readable owner of this model, resolved from the entry's OWNING
+    /// INSTANCE rather than from `entry.model.provider`.
+    ///
+    /// `LLMModel.provider` is a free-form denormalized string with no single
+    /// writer, so what it holds depends on which code path created the model:
+    ///   - built-in catalogues write a vendor name ("OpenAI", "Anthropic");
+    ///   - the in-app "Add Custom Model" form writes the PROTOCOL type's
+    ///     display name, so a provider the user labelled "Zhipu AI" showed
+    ///     "OpenAI" — right shape, wrong provider;
+    ///   - `models.add` (config / RPC surface) writes the instance UUID, which
+    ///     is what surfaced as the reported "A6FC13AE-…" in this row.
+    /// Reading it back for display therefore renders whatever that writer
+    /// happened to store.
+    ///
+    /// `entry.providerInstanceId` is the authoritative link (it is half of
+    /// `compositeKey`, the cross-device identity), so resolve the live
+    /// instance and use its user-facing label. Falls back to the stored
+    /// string only when the instance is genuinely gone — better a stale
+    /// vendor name than a blank row.
+    private var providerDisplayName: String {
+        if let instance = store.config.instances.first(where: { $0.id == entry.providerInstanceId }) {
+            let label = instance.label.trimmingCharacters(in: .whitespacesAndNewlines)
+            return label.isEmpty ? instance.providerType.displayName : label
+        }
+        return entry.model.provider
+    }
 
     @State private var displayName: String = ""
     @State private var modelId: String = ""
@@ -1246,7 +1322,7 @@ struct ModelEntryDetailSheet: View {
                         Text("Provider")
                             .foregroundStyle(.secondary)
                         Spacer()
-                        Text(entry.model.provider)
+                        Text(providerDisplayName)
                             .foregroundStyle(.secondary)
                     }
 
@@ -1544,7 +1620,13 @@ struct ModelEntryDetailSheet: View {
     }
 
     private func save() {
-        let trimmedName = displayName.trimmingCharacters(in: .whitespaces)
+        // [T-custom-model-name-trailing-space] Keep the user's spacing verbatim in
+        // the display NAME (see addModel for the full reasoning). Only a
+        // whitespace-only entry counts as empty, which still falls back to the base
+        // model's name at `effectiveTypedName` below. The model ID stays trimmed —
+        // it is wire data, not presentation.
+        let trimmedName = displayName.trimmingCharacters(in: .whitespaces).isEmpty
+            ? "" : displayName
         let trimmedId = modelId.trimmingCharacters(in: .whitespaces)
         let trimmedMaxTokens = maxTokensText.trimmingCharacters(in: .whitespaces)
         let parsedMaxTokens: Int? = trimmedMaxTokens.isEmpty ? nil : Int(trimmedMaxTokens)

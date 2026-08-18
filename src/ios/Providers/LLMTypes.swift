@@ -60,9 +60,57 @@ struct LLMModel: Equatable, Hashable, Identifiable, Sendable, Codable {
     /// nil means the provider uses native thinking blocks (Anthropic) or thought parts (Gemini).
     var interleavedReasoningField: String?
 
+    /// [T-reasoning-effort-data-driven] Effort tiers this model accepts on the
+    /// wire, from the models.dev `reasoning_options` entry of type `effort`
+    /// (e.g. `["high","max"]` for zhipuai glm-5.2). Lowercased.
+    ///
+    /// Two distinct jobs, both previously done by hardcoded id substring lists:
+    ///   1. Presence (non-nil, non-empty) = "this model is controlled by
+    ///      `reasoning_effort`" — the signal that replaces the
+    ///      deepseek/glm/kimi/minimax family skip-list.
+    ///   2. Contents = the ALLOWED tiers. The sets vary wildly across the
+    ///      catalog (`["low","medium","high"]`, `["high","max"]`,
+    ///      `["high","xhigh"]`, …), so the user's chosen level must be clamped
+    ///      onto this set — sending "xhigh" to a `["high","max"]` model is the
+    ///      same class of 400 the MiMo/Agnes clamp already guards against.
+    ///
+    /// nil = catalog says nothing; fall back to the legacy heuristics.
+    var reasoningEffortValues: [String]?
+
+    /// [OpenMinis#163] The catalog affirmatively declares NO effort tiers for
+    /// this model — it reasons, but takes no `reasoning_effort` parameter.
+    ///
+    /// Distinct from `reasoningEffortValues == nil`, which also covers "the
+    /// catalog has never heard of this model". Only the affirmative case may
+    /// suppress the field; the unknown case stays permissive so third-party
+    /// relays keep working. See `ModelsDevModel.declaresNoEffortTiers`.
+    ///
+    /// Optional (not a plain Bool) so decoding a model persisted before this
+    /// field existed yields nil — "unknown", the pre-existing behaviour —
+    /// rather than a synthesized `false` that would look like a real answer.
+    var declaresNoEffortTiers: Bool?
+
+    /// [T-thinking-off-custom-provider] True when `reasoningEffortValues` was read from a
+    /// catalog entry belonging to this model's OWN provider, rather than from the
+    /// cross-provider fallback scan.
+    ///
+    /// The fallback scan matches a bare model id under any publisher and majority-votes
+    /// the effort sets, which is what every user-defined OpenAI-compatible relay resolves
+    /// through (a custom provider name is in no `providerKeyMap` entry). Good enough to
+    /// clamp a requested tier; NOT good enough to override the user's explicit "thinking
+    /// off", because it describes somebody else's endpoint.
+    ///
+    /// Optional (not a plain `Bool`) for the same reason as `declaresNoEffortTiers`:
+    /// `LLMModel` uses SYNTHESIZED Codable, so a non-optional field would make every
+    /// model persisted before this existed fail to decode outright — taking the user's
+    /// configured entries with it. nil decodes cleanly and reads as "not authoritative",
+    /// which is the permissive/pass-through direction.
+    var effortDeclarationIsAuthoritative: Bool?
+
     init(id: String, displayName: String, provider: String, modalityOverride: ModelModality? = nil,
          contextWindow: Int? = nil, maxOutputTokens: Int? = nil,
-         supportsReasoning: Bool? = nil, interleavedReasoningField: String? = nil) {
+         supportsReasoning: Bool? = nil, interleavedReasoningField: String? = nil,
+         reasoningEffortValues: [String]? = nil, declaresNoEffortTiers: Bool? = nil) {
         self.id = id
         self.displayName = displayName
         self.provider = provider
@@ -71,6 +119,8 @@ struct LLMModel: Equatable, Hashable, Identifiable, Sendable, Codable {
         self.maxOutputTokens = maxOutputTokens
         self.supportsReasoning = supportsReasoning
         self.interleavedReasoningField = interleavedReasoningField
+        self.reasoningEffortValues = reasoningEffortValues
+        self.declaresNoEffortTiers = declaresNoEffortTiers
     }
 
     // [T-anthropic-context-window] Explicit context/output caps per Anthropic's
@@ -234,6 +284,15 @@ struct LLMModel: Equatable, Hashable, Identifiable, Sendable, Codable {
         provider: "OpenAI"
     )
 
+    /// [T-codex-oauth-model-prune] Codex OAuth only — verified callable on a
+    /// live ChatGPT-account token (2026-08-01) and present in CLIProxyAPI's
+    /// Codex client registry, but we had never listed it.
+    static let gpt54Mini = LLMModel(
+        id: "gpt-5.4-mini",
+        displayName: "GPT-5.4 Mini",
+        provider: "OpenAI"
+    )
+
     static let gpt53 = LLMModel(
         id: "gpt-5.3",
         displayName: "GPT-5.3",
@@ -358,11 +417,27 @@ struct LLMModel: Equatable, Hashable, Identifiable, Sendable, Codable {
     ]
 
     /// Models available via Codex OAuth (ChatGPT subscription).
+    ///
+    /// [T-codex-oauth-model-prune] The Codex backend rejects a model the
+    /// ChatGPT tier does not carry with
+    /// `HTTP 400 {"detail":"The '<id>' model is not supported when using Codex
+    /// with a ChatGPT account."}` — and that error surfaces as an empty
+    /// assistant turn, so an unusable entry in this picker reads to the user as
+    /// "tool calls are broken" rather than "wrong model". Entries verified 400
+    /// on-device (2026-08-01, real Codex OAuth token) were removed:
+    /// gpt-5.3-codex, gpt-5.3-codex-spark, gpt-5-codex-mini, gpt-5.3, gpt-5.2,
+    /// gpt-5. The survivors match the model set CLIProxyAPI ships for the Codex
+    /// client (`internal/registry/models/codex_client_models.json`), which is
+    /// also gpt-5.6-*/5.5/5.4 only.
+    ///
+    /// Availability is tier-dependent, not absolute — a higher ChatGPT plan may
+    /// carry more. Re-probe before adding anything back; do not restore an id
+    /// from documentation alone.
     static let allOpenAICodexOAuth: [LLMModel] = [
         .gpt56Sol, .gpt56Terra, .gpt56Luna,
-        .gpt55, .gpt54, .gpt53Codex, .gpt53CodexSpark,
-        .gpt5CodexMini,
-        .gpt52, .gpt53, .gpt5,
+        .gpt55, .gpt54, .gpt54Mini,
+        // gptImage2 is kept: it is an image endpoint, not a Codex chat model,
+        // so the text-model probe above does not apply to it.
         .gptImage2,
     ]
 
@@ -566,6 +641,21 @@ struct LLMModel: Equatable, Hashable, Identifiable, Sendable, Codable {
         if lid.contains("codex") { return 200_000 }
         // DeepSeek
         if lid.contains("deepseek") { return 128_000 }
+        // xAI Grok. [T-ios-grok-context-underestimate] Without this branch a
+        // Grok id missing from the models.dev catalog fell through to the
+        // 128K default, and ContextPolicy turned that into
+        // compactThreshold = 128K - 20K = 108K — so a model with a 256K–2M
+        // window auto-compacted every ~20-30 tool calls. Field report
+        // 2026-08-13: `grok-4.6` (not yet in the catalog) compacted 6 times in
+        // 47 minutes. Grok 3 is the only 131K generation; Grok 4 and later are
+        // 256K at minimum, and the fast/4.20 lines advertise 2M. 256K is the
+        // conservative floor for an unknown Grok 4+; models.dev still
+        // overrides via the explicit `contextWindow` above whenever the id IS
+        // in the catalog.
+        if lid.contains("grok") {
+            if lid.contains("grok-2") || lid.contains("grok-3") { return 131_072 }
+            return 256_000
+        }
         // Default: assume a modern long-context model rather than 64K so the
         // group context-limit slider doesn't collapse to a single Unlimited stop.
         return 128_000
@@ -781,7 +871,46 @@ extension LLMModel {
         // ceiling of that family's non-reasoning members (mimo-v2.5-tts/-asr).
         // [T-fallback-thinking-preclamp]
         if supportsReasoning == false { return .off }
+        // [T-thinking-levels-data-driven] A declared effort set is a stronger
+        // statement than any id-substring rule: it names the exact tiers the
+        // backend accepts. Take its top tier as the ceiling so a model whose
+        // declaration reaches beyond the hardcoded default (.xhigh) — e.g.
+        // zhipuai glm-5.2 / deepseek-v4, both `["high","max"]` — is actually
+        // reachable from the UI. Without this, "max" was declared by the
+        // catalog, clamped to by the wire path, and yet unselectable.
+        if let declaredTop = selectableThinkingLevels.last {
+            return declaredTop
+        }
         return ThinkingLevelCatalog.declaredMaxLevel(for: id) ?? .xhigh
+    }
+
+    /// [T-thinking-levels-data-driven] The thinking levels worth OFFERING for
+    /// this model, derived from the catalog's declared effort tiers.
+    ///
+    /// The wire path (`clampEffort`) snaps any request onto the declared set,
+    /// so when a model declares a sparse set — `["high","max"]` is the single
+    /// most common sparse shape in the catalog (58 models, incl. zhipuai
+    /// glm-5.2 and official deepseek-v4) — the five generic UI levels collapse
+    /// onto one or two distinct wire values. The user then drags a slider that
+    /// provably changes nothing: verified on-device 2026-08-01, glm-5.2 sent
+    /// `reasoning_effort:"high"` for Low AND Med AND High AND XHigh.
+    ///
+    /// Returning one level per DISTINCT declared tier makes the picker honest:
+    /// every option the user can pick produces a different request. Empty when
+    /// nothing is declared, so the legacy id-rule ceiling still applies.
+    ///
+    /// `.off` is never included — it is a separate toggle, not an effort tier,
+    /// and the OFF wire value is chosen by `explicitOffEffort`, not here.
+    var selectableThinkingLevels: [ThinkingLevel] {
+        guard let declared = reasoningEffortValues, !declared.isEmpty else { return [] }
+        // Map each declared wire tier to the UI level that emits it. "none" and
+        // "minimal" are OFF-ish tiers handled by the toggle, not the ladder.
+        let mapping: [(wire: String, level: ThinkingLevel)] = [
+            ("low", .low), ("medium", .medium), ("high", .high),
+            ("xhigh", .xhigh), ("max", .max),
+        ]
+        let set = Set(declared.map { $0.lowercased() })
+        return mapping.filter { set.contains($0.wire) }.map(\.level)
     }
 }
 
