@@ -30,6 +30,7 @@ import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.util.concurrent.TimeUnit
 import com.openminis.app.provider.failOnSilentEmptyCompletion
+import com.openminis.app.provider.thinking.ThinkingRuleResolver
 
 class GeminiProvider(
     private val apiKey: String,
@@ -148,10 +149,13 @@ class GeminiProvider(
 
                 // Extract function calls from streaming response
                 val functionCalls = extractFunctionCalls(json)
-                for ((fcName, fcArgs) in functionCalls) {
+                for ((fcName, fcArgs, fcSig) in functionCalls) {
                     val toolId = "gemini_${System.nanoTime()}"
                     send(LLMStreamChunk.ToolUseStart(toolId, fcName))
-                    send(LLMStreamChunk.ToolCallComplete(toolId, fcName, fcArgs))
+                    // [T-android-gemini3-thoughtsig / #179] Carry the part's
+                    // thoughtSignature through so it can be persisted and replayed
+                    // on the historical functionCall (gemini-3.x requires it).
+                    send(LLMStreamChunk.ToolCallComplete(toolId, fcName, fcArgs, thoughtSignature = fcSig))
                 }
 
                 extractUsage(json)?.let { usage ->
@@ -186,6 +190,27 @@ class GeminiProvider(
     ): JSONObject {
         val body = JSONObject()
 
+        // [T-android-gemini3-thoughtsig / #179] Gemini 3.x REQUIRES a
+        // thoughtSignature on every historical functionCall part; a bare
+        // functionCall 400s ("Function call is missing a thought_signature").
+        // Only gemini-3.x enforces this, so gate the whole special-case on it
+        // to leave 1.x/2.x/flash behaviour byte-for-byte unchanged.
+        val requiresSig = model.id.lowercase().contains("gemini-3")
+        // Tool-call ids we CANNOT safely replay as a functionCall because their
+        // signature is missing (old sessions, non-3.x-origin history, dropped
+        // field). For these, both the functionCall AND its paired functionResponse
+        // are downgraded to plain-text summaries so no unsigned functionCall is
+        // ever sent. Mirrors iOS convertMessages `unsignedToolCallIds`.
+        val unsignedToolCallIds: Set<String> = if (!requiresSig) emptySet() else buildSet {
+            for (msg in messages) {
+                for (part in msg.contentParts) {
+                    if (part is AgentContentPart.ToolUse && part.thoughtSignature.isNullOrEmpty()) {
+                        add(part.id)
+                    }
+                }
+            }
+        }
+
         val contents = JSONArray()
         val lastUserIndex = messages.indexOfLast { it.role == LLMMessage.Role.USER }
         for ((index, msg) in messages.withIndex()) {
@@ -205,22 +230,50 @@ class GeminiProvider(
                             }
                         }
                         is AgentContentPart.ToolUse -> {
-                            parts.put(JSONObject().apply {
-                                put("functionCall", JSONObject().apply {
-                                    put("name", part.name)
-                                    put("args", part.input)
+                            if (part.id in unsignedToolCallIds) {
+                                // [T-android-gemini3-thoughtsig / #179] No signature
+                                // to replay → downgrade to a text summary rather than
+                                // send a bare functionCall (which gemini-3.x 400s on).
+                                val argsDesc = part.input.toString().let {
+                                    if (it.length > 500) it.take(500) + "…" else it
+                                }
+                                parts.put(JSONObject().put("text", "[Called ${part.name} with: $argsDesc]"))
+                            } else {
+                                parts.put(JSONObject().apply {
+                                    // [T-android-gemini3-thoughtsig / #179] The
+                                    // signature is a sibling of functionCall on the
+                                    // part object, not nested inside it.
+                                    if (requiresSig && !part.thoughtSignature.isNullOrEmpty()) {
+                                        put("thoughtSignature", part.thoughtSignature)
+                                    }
+                                    put("functionCall", JSONObject().apply {
+                                        put("name", part.name)
+                                        put("args", part.input)
+                                    })
                                 })
-                            })
+                            }
                         }
                         is AgentContentPart.ToolResult -> {
-                            val responseObj = JSONObject()
-                            responseObj.put("name", part.name)
-                            val responseContent = JSONObject()
-                            val safeContent = part.content.ifEmpty { " " }
-                            responseContent.put("result", safeContent)
-                            if (part.isError) responseContent.put("error", true)
-                            responseObj.put("response", responseContent)
-                            parts.put(JSONObject().put("functionResponse", responseObj))
+                            if (part.id in unsignedToolCallIds) {
+                                // [T-android-gemini3-thoughtsig / #179] Its paired
+                                // functionCall became text, so this result must too —
+                                // a functionResponse with no matching functionCall is
+                                // itself a 400.
+                                val safe = part.content.ifEmpty { " " }.let {
+                                    if (it.length > 1000) it.take(1000) + "…" else it
+                                }
+                                val prefix = if (part.isError) "Error from" else "Result of"
+                                parts.put(JSONObject().put("text", "[$prefix ${part.name}: $safe]"))
+                            } else {
+                                val responseObj = JSONObject()
+                                responseObj.put("name", part.name)
+                                val responseContent = JSONObject()
+                                val safeContent = part.content.ifEmpty { " " }
+                                responseContent.put("result", safeContent)
+                                if (part.isError) responseContent.put("error", true)
+                                responseObj.put("response", responseContent)
+                                parts.put(JSONObject().put("functionResponse", responseObj))
+                            }
                         }
                         is AgentContentPart.ImageData -> {
                             parts.put(JSONObject().put("inlineData", JSONObject().apply {
@@ -256,7 +309,13 @@ class GeminiProvider(
         }
         body.put("contents", contents)
 
-        if (systemPrompt != null) {
+        // [OpenMinis#226] Audio-output models reject systemInstruction with 400
+        // "Developer instruction is not enabled for this model", the same way they reject
+        // a thinking config. Keyed off the declared output modality (the property actually
+        // responsible) rather than the model id. Dropping it costs nothing: the preamble
+        // is guidance for a text responder, and a TTS model speaks `contents` verbatim.
+        val rejectsSystemInstruction = "audio" in model.outputModalities.orEmpty()
+        if (systemPrompt != null && !rejectsSystemInstruction) {
             body.put("systemInstruction", JSONObject().put(
                 "parts", JSONArray().put(JSONObject().put("text", systemPrompt))
             ))
@@ -308,65 +367,18 @@ class GeminiProvider(
      * - Gemini 2.5 Flash Lite: no thinking support
      */
     private fun buildThinkingConfig(level: ThinkingLevel): JSONObject? {
-        val modelId = model.id
-        val isGemini3 = modelId.contains("gemini-3")
-        val is25Pro = modelId.contains("gemini-2.5-pro")
-        val is25Flash = modelId.contains("gemini-2.5-flash") && !modelId.contains("lite")
-        val is25FlashLite = modelId.contains("gemini-2.5-flash-lite")
-
-        if (is25FlashLite) return null  // No thinking support
-
-        return when {
-            isGemini3 -> {
-                JSONObject().apply {
-                    if (level == ThinkingLevel.OFF) {
-                        // 3.x Pro can't fully disable; use "minimal" for Flash, "low" for Pro
-                        put("thinkingLevel", if (modelId.contains("flash")) "minimal" else "low")
-                    } else {
-                        put("thinkingLevel", when (level) {
-                            ThinkingLevel.LOW -> "low"
-                            ThinkingLevel.MEDIUM -> "medium"
-                            ThinkingLevel.HIGH, ThinkingLevel.XHIGH -> "high"
-                            else -> "low"
-                        })
-                        put("includeThoughts", true)
-                    }
-                }
-            }
-            is25Pro -> {
-                JSONObject().apply {
-                    put("thinkingBudget", when (level) {
-                        ThinkingLevel.OFF -> 128      // minimum
-                        ThinkingLevel.LOW -> 2048
-                        ThinkingLevel.MEDIUM -> 8192
-                        ThinkingLevel.HIGH -> 16384
-                        // [T-android-thinking-level-arch] Gemini 2.5 Pro caps at
-                        // 32768; XHIGH and above all take the ceiling.
-                        ThinkingLevel.XHIGH,
-                        ThinkingLevel.MAX,
-                        ThinkingLevel.ULTRA -> 32768
-                    })
-                    if (level.isEnabled) put("includeThoughts", true)
-                }
-            }
-            is25Flash -> {
-                JSONObject().apply {
-                    put("thinkingBudget", when (level) {
-                        ThinkingLevel.OFF -> 0
-                        ThinkingLevel.LOW -> 1024
-                        ThinkingLevel.MEDIUM -> 4096
-                        ThinkingLevel.HIGH -> 8192
-                        // [T-android-thinking-level-arch] Gemini 2.5 Flash caps at
-                        // 16384; XHIGH and above all take the ceiling.
-                        ThinkingLevel.XHIGH,
-                        ThinkingLevel.MAX,
-                        ThinkingLevel.ULTRA -> 16384
-                    })
-                    if (level.isEnabled) put("includeThoughts", true)
-                }
-            }
-            else -> null
-        }
+        // [T-thinking-rules-phase2] The per-family rules now live in
+        // ThinkingRuleResolver.geminiThinkingConfig so every vendor's thinking contract
+        // is described in ONE place. Behaviour is byte-for-byte unchanged — verified by
+        // a reflection cross-check against this method's previous body (0 diffs across
+        // 10 models x 7 levels) and pinned by ThinkingWireGeminiAnthropicSnapshotTest.
+        val cfg = ThinkingRuleResolver.geminiThinkingConfig(model.id, level)
+        com.openminis.app.logging.AppLogger.info(
+            "Thinking",
+            "[resolve] provider=gemini model=${model.id} level=${level.name} " +
+                "keys=[${cfg?.keys()?.asSequence()?.sorted()?.joinToString(",") ?: ""}]",
+        )
+        return cfg
     }
 
     /** Extract text from all non-thought parts. */
@@ -432,19 +444,27 @@ class GeminiProvider(
         return out
     }
 
-    private fun extractFunctionCalls(json: JSONObject): List<Pair<String, JSONObject>> {
+    /**
+     * [T-android-gemini3-thoughtsig / #179] Returns (name, args, thoughtSignature)
+     * per functionCall part. The signature lives as a sibling `thoughtSignature`
+     * field on the SAME part object as `functionCall` (not inside it), per the
+     * Gemini v1beta wire format. Null when absent (non-3.x models, or a chunk
+     * without a signature).
+     */
+    private fun extractFunctionCalls(json: JSONObject): List<Triple<String, JSONObject, String?>> {
         val candidates = json.optJSONArray("candidates") ?: return emptyList()
         val first = candidates.optJSONObject(0) ?: return emptyList()
         val content = first.optJSONObject("content") ?: return emptyList()
         val parts = content.optJSONArray("parts") ?: return emptyList()
 
-        val calls = mutableListOf<Pair<String, JSONObject>>()
+        val calls = mutableListOf<Triple<String, JSONObject, String?>>()
         for (i in 0 until parts.length()) {
             val part = parts.getJSONObject(i)
             val fc = part.optJSONObject("functionCall") ?: continue
             val name = fc.safeOptString("name", "")
             val args = fc.optJSONObject("args") ?: JSONObject()
-            if (name.isNotEmpty()) calls.add(name to args)
+            val sig = part.safeOptString("thoughtSignature", "").ifEmpty { null }
+            if (name.isNotEmpty()) calls.add(Triple(name, args, sig))
         }
         return calls
     }

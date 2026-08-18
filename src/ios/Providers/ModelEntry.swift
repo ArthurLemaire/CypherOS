@@ -220,4 +220,30 @@ extension ModelEntry {
     var effectiveMaxThinkingLevel: ThinkingLevel {
         overrides.maxThinkingLevel ?? model.catalogMaxThinkingLevel
     }
+
+    /// [T-thinking-levels-data-driven] The thinking levels to OFFER for this
+    /// entry, in ascending order and never including `.off`.
+    ///
+    /// Prefers the catalog's declared effort tiers (one option per DISTINCT
+    /// wire value, so every option provably changes the request) and falls back
+    /// to the historical "every level up to the ceiling" ladder when the model
+    /// declares nothing.
+    ///
+    /// A user override (`overrides.maxThinkingLevel`) always wins as a CEILING:
+    /// it is a manual correction for a model the catalog describes wrongly, so
+    /// it must be able to cut the list down — but it is never allowed to invent
+    /// tiers the backend didn't declare, which is what the pre-existing
+    /// `clampEffort` would silently undo anyway.
+    var selectableThinkingLevels: [ThinkingLevel] {
+        let ceiling = effectiveMaxThinkingLevel
+        guard ceiling != .off else { return [] }
+        let declared = model.selectableThinkingLevels
+        guard !declared.isEmpty else {
+            return ThinkingLevel.allCases.filter { $0 != .off && $0 <= ceiling }
+        }
+        let capped = declared.filter { $0 <= ceiling }
+        // An override below every declared tier would empty the picker and
+        // strand the toggle in an unusable state — keep the weakest tier.
+        return capped.isEmpty ? [declared[0]] : capped
+    }
 }

@@ -9,10 +9,35 @@ enum DeviceIdentity {
     private static let keychainAccount = "deviceId"
 
     /// Stable UUID for this device, persisted in Keychain.
+    ///
+    /// [T-ios-deviceid-blank-ckrecordid-crash] The Keychain value is VALIDATED, not
+    /// merely unwrapped. `readKeychain()` returns any UTF-8-decodable payload, so a
+    /// zero-length or whitespace-only item decodes to `Optional("")` — non-nil, so
+    /// the old `if let` accepted it and skipped UUID generation entirely.
+    ///
+    /// That empty id then flowed straight into
+    /// `CKRecord.ID(recordName: DeviceIdentity.deviceId, …)` in
+    /// `CloudSyncEngine.queueDeviceRecord()`, which is the ONE CKRecord.ID
+    /// construction site with neither a pre-check nor an ObjC try/catch. CloudKit
+    /// raises NSInvalidArgumentException on an empty recordName, and an ObjC
+    /// exception crossing Swift frames is uncatchable — it reaches objc_terminate
+    /// and aborts. Field signature: SIGABRT on the main thread right after
+    /// foregrounding (the 180s foreground sync timer and the CloudKit
+    /// accountChange handler both call queueDeviceRecord from a @MainActor Task),
+    /// and it stopped when the user turned iCloud sync off.
+    ///
+    /// Trimming before the emptiness test matters: a stray newline written by an
+    /// older build (or a partially-restored Keychain item) yields a name that is
+    /// non-empty but still illegal, so " \n" must regenerate too rather than be
+    /// stored as an id.
     static let deviceId: String = {
-        if let existing = readKeychain() {
+        if let existing = readKeychain()?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !existing.isEmpty {
             return existing
         }
+        // Either nothing was stored, or what was stored was blank/corrupt. Mint a
+        // fresh id and OVERWRITE, so the bad value cannot be read again next launch
+        // (writeKeychain deletes before adding, so this self-heals in place).
         let newId = UUID().uuidString
         writeKeychain(newId)
         return newId

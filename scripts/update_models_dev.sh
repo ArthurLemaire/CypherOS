@@ -25,6 +25,13 @@ echo "Valid JSON — $PROVIDERS providers"
 mv "$IOS_DEST.tmp" "$IOS_DEST"
 echo "Updated $IOS_DEST"
 
+# The app resolves cross-provider model ids through a precomputed stage-2 index
+# (ModelsDevAPI.buildStage2Index). Verify the new catalog still resolves exactly
+# as a full per-key scan would, so a catalog update can never silently change
+# which entry wins the majority vote.
+echo "Verifying stage-2 resolution against the new catalog ..."
+python3 "$SCRIPT_DIR/verify_models_dev_resolution.py"
+
 # Copy to Android assets
 cp "$IOS_DEST" "$ANDROID_DEST"
 echo "Updated $ANDROID_DEST"

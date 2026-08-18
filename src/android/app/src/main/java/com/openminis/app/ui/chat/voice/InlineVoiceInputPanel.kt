@@ -50,6 +50,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -79,6 +80,8 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 
 /**
  * [T-android-voice-panel] Inline voice input panel — Android port of iOS
@@ -332,13 +335,24 @@ fun InlineVoiceInputPanel(
         captureBase = transcript
         transcribeError = null
         SpeechRecognitionManager.startRecording(
+            // [T-android-vad] Commit only on a FINAL result.
+            //
+            // Previously every interim hypothesis was written straight into the
+            // composer, which is what made Android feel live while iOS waited
+            // for a silence window. The engines no longer forward partials at
+            // all, so in practice this fires once per utterance — but the guard
+            // is explicit rather than assumed, so a future engine that does
+            // emit partials cannot silently reintroduce streaming.
+            //
+            // Appending (not replacing) matches iOS: successive utterances join
+            // with a single space (VoiceInputPanel.swift:931).
             onPartialOrFinal = { text, isFinal ->
                 if (isEditing) return@startRecording
+                if (!isFinal) return@startRecording
+                if (text.isBlank()) return@startRecording
                 val sep = if (captureBase.isEmpty() || captureBase.endsWith(" ")) "" else " "
-                val joined = if (text.isBlank()) captureBase else captureBase + sep + text
-                if (isFinal) {
-                    captureBase = joined
-                }
+                val joined = captureBase + sep + text
+                captureBase = joined
                 setTranscript(joined)
             },
             onError = { error, message ->
@@ -439,6 +453,22 @@ fun InlineVoiceInputPanel(
 
     val screenH = LocalConfiguration.current.screenHeightDp.dp
     val maxPanel = screenH * 0.6f
+
+    // [T-android-voice-entry-always-available] No usable ASR engine. The mic
+    // button no longer hides in this case (hiding it stranded users inside
+    // voice mode), so the panel owns the explanation: say WHY nothing will be
+    // transcribed and link to the two things that fix it — the system speech
+    // service, or an ASR provider configured in Minis. The composer's toggle
+    // stays visible throughout, so leaving is always one tap away.
+    val engineAvailable by SpeechRecognitionManager.isAvailable.collectAsState()
+    if (!engineAvailable) {
+        VoiceEngineUnavailableNotice(
+            expanded = expanded,
+            onToggleExpanded = { persistExpanded(!expanded) },
+            modifier = modifier,
+        )
+        return
+    }
 
     Column(
         modifier = modifier
@@ -862,6 +892,52 @@ private fun TranscriptArea(
     }
 }
 
+/**
+ * [T-android-voice-mic-shadow] The original `shadow(6.dp)` look, drawn
+ * manually so it has no downward cast.
+ *
+ * Compose's `shadow()` exposes no offset. Elevation feeds a renderer that
+ * lights the shape from a point above the screen, and the resulting spot
+ * shadow is displaced down the y-axis in proportion to the elevation — so the
+ * only way to shrink the displacement through that API is to shrink the
+ * elevation, which shrinks the shadow itself and changes the button's look.
+ * (The light position IS adjustable, but it is a window-level attribute and
+ * would move every shadow in the app.)
+ *
+ * Drawing it here sidesteps both problems: a radial gradient centred on the
+ * circle, painted behind the content, gives the same soft halo with zero
+ * offset. The radius extends [spread] beyond the circle's edge and the alpha
+ * ramp is weighted so most of the darkness sits close in, matching the falloff
+ * of the elevation shadow it replaces.
+ */
+private fun Modifier.micShadowNoOffset(
+    spread: androidx.compose.ui.unit.Dp,
+    color: Color = Color.Black,
+    maxAlpha: Float = 0.10f,
+): Modifier = this.drawBehind {
+    val r = size.minDimension / 2f
+    val spreadPx = spread.toPx()
+    val outer = r + spreadPx
+    // Stops chosen so the gradient is near-opaque at the circle's edge and
+    // fades out over the spread, rather than easing linearly across the whole
+    // radius (which reads as a wide, flat smudge).
+    val edge = r / outer
+    drawCircle(
+        brush = androidx.compose.ui.graphics.Brush.radialGradient(
+            colorStops = arrayOf(
+                0f to color.copy(alpha = maxAlpha),
+                edge to color.copy(alpha = maxAlpha),
+                (edge + (1f - edge) * 0.45f) to color.copy(alpha = maxAlpha * 0.35f),
+                1f to Color.Transparent,
+            ),
+            center = center,
+            radius = outer,
+        ),
+        radius = outer,
+        center = center,
+    )
+}
+
 @Composable
 private fun MicCircleButton(
     diameter: androidx.compose.ui.unit.Dp,
@@ -874,7 +950,11 @@ private fun MicCircleButton(
     Box(
         modifier = Modifier
             .size(diameter)
-            .shadow(6.dp, CircleShape)
+            // [T-android-voice-mic-shadow] Same white circle and same soft
+            // halo as before; only the downward cast is gone. See
+            // micShadowNoOffset for why this is drawn rather than expressed as
+            // an elevation.
+            .micShadowNoOffset(10.dp)
             .background(Color.White, CircleShape)
             .clip(CircleShape)
             .clickable(enabled = enabled) { onTap() },
@@ -962,11 +1042,31 @@ private fun InlineMiniWaveform(levels: List<Float>) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(3.dp),
     ) {
-        levels.takeLast(7).forEach { level ->
+        // [T-android-voice-parity] Indexed, and each bar animates.
+        //
+        // Two fixes over the previous `forEach { level -> Box(...) }`:
+        //  1. The bars were redrawn with raw values on every StateFlow
+        //     emission — no smoothing at all, where iOS runs a per-bar spring
+        //     (response 0.18, dampingFraction 0.6 —
+        //     InlineVoiceInputView.swift:1302). Android's level source is also
+        //     coarser (onRmsChanged at ~10-20 Hz vs iOS's ~94 Hz PCM tap), so
+        //     unsmoothed bars step visibly. `spring` with dampingRatio 0.6 and
+        //     stiffness 900 is the closest Compose analogue to a 0.18 s spring.
+        //  2. `forEach` gave Compose no per-slot identity, so a shifted list
+        //     re-associated animation state to the wrong bar. The index is a
+        //     stable slot key: bar N keeps its own animation across frames
+        //     while the VALUE flowing through it shifts left.
+        val tail = levels.takeLast(7)
+        tail.forEachIndexed { index, level ->
+            val animated by animateFloatAsState(
+                targetValue = level,
+                animationSpec = spring(dampingRatio = 0.6f, stiffness = 900f),
+                label = "voiceBar$index",
+            )
             Box(
                 modifier = Modifier
                     .width(3.dp)
-                    .height((5 + level * 21).dp.coerceAtMost(26.dp))
+                    .height((5 + animated * 21).dp.coerceAtMost(26.dp))
                     .background(Color.Black.copy(alpha = 0.85f), RoundedCornerShape(50)),
             )
         }
@@ -1054,8 +1154,21 @@ private fun statusLabel(
     if (permissionDenied) return stringResource(R.string.voice_panel_permission_denied)
     if (isEditing) return stringResource(R.string.voice_panel_editing)
     if (isRecording) {
+        // [T-android-voice-parity] iOS cycles FOUR entries here, with
+        // "Listening…" deliberately repeated at index 1 and 3 so the steady
+        // label occupies half the cycle and the actionable hint doesn't nag
+        // (InlineVoiceInputView.swift:1123-1130). We mirror that rhythm.
+        //
+        // iOS's other actionable slot is "Long press to paste"; Android does
+        // NOT have that gesture — long-pressing the transcript CLEARS it here
+        // (see onLongPress -> onClearAll below). Advertising a paste gesture
+        // that instead wipes the user's text would be worse than a shorter
+        // cycle, so that slot carries the delete hint the panel actually
+        // implements.
         val tips = listOf(
             stringResource(R.string.voice_panel_tip_tap_to_transcribe),
+            stringResource(R.string.voice_panel_tip_listening),
+            stringResource(R.string.voice_panel_tip_hold_delete),
             stringResource(R.string.voice_panel_tip_listening),
         )
         return tips[recordingTipIndex % tips.size]
@@ -1070,4 +1183,127 @@ private fun statusLabel(
         return tips[resultTipIndex % tips.size]
     }
     return stringResource(R.string.voice_panel_tap_to_speak)
+}
+
+/**
+ * [T-android-voice-entry-always-available] Shown in place of the recording UI
+ * when no speech engine can transcribe right now.
+ *
+ * This exists because the composer's mic/keyboard toggle is no longer hidden
+ * when speech is unavailable — hiding it was what stranded users inside voice
+ * mode. The control stays, so this panel has to answer "why is nothing
+ * happening?" and offer the two real fixes:
+ *
+ *  - the device's speech service (Google app / OEM equivalent) is missing or
+ *    disabled → open system voice-input settings;
+ *  - no ASR provider is configured in Minis → open Provider settings.
+ *
+ * Leaving is always available: the toggle in the composer is untouched.
+ */
+@Composable
+private fun VoiceEngineUnavailableNotice(
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = if (expanded) ExpandedBase else CompactHeight)
+            .animateContentSize(animationSpec = tween(280))
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+    ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            CircleIconButton(
+                icon = if (expanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                contentDescription = stringResource(
+                    if (expanded) R.string.voice_panel_collapse else R.string.voice_panel_expand,
+                ),
+                modifier = Modifier.align(Alignment.TopStart),
+            ) { onToggleExpanded() }
+
+            Text(
+                text = stringResource(R.string.voice_panel_no_engine_title),
+                style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(horizontal = 44.dp),
+            )
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        Text(
+            text = stringResource(R.string.voice_panel_no_engine_body),
+            style = TextStyle(fontSize = 12.sp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            NoticeActionButton(stringResource(R.string.voice_panel_no_engine_open_system)) {
+                // Best-effort: the exact voice-input screen varies by OEM, so
+                // fall back to the app's own settings page rather than crashing
+                // on a device that doesn't expose the specific action.
+                val opened = runCatching {
+                    ctx.startActivity(
+                        android.content.Intent("android.settings.VOICE_INPUT_SETTINGS")
+                            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                    true
+                }.getOrDefault(false)
+                if (!opened) {
+                    runCatching {
+                        ctx.startActivity(
+                            android.content.Intent(android.provider.Settings.ACTION_SETTINGS)
+                                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            NoticeActionButton(stringResource(R.string.voice_panel_no_engine_open_providers)) {
+                runCatching {
+                    ctx.startActivity(
+                        android.content.Intent(
+                            android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse("minis://settings/providers"),
+                        ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Small pill button used by [VoiceEngineUnavailableNotice]. */
+@Composable
+private fun NoticeActionButton(label: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .background(ChatColors.inputIconBg, RoundedCornerShape(14.dp))
+            .border(0.5.dp, ChatColors.inputIconBorder, RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onClick() }
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            style = TextStyle(fontSize = 12.sp),
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+    }
 }

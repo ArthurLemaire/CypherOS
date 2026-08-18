@@ -55,6 +55,8 @@ fun AddModelsToGroupScreen(
     val modalityFilter = when (groupId) {
         config.voiceInputGroupId -> PickerModalityFilter.AUDIO_INPUT
         config.voiceOutputGroupId -> PickerModalityFilter.AUDIO_OUTPUT
+        // [T-android-vision-group] Vision Group picker: only image-capable models.
+        config.visionGroupId -> PickerModalityFilter.IMAGE_INPUT
         else -> null
     }
     val availableEntries = config.modelEntries.filter {

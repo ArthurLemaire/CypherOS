@@ -17,6 +17,749 @@ private final class SessionMenuActionChannel {
     func send(_ action: SessionMenuAction) { handler?(action) }
 }
 
+/// One sidebar section: a date bucket (folderId == nil) or a folder section.
+/// Equatable and cheap on purpose — the sidebar ForEach diffs this on every
+/// transaction flush, so it must stay a [String] + small scalars, never a
+/// [ChatSession] ([T-ios-session-list-equatable-jank]).
+struct SidebarGroup: Equatable {
+    var label: String            // English key for date buckets; folder name otherwise
+    var ids: [String]            // emptied when the folder is collapsed
+    var folderId: String? = nil
+    var totalCount: Int = 0      // member count incl. hidden-by-collapse rows
+    var glyphs: [FolderGlyph] = []   // top-3 distinct member category glyphs
+    var anyUnread = false
+    var anyActive = false
+    var anyPaused = false
+    var isCollapsed = false
+    var isFolderPinned = false
+    var latestDate: Date? = nil      // newest member updatedAt (nil = empty folder)
+    var summaryTitle: String? = nil  // newest member's title, for the subtitle line
+    /// True on the FIRST folder group only: renders the "Groups" divider
+    /// label (styled like the date-bucket headers) above the folder block.
+    var showsGroupsHeader = false
+}
+
+/// A single composed-icon glyph. Small struct instead of a tuple because
+/// tuples can't satisfy Equatable inside SidebarGroup's array.
+struct FolderGlyph: Equatable {
+    var systemName: String
+    var color: Color
+}
+
+/// Projection of EXACTLY the per-session fields the sidebar grouping reads —
+/// the memo key's session component. Deliberately excludes `lastMessage`
+/// (the expensive field at the heart of [T-ios-session-list-equatable-jank]);
+/// comparing N of these is a handful of short-string compares per element,
+/// far cheaper than re-running the grouping.
+private struct SidebarSessionKey: Equatable {
+    let id: String
+    let updatedAt: Date
+    let pinnedAt: Date?
+    let isPinned: Bool
+    let folderId: String?
+    let category: String?
+    let title: String?
+}
+
+/// Every input `groupedSessionIDs` depends on. Compared (not hashed) so a
+/// hit is provably identical input — no collision risk. The badge/activity
+/// sets are IN the key on purpose: they're both the aggregation inputs and
+/// the invalidation signal (a badge aging past the 24h window changes the
+/// freshly-built set, which misses the memo — same "next ambient refresh"
+/// timing the unmemoized per-member query had). `dayStamp` invalidates the
+/// date buckets when the calendar day flips.
+private struct SidebarGroupsMemoKey: Equatable {
+    let sessions: [SidebarSessionKey]
+    let folders: [ChatFolder]
+    let collapsedFolderIds: Set<String>
+    let pendingDraftId: String?
+    let pendingDraftFolderId: String?
+    let isSearching: Bool
+    let unreadIds: Set<String>
+    let freshCornerIds: Set<String>
+    let activeIds: Set<String>
+    let dayStamp: Date
+}
+
+/// Reference-type memo box held in @State: mutating its contents during a
+/// body evaluation is legal (no observed value changes, so no re-entrant
+/// invalidation), and identity survives ContentView struct re-inits. A memo
+/// hit returns the SAME [SidebarGroup] array instance, so the downstream
+/// ForEach diff takes the identical-storage fast path instead of comparing
+/// element-wise.
+private final class SidebarGroupsMemo {
+    var key: SidebarGroupsMemoKey?
+    var groups: [SidebarGroup] = []
+}
+
+/// List-selection opt-out with an availability floor. The folder card row
+/// must never become the List(selection:)'s selected value — its "tap" is
+/// collapse/expand, not navigation — but .selectionDisabled is iOS 17+ and
+/// the app floors at 16 (where the plain Button row doesn't self-select).
+private struct SelectionDisabledIfAvailable: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 17.0, *) {
+            content.selectionDisabled()
+        } else {
+            content
+        }
+    }
+}
+
+/// Tracks whether an expanded folder's header card has scrolled out above
+/// the list's visible top, reporting only on TRANSITIONS (Bool onChange) so
+/// scroll frames don't churn ContentView state. Lives in the header row's
+/// background — geometry is read in .global and compared against the
+/// threshold the mini-bar overlay measured, which sidesteps the known-flaky
+/// preference propagation across List cell hosting boundaries entirely.
+///
+/// `lastMaxY` exists for the CULLING edge: when the List recycles the header
+/// cell far offscreen, onDisappear is the only signal left, and it alone
+/// can't tell "culled above" from "culled below". The last observed frame
+/// disambiguates. onDisappear also fires on collapse and on entering select
+/// mode (the header row unmounts) — those reports are harmless because the
+/// mini-bar's display guard independently requires an expanded folder
+/// outside select mode.
+private struct FolderHeaderVisibilityProbe: View {
+    let folderId: String
+    let thresholdY: CGFloat
+    let onVisibilityChange: (String, Bool) -> Void
+
+    @State private var lastMaxY: CGFloat = .infinity
+
+    var body: some View {
+        GeometryReader { geo in
+            let maxY = geo.frame(in: .global).maxY
+            let hidden = maxY < thresholdY
+            Color.clear
+                .onAppear {
+                    lastMaxY = maxY
+                    onVisibilityChange(folderId, hidden)
+                }
+                .onChange(of: maxY) { newValue in
+                    lastMaxY = newValue
+                }
+                .onChange(of: hidden) { newValue in
+                    onVisibilityChange(folderId, newValue)
+                }
+                .onDisappear {
+                    onVisibilityChange(folderId, lastMaxY < thresholdY)
+                }
+        }
+    }
+}
+
+/// Folder card container: what visually separates a folder from the flat
+/// session rows around it. On iOS 26+ this is the system Liquid Glass
+/// material (`glassEffect`) in a continuous rounded rect; on earlier systems
+/// it degrades to a deliberately plain filled card with a hairline stroke —
+/// no custom blur, since `.blur` is an offscreen pass and this list is the
+/// site of two archived scroll-perf incidents. The drop-target state draws an
+/// accent tint + stroke ON TOP of either material, so drag feedback reads the
+/// same on both OS generations.
+/// One row's share of the expanded container's OUTER border. The top kind
+/// draws the top arc + upper side walls, middle draws side walls only, and
+/// bottom draws the lower walls + bottom arc — tiled across the group's rows
+/// they form one continuous rounded-rect highlight, with no horizontal lines
+/// at the row boundaries (which a per-segment full stroke would create).
+private struct FolderSegmentBorder: Shape {
+    enum Kind { case top, middle, bottom }
+    let kind: Kind
+    var radius: CGFloat = 16
+
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        switch kind {
+        case .top:
+            p.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+            p.addLine(to: CGPoint(x: rect.minX, y: rect.minY + radius))
+            p.addArc(center: CGPoint(x: rect.minX + radius, y: rect.minY + radius),
+                     radius: radius, startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false)
+            p.addLine(to: CGPoint(x: rect.maxX - radius, y: rect.minY))
+            p.addArc(center: CGPoint(x: rect.maxX - radius, y: rect.minY + radius),
+                     radius: radius, startAngle: .degrees(270), endAngle: .degrees(0), clockwise: false)
+            p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        case .middle:
+            p.move(to: CGPoint(x: rect.minX, y: rect.minY))
+            p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+            p.move(to: CGPoint(x: rect.maxX, y: rect.minY))
+            p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        case .bottom:
+            p.move(to: CGPoint(x: rect.minX, y: rect.minY))
+            p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY - radius))
+            p.addArc(center: CGPoint(x: rect.minX + radius, y: rect.maxY - radius),
+                     radius: radius, startAngle: .degrees(180), endAngle: .degrees(90), clockwise: true)
+            p.addLine(to: CGPoint(x: rect.maxX - radius, y: rect.maxY))
+            p.addArc(center: CGPoint(x: rect.maxX - radius, y: rect.maxY - radius),
+                     radius: radius, startAngle: .degrees(90), endAngle: .degrees(0), clockwise: true)
+            p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        }
+        return p
+    }
+}
+
+/// Edge highlight for the simulated glass: bright hairline in dark mode
+/// (the reference system-folder look), a subtle dark line in light mode
+/// (white would vanish on the light page).
+private let folderEdgeHighlight = Color(UIColor { traits in
+    traits.userInterfaceStyle == .dark
+        ? UIColor(white: 1, alpha: 0.30)
+        : UIColor(white: 0, alpha: 0.08)
+})
+
+/// Background for the expanded FAB search bar. Liquid Glass capsule on iOS 26+,
+/// the original opaque capsule + hand-rolled shadow below it.
+///
+/// A modifier rather than a background view because the bar's content has to sit
+/// INSIDE the glass: `.glassEffect` styles the view it is applied to, so the
+/// text field and its icons ride within the material instead of being composited
+/// over a separately-drawn shape.
+private struct SearchBarSurface: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            // No .clipShape needed — glassEffect(in:) already clips to the
+            // capsule, and no .shadow: the material carries its own.
+            content.glassEffect(.regular, in: .capsule)
+        } else {
+            content
+                .background(Color(UIColor.secondarySystemBackground))
+                .clipShape(Capsule())
+                .shadow(color: .black.opacity(0.1), radius: 6, x: 0, y: 2)
+        }
+    }
+}
+
+/// Tags the search FAB and the expanded search bar with ONE shared
+/// `glassEffectID`.
+///
+/// Currently INERT: `glassEffectID` only does anything inside a
+/// `GlassEffectContainer`, and the FAB row no longer has one — that container
+/// suppressed the new-chat FAB's context menu, see the note on `fabRow`. The
+/// modifier is kept (harmless, and it costs nothing) so that if the container
+/// is ever reinstated with the menu problem solved, the morph works again
+/// without re-deriving the id plumbing. The row's scale+opacity transition is
+/// what actually animates the swap today.
+private struct FABGlassMorphID: ViewModifier {
+    let namespace: Namespace.ID
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.glassEffectID("fabSearch", in: namespace)
+        } else {
+            content
+        }
+    }
+}
+
+/// THE single source of truth for a folder surface's background — used
+/// identically by the collapsed lone card and by every row of an expanded
+/// group. Per the user's directive after several rounds of expanded-only
+/// material tuning: there is NO expanded-specific material/tint/opacity
+/// definition anymore. The only thing that varies by position is the SHAPE
+/// (lone / top / middle / bottom corner segmentation) and how the border is
+/// tiled; the fill comes from one place.
+private struct FolderSurface: ViewModifier {
+    enum Kind { case lone, top, middle, bottom }
+    let kind: Kind
+
+    /// The collapsed card's ACTUAL rendered color, eyedropper-sampled from
+    /// device screenshots. Dark: RGB 18/18/18 — re-sampled with a probe
+    /// build rendering REAL glass over a pure-black list with no pinned rows
+    /// behind it (24 points, zero variance). The earlier 57/57/60 was
+    /// contaminated: that screenshot's card had blurred colorful content
+    /// showing through the glass, and the too-light constant is what read as
+    /// a heavy solid slab against the black page. True glass sits nearly on
+    /// the background and lets the edge hairline do the lifting — that IS
+    /// the lightweight look. Light: RGB 252/252/252 (sampled over a clean
+    /// light background, unaffected).
+    /// Used for the expanded segments on iOS 26 instead of per-row
+    /// glassEffect: glass pieces cannot merge across List rows (edge lines
+    /// between every segment — twice rejected), and in THIS context glass
+    /// has nothing to blur behind it (the container sits on the flat list
+    /// background), so its rendered output IS effectively this constant
+    /// color. Sampling it gives pixel-level brightness parity with the
+    /// collapsed card, perfectly seamless tiling, and zero perf risk —
+    /// chosen by the user over a preference-propagation spike.
+    static let sampledGlassColor = Color(UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(red: 18/255.0, green: 18/255.0, blue: 18/255.0, alpha: 1)
+            : UIColor(red: 252/255.0, green: 252/255.0, blue: 252/255.0, alpha: 1)
+    })
+
+    private var shape: AnyShape {
+        switch kind {
+        case .lone:
+            return AnyShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        case .top:
+            return AnyShape(UnevenRoundedRectangle(
+                topLeadingRadius: 16, bottomLeadingRadius: 0,
+                bottomTrailingRadius: 0, topTrailingRadius: 16, style: .continuous))
+        case .middle:
+            return AnyShape(Rectangle())
+        case .bottom:
+            return AnyShape(UnevenRoundedRectangle(
+                topLeadingRadius: 0, bottomLeadingRadius: 16,
+                bottomTrailingRadius: 16, topTrailingRadius: 0, style: .continuous))
+        }
+    }
+
+    func body(content: Content) -> some View {
+        Group {
+            // Two states, two deliberate treatments (user decision):
+            // - COLLAPSED lone card: the sampled constant. glassEffect is a
+            //   live material and a collapsed card scrolls past heterogeneous
+            //   content (blurred colorful pinned rows), so live glass
+            //   flickered frame to frame; the constant is what that glass
+            //   rendered over the flat background anyway.
+            // - EXPANDED segments: a real material for translucency. Member
+            //   rows sit over the STABLE list background only — nothing
+            //   colorful ever passes behind them — so the flicker mechanism
+            //   doesn't apply, and the material keeps the container from
+            //   reading as a dull solid slab. regularMaterial (the brighter
+            //   tier; ultraThin ran too dark here before).
+            if kind == .lone {
+                if #available(iOS 26.0, *) {
+                    content.background(shape.fill(Self.sampledGlassColor))
+                } else {
+                    content.background(shape.fill(Color(UIColor.secondarySystemBackground)))
+                }
+            } else {
+                if #available(iOS 26.0, *) {
+                    content.background(shape.fill(.regularMaterial))
+                } else {
+                    content.background(shape.fill(Color(UIColor.secondarySystemBackground)))
+                }
+            }
+        }
+        .overlay {
+            // Border: full hairline on the lone card (its existing look, sub-26
+            // only — glass carries its own edge); tiled outer-perimeter
+            // segments on expanded rows so the pieces read as one outline
+            // without horizontal lines at the row boundaries.
+            switch kind {
+            case .lone:
+                // With glass gone the card needs an explicit edge for
+                // definition — the same highlight the expanded segments tile,
+                // as a full perimeter here.
+                if #available(iOS 26.0, *) {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(folderEdgeHighlight, lineWidth: 0.75)
+                } else {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(Color(UIColor.separator).opacity(0.5), lineWidth: 0.5)
+                }
+            case .top:
+                FolderSegmentBorder(kind: .top)
+                    .stroke(folderEdgeHighlight, lineWidth: 0.75)
+            case .middle:
+                FolderSegmentBorder(kind: .middle)
+                    .stroke(folderEdgeHighlight, lineWidth: 0.75)
+            case .bottom:
+                FolderSegmentBorder(kind: .bottom)
+                    .stroke(folderEdgeHighlight, lineWidth: 0.75)
+            }
+        }
+    }
+}
+
+private struct FolderCardBackground: ViewModifier {
+    let isDropTarget: Bool
+    let isExpanded: Bool
+
+    private var dropShape: AnyShape {
+        isExpanded
+            ? AnyShape(UnevenRoundedRectangle(
+                topLeadingRadius: 16, bottomLeadingRadius: 0,
+                bottomTrailingRadius: 0, topTrailingRadius: 16, style: .continuous))
+            : AnyShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .modifier(FolderSurface(kind: isExpanded ? .top : .lone))
+            .overlay {
+                if isDropTarget {
+                    ZStack {
+                        dropShape.fill(Color.accentColor.opacity(0.15))
+                        dropShape.stroke(Color.accentColor, lineWidth: 1.5)
+                    }
+                }
+            }
+    }
+}
+
+/// Middle/bottom rows of an expanded group: the SAME FolderSurface as the
+/// collapsed card, with the corner segmentation and border tiling that
+/// multi-row composition needs.
+private struct FolderMemberRowBackground: View {
+    let isLast: Bool
+
+    var body: some View {
+        Color.clear
+            .modifier(FolderSurface(kind: isLast ? .bottom : .middle))
+            .padding(.horizontal, 6)
+            .padding(.bottom, isLast ? 4 : 0)
+    }
+}
+
+/// Rename + dissolve alerts for the folder-header menu, extracted into a
+/// modifier so their inline Binding(get:set:) expressions don't count against
+/// ContentView.body's type-check budget (adding them inline tipped the
+/// compiler into "unable to type-check in reasonable time").
+private struct FolderAlertsModifier: ViewModifier {
+    @Binding var folderToRename: ChatFolder?
+    @Binding var renameFolderText: String
+    @Binding var renameFolderDesc: String
+    @Binding var folderToDissolve: ChatFolder?
+    /// [T-folder-duplicate-name] Every existing group, so a rename can detect a
+    /// name collision before writing.
+    let allFolders: [ChatFolder]
+    let memberCount: (String) -> Int
+    let onRename: (ChatFolder, String, String) -> Void
+    let onDissolve: (ChatFolder) -> Void
+    /// Offer to merge `source` into the existing same-named `target`.
+    let onMergeInto: (_ source: ChatFolder, _ target: ChatFolder) -> Void
+
+    /// The rename was blocked because the typed name is already taken; holds
+    /// the (renamed folder, existing folder) pair for the follow-up alert.
+    @State private var renameCollision: (source: ChatFolder, target: ChatFolder)?
+
+    /// [T-folder-duplicate-name] An OTHER group already carrying `name`.
+    /// Excludes the folder being renamed so re-saving its own name (e.g. a
+    /// description-only edit) is never treated as a collision.
+    private func duplicate(of name: String, excluding id: String) -> ChatFolder? {
+        let key = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !key.isEmpty else { return nil }
+        return allFolders.first {
+            $0.id != id
+                && $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == key
+        }
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .alert(
+                "Rename Group",
+                isPresented: Binding(
+                    get: { folderToRename != nil },
+                    set: { if !$0 { folderToRename = nil } }
+                )
+            ) {
+                TextField("Group Name", text: $renameFolderText)
+                // The one-sentence auto-grouping context — hidden in the
+                // list, surfaced for editing exactly here as requested.
+                TextField("Description (optional)", text: $renameFolderDesc)
+                Button("Cancel", role: .cancel) { folderToRename = nil }
+                Button("Rename") {
+                    let name = renameFolderText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if let folder = folderToRename, !name.isEmpty {
+                        // [T-folder-duplicate-name] Renaming onto an existing
+                        // name would leave two groups the picker cannot tell
+                        // apart. Stop and offer the merge instead of writing.
+                        if let clash = duplicate(of: name, excluding: folder.id) {
+                            renameCollision = (source: folder, target: clash)
+                        } else {
+                            onRename(folder, name, renameFolderDesc)
+                        }
+                    }
+                    folderToRename = nil
+                }
+            }
+            // [T-folder-duplicate-name] Follow-up for a blocked rename. A plain
+            // `.alert` cannot host a picker, so the choice is spelled out: go
+            // back and pick another name, or move this group's chats into the
+            // existing one (which is what "use the existing group" means when
+            // the group already has members).
+            .alert(
+                "Group Already Exists",
+                isPresented: Binding(
+                    get: { renameCollision != nil },
+                    set: { if !$0 { renameCollision = nil } }
+                ),
+                presenting: renameCollision
+            ) { pair in
+                Button("Change Name") {
+                    // Reopen the rename dialog with the text still in place so
+                    // the user edits rather than retypes.
+                    folderToRename = pair.source
+                    renameCollision = nil
+                }
+                Button("Move Chats There") {
+                    onMergeInto(pair.source, pair.target)
+                    renameCollision = nil
+                }
+                Button("Cancel", role: .cancel) { renameCollision = nil }
+            } message: { pair in
+                Text("A group named “\(pair.target.name)” already exists. Choose a different name, or move this group's chats into it.")
+            }
+            .alert(
+                "Dissolve Group?",
+                isPresented: Binding(
+                    get: { folderToDissolve != nil },
+                    set: { if !$0 { folderToDissolve = nil } }
+                ),
+                presenting: folderToDissolve
+            ) { folder in
+                Button("Cancel", role: .cancel) { folderToDissolve = nil }
+                Button("Dissolve") {
+                    onDissolve(folder)
+                    folderToDissolve = nil
+                }
+            } message: { folder in
+                // Spell out that no session is deleted — this action sits one
+                // menu away from the one that deletes everything, and the
+                // wording is what keeps them apart.
+                Text("\(memberCount(folder.id)) sessions will move back to the main list. No session will be deleted.")
+            }
+    }
+}
+
+/// A pending "move sessions to folder" interaction, presented as a sheet.
+private struct FolderPickerRequest: Identifiable {
+    let id = UUID()
+    let sessionIds: Set<String>
+    let fromMultiSelect: Bool
+    let anyFiled: Bool
+}
+
+/// Shared folder picker: existing folders, inline "new folder" creation, and
+/// (when a target is already filed) "remove from folder". One sheet serves the
+/// multi-select toolbar, the row context menu, and later entry points, so the
+/// flows can't drift apart.
+private struct FolderPickerSheet: View {
+    enum Choice {
+        case existing(String)                    // folder id
+        case create(name: String, desc: String?) // new group name + optional description
+        case removeFromFolder
+    }
+
+    /// One pickable folder with the display aggregates the row needs — the
+    /// same composed icon and "N chats · context" subtitle the home group
+    /// card shows, so the picker and the list describe a group identically.
+    /// Computed by the presenter (which owns sessions), not here.
+    struct FolderItem: Identifiable {
+        let folder: ChatFolder
+        let glyphs: [FolderGlyph]   // top-3 distinct member category glyphs
+        let count: Int
+        let subtitle: String?       // desc if set, else newest member title
+        var id: String { folder.id }
+    }
+
+    let items: [FolderItem]
+    let sessionIds: [String]
+    let anyFiled: Bool
+    let onChoose: (Choice) -> Void
+
+    @State private var newFolderName = ""
+    @State private var newFolderDesc = ""
+    @FocusState private var nameFieldFocused: Bool
+    @Environment(\.dismiss) private var dismiss
+    @State private var suggesting = false
+    @State private var suggestedMerge: (folderId: String, folderName: String)?
+    @State private var suggestFailed = false
+
+    private var sessionCount: Int { sessionIds.count }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    HStack {
+                        Image(systemName: "folder.badge.plus")
+                            .foregroundStyle(Color.accentColor)
+                        TextField("New Group Name", text: $newFolderName)
+                            .focused($nameFieldFocused)
+                            .submitLabel(.next)
+                    }
+                    // One-sentence auto-grouping context (≤100 chars). Typed
+                    // here or prefilled by AI Suggest; never shown in the
+                    // list, editable later from Rename Group.
+                    TextField("Description (optional, guides auto-grouping)", text: $newFolderDesc, axis: .vertical)
+                        .lineLimit(1...2)
+                        .font(.subheadline)
+                        .onChange(of: newFolderDesc) { v in
+                            if v.count > 100 { newFolderDesc = String(v.prefix(100)) }
+                        }
+                    // ✨ AI suggest — nothing auto-applies. A merge suggestion
+                    // renders as its own confirm row below; a create
+                    // suggestion prefills the name field and waits for the
+                    // user's Create tap. Failure degrades silently to the
+                    // manual flow (the sheet is already the manual flow).
+                    // Bottom row of the create area: AI Suggest leading,
+                    // Create trailing. Two independent tap targets in one
+                    // List row need .borderless — a plain Button row would
+                    // swallow the whole-row tap.
+                    HStack {
+                        Button {
+                            runSuggest()
+                        } label: {
+                            HStack {
+                                if suggesting {
+                                    ProgressView().controlSize(.small)
+                                } else {
+                                    Image(systemName: "sparkles")
+                                        .foregroundStyle(Color.accentColor)
+                                }
+                                Text(suggestFailed ? "AI Suggest (failed — try again)" : "AI Suggest")
+                            }
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(suggesting)
+                        Spacer()
+                        Button("Create", action: createIfNamed)
+                            .buttonStyle(.borderless)
+                            .fontWeight(.semibold)
+                            .disabled(trimmedName.isEmpty || duplicateFolder != nil)
+                    }
+                    // [T-folder-duplicate-name] Name already taken. Says so, and
+                    // offers the one-tap way out — filing into the existing group
+                    // is almost always what was meant. Create is disabled above,
+                    // so this is a real choice rather than a warning to ignore.
+                    if let dup = duplicateFolder {
+                        Button {
+                            onChoose(.existing(dup.id))
+                        } label: {
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    // Folder name is user data — interpolated, not a key.
+                                    Text("“\(dup.name)” already exists")
+                                        .font(.subheadline)
+                                    Text("Rename to something else, or tap to use it")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            } icon: {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+                    }
+                    if let merge = suggestedMerge {
+                        Button {
+                            onChoose(.existing(merge.folderId))
+                        } label: {
+                            Label {
+                                // Folder name is user data — interpolated, not a key.
+                                Text("Move into “\(merge.folderName)”?")
+                            } icon: {
+                                Image(systemName: "sparkles")
+                                    .foregroundStyle(Color.accentColor)
+                            }
+                        }
+                    }
+                }
+
+                if !items.isEmpty {
+                    Section("Groups") {
+                        ForEach(items) { item in
+                            Button {
+                                onChoose(.existing(item.folder.id))
+                            } label: {
+                                // Mirrors the home group card's identity row:
+                                // same composed circle icon, same
+                                // "N chats · context" subtitle (and thus the
+                                // same localization keys).
+                                HStack(spacing: 8) {
+                                    FolderComposedIcon(glyphs: item.glyphs, diameter: 40)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        // Folder names are user data — verbatim.
+                                        Text(item.folder.name)
+                                            .foregroundStyle(Color(UIColor.label))
+                                            .lineLimit(1)
+                                        Group {
+                                            if let sub = item.subtitle {
+                                                Text("\(item.count) chats · \(sub)")
+                                            } else if item.count > 0 {
+                                                Text("\(item.count) chats")
+                                            } else {
+                                                Text("Empty group")
+                                            }
+                                        }
+                                        .font(.system(size: 13))
+                                        .foregroundStyle(Color(UIColor.secondaryLabel))
+                                        .lineLimit(1)
+                                    }
+                                    Spacer()
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if anyFiled {
+                    Section {
+                        Button {
+                            onChoose(.removeFromFolder)
+                        } label: {
+                            Label("Remove from Group", systemImage: "folder.badge.minus")
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Move \(sessionCount) to Group")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private var trimmedName: String {
+        newFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// [T-folder-duplicate-name] The existing group whose name matches what the
+    /// user is typing, if any.
+    ///
+    /// Case- and whitespace-insensitive because "Work" / "work " are the same
+    /// group to a person, and silently creating a second one is how a list ends
+    /// up with two identically-labelled folders that are impossible to tell
+    /// apart in the picker.
+    private var duplicateFolder: ChatFolder? {
+        let key = trimmedName.lowercased()
+        guard !key.isEmpty else { return nil }
+        return items.first { $0.folder.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() == key }?.folder
+    }
+
+    private func createIfNamed() {
+        guard !trimmedName.isEmpty else { return }
+        // Never silently create a second group with an existing name — the
+        // inline notice below offers the existing one instead.
+        guard duplicateFolder == nil else { return }
+        let d = newFolderDesc.trimmingCharacters(in: .whitespacesAndNewlines)
+        onChoose(.create(name: trimmedName, desc: d.isEmpty ? nil : d))
+    }
+
+    private func runSuggest() {
+        suggesting = true
+        suggestFailed = false
+        suggestedMerge = nil
+        let ids = sessionIds
+        Task { @MainActor in
+            defer { suggesting = false }
+            do {
+                switch try await AIChatViewModel.suggestFolder(forSessionIds: ids) {
+                case .merge(let folderId, let folderName):
+                    suggestedMerge = (folderId, folderName)
+                case .create(let name, let desc):
+                    newFolderName = name
+                    if let desc { newFolderDesc = desc }
+                    nameFieldFocused = true
+                }
+            } catch {
+                // [T-ios-folder-suggest-retry] This catch used to swallow the
+                // error entirely — the user saw "failed — try again" and the
+                // log had nothing. Keep the UI flag, but record why.
+                AppLogger(category: "AIChatVM").error("[FolderSuggest] UI caught error=\(error)")
+                suggestFailed = true
+            }
+        }
+    }
+}
+
 private enum SessionMenuAction {
     case togglePin(String)
     case exportJSON(String)
@@ -29,6 +772,7 @@ private enum SessionMenuAction {
     case forceSync(String)
     case forcePull(String)
     case select(String)
+    case moveToFolder(String)
     case delete(String)
 }
 
@@ -129,8 +873,69 @@ struct ContentView: View {
     // diff key (see sessionRowKeys) so the ForEach can't skip re-materializing
     // the row whose running state changed.
     @ObservedObject private var sidebarActivityTracker = SessionActivityTracker.shared
+    // Folder-header aggregates (anyUnread / anyPaused) read the badge store
+    // during sidebarGroups; observing it here is what re-derives those
+    // aggregates when a badge flips. Row-level observation alone would only
+    // refresh the rows, not the header pass.
+    @ObservedObject private var sidebarBadgeStore = SessionBadgeStore.shared
     @ObservedObject private var sidebarConcurrencyManager = SessionConcurrencyManager.shared
     @State private var sessions: [ChatSession] = []
+    @State private var folders: [ChatFolder] = []
+    /// Collapsed folder sections. Pure UI view-state: persisted locally, never
+    /// synced (like SessionBadgeStore's .unread — cross-device expand state is
+    /// noise, not signal).
+    @State private var collapsedFolderIds: Set<String> =
+        Set(UserDefaults.standard.stringArray(forKey: "collapsedFolderIds") ?? [])
+    /// Folder ids whose EXPANDED header card is currently scrolled out above
+    /// the list's visible top — drives the floating mini-bar. A Set (not a
+    /// single id) because "expanded" is the DEFAULT folder state: before the
+    /// accordion ever runs, several folders can be expanded at once, so more
+    /// than one header can be offscreen. Display picks one deterministically.
+    @State private var offscreenFolderHeaderIds: Set<String> = []
+    /// Global Y of the list's visible top edge (under the nav bar), measured
+    /// by the mini-bar overlay. The header probe compares its own global
+    /// frame against this to decide "scrolled out". Changes on rotation only.
+    @State private var folderMiniBarTopY: CGFloat = 0
+    /// [T-ios-folder-accordion-scroll-anchor] Last observed global minY of each
+    /// folder header row, keyed by folder id. Written by a lightweight probe on
+    /// every header (collapsed ones included — the accordion needs the position
+    /// of the header ABOUT to expand, which by definition is still collapsed
+    /// when the tap lands). Read once per toggle to decide whether a scroll
+    /// correction is needed at all; never drives layout, so the per-frame writes
+    /// cost nothing but a dictionary store.
+    @State private var folderHeaderTopY: [String: CGFloat] = [:]
+    /// The list's visible BOTTOM edge in global coords, the lower bound of the
+    /// "still on screen" test. Paired with `folderMiniBarTopY` (the top edge).
+    @State private var folderListBottomY: CGFloat = 0
+    /// Memo for the sidebar grouping — see SidebarGroupsMemo. Keeps the
+    /// O(N) partition + per-folder aggregation off every AttributeGraph
+    /// flush (activity ticks during streaming re-eval this body at high
+    /// frequency, including mid-scroll).
+    @State private var sidebarGroupsMemo = SidebarGroupsMemo()
+    /// Pending "move to folder" — non-nil presents the picker sheet. Shared by
+    /// the multi-select toolbar and the row context menu (single-selection is a
+    /// one-element set).
+    @State private var folderPickerRequest: FolderPickerRequest?
+    /// Set when the picker applied a move that originated from multi-select;
+    /// selection mode is exited in the sheet's onDismiss (not in the apply
+    /// callback) to avoid the documented animation conflict.
+    @State private var folderMoveApplied = false
+    // Folder-header context-menu state (rename / dissolve / delete-all / new chat).
+    @State private var folderToRename: ChatFolder?
+    @State private var renameFolderText = ""
+    @State private var renameFolderDesc = ""
+    @State private var folderToDissolve: ChatFolder?
+    /// When delete-all runs for a folder, the (by then empty) folder row is
+    /// dropped after the sessions are gone. Cleared on cancel in onDismiss.
+    @State private var pendingDeleteFolderId: String?
+    /// "New chat in folder": the folder intent rides with the DRAFT ID, not a
+    /// bare flag — a draft is promoted to a real row only on first message, so
+    /// folder_id can't be written at draft time, and keying on the draft id
+    /// means an abandoned draft never mis-files a later unrelated session.
+    @State private var pendingFolderDraft: (draftId: String, folderId: String)?
+    /// Folder id currently hovered by a drag (empty string = the "ungroup"
+    /// target on a date-bucket header). Drives the drop highlight.
+    @State private var dropTargetFolderId: String?
     /// [T-ios-session-list-equatable-jank] id → ChatSession lookup backing the
     /// sidebar rows. Held in @State (not a per-body-eval computed `[String:
     /// ChatSession]`) on purpose: a plain `let byId = computedDict` inside the
@@ -253,6 +1058,11 @@ struct ContentView: View {
     @State private var showExportPreview = false
     @State private var isExporting = false
     @State private var exportFileURL: URL?
+    /// [T-export-preview-blank] The UNZIPPED payload backing `exportFileURL`, used
+    /// only to render the preview. `exportFileURL` is the artifact the user shares
+    /// or saves (a .zip), and zip bytes cannot be decoded as text — previewing it
+    /// produced a blank page. Nil when there is nothing text-previewable.
+    @State private var exportPreviewURL: URL?
     @State private var exportProgress: (done: Int, total: Int)? = nil
     @State private var exportSummary: ExportSummary? = nil
     @State private var deleteInfo: DeleteInfo?
@@ -295,6 +1105,19 @@ struct ContentView: View {
     @State private var navigationPath = NavigationPath()
     /// Tracks the session ID currently visible on the compact navigation stack.
     @State private var currentStackSessionId: String?
+    /// [T-ios-stacknav-transition-attributegraph-race] Compact-layout analogue
+    /// of `previousSelectedSessionId`: the session that was on the stack before
+    /// the most recent `navigationPath` change, so the `onChange` observer can
+    /// suspend the OUTGOING vm for the transition.
+    ///
+    /// A separate property is required — `currentStackSessionId` cannot serve
+    /// here. `.onChange` is a view-update observer, so it runs after the state
+    /// change is committed, and every navigation helper assigns
+    /// `currentStackSessionId = newId` in the same synchronous block that
+    /// mutates the path (see `switchToSession` / `handleNewChatRequest` /
+    /// `openSession`). By observer time it therefore already holds the INCOMING
+    /// id, and reading it would suspend the wrong vm — the one being mounted.
+    @State private var previousStackSessionId: String?
     /// The real session ID after a draft session is persisted (iPad only).
     /// While set, the AIChatView for this session stays alive even though
     /// selectedSessionId may still be a draft ID.
@@ -318,6 +1141,71 @@ struct ContentView: View {
     /// id we hand to `QuickActionWorkflow.attachTargetSession` here
     /// matches the one `openSession` will use after the pop commits.
     @State private var pendingNewChatTargetId: String? = nil
+
+    /// [T-ios-bg-nav-push-watchdog] A `navigationPath` write that arrived while
+    /// the app was NOT active, held back until it is.
+    ///
+    /// Four `.ips` reports (1.12(16) 03:58 + 04:09, 1.13(1) 19:28 + 20:04, all
+    /// `WatchdogVisibility: Background`) share one main-thread stack:
+    ///
+    ///     NavigationStackCoordinator.update(to:from:navigationController:…)
+    ///     → UIKitNavigationController.pushViewController(_:animated:)
+    ///     → -[UINavigationController _immediatelyApplyViewControllers:…]
+    ///     → -[UINavigationBar _redisplayItems]
+    ///     → -[UIView(Hierarchy) layoutBelowIfNeeded]      ← synchronous, whole tree
+    ///
+    /// `_immediatelyApplyViewControllers` is the non-animated branch: it runs
+    /// the pushed screen's ENTIRE first layout pass inline, with no yield point.
+    /// The screen being pushed is always `AIChatView` (the sole
+    /// `navigationDestination` below) — the heaviest view in the app — so that
+    /// pass costs hundreds of ms even on a good day.
+    ///
+    /// The reports' CPU statistics show the main thread pinned at ~100% of one
+    /// core for the whole window (10.230s of application CPU inside a 10.00s
+    /// scene-update allowance; 5.309 / 5.643 / 5.517s inside the 5.0s
+    /// terminate allowance — the "17% CPU" line is percent-of-six-cores). No
+    /// other thread holds a lock; SwiftUI's AsyncRenderer is itself parked on
+    /// `_MovableLockLock` waiting for the ViewGraph lock main holds. So this is
+    /// a compute-bound main-thread stall, not a deadlock.
+    ///
+    /// While the agent loop runs backgrounded (`beginBackgroundTask("AgentLoop")`
+    /// + silent-audio keep-alive), notification / deep-link / QuickAction /
+    /// share routes can all still write `navigationPath`. Backgrounded, that
+    /// push renders nothing a user can see, yet spends its full layout cost
+    /// inside the 5s termination or 10s scene-update budget — and the process
+    /// gets SIGKILL'd. (The 03:58 report's `procExitAbsTime` lines up exactly
+    /// with the 04:09 report's `procLaunch`: killed, relaunched, and killed
+    /// again 11 minutes later on the same path.)
+    ///
+    /// Deferring costs nothing: the destination is offscreen either way, and
+    /// on foreground return the same layout runs with a full frame budget
+    /// instead of against a watchdog clock.
+    ///
+    /// Carries the deferral instant so a stale request can be dropped rather
+    /// than flushed — see `pendingBackgroundNavigationTTL`.
+    @State private var pendingBackgroundNavigation: (path: NavigationPath, deferredAt: Date)?
+
+    /// [T-ios-bg-nav-push-watchdog] How long a deferred push stays valid.
+    ///
+    /// The gate above answers "don't push while backgrounded"; this answers
+    /// "…but for how long is that push still what the user wants?". A push
+    /// deferred at 02:00 by a background agent-loop notification is not a
+    /// destination the user asked for when they open the app at 09:00 to
+    /// glance at the session list — flushing it would yank them into an
+    /// unrelated session with no action of theirs behind it. That is a
+    /// navigation-semantics bug, not a crash, but it is the direct cost of the
+    /// deferral this mechanism introduced, so it belongs here.
+    ///
+    /// 90s: the case worth honouring is "user taps a notification / deep link,
+    /// app foregrounds, push lands" — that round trip is seconds, and even a
+    /// slow cold launch with a rootfs warm-up stays well inside a minute.
+    /// Anything older is the app having sat suspended, where the reopen is far
+    /// more likely to be the user's own intent than a reply to that stale
+    /// request. Deliberately much tighter than the 15-minute "latest session is
+    /// stale, open a new one instead" heuristic further down: that one picks
+    /// between two reasonable destinations, whereas this one decides whether to
+    /// override where the user just chose to be.
+    private static let pendingBackgroundNavigationTTL: TimeInterval = 90
 
     var body: some View {
         GeometryReader { geo in
@@ -345,6 +1233,10 @@ struct ContentView: View {
                 wireMenuActions()
             }
         }
+        .onReceive(
+            NotificationCenter.default.publisher(for: .sessionDidCreate),
+            perform: handleSessionCreatedForPendingFolder
+        )
         .onReceive(NotificationCenter.default.publisher(for: .newChatRequested)) { _ in
             handleNewChatRequest()
         }
@@ -395,6 +1287,17 @@ struct ContentView: View {
                 DispatchQueue.main.async {
                     activeToolSheet = .settings
                 }
+            }
+            // [T-ios-bg-nav-push-watchdog] Backstop for the scenePhase flush.
+            // `.onChange(of: scenePhase)` only fires on a TRANSITION, so a
+            // deferral that happened before this view mounted — a cold launch
+            // straight into the background, or a root remount (the
+            // `.id(appLanguage)` rebuild above) — would leave the push stranded
+            // with no later transition to release it. Deferred one runloop for
+            // the same reason the quick-action path above is: the
+            // NavigationStack must have attached `$navigationPath` first.
+            DispatchQueue.main.async {
+                flushPendingBackgroundNavigation()
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .sessionDidCreate)) { note in
@@ -456,12 +1359,13 @@ struct ContentView: View {
                 // Wide layout replaces selection — no stack to worry about
                 openSession(targetId)
             } else {
-                guard currentStackSessionId != targetId else { return }
-                // Pop current session off the navigation stack first, then push the target
-                navigationPath.removeLast(navigationPath.count)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    openSession(targetId)
-                }
+                // [T-ios-moveto-transfer-race] No early-return when the target
+                // already reads as current: a swallowed push leaves
+                // `currentStackSessionId` set to a target that never appeared,
+                // and bailing here is exactly what made a retry do nothing.
+                // switchToSession is idempotent, so re-running it for a target
+                // that genuinely is on screen is harmless.
+                switchToSession(targetId)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .openSessionFromIntent)) { note in
@@ -477,12 +1381,11 @@ struct ContentView: View {
                 guard selectedSessionId != sessionId && newSessionRealId != sessionId else { return }
                 openSession(sessionId)
             } else {
+                // [T-ios-moveto-transfer-race] Same atomic replacement as the
+                // move path — the old animated-pop-then-delayed-push had the
+                // same swallowed-push failure mode here.
                 guard currentStackSessionId != sessionId else { return }
-                // Pop entire stack back to root first, then push the target session
-                navigationPath.removeLast(navigationPath.count)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    openSession(sessionId)
-                }
+                switchToSession(sessionId)
             }
         }
         .fullScreenCover(isPresented: $showTerminal) {
@@ -552,6 +1455,10 @@ struct ContentView: View {
                 // Deletion was performed — reset selection mode after sheet is fully dismissed
                 isSelecting = false
                 selectedIds.removeAll()
+            } else {
+                // Cancelled — a pending delete-folder-with-sessions must not
+                // linger and attach itself to a later unrelated delete.
+                pendingDeleteFolderId = nil
             }
         }) {
             DeleteConfirmSheet(info: $deleteInfo, isLoading: isComputingDelete) {
@@ -561,8 +1468,78 @@ struct ContentView: View {
             .presentationDetents([.medium])
         }
         .sheet(isPresented: $showExportPreview) {
-            ExportPreviewSheet(fileURL: exportFileURL, summary: exportSummary)
+            ExportPreviewSheet(fileURL: exportFileURL, previewURL: exportPreviewURL, summary: exportSummary)
         }
+        .sheet(item: $folderPickerRequest, onDismiss: {
+            // Mirror the delete sheet's pattern (see the comment near
+            // computeDeleteInfo): selection state is reset only after the
+            // sheet is fully dismissed to avoid animation conflicts.
+            if folderMoveApplied {
+                folderMoveApplied = false
+                isSelecting = false
+                selectedIds.removeAll()
+            }
+        }) { req in
+            FolderPickerSheet(
+                items: folderPickerItems(),
+                sessionIds: Array(req.sessionIds),
+                anyFiled: req.anyFiled
+            ) { choice in
+                Task { @MainActor in
+                    switch choice {
+                    case .existing(let folderId):
+                        await ChatStore.shared.setFolder(folderId, forSessions: Array(req.sessionIds))
+                    case .create(let name, let desc):
+                        let folder = await ChatStore.shared.createFolder(name: name, desc: desc)
+                        await ChatStore.shared.setFolder(folder.id, forSessions: Array(req.sessionIds))
+                    case .removeFromFolder:
+                        await ChatStore.shared.setFolder(nil, forSessions: Array(req.sessionIds))
+                    }
+                    refreshSessionList()
+                }
+                if req.fromMultiSelect { folderMoveApplied = true }
+                folderPickerRequest = nil
+            }
+            .presentationDetents([.medium, .large])
+        }
+        .modifier(FolderAlertsModifier(
+            folderToRename: $folderToRename,
+            renameFolderText: $renameFolderText,
+            renameFolderDesc: $renameFolderDesc,
+            folderToDissolve: $folderToDissolve,
+            allFolders: folders,
+            memberCount: { fid in sessions.filter { $0.folderId == fid }.count },
+            onRename: { folder, name, desc in
+                Task { @MainActor in
+                    // Always pass desc (empty clears): the dialog is seeded with
+                    // the stored value when it opens ([T-folder-rename-desc-wipe]),
+                    // so whatever is in the field on Rename is the user's
+                    // intended state.
+                    await ChatStore.shared.renameFolder(folder.id, name: name, desc: desc)
+                    refreshSessionList()
+                }
+            },
+            onDissolve: { folder in
+                Task { @MainActor in
+                    _ = await ChatStore.shared.dissolveFolder(folder.id)
+                    refreshSessionList()
+                }
+            },
+            // [T-folder-duplicate-name] Merge the renamed group into the
+            // existing same-named one: move its chats over, then dissolve the
+            // now-empty source. Dissolve (not delete) is deliberate — it only
+            // ever ungroups, so a mistake here can never cost a session.
+            onMergeInto: { source, target in
+                Task { @MainActor in
+                    let memberIds = sessions.filter { $0.folderId == source.id }.map(\.id)
+                    if !memberIds.isEmpty {
+                        await ChatStore.shared.setFolder(target.id, forSessions: memberIds)
+                    }
+                    _ = await ChatStore.shared.dissolveFolder(source.id)
+                    refreshSessionList()
+                }
+            }
+        ))
         .overlay {
             if isExporting {
                 ZStack {
@@ -589,6 +1566,13 @@ struct ContentView: View {
         }
         .task {
             sessions = await ChatStore.shared.listSessions()
+            // Folders must load WITH the first session batch: groupedSessionIDs
+            // treats a folder_id whose folder isn't loaded as an orphan and
+            // renders the session ungrouped, so a first paint with sessions
+            // but no folders shows a flat list and the folder cards only
+            // "appear after a while" (whenever refreshSessionList next ran —
+            // the exact symptom reported from the Mac build).
+            folders = await ChatStore.shared.listFolders()
             let shareAlreadyHandled = shareCoordinator.bufferVersion > 0
             // A Home Screen Quick Action that fired during launch will
             // open the right session itself via `quickActionRouter.newChatTrigger`.
@@ -642,6 +1626,20 @@ struct ContentView: View {
                 var tx = Transaction()
                 tx.disablesAnimations = true
                 withTransaction(tx) { openSession(Self.makeNewSessionId()) }
+            } else if CrashReporter.shared.shouldBypassSessionRestore {
+                // [T-ios-session-crash-loop] The last two launches both died in
+                // the foreground within a minute of each other — the signature
+                // of a session that faults while loading and is then re-opened
+                // automatically on the next launch, which the user cannot
+                // escape from inside the app (they can reach neither Settings
+                // to change the launch screen nor the list to delete it).
+                //
+                // Open nothing: fall through to the session list so the app is
+                // usable again. Deliberately placed AFTER the notification-tap
+                // and share branches — those are explicit, just-expressed user
+                // intent, and a stale crash flag must not swallow them.
+                CrashReporter.shared.clearCrashLoopFlag()
+                shareLog.warning("[Share] .task: crash-loop detected — skipping session restore, landing on the session list")
             } else {
                 // No share — normal launch screen behavior
                 switch launchScreen {
@@ -670,6 +1668,16 @@ struct ContentView: View {
                         withTransaction(tx) { openSession(latest.id) }
                     }
                 }
+            }
+            // iPad split launch: every launchScreen branch above has resolved
+            // by now, so if the restored selection lives inside a collapsed
+            // folder, expand that folder (accordion — closes the others) so
+            // the selected row is actually visible in the sidebar instead of
+            // hidden behind a collapsed card.
+            if isWideLayout, let sid = selectedSessionId,
+               let fid = sessions.first(where: { $0.id == sid })?.folderId,
+               collapsedFolderIds.contains(fid) {
+                toggleFolderCollapsed(fid)
             }
             didInitialLoad = true
             fetchAlarmsIfNeeded()
@@ -768,6 +1776,60 @@ struct ContentView: View {
             }
         }
         .onChange(of: navigationPath) { _ in
+            // [T-ios-stacknav-transition-attributegraph-race] The SAME hosting-
+            // view teardown race the `selectedSessionId` observer above guards
+            // — but that observer only fires in the SPLIT (iPad / wide) layout.
+            // iPhone drives navigation through `navigationPath`, so the
+            // outgoing chat's vm was NEVER suspended for a push/pop, and the
+            // mitigation added for the 2026-06-01 build-48 crash simply did not
+            // exist on the compact path.
+            //
+            // Crash 2026-08-10 19:23 (Minis 1.12(1), iOS 26.5.2, iPhone18,1 —
+            // a STACK-layout device): EXC_BAD_ACCESS at 0xffffffff00000000 in
+            // AG::Subgraph::~Subgraph → NodeCache::~NodeCache, reached from
+            // `NavigationStackCoordinator.navigationController(_:willShow:)` →
+            // `ejectDeferred/sanitize` → `replaceRootViewWhenSafe` → a
+            // synchronous `ViewGraph.updateOutputs` inside the UIKit
+            // transition-completion callback. The device log shows exactly the
+            // documented precondition: the agent loop kept streaming straight
+            // through the transition and PAST the view's teardown —
+            //
+            //   19:23:26.731  chat slides offscreen (x=402…804, transition starts)
+            //   19:23:26.735  [TOOL:STREAMING] shell_execute …
+            //   19:23:27.138  [TOOL:STREAMING] …
+            //   19:23:27.213  AIChatView.onDisappear vm.isProcessing=true
+            //   19:23:27.349  [TOOL:STREAMING] …   (still mutating after teardown)
+            //
+            // so @Published deltas were feeding a subgraph while UIKit was
+            // invalidating it. Suspend the outgoing vm for the transition,
+            // exactly as the split path does, and resume on the same 0.4s
+            // delay so the session catches up when the user returns.
+            //
+            // The outgoing id is tracked separately (`previousStackSessionId`)
+            // rather than read from `currentStackSessionId` — see that
+            // property's doc-comment for why the latter is already the INCOMING
+            // id by the time this observer runs.
+            // The incoming id is `currentStackSessionId` only while the path is
+            // NON-empty; a pop to the session list leaves it momentarily stale
+            // (it is cleared further down in this same handler), so an empty
+            // path means "incoming = nothing" and the outgoing vm must still be
+            // suspended. Getting this wrong would skip the pop — which is the
+            // exact transition the crash log captured.
+            let incomingStackId: String? = navigationPath.isEmpty ? nil : currentStackSessionId
+            let outgoingStackId = previousStackSessionId
+            previousStackSessionId = incomingStackId
+            if let outgoingId = outgoingStackId,
+               outgoingId != incomingStackId,
+               let outgoingVm = ViewModelCache.shared.get(for: outgoingId) {
+                outgoingVm.setSuspendedForTransition(true)
+                // Unconditional resume on the same 0.4s delay the split path
+                // uses. `weak` so a deallocated vm simply drops it, and
+                // `setSuspendedForTransition` is guarded on an actual change,
+                // so overlapping transitions cannot leave the flag stuck.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak outgoingVm] in
+                    outgoingVm?.setSuspendedForTransition(false)
+                }
+            }
             // [T-ios-search-focus-sticky] iPhone stack: pushing into a session
             // (or new chat) with an empty search drops the sticky search bar.
             // Only on push (path non-empty) — popping back must NOT clear an
@@ -798,9 +1860,13 @@ struct ContentView: View {
         }
         .onChange(of: shareCoordinator.hasPendingShare) { hasPending in
             if hasPending {
+                let hadRecord = SharedContainerStore.loadPendingShare() != nil
                 processPendingShare()
-                // If currently on home screen, navigate to new session for the share
-                if navigationPath.isEmpty {
+                // [T-share-double-raise] Only navigate when this raise actually
+                // carried content. A duplicate raise finds the record already
+                // consumed; opening a second blank session for it would replace
+                // the one the first pass just populated.
+                if hadRecord, navigationPath.isEmpty {
                     shareLog.info("[Share] onChange: Home screen — opening new session for share")
                     var tx = Transaction()
                     tx.disablesAnimations = true
@@ -859,6 +1925,13 @@ struct ContentView: View {
                     // Guard against rapid bg→fg→bg: if scenePhase already
                     // changed back, skip the stale .active work.
                     guard scenePhase == .active else { return }
+                    // [T-ios-bg-nav-push-watchdog] Commit any push that arrived
+                    // while backgrounded. Runs here — after the `Task.yield()`
+                    // that keeps .active work off the synchronous callback — so
+                    // the pushed screen's first layout pass lands on its own
+                    // runloop turn with a full frame budget, never inside the
+                    // foreground-transition tick.
+                    flushPendingBackgroundNavigation()
                     fetchAlarmsIfNeeded()
                     if #available(iOS 17.0, *) {
                         SyncCore.shared.isAppInBackground = false
@@ -933,7 +2006,26 @@ struct ContentView: View {
                         AIChatView(sessionId: Self.isNewSessionId(id) ? nil : id, draftId: Self.isNewSessionId(id) ? id : nil, initialGroupId: Self.extractGroupId(from: id))
                             .id(id)
                             .onAppear {
-                                if currentStackSessionId != id { currentStackSessionId = id }
+                                if currentStackSessionId != id {
+                                    currentStackSessionId = id
+                                    // [T-ios-stacknav-transition-attributegraph-race]
+                                    // Keep the outgoing-id tracker in lockstep.
+                                    // This branch fires exactly when the two
+                                    // have DIVERGED — the "swallowed push left
+                                    // currentStackSessionId set to a target
+                                    // that never appeared" case documented on
+                                    // the .moveInputToSession handler — and it
+                                    // mounts a chat WITHOUT a navigationPath
+                                    // change, so the observer that normally
+                                    // maintains previousStackSessionId does not
+                                    // run. Left unsynced, the next real
+                                    // transition would suspend whichever id the
+                                    // last observer pass recorded instead of
+                                    // the vm actually on screen: the wrong vm
+                                    // stalls and the real outgoing one keeps
+                                    // publishing into its teardown.
+                                    previousStackSessionId = id
+                                }
                                 SessionBadgeStore.shared.remove(.unread, for: id)
                                 shareLog.info("🔄SESSION stackNav APPEAR id=\(id)")
                             }
@@ -1047,11 +2139,393 @@ struct ContentView: View {
     // and rows look the session up by id. Grouping/sorting logic is unchanged —
     // groupedSessionIDs() just projects groupedSessions() down to ids.
 
-    /// Grouped sidebar sections carrying only session IDs (cheap to diff).
-    private func groupedSessionIDs(_ list: [ChatSession]) -> [(label: String, ids: [String])] {
-        groupedSessions(list).map { (label: $0.label, ids: $0.sessions.map(\.id)) }
+    /// Grouped sidebar sections carrying only session IDs (cheap to diff),
+    /// with folder sections interleaved after Pinned.
+    ///
+    /// Folder aggregates (glyphs / unread / active / paused) are computed HERE,
+    /// in this single pass, and never in the header's body: the header is a
+    /// high-frequency recompute path, and deriving "any member active" there
+    /// would cost O(members) × folders × every AttributeGraph re-eval.
+    private func groupedSessionIDs(_ list: [ChatSession]) -> [SidebarGroup] {
+        // Build the store snapshots ONCE per evaluation (each is O(its own
+        // small population), replacing per-member store entry + per-member
+        // Date allocation), then memo-check: on a hit — the common case for
+        // the high-frequency re-eval paths (activity ticks, badge publishes
+        // that changed nothing the sidebar shows) — the whole partition +
+        // aggregation below is skipped and the previous array instance is
+        // returned.
+        let unreadIds = sidebarBadgeStore.unreadSessionIds
+        let freshCornerIds = sidebarBadgeStore.freshCornerBadgeSessionIds(within: 24 * 3600)
+        let activeIds = sidebarActivityTracker.resolvedActiveSessionIds
+        let key = SidebarGroupsMemoKey(
+            sessions: list.map {
+                SidebarSessionKey(
+                    id: $0.id, updatedAt: $0.updatedAt, pinnedAt: $0.pinnedAt,
+                    isPinned: $0.isPinned, folderId: $0.folderId,
+                    category: $0.category, title: $0.title)
+            },
+            folders: folders,
+            collapsedFolderIds: collapsedFolderIds,
+            pendingDraftId: pendingFolderDraft?.draftId,
+            pendingDraftFolderId: pendingFolderDraft?.folderId,
+            isSearching: isSearching,
+            unreadIds: unreadIds,
+            freshCornerIds: freshCornerIds,
+            activeIds: activeIds,
+            dayStamp: Calendar.current.startOfDay(for: Date()))
+        if sidebarGroupsMemo.key == key {
+            return sidebarGroupsMemo.groups
+        }
+        let groups = computeGroupedSessionIDs(
+            list, unreadIds: unreadIds, freshCornerIds: freshCornerIds, activeIds: activeIds)
+        sidebarGroupsMemo.key = key
+        sidebarGroupsMemo.groups = groups
+        return groups
     }
 
+    private func computeGroupedSessionIDs(
+        _ list: [ChatSession],
+        unreadIds: Set<String>,
+        freshCornerIds: Set<String>,
+        activeIds: Set<String>
+    ) -> [SidebarGroup] {
+        let folderById = Dictionary(folders.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+
+        var filed: [(fid: String, session: ChatSession)] = []
+        var unfiled: [ChatSession] = []
+        for s in list {
+            // Folder membership outranks pin FOR PLACEMENT: a filed session
+            // renders inside its group even when pinned. (The original
+            // pin-wins rule made "file a pinned session" look like a no-op —
+            // the write succeeded but the session stayed in Pinned and the
+            // group showed empty, reported as a bug.) The pin itself is NOT
+            // touched: pinned members sort first within their group and keep
+            // the row's pin glyph — filing must never silently unpin.
+            //
+            // A folder_id pointing at a folder we don't have locally (record
+            // not yet synced in, or folder deleted on a peer) renders as
+            // ungrouped rather than vanishing — the orphan-reference rule
+            // from the design doc's sync section.
+            //
+            // A "New Chat in Group" DRAFT has no sessions row yet (folder_id
+            // is written at promotion), so it rides pendingFolderDraft: the
+            // draft renders inside its target group from the first moment
+            // instead of popping into Today until the first message lands.
+            let effectiveFid: String? = s.folderId
+                ?? (pendingFolderDraft?.draftId == s.id ? pendingFolderDraft?.folderId : nil)
+            if let fid = effectiveFid, folderById[fid] != nil {
+                filed.append((fid: fid, session: s))
+            } else {
+                unfiled.append(s)
+            }
+        }
+
+        let dateGroups = groupedSessions(unfiled).map {
+            SidebarGroup(label: $0.label, ids: $0.sessions.map(\.id))
+        }
+
+        // `list` arrives updated_at DESC, so first-encounter order over the
+        // filed sessions IS the folders' activity order (max member updatedAt
+        // descending) — no separate sort needed.
+        var folderOrder: [String] = []
+        var members: [String: [ChatSession]] = [:]
+        for entry in filed {
+            if members[entry.fid] == nil { folderOrder.append(entry.fid) }
+            members[entry.fid, default: []].append(entry.session)
+        }
+        // Folders with no (visible) members still render — a folder that
+        // disappears whenever its sessions are filtered out reads as data
+        // loss. EXCEPT during an active search: there the list is a result
+        // set, and padding it with every non-matching folder as an empty card
+        // is noise (found in review — search for a message and every folder
+        // you own would tag along).
+        if !isSearching {
+            for f in folders.sorted(by: { $0.updatedAt > $1.updatedAt }) where members[f.id] == nil {
+                folderOrder.append(f.id)
+                members[f.id] = []
+            }
+        }
+
+        var folderGroups: [SidebarGroup] = []
+        for fid in folderOrder {
+            guard let folder = folderById[fid] else { continue }
+            let m = members[fid] ?? []
+            // Display order: pinned members first (stable partition), the
+            // rest by recency. Aggregates below deliberately keep using the
+            // recency-ordered `m` — latestDate/summary mean "newest activity",
+            // not "first displayed row".
+            let displayOrdered = m.filter(\.isPinned) + m.filter { !$0.isPinned }
+            var g = SidebarGroup(label: folder.name, ids: displayOrdered.map(\.id), folderId: fid)
+            g.totalCount = m.count
+            // Top-3 DISTINCT category glyphs by recency (m is recency-sorted).
+            // Distinct because three code sessions rendering three identical
+            // terminal glyphs carries no information.
+            var seenCategories = Set<String>()
+            for s in m where seenCategories.insert(s.category ?? "").inserted {
+                let icon = sessionCategoryIcon(for: s.category)
+                g.glyphs.append(FolderGlyph(systemName: icon.systemName, color: icon.color))
+                if g.glyphs.count == 3 { break }
+            }
+            // Status passthrough as ONE early-exiting pass of hash lookups
+            // (was three `contains` passes entering the observed stores per
+            // member). anyPaused carries only FRESH corner badges (entered in
+            // the last 24h; covers paused and every future non-unread kind) —
+            // rows keep rendering their badges unfiltered; the window only
+            // stops long-stale states from flagging the whole group forever.
+            if !unreadIds.isEmpty || !activeIds.isEmpty || !freshCornerIds.isEmpty {
+                for s in m {
+                    if !g.anyUnread, unreadIds.contains(s.id) { g.anyUnread = true }
+                    if !g.anyActive, activeIds.contains(s.id) { g.anyActive = true }
+                    if !g.anyPaused, freshCornerIds.contains(s.id) { g.anyPaused = true }
+                    if g.anyUnread, g.anyActive, g.anyPaused { break }
+                }
+            }
+            g.isCollapsed = collapsedFolderIds.contains(fid)
+            g.isFolderPinned = folder.isPinned
+            // m is recency-sorted, so .first is the newest member.
+            g.latestDate = m.first?.updatedAt
+            g.summaryTitle = m.first?.title
+            if g.isCollapsed { g.ids = [] }
+            folderGroups.append(g)
+        }
+        // Pinned folders float above unpinned ones. Within each half the
+        // activity order (first-encounter over the updated_at-DESC list) is
+        // preserved — stable partition, not a re-sort.
+        folderGroups = folderGroups.filter(\.isFolderPinned) + folderGroups.filter { !$0.isFolderPinned }
+        // "Groups" divider above the folder block, mirroring the Today/
+        // Yesterday labels, so the block separates from the pinned sessions
+        // above it at a glance.
+        if !folderGroups.isEmpty { folderGroups[0].showsGroupsHeader = true }
+
+        // Assembly: Pinned → folders (by activity) → date buckets. This is the
+        // design doc's simplified layout — a fixed folder block rather than
+        // folders mixed into the date buckets — chosen because interleaving
+        // would push cross-bucket decisions into groupedSessions, a function
+        // already implicated in [T-ios-session-list-equatable-jank].
+        if let first = dateGroups.first, first.label == "Pinned" {
+            return [first] + folderGroups + dateGroups.dropFirst()
+        }
+        return folderGroups + dateGroups
+    }
+
+    /// Toggle a folder section collapsed/expanded and persist the set.
+    /// Expansion is EXCLUSIVE (accordion): opening a folder closes every
+    /// other one — only one folder interior is on screen at a time, which
+    /// keeps the wrapped-container look unambiguous and the list short.
+    private func toggleFolderCollapsed(_ folderId: String, scrollProxy: ScrollViewProxy? = nil) {
+        // [T-ios-folder-accordion-scroll-anchor] Keep the tapped folder in view
+        // across the swap.
+        //
+        // Opening folder B closes folder A (accordion). When A sat ABOVE B and
+        // the user had scrolled deep into A's long member list, A's rows are
+        // removed from the List and everything below — including B, the folder
+        // they just tapped — slides UP by A's full expanded height. That height
+        // is routinely taller than the viewport, so B lands off-screen above the
+        // top edge and the user has to scroll back to find what they opened.
+        //
+        // Fix: after the state change, bring B's header back into view IF it
+        // left. This reuses the same anchor and proxy the mini-bar's "back to
+        // header" jump already uses, so no new scroll infrastructure is
+        // introduced. See the correction block at the end of this function for
+        // why the scroll is conditional rather than unconditional.
+        //
+        // Only on EXPAND — collapsing is self-anchoring (the header the user
+        // tapped stays exactly where it is; scrolling then would move content
+        // out from under the finger for no reason).
+        let willExpand = collapsedFolderIds.contains(folderId)
+
+        // Animated again by request — with the jitter history baked into the
+        // parameters. The original shaking had two ingredients: per-row glass
+        // segments re-rendering every animation frame (that structure is gone;
+        // the group is now ONE card, one glass shape), and a springy curve
+        // whose oscillation read as continuous wobble. Hence a short plain
+        // easeInOut: monotonic (no overshoot to re-measure), brief enough
+        // that the List's per-frame self-size pass stays cheap.
+        withAnimation(.easeInOut(duration: 0.25)) {
+            if collapsedFolderIds.contains(folderId) {
+                collapsedFolderIds = Set(folders.map(\.id))
+                collapsedFolderIds.remove(folderId)
+            } else {
+                collapsedFolderIds.insert(folderId)
+            }
+        }
+        UserDefaults.standard.set(Array(collapsedFolderIds), forKey: "collapsedFolderIds")
+
+        // Deferred one runloop turn on purpose: the rows removed by the collapse
+        // are still in the List when this returns, so measuring now would read
+        // the pre-collapse geometry. Letting SwiftUI apply the structural change
+        // first means the probe values below describe the layout the user will
+        // actually see.
+        //
+        // MINIMAL CORRECTION, not "scroll to top". The first version of this fix
+        // called `scrollTo(anchor: .top)` unconditionally on every expand, which
+        // did keep the folder on screen but slammed it to the top edge even when
+        // it had never moved — the tap read as "jump to top" rather than "expand
+        // in place". Now the header's post-layout position is measured and a
+        // scroll happens ONLY when it actually left the viewport:
+        //
+        //   - still fully on screen  → do nothing at all (the true in-place case)
+        //   - pushed above the top   → bring it just inside the top edge
+        //   - pushed below the bottom→ bring it just inside, still near the top,
+        //                              since an expanded folder needs the space
+        //                              BELOW its header to show members
+        //
+        // `anchor: .top` is still the landing spot when a correction is needed —
+        // what changed is that it is now conditional. SwiftUI's ScrollViewProxy
+        // has no "scroll by delta" primitive, so top-anchoring is the only way to
+        // express "bring this into view"; the win is that the common case no
+        // longer triggers it.
+        if willExpand, let scrollProxy {
+            DispatchQueue.main.async {
+                let topEdge = folderMiniBarTopY
+                let bottomEdge = folderListBottomY
+                guard let headerY = folderHeaderTopY[folderId], bottomEdge > topEdge else {
+                    // No probe reading yet (header never rendered, e.g. expanded
+                    // programmatically while off screen). Fall back to the old
+                    // unconditional behaviour rather than risk leaving the user
+                    // staring at the wrong part of the list.
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        scrollProxy.scrollTo("folderHeader-\(folderId)", anchor: .top)
+                    }
+                    return
+                }
+
+                // Keep a little slack at the top so a header sitting *exactly* on
+                // the boundary isn't judged off-screen by a sub-point rounding
+                // difference, and so a corrected header lands visibly inside the
+                // edge rather than flush against it.
+                let slack: CGFloat = 8
+                let isAboveViewport = headerY < topEdge + slack
+                let isBelowViewport = headerY > bottomEdge - slack
+
+                guard isAboveViewport || isBelowViewport else {
+                    // In place — the whole point of this refinement.
+                    return
+                }
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    scrollProxy.scrollTo("folderHeader-\(folderId)", anchor: .top)
+                }
+            }
+        }
+    }
+
+    /// Probe report sink. Animated so the mini-bar's insertion/removal
+    /// transition actually plays; guarded so the (per-frame-capable) probe
+    /// only ever mutates state on a real transition.
+    private func setFolderHeaderOffscreen(_ folderId: String, _ offscreen: Bool) {
+        guard offscreenFolderHeaderIds.contains(folderId) != offscreen else { return }
+        withAnimation(.easeInOut(duration: 0.2)) {
+            if offscreen {
+                offscreenFolderHeaderIds.insert(folderId)
+            } else {
+                offscreenFolderHeaderIds.remove(folderId)
+            }
+        }
+    }
+
+    /// The folder the mini-bar represents, or nil = no bar. Requires an
+    /// EXPANDED folder (collapse may happen while the header is culled, with
+    /// no probe alive to retract the offscreen mark — this guard is what
+    /// keeps the bar honest) whose header is scrolled out, outside select
+    /// mode. Deterministic pick in folder order when several qualify (only
+    /// possible before the accordion has ever run).
+    private var folderMiniBarFolder: ChatFolder? {
+        guard !isSelecting else { return nil }
+        return folders.first {
+            offscreenFolderHeaderIds.contains($0.id) && !collapsedFolderIds.contains($0.id)
+        }
+    }
+
+    /// Top-aligned overlay for both list layouts: measures the list's visible
+    /// top edge (the probe threshold — the GeometryReader content respects
+    /// the safe area, so its global minY IS "just under the nav bar") and
+    /// floats the mini-bar when an expanded group's header is scrolled out.
+    /// Pure overlay: the List's structure is untouched, and everything but
+    /// the bar itself passes touches through.
+    private func folderMiniBarOverlay(_ scrollProxy: ScrollViewProxy) -> some View {
+        GeometryReader { geo in
+            let topY = geo.frame(in: .global).minY
+            ZStack(alignment: .top) {
+                if let folder = folderMiniBarFolder {
+                    folderMiniBar(for: folder, scrollProxy: scrollProxy)
+                        .frame(maxWidth: .infinity)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .top)
+            .onAppear {
+                folderMiniBarTopY = topY
+                folderListBottomY = geo.frame(in: .global).maxY
+            }
+            .onChange(of: topY) { folderMiniBarTopY = $0 }
+            .onChange(of: geo.frame(in: .global).maxY) { folderListBottomY = $0 }
+        }
+    }
+
+    /// Composed-icon glyphs for the mini-bar, resolved from the memoized
+    /// groups (same aggregation that feeds the home card, so the two icons
+    /// can't drift). The memo box may briefly hold the PREVIOUS evaluation's
+    /// groups mid-update — visually identical for an icon tint, and the next
+    /// evaluation converges.
+    private func folderMiniBarGlyphs(_ folderId: String) -> [FolderGlyph] {
+        sidebarGroupsMemo.groups.first { $0.folderId == folderId }?.glyphs ?? []
+    }
+
+    /// The floating mini-bar, 48pt capsule with TWO interaction zones:
+    /// icon + name (leading) scrolls the list back to the group's header;
+    /// the trailing filled-circle chevron collapses the group. Split per the
+    /// redesign — the whole-bar-collapses behavior made "where am I" and
+    /// "close this" the same target.
+    private func folderMiniBar(for folder: ChatFolder, scrollProxy: ScrollViewProxy) -> some View {
+        HStack(spacing: 8) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    scrollProxy.scrollTo("folderHeader-\(folder.id)", anchor: .top)
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    FolderComposedIcon(glyphs: folderMiniBarGlyphs(folder.id), diameter: 30)
+                    // Folder names are user data — verbatim.
+                    Text(folder.name)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color(UIColor.label))
+                        .lineLimit(1)
+                }
+                // Widen the tap zone to everything left of the chevron.
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                // Retract the mark ourselves: if the header cell is culled
+                // there is no probe alive to do it, and the display guard
+                // alone would leave a stale entry pinning the NEXT
+                // expansion's bar on.
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    _ = offscreenFolderHeaderIds.remove(folder.id)
+                }
+                toggleFolderCollapsed(folder.id)
+            } label: {
+                Image(systemName: "chevron.up")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color(UIColor.secondaryLabel))
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(Color(UIColor.tertiarySystemFill)))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("Collapse Group"))
+        }
+        .padding(.leading, 10)
+        .padding(.trailing, 8)
+        .frame(height: 48)
+        .frame(maxWidth: 320)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(Capsule().stroke(Color(UIColor.separator).opacity(0.5), lineWidth: 0.5))
+        .shadow(color: Color.black.opacity(0.15), radius: 8, y: 2)
+        .padding(.top, 8)
+        .padding(.horizontal, 24)
+    }
 
     /// [T-ios-session-list-equatable-jank] Rebuild the id→ChatSession cache.
     /// Called from `.onChange(of: sessions)` — NOT per body eval — so the
@@ -1164,12 +2638,31 @@ struct ContentView: View {
     }
 
     /// Plain List with NavigationLink for stack (iPhone) layout.
+    /// ScrollViewReader feeds the mini-bar's "back to header" jump; wrapping
+    /// the List is inert otherwise (no layout/behavior change).
     private var stackList: some View {
+        ScrollViewReader { scrollProxy in
         List {
             // [T-ios-session-list-equatable-jank] id-list projection — see splitList.
             let groups = groupedSessionIDs(filteredSessions)
             ForEach(Array(groups.enumerated()), id: \.offset) { index, group in
                 Section {
+                    // Folder card as the section's FIRST ROW, not its header:
+                    // plain-List headers carry platform-specific chrome
+                    // (spacing/padding differ between iPhone, iPad sidebar and
+                    // Catalyst), which visibly detached the card from its
+                    // member rows on iPad/macOS. Row-to-row adjacency is a
+                    // guaranteed 0pt on every platform, so the container
+                    // segments actually weld. (Cost: the card no longer pins
+                    // while its members scroll — acceptable, accordion keeps
+                    // sections short.)
+                    if group.folderId != nil, !isSelecting {
+                        folderSectionHeader(group, scrollProxy: scrollProxy)
+                            .listRowInsets(EdgeInsets())
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .modifier(SelectionDisabledIfAvailable())
+                    }
                     ForEach(group.ids, id: \.self) { sessionId in
                         // [T-ios-session-list-equatable-jank] Resolve via the
                         // @State cache (sessionForRow), NOT a captured
@@ -1197,6 +2690,17 @@ struct ContentView: View {
                                 // transaction flush from unrelated ContentView
                                 // state churn doesn't deep-compare ChatSession.
                                 .equatable()
+                                // Entry D: long-press then move = drag the
+                                // session id (never the ChatSession value —
+                                // same id-only discipline as the list
+                                // projection and the menu's value-semantics
+                                // constraint). The SYSTEM arbitrates against
+                                // .contextMenu on the same press: hold still →
+                                // menu, hold then move → drag. Do not replace
+                                // with a hand-rolled gesture sequence — the
+                                // gesture layer is where system gestures are
+                                // beaten (see the WebView sheet-dismiss fix).
+                                .draggable(session.id)
                                 .overlay {
                                     if regeneratingTitleSessionId == session.id {
                                         ZStack {
@@ -1211,7 +2715,13 @@ struct ContentView: View {
                                 )
                             .listRowInsets(EdgeInsets())
                             .listRowSeparator(.hidden)
-                            .listRowBackground(Color(.systemBackground))
+                            .listRowBackground(Group {
+                                if group.folderId != nil {
+                                    FolderMemberRowBackground(isLast: sessionId == group.ids.last)
+                                } else {
+                                    Color(.systemBackground)
+                                }
+                            })
                             .contextMenu {
                                 // [T-ios-crash-contextmenu-uaf] Value-only menu view,
                                 // no closure captures — see SessionContextMenu.
@@ -1225,7 +2735,18 @@ struct ContentView: View {
                         }  // if let session
                     }
                 } header: {
-                    sectionHeader(index: index, group: group)
+                    // Folder groups render their card as the section's first
+                    // ROW (above); the header slot serves the date buckets,
+                    // the select-mode select-all, and — on the first folder
+                    // group only — the "Groups" divider label.
+                    if group.folderId == nil || isSelecting {
+                        sectionHeader(index: index, group: group)
+                    } else if group.showsGroupsHeader {
+                        Text("Groups")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color(UIColor.secondaryLabel))
+                            .textCase(nil)
+                    }
                 }
             }
 
@@ -1240,6 +2761,7 @@ struct ContentView: View {
         #endif
         .opacity(didInitialLoad ? 1 : 0)
         .overlay { if didInitialLoad, filteredSessions.isEmpty, !isSearching { emptyState } }
+        .overlay(alignment: .top) { folderMiniBarOverlay(scrollProxy) }
         .safeAreaInset(edge: .bottom) { if isSelecting { selectionToolbar } else { fabRow } }
         // [T-home-fab-keyboard-inset] Mirror of the voice panel's structural
         // immunity (604a9947 / T-voice-bg-fg-gap): with the inline search bar
@@ -1251,10 +2773,13 @@ struct ContentView: View {
         .ignoresSafeArea(.keyboard, edges: showSearchBar ? [] : .bottom)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { sidebarToolbarContent }
+        }
     }
 
     /// Selection-bound List for split (iPad) layout.
+    /// ScrollViewReader: same mini-bar jump wiring as stackList.
     private var splitList: some View {
+        ScrollViewReader { scrollProxy in
         List(selection: $selectedSessionId) {
             // [T-ios-session-list-equatable-jank] Diff a (label, ids) projection
             // so SwiftUI compares a [String] id list, not a [ChatSession] value
@@ -1262,6 +2787,17 @@ struct ContentView: View {
             let groups = groupedSessionIDs(displaySessions)
             ForEach(Array(groups.enumerated()), id: \.offset) { index, group in
                 Section {
+                    // Folder card as first row — see the sidebar list's
+                    // comment: plain-List headers carry platform-specific
+                    // chrome and detached the card from its members on
+                    // iPad/macOS; row adjacency welds on every platform.
+                    if group.folderId != nil, !isSelecting {
+                        folderSectionHeader(group, scrollProxy: scrollProxy)
+                            .listRowInsets(EdgeInsets())
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .modifier(SelectionDisabledIfAvailable())
+                    }
                     ForEach(group.ids, id: \.self) { sessionId in
                         // [T-ios-session-list-equatable-jank] Resolve via the
                         // @State cache (sessionForRow), NOT a captured
@@ -1290,6 +2826,17 @@ struct ContentView: View {
                                 // transaction flush from unrelated ContentView
                                 // state churn doesn't deep-compare ChatSession.
                                 .equatable()
+                                // Entry D: long-press then move = drag the
+                                // session id (never the ChatSession value —
+                                // same id-only discipline as the list
+                                // projection and the menu's value-semantics
+                                // constraint). The SYSTEM arbitrates against
+                                // .contextMenu on the same press: hold still →
+                                // menu, hold then move → drag. Do not replace
+                                // with a hand-rolled gesture sequence — the
+                                // gesture layer is where system gestures are
+                                // beaten (see the WebView sheet-dismiss fix).
+                                .draggable(session.id)
                                 .overlay {
                                     if regeneratingTitleSessionId == session.id {
                                         ZStack {
@@ -1341,18 +2888,52 @@ struct ContentView: View {
                                 .listRowInsets(EdgeInsets())
                                 .listRowSeparator(.hidden)
                                 .listRowBackground(
-                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .fill(isSessionHighlighted(session.id)
-                                              ? Color(red: 183/255.0, green: 175/255.0, blue: 150/255.0).opacity(0.3)
-                                              : Color.clear)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2)
+                                    ZStack {
+                                        if group.folderId != nil {
+                                            let isLast = sessionId == group.ids.last
+                                            FolderMemberRowBackground(isLast: isLast)
+                                            // Flush selection band inside the group;
+                                            // the last member's band takes the
+                                            // container's bottom radii so it stays
+                                            // wrapped by the corners.
+                                            if isSessionHighlighted(session.id) {
+                                                UnevenRoundedRectangle(
+                                                    topLeadingRadius: 0,
+                                                    bottomLeadingRadius: isLast ? 16 : 0,
+                                                    bottomTrailingRadius: isLast ? 16 : 0,
+                                                    topTrailingRadius: 0,
+                                                    style: .continuous
+                                                )
+                                                .fill(Color(red: 183/255.0, green: 175/255.0, blue: 150/255.0).opacity(0.3))
+                                                .padding(.horizontal, 6)
+                                                .padding(.bottom, isLast ? 4 : 0)
+                                            }
+                                        } else {
+                                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                                .fill(isSessionHighlighted(session.id)
+                                                      ? Color(red: 183/255.0, green: 175/255.0, blue: 150/255.0).opacity(0.3)
+                                                      : Color.clear)
+                                                .padding(.horizontal, 6)
+                                                .padding(.vertical, 2)
+                                        }
+                                    }
                                 )
                         }
                         }  // if let session
                     }
                 } header: {
-                    sectionHeader(index: index, group: group)
+                    // Folder groups render their card as the section's first
+                    // ROW (above); the header slot serves the date buckets,
+                    // the select-mode select-all, and — on the first folder
+                    // group only — the "Groups" divider label.
+                    if group.folderId == nil || isSelecting {
+                        sectionHeader(index: index, group: group)
+                    } else if group.showsGroupsHeader {
+                        Text("Groups")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color(UIColor.secondaryLabel))
+                            .textCase(nil)
+                    }
                 }
             }
 
@@ -1361,6 +2942,7 @@ struct ContentView: View {
         .navigationSplitViewColumnWidth(min: 340, ideal: 380, max: 500)
         .opacity(didInitialLoad ? 1 : 0)
         .overlay { if didInitialLoad, displaySessions.isEmpty, !isSearching { emptyState } }
+        .overlay(alignment: .top) { folderMiniBarOverlay(scrollProxy) }
         .safeAreaInset(edge: .bottom) { if isSelecting { selectionToolbar } else { fabRow } }
         // [T-home-fab-keyboard-inset] Same structural immunity as the compact
         // list above — see that call site for the full rationale. On iPad the
@@ -1369,6 +2951,7 @@ struct ContentView: View {
         .ignoresSafeArea(.keyboard, edges: showSearchBar ? [] : .bottom)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { sidebarToolbarContent }
+        }
     }
     // MARK: - Sidebar Toolbar
 
@@ -1785,11 +3368,7 @@ struct ContentView: View {
         if isWideLayout {
             openSession(newId)
         } else {
-            var tx = Transaction()
-            tx.disablesAnimations = true
-            withTransaction(tx) {
-                navigationPath = NavigationPath([newId])
-            }
+            commitNavigationPath(NavigationPath([newId]))
             currentStackSessionId = newId
         }
     }
@@ -1800,6 +3379,17 @@ struct ContentView: View {
     /// the unwind is observable, and a separate observer for
     /// `pendingDispatch` opens the new session.
     private func popToHomeForQuickAction() {
+        // [T-ios-bg-nav-push-watchdog] A pop supersedes any push still held
+        // back from the background — flushing it later would resurrect a
+        // session the workflow just asked us to leave. Dropped before the
+        // `alreadyHome` check so the early return can't strand it either.
+        //
+        // Popping itself is NOT deferred: it tears a screen down rather than
+        // laying a new one out (so it doesn't carry the cost this gate exists
+        // to keep out of the watchdog window), and the quick-action state
+        // machine advances from the `onChange(of: navigationPath)` observer
+        // this write triggers — holding it back would stall `markHome`.
+        pendingBackgroundNavigation = nil
         let alreadyHome = isWideLayout ? (selectedSessionId == nil) : navigationPath.isEmpty
         if alreadyHome {
             // Same-runloop advance — no SwiftUI commit needed.
@@ -1831,14 +3421,91 @@ struct ContentView: View {
         if isWideLayout {
             openSession(newId)
         } else {
-            var tx = Transaction()
-            tx.disablesAnimations = true
-            withTransaction(tx) {
-                navigationPath = NavigationPath([newId])
-            }
+            commitNavigationPath(NavigationPath([newId]))
             currentStackSessionId = newId
         }
         QuickActionWorkflow.shared.attachTargetSession(newId)
+    }
+
+    /// Switch to `id` as the one and only session on screen, replacing whatever
+    /// is currently there.
+    ///
+    /// [T-ios-moveto-transfer-race] Use this for any "jump straight to session
+    /// X" navigation that can fire while another session is already on the
+    /// stack (move-to, notification/intent opens). The compact branch must NOT
+    /// do "animated pop, then push after a blind delay": the push lands inside
+    /// the ~0.35s pop animation and SwiftUI coalesces or drops it, leaving the
+    /// user on the session list with `currentStackSessionId` already updated —
+    /// which then makes the retry guard swallow a second attempt at the same
+    /// target. Replacing the path atomically inside a disabled-animation
+    /// transaction is the pattern `handleNewChatRequest` already proved safe,
+    /// and it commits in one runloop with no window for the race.
+    /// [T-ios-bg-nav-push-watchdog] Commit a compact-layout `navigationPath`
+    /// change, or hold it until the app is active again.
+    ///
+    /// Every compact navigation helper routes its path write through here so
+    /// the background gate cannot be bypassed by adding a new caller. See
+    /// `pendingBackgroundNavigation` for the crash evidence.
+    ///
+    /// `currentStackSessionId` is still assigned by the callers, exactly as
+    /// before — it is the app's own "which session did we navigate to" record,
+    /// read by the quick-action / move-to retry guards, and it must reflect the
+    /// requested target immediately even when the UIKit push is deferred.
+    /// `previousStackSessionId` stays in lockstep because it is maintained by
+    /// the `onChange(of: navigationPath)` observer, which simply runs later —
+    /// when the deferred path is actually committed.
+    private func commitNavigationPath(_ newPath: NavigationPath) {
+        guard UIApplication.shared.applicationState == .active else {
+            // Coalesce: only the newest requested destination matters. An
+            // earlier pending push that never became visible has nothing to
+            // preserve. Overwriting also restarts the TTL, which is correct —
+            // the newest request is the one whose freshness we care about.
+            pendingBackgroundNavigation = (newPath, Date())
+            shareLog.info("🔄SESSION deferring nav commit — app not active (count=\(newPath.count))")
+            return
+        }
+        pendingBackgroundNavigation = nil
+        var tx = Transaction()
+        tx.disablesAnimations = true
+        withTransaction(tx) {
+            navigationPath = newPath
+        }
+    }
+
+    /// Apply a navigation change that was held back while backgrounded.
+    /// Called from the `scenePhase == .active` observer.
+    private func flushPendingBackgroundNavigation() {
+        guard let pending = pendingBackgroundNavigation else { return }
+        // Re-check rather than trust the caller: the `.onAppear` backstop can
+        // run while still backgrounded, and committing there would reinstate
+        // exactly the synchronous background push this gate exists to prevent.
+        // Keep it pending — a later flush will take it.
+        guard UIApplication.shared.applicationState == .active else { return }
+        // Consume before the staleness check, not after: an expired request is
+        // dropped for good. Leaving it parked would let a later foreground —
+        // which is even further from the original intent — try again.
+        pendingBackgroundNavigation = nil
+        let age = Date().timeIntervalSince(pending.deferredAt)
+        guard age <= Self.pendingBackgroundNavigationTTL else {
+            shareLog.info("🔄SESSION discarding deferred nav commit — stale (age=\(Int(age))s > \(Int(Self.pendingBackgroundNavigationTTL))s, count=\(pending.path.count))")
+            return
+        }
+        shareLog.info("🔄SESSION flushing deferred nav commit (count=\(pending.path.count) age=\(Int(age))s)")
+        var tx = Transaction()
+        tx.disablesAnimations = true
+        withTransaction(tx) {
+            navigationPath = pending.path
+        }
+    }
+
+    private func switchToSession(_ id: String) {
+        if isWideLayout {
+            openSession(id)
+            return
+        }
+        searchFocused = false
+        commitNavigationPath(NavigationPath([id]))
+        currentStackSessionId = id
     }
 
     /// Opens a session in the appropriate layout mode.
@@ -1858,7 +3525,12 @@ struct ContentView: View {
             selectedSessionId = id
             draftLog.info("🔑DRAFT openSession DONE selectedSessionId=\(id)")
         } else {
-            navigationPath.append(id)
+            // [T-ios-bg-nav-push-watchdog] Append onto whatever the path WILL
+            // be — a deferred commit is the newer truth, so basing the append
+            // on the still-stale live `navigationPath` would drop it.
+            var next = pendingBackgroundNavigation?.path ?? navigationPath
+            next.append(id)
+            commitNavigationPath(next)
             currentStackSessionId = id
         }
     }
@@ -1948,6 +3620,10 @@ struct ContentView: View {
                 isSelecting = true
                 selectedIds = [sid]
                 scrollToId = sid
+            case .moveToFolder(let sid):
+                let filed = sessions.first(where: { $0.id == sid })?.isFiled ?? false
+                folderPickerRequest = FolderPickerRequest(
+                    sessionIds: [sid], fromMultiSelect: false, anyFiled: filed)
             case .delete(let sid):
                 print("[DELETE] Context menu tapped for session: \(sid)")
                 let info = Self.computeDeleteInfo(for: [sid], totalSessions: sessions.count)
@@ -2056,7 +3732,16 @@ struct ContentView: View {
         shareLog.info("[Share] processPendingShare called")
 
         guard let pending = SharedContainerStore.loadPendingShare() else {
-            shareLog.warning("[Share] loadPendingShare returned nil — no data from extension")
+            // [T-share-double-raise] Reaching here with a buffer already staged
+            // is the DUPLICATE pass, not a failure: the record was consumed and
+            // cleared microseconds ago by the first pass. Say so explicitly —
+            // the old "no data from extension" wording made a benign duplicate
+            // look like the extension had written nothing.
+            if shareCoordinator.pendingShareBuffer != nil {
+                shareLog.info("[Share] processPendingShare: record already consumed, buffer staged (duplicate raise) — no-op")
+            } else {
+                shareLog.warning("[Share] loadPendingShare returned nil — no data from extension")
+            }
             shareCoordinator.hasPendingShare = false
             return
         }
@@ -2156,10 +3841,17 @@ struct ContentView: View {
         }
     }
 
+    // title/subtitle must stay LocalizedStringKey, not String. A string literal at
+    // the call site localizes fine on its own, but routing it through a String
+    // parameter erases that: `Text(String)` stores the value verbatim and never
+    // consults the string table, so these steps rendered English even though
+    // Localizable.xcstrings has all 8 locales for these keys. Typing the parameter
+    // as LocalizedStringKey keeps the literals (both branches of the `isDone`
+    // ternaries included) resolving as keys.
     private func setupStep(
         number: Int,
-        title: String,
-        subtitle: String,
+        title: LocalizedStringKey,
+        subtitle: LocalizedStringKey,
         isDone: Bool,
         action: @escaping () -> Void
     ) -> some View {
@@ -2291,6 +3983,7 @@ struct ContentView: View {
         sessionRefreshInFlight = true
         Task(priority: .utility) { @MainActor in
             sessions = await ChatStore.shared.listSessions()
+            folders = await ChatStore.shared.listFolders()
             sessionRefreshInFlight = false
             if sessionRefreshPending {
                 sessionRefreshPending = false
@@ -2318,7 +4011,211 @@ struct ContentView: View {
     @State private var searchDragOffset: CGFloat = 0
     @State private var searchDidDrag = false
 
+    /// Namespace tying the search FAB and the expanded search bar together as one
+    /// glass fragment, so the two morph instead of cross-fading (iOS 26+).
+    @Namespace private var fabGlassNamespace
+
+    /// Brand fill for the new-chat FAB. On iOS 26 this becomes the glass TINT
+    /// rather than an opaque fill, so the button keeps its colour identity while
+    /// the system material supplies the depth. Below 26 it stays the flat fill
+    /// it has always been.
+    private static let newChatBrandColor = Color(UIColor { $0.userInterfaceStyle == .dark
+        ? UIColor(red: 80/255, green: 76/255, blue: 66/255, alpha: 1)
+        : UIColor(red: 183/255, green: 175/255, blue: 150/255, alpha: 1) })
+
+    /// Glass TINT for the new-chat FAB — deliberately NOT `newChatBrandColor`.
+    ///
+    /// Tinting with the raw brand colour at full strength produced an opaque
+    /// disc with no refraction at all (measured on device: ring pixel std 1.1
+    /// against ~20 for untinted glass), which is what read as "not glass".
+    /// Simply lowering that colour's alpha fixed light mode but vanished in
+    /// dark: the dark brand value (80/76/66) sits so close to the near-black
+    /// page that 0.15–0.25 alpha yielded a warmth (R−B) of only 1.6–3.1,
+    /// indistinguishable from the untinted button.
+    ///
+    /// So the dark variant is lifted and warmed rather than just faded. At
+    /// alpha 0.30 the measured result is better than the old opaque version on
+    /// BOTH axes in dark mode — warmth 22.6 vs 14.0 (more brand identity) with
+    /// ring std 9.3 vs 1.1 (real show-through) — and light mode keeps a warm
+    /// cast (warmth 9.9) while staying visibly translucent.
+    /// `Glass.tint` honours the colour's alpha, so the strength is baked in here.
+    private static let newChatGlassTint = Color(UIColor { $0.userInterfaceStyle == .dark
+        ? UIColor(red: 196/255, green: 176/255, blue: 120/255, alpha: 0.30)
+        : UIColor(red: 183/255, green: 175/255, blue: 150/255, alpha: 0.30) })
+
+    /// Clear/dismiss control inside the expanded search capsule.
+    ///
+    /// A bare glyph with NO background of its own, which is what system search
+    /// fields do. The alternatives were compared on device: `.buttonStyle(.glass)`
+    /// and a small `glassEffect` circle both put a second glass surface INSIDE
+    /// the already-glass capsule, and glass-on-glass read as a raised, competing
+    /// control — noticeably so in dark mode — for what is only a small clear
+    /// action. Letting the capsule stay the single glass surface keeps the row
+    /// coherent with the FABs beside it.
+    ///
+    /// `xmark` rather than the old `xmark.circle.fill`: the filled circle was
+    /// itself a solid background, the very thing that clashed with the glass.
+    /// Sub-26 keeps the original filled-circle look, where there is no glass for
+    /// it to fight with.
+    @ViewBuilder
+    private var searchClearButton: some View {
+        if #available(iOS 26.0, *) {
+            Button { dismissSearch() } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    // [T-ios-search-bar-glass-hit-hole] The frame alone was not
+                    // a tap target: with `.buttonStyle(.plain)` and no fill,
+                    // hit-testing follows the DRAWN GLYPH, so only the ~13pt
+                    // strokes of the "xmark" were live and the rest of this box
+                    // was a hole. Height goes to 44 (Apple's minimum) and
+                    // `contentShape` makes the whole box tappable; the glyph is
+                    // unchanged, so this is hit area only, no visual change.
+                    // The bar is 56pt tall, so 44 fits without growing it.
+                    .frame(width: 32, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        } else {
+            Button { dismissSearch() } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 32, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    /// Glyph colour for the new-chat FAB.
+    ///
+    /// Was hardcoded `.white`, which worked when the button was an opaque
+    /// mid-tone brand disc. Once the fill became 0.30-alpha glass the light-mode
+    /// surface turned pale and a white glyph nearly vanished into it.
+    ///
+    /// Note this can't simply be `Color(UIColor.label)` like the search FAB uses:
+    /// that FAB is glass on 26+ AND `secondarySystemBackground` below it, both
+    /// light-ish surfaces, so `label` is right in every case. The new-chat FAB's
+    /// sub-26 fallback is still the OPAQUE brand colour (183/175/150 light,
+    /// 80/76/66 dark) — mid-tone in light mode, where `label` (near-black) has
+    /// less contrast than the white that shipped there for years. So the choice
+    /// is made per rendering path: adaptive on glass, unchanged white on the
+    /// opaque fallback.
+    private static var newChatIconColor: Color {
+        if #available(iOS 26.0, *) {
+            // Translucent glass: follow the interface style. Not pure black in
+            // light mode — the brand surface is warm, so a slightly softened
+            // near-black sits better on it than #000 while still reading clearly.
+            return Color(UIColor { $0.userInterfaceStyle == .dark
+                ? UIColor.white
+                : UIColor(white: 0.13, alpha: 1) })
+        } else {
+            // Opaque brand disc, as before.
+            return .white
+        }
+    }
+
+    /// Circular FAB surface wrapping its `icon`.
+    ///
+    /// The icon has to be passed IN rather than `.overlay`-ed on afterwards:
+    /// `.glassEffect` draws the material over the view it modifies, so an
+    /// overlay applied to the surface ends up UNDER the glass and disappears
+    /// (verified on device — the tinted disc rendered with no glyph, pixel
+    /// variance ~1.2 across its centre). Putting the icon inside means the glass
+    /// is the background and the glyph rides on top of it.
+    ///
+    /// iOS 26+: `.glassEffect(.regular[.tint], in: .circle)`. The old manual
+    /// `.shadow` is dropped on that path on purpose — Liquid Glass renders its
+    /// own shadow/edge, and stacking the hand-rolled one on top reads as a dark
+    /// halo rather than depth. Sub-26 keeps the original opaque circle AND its
+    /// shadow, unchanged.
+    ///
+    /// Unlike `FolderSurface`, live glass is safe here: the FAB floats in a
+    /// `safeAreaInset` over a stable backdrop and never scrolls past
+    /// heterogeneous content, so the flicker that forced that type onto a
+    /// sampled constant does not apply.
+    @ViewBuilder
+    private func fabCircleSurface<Icon: View>(
+        tint: Color?,
+        fallbackFill: Color,
+        fallbackShadowOpacity: Double,
+        @ViewBuilder icon: () -> Icon
+    ) -> some View {
+        if #available(iOS 26.0, *) {
+            icon()
+                .frame(width: 56, height: 56)
+                .glassEffect(
+                    tint.map { Glass.regular.tint($0) } ?? Glass.regular,
+                    in: .circle
+                )
+                // [T-fab-glass-contextmenu-regression] Without this the long-press
+                // menu on the new-chat FAB stops opening.
+                //
+                // The pre-glass label was `Circle().fill(...)`, a filled shape,
+                // so its hit-test region was the whole 56x56 disc and
+                // `.contextMenu` (attached to that same view) picked up a
+                // long-press anywhere on the button. The glass version's content
+                // is a bare `Image` — `.frame` only reserves space, and
+                // `.glassEffect` draws a material without contributing a
+                // hit-testable shape — so the only interactive pixels left were
+                // the glyph's own strokes. A long press on the surrounding
+                // (visually filled) area hit nothing and no menu appeared.
+                //
+                // Tapping still worked, which is what made this look like a
+                // gesture-priority fight with glassEffect rather than a hit-test
+                // hole: DraggableFAB re-applies `.frame` and `.onTapGesture` at
+                // ITS level, one layer out, so taps were being caught there.
+                // `.contextMenu` is the only one of the three attached inside.
+                //
+                // Restoring an explicit circular content shape gives the glass
+                // surface the same hit region the filled Circle had. Applied
+                // AFTER glassEffect so it covers the rendered disc.
+                .contentShape(.circle)
+                // …and the same shape again for the context-menu PREVIEW.
+                // `.contentShape(_:)` only sets the INTERACTION region; the
+                // lifted platter resolves its shape separately and otherwise
+                // falls back to the view's rectangular bounds, which is what
+                // showed a grey rounded-rect slab peeking out from under the
+                // circular button on long press. `ChatMessageRow` already
+                // declares the two shapes separately for the same reason.
+                .contentShape(.contextMenuPreview, Circle())
+        } else {
+            Circle()
+                .fill(fallbackFill)
+                .overlay { icon() }
+                .shadow(color: .black.opacity(fallbackShadowOpacity), radius: 8, x: 0, y: 4)
+        }
+    }
+
+    @ViewBuilder
     private var fabRow: some View {
+        // [T-fab-glass-contextmenu-regression] NO GlassEffectContainer here.
+        //
+        // The row was briefly wrapped in `GlassEffectContainer(spacing: 10)` so the
+        // search FAB and the expanded search bar (which share a `glassEffectID`)
+        // would morph into one another like the system Dock. That container is what
+        // broke the new-chat FAB's long-press "New Chat with Group" menu.
+        //
+        // Verified on device by A/B-ing the view tree with the debug inspector, same
+        // screen both times, looking for views owning a `UIContextMenuInteraction`:
+        //   with the container:  [WKContentView, UpdateCoalescingCollectionView]
+        //   without it:          [WKContentView, HostingView, UpdateCoalescingCollectionView]
+        // The `HostingView` that hosts this row only gets its context-menu
+        // interaction when the container is absent — inside it, SwiftUI never
+        // materialises one, so no long press can ever raise the menu no matter how
+        // the hit region is shaped. (That is why the earlier `.contentShape(.circle)`
+        // fix did not help: it widened a hit region for an interaction that was
+        // never created.)
+        //
+        // Dropping the container costs only the FAB→search-bar morph animation,
+        // which falls back to the scale+opacity transition the row already declares.
+        // The glass MATERIAL is unaffected — `.glassEffect` does not require a
+        // container, and the FABs still render as glass (verified by screenshot).
+        fabRowContent
+    }
+
+    @ViewBuilder
+    private var fabRowContent: some View {
         ZStack {
             // New chat FAB (draggable)
             DraggableFAB(
@@ -2328,19 +4225,18 @@ struct ContentView: View {
             ) {
                 if !fabDidDrag { openSession(Self.makeNewSessionId()) }
             } label: {
-                Circle()
-                    .fill(Color(UIColor { $0.userInterfaceStyle == .dark
-                        ? UIColor(red: 80/255, green: 76/255, blue: 66/255, alpha: 1)
-                        : UIColor(red: 183/255, green: 175/255, blue: 150/255, alpha: 1) }))
-                    .overlay {
-                        Image(systemName: {
-                            if #available(iOS 17.0, *) { return "bubble.left.and.text.bubble.right" }
-                            return "plus.message.fill"
-                        }())
-                            .font(.system(size: 22, weight: .semibold))
-                            .foregroundStyle(.white)
-                    }
-                    .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
+                fabCircleSurface(
+                    tint: Self.newChatGlassTint,
+                    fallbackFill: Self.newChatBrandColor,
+                    fallbackShadowOpacity: 0.2
+                ) {
+                    Image(systemName: {
+                        if #available(iOS 17.0, *) { return "bubble.left.and.text.bubble.right" }
+                        return "plus.message.fill"
+                    }())
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(Self.newChatIconColor)
+                }
                     .contextMenu {
                         let groups = Array(ProviderConfigStore.shared.config.modelGroups.prefix(10))
                         if !groups.isEmpty {
@@ -2379,16 +4275,39 @@ struct ContentView: View {
                                 .autocorrectionDisabled()
                                 .focused($searchFocused)
                                 .onChange(of: searchText) { _ in scheduleSearch() }
-                            Button { dismissSearch() } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundStyle(.secondary)
-                            }
+                            searchClearButton
                         }
-                        .padding(.horizontal, 18)
+                        // [T-ios-search-bar-glass-hit-hole] Trailing padding is
+                        // trimmed to 8 so the X button's 32pt-wide target sits
+                        // closer to the capsule edge instead of behind 18pt of
+                        // dead space (the button keeps its own internal
+                        // padding, so the glyph barely moves). Leading stays 18
+                        // — that side holds the magnifier and needs the inset.
+                        .padding(.leading, 18)
+                        .padding(.trailing, 8)
                         .frame(width: barWidth, height: fabSize)
-                        .background(Color(UIColor.secondarySystemBackground))
-                        .clipShape(Capsule())
-                        .shadow(color: .black.opacity(0.1), radius: 6, x: 0, y: 2)
+                        .modifier(SearchBarSurface())
+                        // [T-ios-search-bar-glass-hit-hole] `glassEffect(in:)`
+                        // RENDERS a capsule but contributes no hit region of
+                        // its own, and this row sits in a `safeAreaInset` over
+                        // the session List — an inset does not swallow touches
+                        // where it has nothing hit-testable. So every point of
+                        // the bar not covered by a real control (icon,
+                        // TextField, X button) passed the touch straight
+                        // through to the cell scrolling underneath and opened
+                        // whatever session or folder was there.
+                        //
+                        // Declaring the capsule's shape restores the hit region
+                        // to match what is drawn. NOTE this is necessary but
+                        // not sufficient on its own: verified on device that
+                        // the capsule still cannot fully consume taps (the
+                        // a11y tree exposes no element for it, only its
+                        // children), so the durable part of this fix is the
+                        // enlarged, explicitly-shaped X target in
+                        // `searchClearButton` — that is what the user actually
+                        // aims at, and it now hits at all four corners.
+                        .contentShape(.capsule)
+                        .modifier(FABGlassMorphID(namespace: fabGlassNamespace))
                         .position(x: barX + barWidth / 2, y: fabSize / 2)
                     }
                     .transition(.asymmetric(
@@ -2408,14 +4327,16 @@ struct ContentView: View {
                             withAnimation(.easeInOut(duration: 0.2)) { showSearchBar = true }
                         }
                     } label: {
-                        Circle()
-                            .fill(Color(UIColor.secondarySystemBackground))
-                            .overlay {
-                                Image(systemName: "magnifyingglass")
-                                    .font(.system(size: 22, weight: .semibold))
-                                    .foregroundStyle(Color(UIColor.label))
-                            }
-                            .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
+                        fabCircleSurface(
+                            tint: nil,
+                            fallbackFill: Color(UIColor.secondarySystemBackground),
+                            fallbackShadowOpacity: 0.15
+                        ) {
+                            Image(systemName: "magnifyingglass")
+                                .font(.system(size: 22, weight: .semibold))
+                                .foregroundStyle(Color(UIColor.label))
+                        }
+                            .modifier(FABGlassMorphID(namespace: fabGlassNamespace))
                     }
                     .transition(.asymmetric(
                         insertion: .scale(scale: 0.85, anchor: fabOnLeft ? .leading : .trailing).combined(with: .opacity),
@@ -2452,10 +4373,10 @@ struct ContentView: View {
     // MARK: - Section Header
 
     @ViewBuilder
-    private func sectionHeader(index: Int, group: (label: String, ids: [String])) -> some View {
+    private func sectionHeader(index: Int, group: SidebarGroup) -> some View {
         if isSelecting {
             let groupIds = Set(group.ids)
-            let allSelected = groupIds.isSubset(of: selectedIds)
+            let allSelected = !groupIds.isEmpty && groupIds.isSubset(of: selectedIds)
             Button {
                 if allSelected {
                     selectedIds.subtract(groupIds)
@@ -2469,9 +4390,16 @@ struct ContentView: View {
                         .foregroundStyle(allSelected ? Color.accentColor : Color(UIColor.tertiaryLabel))
                     // group.label is a stable English key (used for logic like
                     // == "Pinned"); localize only at display via LocalizedStringKey.
-                    Text(LocalizedStringKey(group.label))
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Color(UIColor.secondaryLabel))
+                    // Folder names are user data — render verbatim, not as a key.
+                    if group.folderId != nil {
+                        Text(group.label)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color(UIColor.secondaryLabel))
+                    } else {
+                        Text(LocalizedStringKey(group.label))
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color(UIColor.secondaryLabel))
+                    }
                 }
                 .textCase(nil)
             }
@@ -2490,6 +4418,342 @@ struct ContentView: View {
                     .foregroundStyle(Color(UIColor.secondaryLabel))
             }
             .textCase(nil)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(dropTargetFolderId == "" ? Color.accentColor.opacity(0.18) : Color.clear)
+            )
+            // Dropping on a date-bucket header moves the sessions OUT of any
+            // folder — the drag gesture works both directions, otherwise
+            // moving out would still require a trip through the menu.
+            .dropDestination(for: String.self) { sessionIds, _ in
+                Task { @MainActor in
+                    await ChatStore.shared.setFolder(nil, forSessions: sessionIds)
+                    refreshSessionList()
+                }
+                return true
+            } isTargeted: { over in
+                if over {
+                    dropTargetFolderId = ""
+                } else if dropTargetFolderId == "" {
+                    dropTargetFolderId = nil
+                }
+            }
+        }
+    }
+
+    /// Display aggregates for the Move-to-Group picker rows: the same
+    /// composed icon glyphs and member count the home group card shows, plus
+    /// the subtitle context — the folder's description when one is set,
+    /// otherwise the newest member's title (mirroring the card's summary).
+    /// Computed once per sheet presentation, not per row.
+    private func folderPickerItems() -> [FolderPickerSheet.FolderItem] {
+        let byFolder = Dictionary(grouping: sessions.filter { $0.folderId != nil },
+                                  by: { $0.folderId! })
+        return folders.map { folder in
+            let m = (byFolder[folder.id] ?? []).sorted { $0.updatedAt > $1.updatedAt }
+            // Top-3 DISTINCT category glyphs by recency — same rule as
+            // groupedSessionIDs, so the picker icon matches the home card.
+            var glyphs: [FolderGlyph] = []
+            var seenCategories = Set<String>()
+            for s in m where seenCategories.insert(s.category ?? "").inserted {
+                let icon = sessionCategoryIcon(for: s.category)
+                glyphs.append(FolderGlyph(systemName: icon.systemName, color: icon.color))
+                if glyphs.count == 3 { break }
+            }
+            let desc = folder.desc?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return FolderPickerSheet.FolderItem(
+                folder: folder,
+                glyphs: glyphs,
+                count: m.count,
+                subtitle: desc.isEmpty ? m.first?.title : desc)
+        }
+    }
+
+    /// Folder section header: composed icon + name + count + collapse chevron,
+    /// with the collapsed-state status passthrough (running / paused / unread).
+    ///
+    /// The status badges appear ONLY when collapsed: expanded members carry
+    /// their own indicators, and duplicating them in the header would leave
+    /// the user guessing which row a header "!" refers to. Collapsing is what
+    /// hides the members' state — that's exactly when a proxy is needed.
+    /// Folder card mirroring SessionRow's frame — same 44pt icon circle, same
+    /// title/subtitle stack, same trailing date column — so a folder reads as
+    /// the same species of thing as a session. Only the content differs:
+    /// composed member-glyph icon, folder name, and a "N chats · latest
+    /// title" summary where a session shows its last message.
+    /// `scrollProxy` is forwarded to `toggleFolderCollapsed` so an expand can
+    /// re-anchor this header after the accordion removes the previously-open
+    /// folder's rows ([T-ios-folder-accordion-scroll-anchor]).
+    private func folderSectionHeader(_ group: SidebarGroup, scrollProxy: ScrollViewProxy? = nil) -> some View {
+        // Content + onTapGesture instead of a Button: the Button's own
+        // long-press handling raced the contextMenu recognizer on some
+        // platforms (long-press on the card did not reliably pop the menu).
+        // With a bare tap gesture the long-press belongs to the contextMenu
+        // alone; the accessibility action keeps the card activatable for
+        // AX clients and the debug tap harness.
+        HStack(spacing: 8) {
+                FolderComposedIcon(glyphs: group.glyphs)
+                    // Same overlay corners as SessionRow: spinner ring for
+                    // running, bottom-trailing badge for paused, top-trailing
+                    // red dot for unread — the symbols the user already knows
+                    // from session rows, in the positions they know them.
+                    // Collapsed-only: expanded members carry their own
+                    // indicators, and a header copy would leave the user
+                    // guessing which row it refers to.
+                    .overlay {
+                        if group.isCollapsed && group.anyActive {
+                            SpinningRing(color: group.glyphs.first?.color ?? .gray)
+                                .frame(width: 42, height: 42)
+                        }
+                    }
+                    .overlay(alignment: .bottomTrailing) {
+                        if group.isCollapsed && group.anyPaused {
+                            ZStack {
+                                Circle().fill(Color(UIColor.systemBackground))
+                                    .frame(width: 16, height: 16)
+                                Image(systemName: "exclamationmark.circle.fill")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(.orange)
+                            }
+                            .offset(x: 2, y: 2)
+                        }
+                    }
+                    .overlay(alignment: .topTrailing) {
+                        if group.isCollapsed && group.anyUnread {
+                            Circle()
+                                .fill(Color.red)
+                                .frame(width: 8, height: 8)
+                                .offset(x: -1, y: 1)
+                        }
+                    }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    // Folder names are user data — verbatim Text, never a
+                    // LocalizedStringKey lookup.
+                    Text(group.label)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Color(UIColor.label))
+                        .lineLimit(1)
+                    Group {
+                        if let title = group.summaryTitle {
+                            Text("\(group.totalCount) chats · \(title)")
+                        } else if group.totalCount > 0 {
+                            Text("\(group.totalCount) chats")
+                        } else {
+                            Text("Empty group")
+                        }
+                    }
+                    .font(.system(size: 14))
+                    .foregroundStyle(Color(UIColor.secondaryLabel))
+                    .lineLimit(1)
+                }
+
+                Spacer(minLength: 1)
+
+                VStack(alignment: .trailing, spacing: 6) {
+                    if let date = group.latestDate {
+                        Text(SessionRow.relativeDateImpl(date))
+                            .font(.system(size: 13))
+                            .foregroundStyle(Color(UIColor.tertiaryLabel))
+                    }
+                    HStack(spacing: 4) {
+                        if group.isFolderPinned {
+                            Image(systemName: "pin.fill")
+                                .font(.system(size: 10))
+                                .foregroundStyle(Color(UIColor.tertiaryLabel))
+                        }
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color(UIColor.tertiaryLabel))
+                            .rotationEffect(.degrees(group.isCollapsed ? -90 : 0))
+                    }
+                }
+            }
+            // Inner 10 + outer 6 = 16pt — the same lead as SessionRow's
+            // horizontal padding, so the folder icon's left edge and (via the
+            // shared 44pt icon frame + 8pt spacing) the folder TITLE both sit
+            // exactly on the session rows' alignment grid.
+            .padding(.horizontal, 10)
+            .padding(.vertical, 10)
+            .textCase(nil)
+            .contentShape(Rectangle())
+            // Mini-bar trigger: only an EXPANDED, populated group needs its
+            // header tracked (a collapsed card scrolling away is just a card).
+            .background {
+                if let fid = group.folderId, !group.isCollapsed, !group.ids.isEmpty {
+                    FolderHeaderVisibilityProbe(
+                        folderId: fid,
+                        thresholdY: folderMiniBarTopY,
+                        onVisibilityChange: setFolderHeaderOffscreen)
+                }
+            }
+            .modifier(FolderCardBackground(
+                isDropTarget: dropTargetFolderId == group.folderId,
+                isExpanded: !group.isCollapsed && !group.ids.isEmpty))
+            // Outer insets float the rounded card inside the list width —
+            // the inset frame is what separates it from the full-bleed
+            // session rows at a glance. (The glass/pre-26 card is what the
+            // pinned header shows while its members scroll under; rows
+            // passing through the 12pt gutters is the standard floating-
+            // header look, not the ghosting the old opaque background fixed.)
+            // 6pt matches the splitList selection highlight's horizontal
+            // inset, so the folder container and a selected member row share
+            // the same left/right edges instead of the container overhanging.
+            .padding(.horizontal, 6)
+            .padding(.top, 4)
+            // Expanded: no bottom gap — the card welds onto the first member
+            // row's container segment.
+            .padding(.bottom, (group.isCollapsed || group.ids.isEmpty) ? 4 : 0)
+        .onTapGesture {
+            if let fid = group.folderId { toggleFolderCollapsed(fid, scrollProxy: scrollProxy) }
+        }
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction {
+            if let fid = group.folderId { toggleFolderCollapsed(fid, scrollProxy: scrollProxy) }
+        }
+        // [T-ios-folder-accordion-scroll-anchor] Record this header's on-screen
+        // position so the accordion can decide whether a scroll correction is
+        // needed. Unlike FolderHeaderVisibilityProbe (mini-bar, expanded folders
+        // only) this tracks EVERY header including collapsed ones — the folder
+        // about to be expanded is collapsed at the moment of the tap, so its
+        // pre-toggle position is exactly what has to be known.
+        //
+        // A background GeometryReader: it reads the row's own frame without
+        // participating in its layout, so no sizing behaviour changes.
+        .background {
+            if let fid = group.folderId {
+                GeometryReader { geo in
+                    Color.clear
+                        .onAppear { folderHeaderTopY[fid] = geo.frame(in: .global).minY }
+                        .onChange(of: geo.frame(in: .global).minY) { folderHeaderTopY[fid] = $0 }
+                }
+            }
+        }
+        // ScrollViewReader anchor for the mini-bar's "back to header" jump.
+        .id("folderHeader-\(group.folderId ?? "")")
+        .listRowInsets(EdgeInsets())
+        .dropDestination(for: String.self) { sessionIds, _ in
+            guard let fid = group.folderId else { return false }
+            Task { @MainActor in
+                await ChatStore.shared.setFolder(fid, forSessions: sessionIds)
+                refreshSessionList()
+            }
+            return true
+        } isTargeted: { over in
+            if over {
+                dropTargetFolderId = group.folderId
+            } else if dropTargetFolderId == group.folderId {
+                dropTargetFolderId = nil
+            }
+        }
+        .contextMenu {
+            if let fid = group.folderId, let folder = folders.first(where: { $0.id == fid }) {
+                Button {
+                    Task { @MainActor in
+                        await ChatStore.shared.toggleFolderPin(fid)
+                        refreshSessionList()
+                    }
+                } label: {
+                    Label(LocalizedStringKey(folder.isPinned ? "Unpin" : "Pin"),
+                          systemImage: folder.isPinned ? "pin.slash" : "pin")
+                }
+                Button {
+                    renameFolderText = folder.name
+                    // [T-folder-rename-desc-wipe] Seed the description too.
+                    // Both fields are shared @State that outlive the dialog, and
+                    // `onRename` ALWAYS passes the desc field through (empty
+                    // clears the stored value, by design). Leaving this unseeded
+                    // meant the field opened blank — or holding whatever was
+                    // typed for a previously renamed folder — so a rename that
+                    // only touched the NAME silently wiped that folder's
+                    // description. Repeat across folders and every description
+                    // disappears, which reads as "renaming one group overwrote
+                    // them all".
+                    renameFolderDesc = folder.desc ?? ""
+                    folderToRename = folder
+                } label: {
+                    Label("Rename Group", systemImage: "square.and.pencil")
+                }
+                Button {
+                    newChatInFolder(fid)
+                } label: {
+                    Label("New Chat in Group", systemImage: "plus.bubble")
+                }
+                Divider()
+                // Dissolve is deliberately NOT destructive-tinted: it touches
+                // no user data (sessions move back to the main list). Tinting
+                // it red would train the eye to read it as the deleting item.
+                Button {
+                    folderToDissolve = folder
+                } label: {
+                    Label("Dissolve Group", systemImage: "folder.badge.minus")
+                }
+                Divider()
+                // The one destructive item, last, with the count in the title
+                // so the consequence is visible in the menu itself, not only
+                // in the confirmation sheet.
+                Button(role: .destructive) {
+                    requestDeleteFolderWithSessions(folder)
+                } label: {
+                    Label("Delete Group & \(group.totalCount) Sessions", systemImage: "trash")
+                }
+            }
+        }
+    }
+
+    /// "New chat in folder": file the just-promoted draft. Separate from the
+    /// draft-bookkeeping onReceive (which is gated on isWideLayout) because
+    /// this must run on iPhone too. The notification can arrive off-main
+    /// (ChatStore actor executor) — all state access happens inside the
+    /// MainActor hop. Extracted to a method so the body's modifier chain
+    /// stays type-checkable.
+    private func handleSessionCreatedForPendingFolder(_ note: Notification) {
+        guard let newId = note.object as? String else { return }
+        let noteDraftId = (note.userInfo as? [String: String])?["draftId"]
+        Task { @MainActor in
+            guard let pending = pendingFolderDraft else { return }
+            guard noteDraftId == pending.draftId else {
+                // Some other draft was promoted — ours was abandoned. Drop the
+                // intent so it can never mis-file a later unrelated chat.
+                if noteDraftId != nil { pendingFolderDraft = nil }
+                return
+            }
+            pendingFolderDraft = nil
+            _ = await ChatStore.shared.setFolderIfUnfiled(pending.folderId, forSession: newId)
+            refreshSessionList()
+        }
+    }
+
+    /// Folder-header menu: start a new chat that lands inside the folder.
+    /// The folder assignment is deferred to draft promotion (see
+    /// pendingFolderDraft); the folder is auto-expanded so the new session
+    /// doesn't appear to vanish into a collapsed section.
+    private func newChatInFolder(_ folderId: String) {
+        if collapsedFolderIds.contains(folderId) { toggleFolderCollapsed(folderId) }
+        let draftId = Self.makeNewSessionId()
+        pendingFolderDraft = (draftId: draftId, folderId: folderId)
+        openSession(draftId)
+    }
+
+    /// Folder-header menu: delete the folder AND every member session. Reuses
+    /// the multi-select delete chain (computeDeleteInfo → DeleteConfirmSheet →
+    /// deleteSelectedSessions) rather than a bespoke path — the delete chain
+    /// owns session files, tombstones and sync, and re-implementing it would
+    /// mean re-earning its correctness.
+    private func requestDeleteFolderWithSessions(_ folder: ChatFolder) {
+        let memberIds = Set(sessions.filter { $0.folderId == folder.id }.map(\.id))
+        selectedIds = memberIds
+        pendingDeleteFolderId = folder.id
+        deleteInfo = nil
+        isComputingDelete = true
+        showDeleteConfirm = true
+        let totalSessions = sessions.count
+        Task { @MainActor in
+            let info = await Task.detached {
+                Self.computeDeleteInfo(for: memberIds, totalSessions: totalSessions)
+            }.value
+            deleteInfo = info
+            isComputingDelete = false
         }
     }
 
@@ -2513,6 +4777,21 @@ struct ContentView: View {
                     Image(systemName: "square.and.arrow.up")
                         .font(.system(size: 20))
                     Text("Export")
+                        .font(.caption2)
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .disabled(selectedIds.isEmpty)
+
+            Button {
+                let anyFiled = sessions.contains { selectedIds.contains($0.id) && $0.isFiled }
+                folderPickerRequest = FolderPickerRequest(
+                    sessionIds: selectedIds, fromMultiSelect: true, anyFiled: anyFiled)
+            } label: {
+                VStack(spacing: 4) {
+                    Image(systemName: "folder")
+                        .font(.system(size: 20))
+                    Text("Move")
                         .font(.caption2)
                 }
                 .frame(maxWidth: .infinity)
@@ -2747,10 +5026,18 @@ struct ContentView: View {
         // Clear deleteInfo to signal onDismiss that deletion occurred;
         // isSelecting and selectedIds are reset in sheet's onDismiss to avoid animation conflicts.
         deleteInfo = nil
+        let folderToDrop = pendingDeleteFolderId
+        pendingDeleteFolderId = nil
         Task {
             for id in ids {
                 await ChatStore.shared.deleteSession(id)
                 deleteSessionFiles(id)
+            }
+            // Delete-all-in-folder: the folder is empty now; dissolving it
+            // just drops the row (and pushes the FolderV2 tombstone).
+            if let fid = folderToDrop {
+                _ = await ChatStore.shared.dissolveFolder(fid)
+                await MainActor.run { refreshSessionList() }
             }
         }
     }
@@ -2882,6 +5169,14 @@ struct ContentView: View {
                 isExporting = false
                 exportProgress = nil
                 exportFileURL = finalURL
+                // [T-export-preview-blank] Preview the raw payload, not the zip.
+                // `finalURL` is normally the .zip (that is what gets shared/saved);
+                // decoding it as UTF-8 always fails, which is why the preview pane
+                // was blank. The uncompressed payload is still sitting in workDir —
+                // createZip copies out of it and nothing deletes it on the success
+                // path — so hand that to the preview. When zipping fell back,
+                // finalURL IS payloadURL and the two are simply the same file.
+                exportPreviewURL = payloadURL
                 exportSummary = isMulti ? summaryWithSize : nil
                 showExportPreview = true
             }
@@ -3266,8 +5561,19 @@ private struct DeleteConfirmSheet: View {
 // MARK: - Export Preview Sheet
 
 private struct ExportPreviewSheet: View {
+    /// The artifact the user shares / saves — normally a `.zip`.
     let fileURL: URL?
+    /// [T-export-preview-blank] The text payload to RENDER. Distinct from
+    /// `fileURL` because the shared artifact is zipped, and zip bytes never
+    /// decode as UTF-8 — reading `fileURL` left the pane blank while the file
+    /// size (read from filesystem attributes, not the content) still showed,
+    /// which is exactly how the bug presented. Falls back to `fileURL` when the
+    /// caller has nothing separate to offer.
+    var previewURL: URL? = nil
     let summary: ExportSummary?
+
+    /// File to read for the on-screen text.
+    private var textSourceURL: URL? { previewURL ?? fileURL }
     @Environment(\.dismiss) private var dismiss
     @State private var showShareSheet = false
     @State private var showFilePicker = false
@@ -3312,10 +5618,15 @@ private struct ExportPreviewSheet: View {
 
                 // Action buttons
                 HStack(spacing: 0) {
-                    // Copy only makes sense for non-zip text payloads (single-session export).
-                    if summary == nil, fileURL?.pathExtension.lowercased() != "zip" {
+                    // [T-export-preview-blank] Copy needs a TEXT source. It used to
+                    // test `fileURL`, which is the zip, so Copy silently vanished
+                    // from every single-session export — the same zip-vs-payload
+                    // confusion that blanked the preview. Test the payload we
+                    // actually read instead, so Copy is offered exactly when there
+                    // is something readable to copy.
+                    if summary == nil, textSourceURL?.pathExtension.lowercased() != "zip" {
                         actionButton(icon: "doc.on.doc", label: copied ? String(localized: "Copied") : String(localized: "Copy")) {
-                            if let url = fileURL, let content = try? String(contentsOf: url, encoding: .utf8) {
+                            if let url = textSourceURL, let content = try? String(contentsOf: url, encoding: .utf8) {
                                 UIPasteboard.general.string = content
                             }
                             copied = true
@@ -3414,13 +5725,17 @@ private struct ExportPreviewSheet: View {
     }
 
     private func loadPreview() async {
-        guard let url = fileURL else {
+        guard let url = textSourceURL else {
             isLoadingPreview = false
             return
         }
 
-        // Load file size
-        if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+        // Load file size — of the SHARED artifact (`fileURL`), not the preview
+        // payload. The number under the pane labels the file the user is about to
+        // share or save, so it has to be the zip's size even though the text above
+        // it comes from the uncompressed payload.
+        if let sizeURL = fileURL,
+           let attrs = try? FileManager.default.attributesOfItem(atPath: sizeURL.path),
            let size = attrs[.size] as? Int64 {
             let formatter = ByteCountFormatter()
             formatter.countStyle = .file
@@ -3434,7 +5749,24 @@ private struct ExportPreviewSheet: View {
                 // Read at most previewLimit bytes worth of data
                 let data = handle.readData(ofLength: previewLimit * 4) // UTF-8 can be up to 4 bytes per char
                 handle.closeFile()
-                if let text = String(data: data, encoding: .utf8) {
+                // [T-export-preview-blank] Decode defensively. `readData` cuts at a
+                // byte offset, so on any file larger than the read window the cut
+                // can land mid-UTF-8-sequence and strict decoding returns nil —
+                // another silent blank page, this time only for big exports.
+                // Retry by trimming up to 3 trailing bytes (the longest possible
+                // partial sequence), then fall back to a lossy decode so the user
+                // sees the content rather than nothing.
+                var decoded = String(data: data, encoding: .utf8)
+                if decoded == nil, data.count > 3 {
+                    for drop in 1...3 {
+                        if let t = String(data: data.dropLast(drop), encoding: .utf8) {
+                            decoded = t
+                            break
+                        }
+                    }
+                }
+                let text = decoded ?? String(decoding: data, as: UTF8.self)
+                if !text.isEmpty {
                     if text.count > previewLimit {
                         preview = String(text.prefix(previewLimit)) + "\n\n…"
                     } else {
@@ -3627,6 +5959,17 @@ private struct SessionContextMenu: View, Equatable {
         } label: {
             Label("Duplicate", systemImage: "doc.on.doc")
         }
+        // Single Button that opens the shared folder-picker sheet. Deliberately
+        // NOT an inline submenu of folder names: this menu body is the
+        // [T-ios-contextmenu-localized-mainthread-hang] site, and listing N
+        // folders here would multiply every AttributeGraph recompute by N.
+        // A static Label keeps the body cost constant, and keeps folder data
+        // out of the menu entirely ([T-ios-crash-contextmenu-uaf]).
+        Button {
+            actions.send(.moveToFolder(key.sid))
+        } label: {
+            Label("Move to Group", systemImage: "folder")
+        }
         if iCloudSyncVisible {
             Button {
                 actions.send(.forceSync(key.sid))
@@ -3679,6 +6022,96 @@ private struct MenuKey: Equatable {
 }
 
 // MARK: - Session Row
+
+/// category → (SF Symbol, color) for a session's list icon.
+///
+/// Single source of truth shared by `SessionRow`, `RemoteSessionRow`, and the
+/// folder header's composed icon (which stacks the top members' glyphs). It
+/// was previously duplicated as two identical private computed properties on
+/// the row structs; the composed icon made a third copy untenable.
+/// Pure function — safe to call from the `groupedSessions` aggregation pass.
+func sessionCategoryIcon(for category: String?) -> (systemName: String, color: Color) {
+    switch category {
+    case "code":         return ("terminal.fill", .orange)
+    case "writing":      return ("doc.text.fill", .blue)
+    case "research":     return ("globe.americas.fill", .teal)
+    case "analysis":     return ("chart.pie.fill", .indigo)
+    case "creative":     return ("paintbrush.pointed.fill", .pink)
+    case "chat":         return ("bubble.left.fill", .green)
+    case "math":         return ("number.circle.fill", .purple)
+    case "translation":  return ("character.bubble", .cyan)
+    case "health":       return ("heart.fill", .red)
+    case "finance":      return ("banknote.fill", .mint)
+    case "travel":       return ("map.fill", .orange)
+    case "education":    return ("book.closed.fill", .blue)
+    case "design":       return ("paintpalette.fill", .pink)
+    case "productivity": return ("calendar.badge.checkmark", .yellow)
+    case "support":      return ("gearshape.fill", .brown)
+    case "other":        return ("square.grid.2x2.fill", .gray)
+    default:             return ("bubble.left.fill", .gray)
+    }
+}
+
+/// Folder icon composed from the folder's top member glyphs: a rounded-rect
+/// "group" container tinted with the first member's category color, holding up
+/// to 3 distinct category symbols. Empty folder → plain gray folder glyph.
+/// Pure rendering — the glyph selection/dedup happens in groupedSessionIDs.
+/// The "grouped list" glyph from the user-provided asset: two rounded
+/// square outlines on the left, four list lines on the right. Traced from
+/// the 1024-unit SVG; squares are drawn as even-odd rings so the whole
+/// glyph is a single fill (no stroke-vs-fill mixing).
+struct GroupGlyphShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        let u = rect.width / 1024.0
+
+        func ring(x: CGFloat, y: CGFloat) {
+            // Outer 325.8×325.8 with r 93; inner inset by the 46.5 stroke.
+            let outer = CGRect(x: x * u, y: y * u, width: 325.8 * u, height: 325.8 * u)
+            let inner = outer.insetBy(dx: 46.5 * u, dy: 46.5 * u)
+            p.addRoundedRect(in: outer, cornerSize: CGSize(width: 93 * u, height: 93 * u), style: .continuous)
+            p.addRoundedRect(in: inner, cornerSize: CGSize(width: 46.5 * u, height: 46.5 * u), style: .continuous)
+        }
+        func line(cy: CGFloat) {
+            let r = CGRect(x: 558.5 * u, y: (cy - 23.27) * u, width: 325.8 * u, height: 46.5 * u)
+            p.addRoundedRect(in: r, cornerSize: CGSize(width: 23.27 * u, height: 23.27 * u))
+        }
+
+        ring(x: 139.6, y: 139.6)
+        ring(x: 139.6, y: 511.9)
+        line(cy: 209.5)
+        line(cy: 395.6)
+        line(cy: 581.8)
+        line(cy: 768.0)
+        return p
+    }
+}
+
+/// Group icon: the grouped-list glyph on the SAME circular translucent tint
+/// the session rows use, at the same 44pt slot — so a group icon and a
+/// session icon are the same species at the same size. The tint and glyph
+/// color borrow the newest member's category color (gray when empty), which
+/// is all that remains of the member-glyph composition: the shape is
+/// uniform, the color still says what the group holds.
+struct FolderComposedIcon: View {
+    let glyphs: [FolderGlyph]
+    var diameter: CGFloat = 44
+
+    var body: some View {
+        let tint = glyphs.first?.color ?? .gray
+        ZStack {
+            // 0.28 vs the session icons' 0.18: a deliberately stronger tint
+            // so a group circle reads as a different kind of thing at a
+            // glance, while keeping the same size and shape language.
+            Circle()
+                .fill(tint.opacity(0.28))
+            GroupGlyphShape()
+                .fill(tint, style: FillStyle(eoFill: true))
+                .frame(width: diameter * 0.56, height: diameter * 0.56)
+        }
+        .frame(width: diameter, height: diameter)
+    }
+}
 
 private struct SessionRow: View, Equatable {
     // [T-ios-session-list-equatable-jank] Custom Equatable so `.equatable()` at
@@ -4010,25 +6443,7 @@ private struct SessionRow: View, Equatable {
 
 
     private var categoryIcon: (systemName: String, color: Color) {
-        switch session.category {
-        case "code":         return ("terminal.fill", .orange)
-        case "writing":      return ("doc.text.fill", .blue)
-        case "research":     return ("globe.americas.fill", .teal)
-        case "analysis":     return ("chart.pie.fill", .indigo)
-        case "creative":     return ("paintbrush.pointed.fill", .pink)
-        case "chat":         return ("bubble.left.fill", .green)
-        case "math":         return ("number.circle.fill", .purple)
-        case "translation":  return ("character.bubble", .cyan)
-        case "health":       return ("heart.fill", .red)
-        case "finance":      return ("banknote.fill", .mint)
-        case "travel":       return ("map.fill", .orange)
-        case "education":    return ("book.closed.fill", .blue)
-        case "design":       return ("paintpalette.fill", .pink)
-        case "productivity": return ("calendar.badge.checkmark", .yellow)
-        case "support":      return ("gearshape.fill", .brown)
-        case "other":        return ("square.grid.2x2.fill", .gray)
-        default:             return ("bubble.left.fill", .gray)
-        }
+        sessionCategoryIcon(for: session.category)
     }
 
     @ViewBuilder
@@ -4056,7 +6471,10 @@ private struct SessionRow: View, Equatable {
     // next to "Yesterday" row times. All four phrase keys already exist in
     // Localizable.xcstrings (8 locales); the weekday/short-date fall-backs
     // use localized format templates so e.g. zh renders 7月8日 instead of 7/8.
-    private static func relativeDateImpl(_ date: Date) -> String {
+    // fileprivate (not private): FolderRowHeader shares this exact formatter —
+    // a second hand-rolled variant is how the T-ios-sessionlist-time-i18n
+    // drift happened the first time.
+    fileprivate static func relativeDateImpl(_ date: Date) -> String {
         let now = Date()
         let calendar = Calendar.current
         let seconds = Int(now.timeIntervalSince(date))
@@ -4154,25 +6572,7 @@ private struct RemoteSessionRow: View {
     }
 
     private var categoryIcon: (systemName: String, color: Color) {
-        switch session.category {
-        case "code":         return ("terminal.fill", .orange)
-        case "writing":      return ("doc.text.fill", .blue)
-        case "research":     return ("globe.americas.fill", .teal)
-        case "analysis":     return ("chart.pie.fill", .indigo)
-        case "creative":     return ("paintbrush.pointed.fill", .pink)
-        case "chat":         return ("bubble.left.fill", .green)
-        case "math":         return ("number.circle.fill", .purple)
-        case "translation":  return ("character.bubble", .cyan)
-        case "health":       return ("heart.fill", .red)
-        case "finance":      return ("banknote.fill", .mint)
-        case "travel":       return ("map.fill", .orange)
-        case "education":    return ("book.closed.fill", .blue)
-        case "design":       return ("paintpalette.fill", .pink)
-        case "productivity": return ("calendar.badge.checkmark", .yellow)
-        case "support":      return ("gearshape.fill", .brown)
-        case "other":        return ("square.grid.2x2.fill", .gray)
-        default:             return ("bubble.left.fill", .gray)
-        }
+        sessionCategoryIcon(for: session.category)
     }
 
     private var iconColor: Color { categoryIcon.color }
@@ -4562,6 +6962,20 @@ private struct AppearanceSettingsView: View {
                 Text("Choose what to show when the app starts. \"Auto\" opens a new chat if the last session is older than 15 minutes.")
             }
 
+            // Auto-grouping default is OFF on principle: it costs nothing
+            // extra (it rides the title-generation call), but it moves user
+            // data without being asked — a behavior the user must opt into.
+            // No pendingSettingsReopen dance here: that exists only because
+            // appLanguage rebuilds the root via .id(); a plain toggle has no
+            // such side effect.
+            Section {
+                Toggle("Auto-Grouping", isOn: autoGroupingBinding)
+            } header: {
+                Text("Grouping")
+            } footer: {
+                Text("When a chat's title is first generated, also file it into a matching existing group. Runs once per chat, only uses groups you already created, and leaves the chat ungrouped when nothing matches.")
+            }
+
             Section {
                 Picker(String(localized: "Return Key"), selection: $returnKeyBehavior) {
                     Text(String(localized: "Newline")).tag(0)
@@ -4700,6 +7114,15 @@ private struct AppearanceSettingsView: View {
                         // Appearance page so the user lands where they were
                         // with all strings rendered in the new language.
                         UserDefaults.standard.set("appearance", forKey: "pendingSettingsReopen")
+                        // [T-ios-stacknav-transition-attributegraph-race] The
+                        // `.id(appLanguage)` re-key below is the app's only
+                        // unconditional WHOLE-TREE teardown, and a chat can be
+                        // streaming underneath this sheet while it happens —
+                        // the same hosting-subgraph race the push/pop observers
+                        // guard, with every mounted vm outgoing at once. Pin
+                        // them all across the re-mount. No-ops when nothing is
+                        // processing, which is the overwhelmingly common case.
+                        ViewModelCache.shared.suspendAllForTreeRemount()
                         appLanguage = lang.id
                         Bundle.setLanguage(lang.id.isEmpty ? nil : lang.id)
                     } label: {
@@ -4728,10 +7151,21 @@ private struct AppearanceSettingsView: View {
             } footer: {
                 Text("Override the display language for this app. \"System\" follows your device language.")
             }
+
         }
         .navigationTitle("Appearance")
         .navigationBarTitleDisplayMode(.inline)
         .background(InteractivePopGestureDisabler())
+    }
+
+    /// UserDefaults-backed binding (not @AppStorage: the key is read at
+    /// title-generation time in AIChatViewModel, so a plain defaults write is
+    /// the single source of truth).
+    private var autoGroupingBinding: Binding<Bool> {
+        Binding(
+            get: { UserDefaults.standard.bool(forKey: "autoGroupingEnabled") },
+            set: { UserDefaults.standard.set($0, forKey: "autoGroupingEnabled") }
+        )
     }
 }
 

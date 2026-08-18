@@ -67,6 +67,16 @@ class MinisAccessibilityService : AccessibilityService() {
         // remediation is the user whitelisting autostart + battery (see
         // SystemPermissionsScreen OEM guidance).
         AppLogger.info(TAG, "service connected (manufacturer=${android.os.Build.MANUFACTURER})")
+        // [T-android-a11y-force-stop-recovery] Latch that the grant existed, so
+        // a later absence can be recognized as a revocation rather than a
+        // never-configured service. This is the one callback that only fires
+        // when the user has genuinely granted it.
+        try {
+            AccessibilityRecoveryManager.markGranted(this)
+            AccessibilityRecoveryManager.refreshRevokedState(this)
+        } catch (t: Throwable) {
+            AppLogger.warning(TAG, "markGranted failed: ${t.message}")
+        }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {

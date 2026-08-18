@@ -162,6 +162,10 @@ extension AIChatViewModel {
             }
             return false
         }()
+        // [T-truncated-args-visibility #119] Tracks whether THIS call's
+        // arguments arrived truncated and were glued shut by the repair pass.
+        // Non-nil ⇒ the args are not what the model actually emitted.
+        var truncationRepairTag: String? = nil
         if needsRepair {
             let rawJoined = tu.inputChunkRing.joined()
             let repairOutcome = Self.repairToolArgs(
@@ -172,7 +176,67 @@ extension AIChatViewModel {
                     "[ToolRepair] REPAIRED tool=\(tu.name) id=\(tu.id) strategies=[\(repairOutcome.repairs.joined(separator: ", "))] beforeKeys=[\(tu.args.keys.sorted().joined(separator: ","))] afterKeys=[\(repairOutcome.args.keys.sorted().joined(separator: ","))] rawJoined=<<<\(rawJoined.prefix(500))>>>"
                 )
                 toolArgs = repairOutcome.args
+                // Only the truncation strategy means "the value itself was cut
+                // short". Type-coercion and fuzzy-name repairs fix the SHAPE of
+                // a fully-received argument and are not a data-loss signal.
+                truncationRepairTag = repairOutcome.repairs.first { $0.hasPrefix("truncation+") }
             }
+        }
+
+        // [T-truncated-args-visibility #119] Refuse to execute a WRITE whose
+        // argument stream was truncated.
+        //
+        // The repair pass closes an unterminated JSON string by appending `"}`,
+        // which for file_write is indistinguishable from the model having ended
+        // `content` right there: the JSON parses, every required field is
+        // present, preflight passes, and a HALF file lands on disk while both
+        // the UI and the model's tool result report plain success. The user
+        // finds a truncated file later; the model, seeing "success", keeps
+        // building on it.
+        //
+        // For writes a partial artifact is strictly worse than none — it is
+        // silent corruption of the user's data, and unlike a blocked call it
+        // cannot be recovered by simply retrying. Read-only and shell tools
+        // keep the existing repair-and-run behaviour: there the repaired call
+        // is at worst a wasted round-trip, and refusing them would regress
+        // recoveries that work today.
+        if let tag = truncationRepairTag,
+           tu.name == "file_write" || tu.name == "file_edit" {
+            let path = (toolArgs["path"] as? String) ?? (toolArgs["file_path"] as? String) ?? ""
+            AppLogger(category: "ToolPreflight").warning(
+                "[ToolRepair] REFUSED truncated write tool=\(tu.name) id=\(tu.id) strategy=\(tag) path=\(path)"
+            )
+            let uiMessage = String(localized: "Blocked: arguments were truncated in transit")
+            let modelMessage = """
+            Error: This call was NOT executed. Its argument stream was truncated in transit \
+            (repair strategy: \(tag)), so the `content` your client sent was cut short and would \
+            have written an incomplete file\(path.isEmpty ? "" : " to \(path)"). Nothing was \
+            written to disk — the target file is unchanged.
+
+            The most likely cause is the response hitting its output-token limit mid-argument. \
+            Re-issue this write in smaller pieces: write the first part, then append the rest \
+            with follow-up calls, rather than repeating the same oversized call.
+            """
+            if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
+                messages[msgIdx].blocks[blockIdx].content = uiMessage
+                messages[msgIdx].blocks[blockIdx].toolStatus = .failed(message: uiMessage)
+            }
+            toolLoopDetector.record(
+                toolName: tu.name, params: tu.args,
+                result: nil, errorMessage: modelMessage, toolCallId: tu.id
+            )
+            let refusedSnap = ToolSnapshot(type: .text, text: modelMessage, mediaRef: nil, duration: nil)
+            let item = ToolSnapshotItem(
+                id: tu.id, toolName: tu.name, snapshot: refusedSnap,
+                mediaResolver: await ChatStore.shared.mediaFileURLResolver()
+            )
+            return ToolExecOutcome(
+                toolId: tu.id, toolName: tu.name,
+                resultPart: .toolResult(id: tu.id, name: tu.name, content: modelMessage, isError: true),
+                snapshotEntry: (toolName: tu.name, snapshot: refusedSnap),
+                snapshotItem: item,
+                cancelled: false
+            )
         }
 
         // Preflight: reject empty / missing-required-field tool calls.
@@ -316,6 +380,19 @@ extension AIChatViewModel {
                         self.scrollToBottomSignal.send()
                     }
                 }
+                // [T-tool-exec-breadcrumb] Durable, written BEFORE the command
+                // launches. `[ToolLifecycle] COMPLETED` only lands after a tool
+                // returns, so a process killed mid-execution (watchdog SIGKILL,
+                // Jetsam, SIGABRT) left no record of what was running. This line
+                // is on disk (O_SYNC) before executeCommand is entered, so the
+                // last breadcrumb after a kill names the command that was live.
+                // Command is truncated — enough to identify it, not enough to
+                // bloat the file with a large heredoc.
+                #if DEBUG
+                CrashReporter.writeToolBreadcrumb(
+                    "[ToolExec] STARTING shell_execute id=\(tu.id.prefix(20)) sid=\(sessionId?.prefix(8) ?? "nil") timeout=\(timeout)s command=\"\(command.prefix(500))\""
+                )
+                #endif
                 result = try await executeCommand(command, timeout: timeout) { [weak self] line in
                     guard let self else { return }
                     let (cleanedLine, capturedURLs) = MinisURLMarker.extract(from: line)
@@ -339,6 +416,16 @@ extension AIChatViewModel {
             } catch {
                 result = CommandResult(output: "Error: \(error.localizedDescription)", exitCode: -1)
             }
+            // [T-tool-exec-breadcrumb] Pair for the STARTING line above. The
+            // existing `[ToolLifecycle] COMPLETED` covers every tool, but it
+            // travels the droppable NSLog pipe; this one shares the STARTING
+            // line's durable file so a STARTING with no matching FINISHED is
+            // unambiguous evidence that the process died inside this command.
+            #if DEBUG
+            CrashReporter.writeToolBreadcrumb(
+                "[ToolExec] FINISHED shell_execute id=\(tu.id.prefix(20)) exit=\(result.exitCode)"
+            )
+            #endif
             if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
                 let existingContent = messages[msgIdx].blocks[blockIdx].content
                 let hasStreamedContent = !existingContent.isEmpty
@@ -581,8 +668,6 @@ extension AIChatViewModel {
                     resizedH = originalH
                 }
 
-                toolImageData = inferenceData
-                toolImageMimeType = "image/jpeg"
                 if pathArg.hasPrefix("/var/minis/") {
                     toolImageLinuxPath = pathArg
                 } else if pathArg.hasPrefix("minis://") {
@@ -599,12 +684,98 @@ extension AIChatViewModel {
                     meta += "\nResized for analysis: \(resizedW)x\(resizedH)"
                 }
                 meta += "\nMIME: image/jpeg"
-                toolOutput = meta
-                toolSuccess = true
 
+                // [T-ios-vision-group #182] Two ways to answer this call.
+                //
+                // Native-vision models keep the original behaviour exactly:
+                // attach the pixels and let the model look at them.
+                //
+                // A model WITHOUT native vision only reaches this line because a
+                // Vision Group is configured (that's the tool-exposure gate), so
+                // hand the bytes to that group and return its DESCRIPTION as
+                // text. Crucially we then leave `toolImageData` nil: attaching
+                // pixels a text-only model can't decode is what the providers
+                // silently drop today, and on the OpenAI Chat Completions path
+                // they'd be dropped without even a placeholder.
+                // [T-ios-vision-group-t264 #182] Optional caller-supplied question
+                // about the image. Only load-bearing on the vision-group branch —
+                // there it steers the describing model, which is the host model's
+                // only way to follow up on a detail it cannot look at itself.
+                let visionPrompt = (toolArgs["prompt"] as? String)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+
+                // [T-ios-vision-branch-mismatch #182] MUST be the same source the
+                // registration used — see `activeModelHasNativeVision`. Reading
+                // `selectedModel` here (while the request is built from
+                // resolveCurrentEntry) is what made a text-only model fall into
+                // the native pixel branch and get metadata instead of a
+                // description.
+                let nativeVision = self.activeModelHasNativeVision
+                if nativeVision {
+                    toolImageData = inferenceData
+                    toolImageMimeType = "image/jpeg"
+                    // Native models see the pixels, so the prompt isn't needed to
+                    // direct anything — but echo it so the transcript shows what
+                    // the model was looking for. Image data is untouched.
+                    if let p = visionPrompt, !p.isEmpty {
+                        toolOutput = meta + "\nRequested focus: \(p)"
+                    } else {
+                        toolOutput = meta
+                    }
+                    toolSuccess = true
+                } else {
+                    do {
+                        // [T-ios-vision-group-attribution #182] Name the model
+                        // that is currently reading, live. Previously the card
+                        // just said "Reading image <path>…" for however many
+                        // seconds the call took, so the user could not tell
+                        // which member of the group was working — nor see a
+                        // fallback happen. `onAttempt` fires before each
+                        // candidate, so a switch is visible as it occurs.
+                        let groupLabel = VisionGroupResolver.groupName()
+                        let pathForUI = pathArg
+                        let outcome = try await VisionGroupResolver.describe(
+                            imageData: inferenceData,
+                            mimeType: "image/jpeg",
+                            customPrompt: visionPrompt,
+                            seed: abs(tu.id.hashValue),
+                            onAttempt: { [weak self] attempt in
+                                guard let self,
+                                      msgIdx < self.messages.count,
+                                      blockIdx < self.messages[msgIdx].blocks.count else { return }
+                                let via = groupLabel.map { " (\($0))" } ?? ""
+                                let retry = attempt.index > 1
+                                    ? " — attempt \(attempt.index)/\(attempt.total)" : ""
+                                self.messages[msgIdx].blocks[blockIdx].content =
+                                    "Reading image \(pathForUI) via \(attempt.modelName)\(via)\(retry)…"
+                            }
+                        )
+                        let framed = VisionGroupResolver.framedDescription(
+                            outcome,
+                            groupName: groupLabel,
+                            question: visionPrompt
+                        )
+                        toolOutput = meta + "\n\n" + framed
+                        toolSuccess = true
+                        ctLogger.info("[read_image] vision-group described image (\(outcome.description.count) chars) via \(outcome.modelName), priorFailures=\(outcome.priorFailures.count)")
+                    } catch {
+                        // Deliberately a SUCCESSFUL result carrying failure text:
+                        // an errored tool result tends to make models retry in a
+                        // loop, whereas this lets the model tell the user plainly.
+                        let reason = (error as? VisionGroupResolver.VisionError)?.errorDescription
+                            ?? error.localizedDescription
+                        toolOutput = meta + "\n\n" + VisionGroupResolver.failureText(reason)
+                        toolSuccess = true
+                        ctLogger.error("[read_image] vision-group describe FAILED: \(reason)")
+                    }
+                }
+
+                // The on-screen tool block shows the image itself in BOTH
+                // branches — the user can always see what was read, regardless
+                // of what the model received.
                 if msgIdx < messages.count, blockIdx < messages[msgIdx].blocks.count {
                     messages[msgIdx].blocks[blockIdx].imageFilePath = fileURL.path
-                    messages[msgIdx].blocks[blockIdx].content = meta
+                    messages[msgIdx].blocks[blockIdx].content = toolOutput
                 }
             } else {
                 ctLogger.error("[read_image] FAILED pathArg=\(pathArg) resolvedURL=\(resolvedURL?.path ?? "nil")")
@@ -726,6 +897,15 @@ extension AIChatViewModel {
             blk.toolDuration = toolDuration
             if cancelledHere {
                 blk.toolStatus = .cancelled
+            } else if toolSuccess, truncationRepairTag != nil {
+                // [T-truncated-args-visibility #119] A repaired call must not
+                // render as a clean success — that is exactly the silence the
+                // user reported. Surface it with the same weight the blocked
+                // path already gets, so "arguments were altered" is visible in
+                // the transcript rather than buried in a log line.
+                blk.toolStatus = .failed(
+                    message: String(localized: "Arguments truncated in transit — result may be incomplete")
+                )
             } else {
                 blk.toolStatus = toolSuccess
                     ? .success
@@ -790,6 +970,22 @@ extension AIChatViewModel {
             } else {
                 finalOutput += "\n\n" + warningMsg
             }
+        }
+
+        // [T-truncated-args-visibility #119] Tell the MODEL when the call it
+        // just got a success for was built from truncated arguments.
+        //
+        // Writes never reach here (refused above), so this covers the tools we
+        // still run repaired — shell_execute, browser_use, file_read, … There
+        // the repaired call may well have done the right thing, but the model
+        // has no way to know its own arguments were altered, and silently
+        // assuming they were intact is how a half-truth propagates downstream.
+        // Stating it lets the model verify rather than guess.
+        if let tag = truncationRepairTag {
+            finalOutput += "\n\n<system-reminder>The argument stream for this call was truncated in "
+                + "transit and auto-closed by the client (repair strategy: \(tag)) before execution. "
+                + "The arguments actually used may be incomplete — verify the result and re-issue "
+                + "the call with complete arguments if anything is missing.</system-reminder>"
         }
 
         let resultPart = AgentContentPart.toolResult(

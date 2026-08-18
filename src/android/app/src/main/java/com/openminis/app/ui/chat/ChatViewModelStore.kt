@@ -110,21 +110,73 @@ object ChatViewModelStore {
     data class PendingTransfer(
         val inputText: String,
         val attachments: List<InputAttachment>,
+        /**
+         * [T-android-moveto-stash-binding] Session this content was moved TO.
+         * Only that session may drain the stash. Previously absent, so
+         * whichever ChatScreen composed first ate the content — if the
+         * navigation to the target didn't land (or the user backed out and
+         * opened something else), the moved text/attachments surfaced in an
+         * unrelated session. Mirrors iOS 6c3093c8 (GH OpenMinis#120).
+         */
+        val targetId: String,
+        /** Wall-clock stash time; drives the [STASH_TTL_MS] staleness drop. */
+        val stashedAtMs: Long = System.currentTimeMillis(),
     )
+
+    /**
+     * [T-android-moveto-stash-binding] A stash older than this is considered
+     * abandoned and dropped rather than injected. Without it an unclaimed
+     * stash sat forever and could ambush a session opened much later.
+     */
+    private const val STASH_TTL_MS = 300_000L
 
     @Volatile
     private var pendingTransfer: PendingTransfer? = null
 
     fun stashPendingTransfer(transfer: PendingTransfer) {
         pendingTransfer = transfer
-        Log.d(TAG, "stashPendingTransfer: text=${transfer.inputText.length}ch attachments=${transfer.attachments.size}")
+        Log.d(
+            TAG,
+            "stashPendingTransfer: target=${transfer.targetId} " +
+                "text=${transfer.inputText.length}ch attachments=${transfer.attachments.size}",
+        )
     }
 
-    /** Drain the pending-transfer slot exactly once. */
-    fun consumePendingTransfer(): PendingTransfer? {
-        val t = pendingTransfer
+    /**
+     * Drain the pending-transfer slot exactly once, and only for the session
+     * it was addressed to.
+     *
+     * [sessionId] is the draining screen's session. A mismatch leaves the
+     * stash in place so the real target can still claim it when it opens.
+     * An expired stash is dropped outright.
+     */
+    fun consumePendingTransfer(sessionId: String): PendingTransfer? {
+        val t = pendingTransfer ?: return null
+        if (System.currentTimeMillis() - t.stashedAtMs > STASH_TTL_MS) {
+            pendingTransfer = null
+            Log.d(TAG, "consumePendingTransfer: dropping stale stash (target=${t.targetId})")
+            return null
+        }
+        // Compare through the draft→canonical alias map, the same way ownerFor /
+        // release / activeSessionId do. Today MoveToSessionSheet only offers
+        // PERSISTED sessions and rename() only fires for drafts, so raw ids
+        // would already match — but resolving makes this correct by
+        // construction instead of relying on that invariant, so a future
+        // "move into a new chat" target can't strand the transfer.
+        if (resolveKey(t.targetId) != resolveKey(sessionId)) {
+            // Not ours — leave it for the intended target.
+            Log.d(
+                TAG,
+                "consumePendingTransfer: session=$sessionId is not target=${t.targetId}, leaving stash",
+            )
+            return null
+        }
         pendingTransfer = null
-        if (t != null) Log.d(TAG, "consumePendingTransfer: text=${t.inputText.length}ch attachments=${t.attachments.size}")
+        Log.d(
+            TAG,
+            "consumePendingTransfer: target=${t.targetId} " +
+                "text=${t.inputText.length}ch attachments=${t.attachments.size}",
+        )
         return t
     }
 }

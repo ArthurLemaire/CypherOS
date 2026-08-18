@@ -234,6 +234,12 @@ struct AIChatView: View {
     @State private var inputFocused: Bool = false
     @State private var inputHasSelection: Bool = false
     @State private var inputIsScrollable: Bool = false
+    /// [T-ios-composer-swipe-send-at-bottom] True when the composer's text is
+    /// scrolled to its end (or is short enough not to scroll). Combined with
+    /// `inputIsScrollable` to decide whether a vertical drag belongs to the
+    /// text's inner scroll or to swipe-to-send. Starts `true` because an empty
+    /// composer has nothing to scroll.
+    @State private var inputAtScrollBottom: Bool = true
     @State private var inputBarHeight: CGFloat = 0
     @State private var inputBarHeightDebounce: Task<Void, Never>?
     /// [T-voice-inputbar-anim-tail] The most recent ON-SCREEN composer height
@@ -264,6 +270,16 @@ struct AIChatView: View {
     /// swipe-up-to-send drag is in progress. Drives the floating send-arrow
     /// hint position so it visually follows the user's finger.
     @State private var sendSwipeLocation: CGPoint = .zero
+    /// [T-ios-composer-swipe-send-at-bottom] Drag translation at the moment
+    /// swipe-to-send took over from the composer's inner scroll, so send
+    /// progress is measured from THERE rather than from the drag's origin.
+    ///
+    /// Without this, one continuous drag that scrolls a long value to its end
+    /// would hand off to send with the whole scroll distance already banked in
+    /// `value.translation.height` — instantly past the 120pt threshold, sending
+    /// a message the user never asked to send. Reset to nil whenever the gesture
+    /// ends or the send branch is not active, so each hand-off re-anchors.
+    @State private var sendSwipeAnchor: CGFloat?
     /// Vertical drag distance (points) above which a swipe-up release fires
     /// `performSend()`. Below this, the hint animates away with no action.
     private static let kSendSwipeThreshold: CGFloat = 120
@@ -272,6 +288,25 @@ struct AIChatView: View {
     /// finger sends. Set below 1.0 so users get earlier confirmation that
     /// they've reached the trigger zone.
     private static let kSendSwipeArmFraction: CGFloat = 0.8
+
+    /// [T-ios-composer-swipe-send-at-bottom] Whether a vertical drag on the
+    /// input bar belongs to swipe-to-send rather than the composer text's own
+    /// inner scroll.
+    ///
+    /// Previously this was just `!inputIsScrollable`: the moment the text
+    /// overflowed, swipe-to-send was disabled outright and every vertical drag
+    /// went to the scroll view — even once the user had already read to the end
+    /// and further dragging could not move the content. Now the scroll gets
+    /// first claim only while it still has somewhere to go: the user scrolls the
+    /// long text through to the bottom, and from there another upward drag
+    /// arms the send, matching how a short (non-overflowing) value behaves.
+    ///
+    /// `inputAtScrollBottom` is trivially true when the text does not overflow,
+    /// so the short-text path is unchanged by construction.
+    private var swipeToSendAllowed: Bool {
+        !inputIsScrollable || inputAtScrollBottom
+    }
+
     @State private var floatingBarHeight: CGFloat = 0
     @State private var showFileBrowser = false
     // [T-browser-download-ux-v2] Downloads panel + "Show in Files" locate target.
@@ -354,6 +389,50 @@ struct AIChatView: View {
     @State private var topSafeAreaInset: CGFloat = 59
     @Environment(\.horizontalSizeClass) private var hSizeClass
     @Environment(\.scenePhase) private var scenePhase
+
+    // MARK: - [T-ipad-composer-resize] Draggable composer height (iPad only)
+
+    /// Persisted composer height as a FRACTION of screen height (e.g. 0.5).
+    /// 0 = never resized, so the composer keeps its natural content-driven
+    /// height. Stored as a fraction rather than points so the preference
+    /// survives rotation, Split View resizes and a move to another iPad.
+    @AppStorage("chat.composer.heightFraction") private var composerHeightFraction: Double = 0
+    /// Live delta while a drag is in flight, in POINTS. Kept separate from the
+    /// persisted fraction so an in-progress drag never writes to defaults and a
+    /// cancelled gesture leaves no trace.
+    @State private var composerDragOffset: CGFloat = 0
+
+    /// The drag handle is iPad-only: on iPhone the composer is already close to
+    /// the keyboard and a 50%-height composer would leave no readable
+    /// transcript, so the affordance is not offered there.
+    private var composerResizeEnabled: Bool { UIDevice.current.userInterfaceIdiom == .pad }
+
+    /// Upper bound for the composer: half the screen. Beyond this the chat
+    /// transcript stops being usable, which is the point of the feature's cap.
+    private var composerMaxHeight: CGFloat { UIScreen.main.bounds.height * 0.5 }
+
+    /// The resolved text-view height, or nil to let the composer size itself.
+    ///
+    /// nil is the untouched default — the composer grows with its content up to
+    /// the built-in ~120pt cap, exactly as before this feature. Once the user
+    /// drags, the stored fraction becomes a FLOOR that the text view is pinned
+    /// to, clamped to [default, 50% of screen].
+    private var composerTextHeight: CGFloat? {
+        guard composerResizeEnabled else { return nil }
+        let base = composerHeightFraction > 0
+            ? UIScreen.main.bounds.height * composerHeightFraction
+            : 0
+        // A drag in flight applies even before anything is persisted, so the
+        // very first drag has something to move away from.
+        guard base > 0 || composerDragOffset != 0 else { return nil }
+        let start = base > 0 ? base : Self.composerDefaultHeight
+        return min(max(start + composerDragOffset, Self.composerDefaultHeight), composerMaxHeight)
+    }
+
+    /// The composer's natural cap when it has never been resized. Also the
+    /// LOWER bound for a drag, per the requirement that the default height is
+    /// the minimum.
+    static var composerDefaultHeight: CGFloat { PastableUITextView.defaultMaxHeight }
     /// Face ID lock state — observed so the navbar title can blur in
     /// lockstep with the chat-body SessionLockGateOverlay (both read
     /// `lockStore.isVisuallyLocked(sid)` rather than recomputing the
@@ -936,14 +1015,48 @@ struct AIChatView: View {
         }
         .sheet(isPresented: $showMoveToSheet) {
             MoveToSessionSheet(currentSessionId: vm.sessionId) { targetId in
-                // Stash current input into ViewModelCache
-                ViewModelCache.pendingTransfer = .init(
-                    inputText: vm.inputText,
-                    attachments: vm.attachments
+                // [T-ios-moveto-transfer-race] Stash bound to the target, so
+                // only that session can consume it.
+                let movedText = vm.inputText
+                let movedAttachments = vm.attachments
+                let stash = ViewModelCache.PendingTransfer(
+                    targetId: targetId,
+                    inputText: movedText,
+                    attachments: movedAttachments
                 )
-                // Clear current VM input
+                ViewModelCache.pendingTransfer = stash
+                // Clear the source composer optimistically so the move reads as
+                // instant, but keep a copy: if the target never consumes the
+                // stash (navigation swallowed, wrong session opened), restore it
+                // here rather than letting the user's content vanish. Attachment
+                // files are NOT deleted on this path — both the stash and this
+                // restore reference the same cacheURLs.
                 vm.inputText = ""
                 vm.attachments.removeAll()
+                // The share content is no longer here — reset the flag that
+                // gates the "Move to…" pill. Currently `hasMovableShareContent`
+                // hides the pill anyway now the composer is empty, so this is
+                // not user-visible, but leaving it true is a latent trap for
+                // anything else that reads it.
+                hasInjectedShareContent = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + ViewModelCache.PendingTransfer.staleAfter) {
+                    // Match the exact stash we staged, not just its target: a
+                    // second move to the same target within the stale window
+                    // replaces the slot, and this timer must not restore that
+                    // newer content out from under it.
+                    guard let stranded = ViewModelCache.pendingTransfer,
+                          stranded.targetId == targetId,
+                          stranded.createdAt == stash.createdAt else { return }
+                    // Still sitting in the slot → nobody consumed it.
+                    ViewModelCache.pendingTransfer = nil
+                    minisLogger.info("[MoveTo] Transfer to \(targetId) was never consumed — restoring content to source session")
+                    if vm.inputText.isEmpty {
+                        vm.inputText = movedText
+                    } else if !movedText.isEmpty {
+                        vm.inputText += "\n" + movedText
+                    }
+                    vm.attachments.append(contentsOf: movedAttachments)
+                }
                 // Dismiss keyboard first so it doesn't linger during transition
                 inputFocused = false
                 // Post navigation after sheet dismiss animation completes
@@ -1540,6 +1653,35 @@ struct AIChatView: View {
 
     private func injectPendingTransferIfNeeded() {
         guard let transfer = ViewModelCache.pendingTransfer else { return }
+
+        // [T-ios-moveto-transfer-race] Only the intended target may consume the
+        // stash. Previously ANY session that appeared first took it, so a
+        // swallowed push meant the content surfaced in whatever session the
+        // user opened next. A mismatch is not an error — it just means we are
+        // not the target — so leave the stash alone and let the real target
+        // claim it. Time-based cleanup is what stops it lingering forever.
+        //
+        // [T-ios-moveto-new-session] The target may be a NOT-YET-CREATED
+        // session. "Move to… → New Chat" stages the synthetic `__new__<UUID>`
+        // draft id that ContentView is about to push, but that view is built as
+        // `AIChatView(sessionId: nil, draftId: "__new__…")` — the real session
+        // row only exists once the user sends. Matching `vm.sessionId` alone
+        // therefore NEVER matched for a new-chat target: the stash sat
+        // unclaimed until it went stale and was deleted, so the moved text and
+        // images vanished with no restore (the source view that owns the
+        // restore timer has already been popped by then). Match `draftId` too.
+        let isTarget = transfer.targetId == vm.sessionId || transfer.targetId == draftId
+        guard isTarget else {
+            if transfer.isStale {
+                ViewModelCache.discardPendingTransfer(reason: "stale, target \(transfer.targetId) never appeared")
+            }
+            return
+        }
+        guard !transfer.isStale else {
+            ViewModelCache.discardPendingTransfer(reason: "target \(transfer.targetId) appeared too late")
+            return
+        }
+
         ViewModelCache.pendingTransfer = nil
         minisLogger.info("[MoveTo] Injecting transfer: text='\(String(transfer.inputText.prefix(50)))' attachments=\(transfer.attachments.count) existing=\(vm.attachments.count)")
         // Clean up any stale unsent attachments on the target VM before injecting
@@ -3126,6 +3268,7 @@ struct AIChatView: View {
             isFocused: $inputFocused,
             hasSelection: $inputHasSelection,
             isScrollable: $inputIsScrollable,
+            isAtScrollBottom: $inputAtScrollBottom,
             // `String(localized:)` with an interpolation extracts the
             // `%@` form ("Message %@ (@ to mention files)") as the lookup
             // key in Localizable.xcstrings, so translators get one
@@ -3154,13 +3297,91 @@ struct AIChatView: View {
                         locale: "zh", source: "text_input")
                 }
             },
-            desiredCaret: vm.pendingCaret
+            desiredCaret: vm.pendingCaret,
+            // [T-ipad-composer-resize] Raise the text view's growth cap in
+            // lockstep with the dragged frame, otherwise text would scroll at
+            // 120pt inside a taller box and the extra space would be dead.
+            maxHeightOverride: composerTextHeight
         )
-        .fixedSize(horizontal: false, vertical: true)
+        return AnyView(composerBody(field: field, topPadding: topPadding))
+    }
+
+    /// [T-ipad-composer-resize] Wraps the text field with its (optional) fixed
+    /// height and the iPad drag handle.
+    ///
+    /// `.fixedSize(vertical:)` and an explicit `.frame(height:)` are mutually
+    /// exclusive: fixedSize asks the view for its intrinsic height, which is
+    /// exactly what we're overriding once the user has resized. So the two
+    /// modes are separate branches rather than modifiers stacked on one view.
+    private func composerBody(field: PastableTextView, topPadding: CGFloat) -> some View {
+        Group {
+            if let height = composerTextHeight {
+                field.frame(height: height)
+            } else {
+                field.fixedSize(horizontal: false, vertical: true)
+            }
+        }
         .padding(.horizontal, 16)
         .padding(.top, topPadding)
         .padding(.bottom, 10)
-        return AnyView(field)
+        .overlay(alignment: .top) {
+            if composerResizeEnabled { composerResizeHandle }
+        }
+    }
+
+    /// The grab affordance. Dragging UP makes the composer taller, so the drag
+    /// translation is negated. Double-tapping toggles between the two extremes.
+    private var composerResizeHandle: some View {
+        Capsule()
+            .fill(ChatColors.secondaryText.opacity(0.35))
+            .frame(width: 36, height: 5)
+            .padding(.top, 4)
+            .contentShape(Rectangle().inset(by: -12))  // enlarge the hit area
+            // Order matters: the double-tap must be registered BEFORE the drag,
+            // otherwise the drag (minimumDistance 2) claims the touch sequence
+            // first and the second tap never forms.
+            .onTapGesture(count: 2) { toggleComposerHeight() }
+            .gesture(
+                DragGesture(minimumDistance: 2)
+                    .onChanged { value in composerDragOffset = -value.translation.height }
+                    .onEnded { value in
+                        let resolved = min(
+                            max(currentComposerHeight - value.translation.height,
+                                Self.composerDefaultHeight),
+                            composerMaxHeight)
+                        composerDragOffset = 0
+                        persistComposerHeight(resolved)
+                    }
+            )
+            .accessibilityLabel(String(localized: "Resize input box"))
+            .accessibilityHint(String(localized: "Drag to resize, double tap to toggle"))
+    }
+
+    /// Double-tap: jump between the 50% cap and the default height. Anything
+    /// short of the cap counts as "not expanded" and expands, so a partially
+    /// dragged composer grows rather than collapsing unexpectedly.
+    private func toggleComposerHeight() {
+        let isExpanded = currentComposerHeight >= composerMaxHeight - 0.5
+        withAnimation(.easeOut(duration: 0.2)) {
+            persistComposerHeight(isExpanded ? Self.composerDefaultHeight : composerMaxHeight)
+        }
+    }
+
+    /// Store a resolved composer height as a screen fraction. Collapsing to the
+    /// default clears the preference entirely, so the composer returns to
+    /// content-driven sizing rather than being pinned at the default.
+    private func persistComposerHeight(_ height: CGFloat) {
+        composerHeightFraction = height <= Self.composerDefaultHeight + 0.5
+            ? 0
+            : height / UIScreen.main.bounds.height
+    }
+
+    /// The composer's height right now, used as the drag's starting point.
+    private var currentComposerHeight: CGFloat {
+        composerHeightFraction > 0
+            ? min(max(UIScreen.main.bounds.height * composerHeightFraction,
+                      Self.composerDefaultHeight), composerMaxHeight)
+            : Self.composerDefaultHeight
     }
 
     // MARK: - Input keyboard handlers (extracted to avoid inflating the
@@ -3266,25 +3487,7 @@ struct AIChatView: View {
                     .padding(.trailing, 10)
                 }
             }
-            // [T-popup-white-patch 7a0e3d62] Paint the composer fill INSIDE
-            // a rounded shape rather than as a rectangular background +
-            // clipShape. With the previous `.background(.white).clipShape(...)`
-            // pair, the host CALayer carried a rectangular white backing
-            // color that the system text-selection / edit-menu pop
-            // animation snapshotted before the SwiftUI mask applied —
-            // exposing a white rectangle around the rounded corners during
-            // the animation. Filling the rounded shape directly leaves the
-            // host layer's backgroundColor at .clear, so the snapshot is
-            // already-rounded and the corners stay clean. clipShape is
-            // kept so any child views (text view, attachments) still get
-            // clipped to the rounded rect.
-            .background(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(ChatColors.inputBg)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .shadow(color: Color.black.opacity(0.12), radius: 8, x: 0, y: 2)
-            .shadow(color: Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0, alpha: 0.5) : UIColor(white: 0, alpha: 0) }), radius: 8, x: 0, y: -4)
+            .modifier(ComposerSurface())
             .frame(maxWidth: maxContentWidth)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -3457,7 +3660,15 @@ struct AIChatView: View {
             .simultaneousGesture(
                 DragGesture(minimumDistance: 20, coordinateSpace: .local)
                     .onChanged { value in
-                        guard !inputHasSelection, !inputIsScrollable else { return }
+                        // [T-ios-composer-swipe-send-at-bottom] While the inner
+                        // scroll still owns the drag, keep the anchor cleared so
+                        // that the instant it hands off (user reaches the bottom
+                        // mid-drag) progress re-anchors HERE instead of counting
+                        // the scrolling that came before.
+                        guard !inputHasSelection, swipeToSendAllowed else {
+                            sendSwipeAnchor = nil
+                            return
+                        }
                         // Priority in voice mode: component gestures > collapse/
                         // expand > swipe-to-send. The panel's own drags (collapse/
                         // expand, delete control) are handled inside the panel; the
@@ -3482,7 +3693,18 @@ struct AIChatView: View {
                             if sendSwipeProgress != 0 { sendSwipeProgress = 0 }
                             return
                         }
-                        let dragUp = -value.translation.height
+                        // [T-ios-composer-swipe-send-at-bottom] Anchor progress
+                        // at the hand-off point. For a plain short-text drag
+                        // this is the drag origin (0) and behaves exactly as
+                        // before; for a drag that first scrolled a long value to
+                        // its end, it discards the scrolling part so only the
+                        // EXTRA pull past the bottom counts toward sending.
+                        if sendSwipeAnchor == nil { sendSwipeAnchor = value.translation.height }
+                        let dragUp = -(value.translation.height - (sendSwipeAnchor ?? 0))
+                        guard dragUp > 0 else {
+                            if sendSwipeProgress != 0 { sendSwipeProgress = 0 }
+                            return
+                        }
                         let newProgress = max(0, min(1, dragUp / Self.kSendSwipeThreshold))
                         // Haptic tick the first time we cross the arming
                         // fraction (0.8) — matches the capsule's full-opacity
@@ -3495,7 +3717,12 @@ struct AIChatView: View {
                         sendSwipeLocation = value.location
                     }
                     .onEnded { value in
-                        guard !inputHasSelection, !inputIsScrollable else {
+                        // [T-ios-composer-swipe-send-at-bottom] Consume the
+                        // hand-off anchor: whatever happens below, the next
+                        // gesture must re-anchor from scratch.
+                        let anchor = sendSwipeAnchor ?? 0
+                        sendSwipeAnchor = nil
+                        guard !inputHasSelection, swipeToSendAllowed else {
                             sendSwipeProgress = 0
                             return
                         }
@@ -3523,7 +3750,11 @@ struct AIChatView: View {
                         let isVertical = abs(value.translation.height) > abs(value.translation.width)
                         let endY = value.location.y
                         let hasText = !vm.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        let swipedUp = isVertical && value.translation.height < 0
+                        // Measure the send-relevant travel from the hand-off
+                        // anchor, not the drag origin, so the scrolling portion
+                        // of a scroll-then-pull drag doesn't read as a swipe-up.
+                        let anchoredHeight = value.translation.height - anchor
+                        let swipedUp = isVertical && anchoredHeight < 0
                         if swipedUp && hasText {
                             // Swipe-up release with text: send if past
                             // arming fraction (0.8). When the agent is
@@ -4160,6 +4391,50 @@ struct AIChatView: View {
         hSizeClass == .regular ? 900 : nil
     }
 
+}
+
+// MARK: - Composer Surface
+
+/// Background + shadow for the composer's outer rounded container.
+///
+/// **[T-popup-white-patch 7a0e3d62] — the invariant both branches must keep.**
+/// The fill is painted INSIDE a rounded shape, never as a rectangular
+/// `.background(color)` + `.clipShape(...)` pair. With that older pairing the
+/// host CALayer carried a rectangular backing colour which the system
+/// text-selection / edit-menu pop animation snapshotted *before* SwiftUI's mask
+/// applied, flashing a square of colour around the rounded corners mid-animation.
+/// Filling the shape directly leaves the host layer's `backgroundColor` at
+/// `.clear`, so the snapshot is already rounded. `clipShape` is still applied so
+/// child views (text view, attachment grid) are clipped to the same rect.
+///
+/// `glassEffect(in:)` composites the material into the shape it is given, for
+/// the same reason: it does not set a rectangular layer background, so it
+/// preserves the invariant rather than reintroducing the bug. Verified on device
+/// by long-pressing composer text to raise the edit menu — see the task notes.
+///
+/// The two hand-rolled shadows are dropped on the glass path (Liquid Glass
+/// renders its own edge and shadow; stacking the old ones reads as a dark halo —
+/// the same finding as the FAB conversion). The sub-26 branch keeps the original
+/// fill and BOTH shadows byte-for-byte, including the dark-mode-only top shadow
+/// that lifts the bar off the message list.
+private struct ComposerSurface: ViewModifier {
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: 20, style: .continuous)
+    }
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(.regular, in: shape)
+                .clipShape(shape)
+        } else {
+            content
+                .background(shape.fill(ChatColors.inputBg))
+                .clipShape(shape)
+                .shadow(color: Color.black.opacity(0.12), radius: 8, x: 0, y: 2)
+                .shadow(color: Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0, alpha: 0.5) : UIColor(white: 0, alpha: 0) }), radius: 8, x: 0, y: -4)
+        }
+    }
 }
 
 // MARK: - Provider Import Prompt

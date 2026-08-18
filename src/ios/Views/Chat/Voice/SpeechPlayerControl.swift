@@ -165,7 +165,12 @@ struct SpeechPlayerControl: View {
         }
     }
 
-    private func recompute() {
+    /// [T-voice-capsule-streaming-ratchet] Pending settle-window descent; see
+    /// the ratchet block at the end of `recompute`.
+    @State private var descentTask: Task<Void, Never>?
+    private static let descentSettleMillis = 1200
+
+    private func recompute(allowDescent: Bool = false) {
         let rf = restingFrame
         guard rf.width > 0 else { return }
         let newLift = placement.requiredLift(forCapsule: rf)
@@ -196,9 +201,51 @@ struct SpeechPlayerControl: View {
         // button is faded out anyway, and freezing it avoids the very jitter we're
         // suppressing. It re-applies the settled value once space recovers.
         guard !shouldHide else { return }
-        if abs(newLift - avoidLift) > 6 {
-            VoiceLog.log("[capsule] APPLY lift \(Int(avoidLift)) → \(Int(newLift)); restingBottom=\(Int(rf.maxY)) → displayBottom=\(Int(rf.maxY - newLift))")
+
+        // [T-voice-capsule-streaming-ratchet] Ratchet with settle-window
+        // descent. During a streaming reply the obstacle set under the capsule
+        // genuinely oscillates at content rhythm (the FloatingToolBar preview
+        // grows/swaps inside the "inputBar" composite, the scroll buttons pop
+        // in and out) — each flip is slower than the 200/250ms debounces, so a
+        // faithfully-tracking lift bounced the button ~80px up and down about
+        // once a second (GH report, frame-tracked 590↔670px). Asymmetric
+        // policy instead:
+        //   rise: apply immediately — never let UI cover the button;
+        //   fall: apply only after the LOWER target has held continuously for
+        //         `descentSettleMillis`; any interim rise/return cancels the
+        //         pending descent, so an oscillating obstacle pins the capsule
+        //         at its high-water mark instead of dancing with it.
+        let delta = newLift - avoidLift
+        if delta > 6 {
+            descentTask?.cancel()
+            descentTask = nil
+            VoiceLog.log("[capsule] APPLY lift \(Int(avoidLift)) → \(Int(newLift)) (rise); restingBottom=\(Int(rf.maxY)) → displayBottom=\(Int(rf.maxY - newLift))")
             avoidLift = newLift
+        } else if delta < -6 {
+            if allowDescent {
+                descentTask = nil
+                VoiceLog.log("[capsule] APPLY lift \(Int(avoidLift)) → \(Int(newLift)) (settled descent); restingBottom=\(Int(rf.maxY)) → displayBottom=\(Int(rf.maxY - newLift))")
+                avoidLift = newLift
+            } else if descentTask == nil {
+                VoiceLog.log("[capsule] descent \(Int(avoidLift)) → \(Int(newLift)) ARMED — applying after \(Self.descentSettleMillis)ms of stability")
+                descentTask = Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(Self.descentSettleMillis))
+                    guard !Task.isCancelled else { return }
+                    descentTask = nil
+                    // Re-evaluate from a FRESH requiredLift at fire time — the
+                    // world may have moved during the settle window.
+                    recompute(allowDescent: true)
+                }
+            }
+            // else: a descent is already pending — let it fire and re-evaluate.
+        } else {
+            // Target is back at (≈) the current lift — the obstacle returned.
+            // A pending descent would undershoot; cancel it.
+            if let t = descentTask {
+                t.cancel()
+                descentTask = nil
+                VoiceLog.log("[capsule] descent CANCELLED — obstacle returned (lift stays \(Int(avoidLift)))")
+            }
         }
     }
 

@@ -490,11 +490,32 @@ private struct MarkdownFilePreview: View {
         .toolbar {
             if case .loaded = loadState {
                 ToolbarItem(placement: .topBarLeading) {
-                    Picker("View", selection: $renderMode) {
-                        Image(systemName: "doc.richtext").tag(Mode.rendered)
-                        Image(systemName: "chevron.left.forwardslash.chevron.right").tag(Mode.source)
+                    // Single toggle button, NOT a segmented Picker.
+                    //
+                    // A `.segmented` Picker asks for the width of all its
+                    // segments, but a toolbar item on iOS 26's Liquid Glass
+                    // bar is laid out as one round glass button. The control
+                    // got squeezed into that circular slot and drew both
+                    // segments on top of each other — the reported "two
+                    // overlapping, distorted icons" (screenshot
+                    // /tmp/md_preview_toggle_bug.jpg), not an animation stuck
+                    // mid-transition.
+                    //
+                    // A plain Button showing ONE icon is what a toolbar slot
+                    // is shaped for, and it matches the icon-swap toggles
+                    // used elsewhere in the app. The icon shows the mode you
+                    // will switch TO, which is the convention for a toggle
+                    // that has no separate label.
+                    Button {
+                        renderMode = (renderMode == .rendered) ? .source : .rendered
+                    } label: {
+                        Image(systemName: renderMode == .rendered
+                              ? "chevron.left.forwardslash.chevron.right"
+                              : "doc.richtext")
                     }
-                    .pickerStyle(.segmented)
+                    .accessibilityLabel(renderMode == .rendered
+                                        ? Text("Show Source")
+                                        : Text("Show Rendered"))
                 }
             }
         }
@@ -1398,6 +1419,10 @@ struct FileItem: Identifiable {
     let isSymlink: Bool
     let size: Int64
     let modificationDate: Date?
+    /// Lowercased extension of the symlink *target* (or of `url` itself when
+    /// not a link). Precomputed in `init?` so `iconName` — evaluated in `body`
+    /// for every visible row — never has to resolve the link again.
+    let resolvedPathExtension: String
 
     init?(url: URL) {
         self.url = url
@@ -1426,11 +1451,19 @@ struct FileItem: Identifiable {
             self.isDirectory = targetValues?.isDirectory ?? false
             self.size = Int64(targetValues?.fileSize ?? 0)
             self.modificationDate = targetValues?.contentModificationDate
+            // Capture the target's extension now, while we're already off the
+            // main thread and have the resolved URL in hand. `iconName` is read
+            // from `body` for every visible row; re-resolving the symlink there
+            // meant a `getattrlist(2)` per row per body pass, which blocks the
+            // main thread when the link points into a slow or unreachable
+            // mounted volume.
+            self.resolvedPathExtension = resolved.pathExtension.lowercased()
         } else {
             guard let values else { return nil }
             self.isDirectory = values.isDirectory ?? false
             self.size = Int64(values.fileSize ?? 0)
             self.modificationDate = values.contentModificationDate
+            self.resolvedPathExtension = url.pathExtension.lowercased()
         }
     }
 
@@ -1439,7 +1472,7 @@ struct FileItem: Identifiable {
             return "folder.fill"
         }
 
-        let ext = (isSymlink ? url.resolvingSymlinksInPath() : url).pathExtension.lowercased()
+        let ext = resolvedPathExtension
         switch ext {
         case "txt", "md", "json", "xml", "yaml", "yml":
             return "doc.text"
@@ -1547,6 +1580,10 @@ private struct DirectoryPickerView: View {
     @State private var currentDir: URL
     @State private var items: [FileItem] = []
     @State private var pathComponents: [String] = []
+    /// Monotonic id for the in-flight `loadDirectories` task, so a slow
+    /// enumeration that finishes after the user has already navigated
+    /// elsewhere doesn't overwrite the newer listing.
+    @State private var loadToken: UInt64 = 0
 
     init(rootPath: URL, rootLabel: String, initialPath: URL? = nil, excludedURL: URL, title: String, onSelect: @escaping (URL) -> Void) {
         self.rootPath = rootPath
@@ -1637,22 +1674,47 @@ private struct DirectoryPickerView: View {
         .onAppear { loadDirectories() }
     }
 
+    /// Enumerate `currentDir`'s subdirectories on a background queue.
+    ///
+    /// Every call here is a filesystem touch — `resolvingSymlinksInPath()`,
+    /// `contentsOfDirectory`, and `FileItem.init?`'s per-child
+    /// `resourceValues(forKeys:)` — and `currentDir` can be inside a mounted
+    /// external folder backed by a network share or another app's
+    /// FileProvider. On such a volume each of those is a synchronous XPC
+    /// round-trip to the provider, so running this loop inline from
+    /// `.onAppear` (as it used to) blocked the main thread for as long as the
+    /// volume took to answer, tripping the 10s scene-update watchdog. Hop off
+    /// the main actor and publish results back when done.
     private func loadDirectories() {
         updatePathComponents()
-        let resolved = currentDir.resolvingSymlinksInPath()
-        let fm = FileManager.default
-        let contents = (try? fm.contentsOfDirectory(
-            at: resolved,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        )) ?? []
-        items = contents.compactMap { url -> FileItem? in
-            let item = FileItem(url: url)
-            guard let item, item.isDirectory else { return nil }
-            // Exclude the source item's directory to prevent moving into itself
-            if url.resolvingSymlinksInPath().path == excludedURL.resolvingSymlinksInPath().path { return nil }
-            return item
-        }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        let dir = currentDir
+        let excluded = excludedURL
+        loadToken &+= 1
+        let token = loadToken
+        Task.detached(priority: .userInitiated) {
+            let resolved = dir.resolvingSymlinksInPath()
+            let fm = FileManager.default
+            let contents = (try? fm.contentsOfDirectory(
+                at: resolved,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            )) ?? []
+            // Resolve the exclusion once, not once per child.
+            let excludedPath = excluded.resolvingSymlinksInPath().path
+            let loaded = contents.compactMap { url -> FileItem? in
+                let item = FileItem(url: url)
+                guard let item, item.isDirectory else { return nil }
+                // Exclude the source item's directory to prevent moving into itself
+                if url.resolvingSymlinksInPath().path == excludedPath { return nil }
+                return item
+            }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            await MainActor.run {
+                // Drop results from a superseded load (user navigated again
+                // while a slow volume was still enumerating).
+                guard token == loadToken else { return }
+                items = loaded
+            }
+        }
     }
 
     private func navigateTo(index: Int) {

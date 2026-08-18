@@ -34,8 +34,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ProviderModelGroupEntity::class,
         ProviderAgentLoopIdEntity::class,
         ProviderConfigMetaEntity::class,
+        ProviderThinkingRuleEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class ProviderDatabase : RoomDatabase() {
@@ -74,6 +75,35 @@ abstract class ProviderDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * [T-android-thinking-rules-phase2] Add the custom-thinking-rules table.
+         * Pure additive CREATE TABLE — no existing row is touched, and a provider with
+         * no custom rules has an empty table, so resolution stays byte-identical to
+         * pre-migration (the resolver prepends an empty list above the built-ins).
+         */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS provider_thinking_rules (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        provider_instance_id TEXT NOT NULL,
+                        label TEXT NOT NULL,
+                        scope_kind TEXT NOT NULL,
+                        scope_pattern TEXT,
+                        wire_format_json TEXT,
+                        reasoning_echo_json TEXT,
+                        sort_order INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_provider_thinking_rules_provider_instance_id " +
+                        "ON provider_thinking_rules(provider_instance_id)",
+                )
+            }
+        }
+
         fun getInstance(context: Context): ProviderDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -81,7 +111,7 @@ abstract class ProviderDatabase : RoomDatabase() {
                     ProviderDatabase::class.java,
                     "provider.db",
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build()
                     .also { INSTANCE = it }
             }

@@ -2,7 +2,9 @@ package com.openminis.app.provider.voice
 
 import android.util.Base64
 import android.util.Log
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -85,6 +87,14 @@ class MiniMaxVoiceProvider(providerId: String, baseURL: String, apiKey: String?)
         val url = composedUrlString(voiceOutputEndpointPath())
         // MiniMax-specific shape: speed becomes an integer 0~200.
         val speedInt = ((request.speed ?: 1.0f) * 100).toInt()
+        // [T-voice-minimax-quicktest-2054] The picker (where model entries
+        // double as voices) passes the MODEL id in `voice`. MiniMax voice ids
+        // are a SEPARATE namespace, so sending the model id as voice_id fails
+        // with 2054 "voice id not exist" — which is exactly what Quick Test hit
+        // on speech-2.8-hd / -turbo while iOS passed. Treat voice == model as
+        // "no voice selected" and fall back to the default. Port of the iOS
+        // guard in VoiceProvider+Vendors.swift.
+        val requestedVoice = if (request.voice == request.model) null else request.voice
         val body = JSONObject().apply {
             put("model", request.model ?: defaultVoiceOutputModel())
             put("text", request.input)
@@ -92,7 +102,7 @@ class MiniMaxVoiceProvider(providerId: String, baseURL: String, apiKey: String?)
             put(
                 "voice_setting",
                 JSONObject()
-                    .put("voice_id", request.voice ?: defaultVoiceOutputVoice())
+                    .put("voice_id", requestedVoice ?: defaultVoiceOutputVoice())
                     .put("speed", speedInt)
                     .put("vol", 100)
                     .put("pitch", 0),
@@ -125,11 +135,34 @@ class MiniMaxVoiceProvider(providerId: String, baseURL: String, apiKey: String?)
                 throw VoiceProviderException.Parse("MiniMax TTS error [$code]: $msg")
             }
         }
+        // [T-voice-minimax-quicktest-2054] Current t2a_v2 (api.minimaxi.com,
+        // verified on iOS 2026-07-24) nests HEX-encoded audio at `data.audio`;
+        // older deployments returned base64 at `audio.audio`. Android only knew
+        // the legacy shape, so even a request that succeeded upstream would
+        // have failed to parse. Try hex first, then base64, matching iOS.
+        json?.optJSONObject("data")?.optString("audio")?.takeIf { it.isNotEmpty() }?.let { enc ->
+            decodeHex(enc)?.let { return it }
+            runCatching { Base64.decode(enc, Base64.DEFAULT) }.getOrNull()?.let { return it }
+            throw VoiceProviderException.Parse("MiniMax TTS: data.audio is neither hex nor base64")
+        }
         val b64 = json?.optJSONObject("audio")?.optString("audio")
             ?.takeIf { it.isNotEmpty() }
             ?: throw VoiceProviderException.Parse("Unexpected MiniMax TTS response format")
         return runCatching { Base64.decode(b64, Base64.DEFAULT) }.getOrNull()
             ?: throw VoiceProviderException.Parse("Unexpected MiniMax TTS response format")
+    }
+
+    /** Hex string → bytes, or null when the string isn't valid hex. */
+    private fun decodeHex(s: String): ByteArray? {
+        if (s.length % 2 != 0 || s.isEmpty()) return null
+        val out = ByteArray(s.length / 2)
+        for (i in out.indices) {
+            val hi = Character.digit(s[i * 2], 16)
+            val lo = Character.digit(s[i * 2 + 1], 16)
+            if (hi < 0 || lo < 0) return null
+            out[i] = ((hi shl 4) or lo).toByte()
+        }
+        return out
     }
 }
 
@@ -719,5 +752,244 @@ class MimoVoiceProvider(providerId: String, baseURL: String, apiKey: String?) :
             ?: throw VoiceProviderException.Parse("Unexpected MiMo TTS response format")
         return runCatching { Base64.decode(b64, Base64.DEFAULT) }.getOrNull()
             ?: throw VoiceProviderException.Parse("Unexpected MiMo TTS response format")
+    }
+}
+
+// -- OpenRouter (TTS + ASR, both ride on /v1/chat/completions) ----------------
+
+/**
+ * OpenRouter voice — Android port of iOS `OpenRouterVoiceProvider`
+ * (iOS 1946b0b2 for TTS, 1f23fd02 for ASR).
+ *
+ * OpenRouter does not implement OpenAI's dedicated TTS endpoint at all:
+ * `POST /api/v1/audio/speech` answers `{"error":{"message":"Model <id> does
+ * not exist","code":400}}` for EVERY model id, including `openai/tts-1`. That
+ * 400 — the endpoint being absent, not a missing model — is what users saw for
+ * every OpenRouter voice entry from fish-audio to gpt-audio.
+ *
+ * ASR is split across TWO endpoints serving DISJOINT model sets:
+ *   - `/v1/audio/transcriptions` takes dedicated ASR models only
+ *     (`openai/whisper-1` works; a chat model there returns the same 400);
+ *   - `/v1/chat/completions` with an `input_audio` part takes audio-capable
+ *     CHAT models (gemini-3.6-flash, gpt-audio-mini), and explicitly REJECTS
+ *     whisper ("is a transcription model and cannot be used with the
+ *     chat/completions endpoint").
+ *
+ * So neither half can be routed by provider type alone — the split is per
+ * model, and OpenRouter's own error text is the specification.
+ */
+class OpenRouterVoiceProvider(providerId: String, baseURL: String, apiKey: String?) :
+    VoiceProvider(providerId, baseURL, apiKey) {
+
+    companion object {
+        /**
+         * OpenAI's audio-preview models emit 24 kHz mono PCM16 and OpenRouter
+         * proxies that stream unchanged. No response field announces the rate,
+         * so it is fixed here — a wrong value plays at the wrong pitch, which
+         * is immediately audible if it ever changes.
+         */
+        private const val PCM_SAMPLE_RATE = 24000
+
+        /**
+         * The voices OpenAI's audio-preview models accept, as returned verbatim
+         * in their own 400 ("Supported values are: …"). Used only to RECOGNISE
+         * a valid name, never to pick one — the fallback is the default voice.
+         */
+        private val KNOWN_VOICES = setOf(
+            "alloy", "echo", "fable", "onyx", "nova", "shimmer", "coral",
+            "verse", "ballad", "ash", "sage", "marin", "cedar",
+        )
+
+        /**
+         * Ids that belong to the `/audio/transcriptions` endpoint. Deliberately
+         * narrow and name-based: a false positive sends a working chat model to
+         * the endpoint that 400s.
+         *
+         * Every pattern was probed against the live endpoint rather than
+         * guessed, because OpenRouter publishes no catalogue for them: GET
+         * /api/v1/models lists the chat models and contains no ASR id at all,
+         * yet `openai/whisper-1` transcribes fine. Confirmed working there:
+         * `openai/whisper-1`, `openai/gpt-4o-transcribe`,
+         * `openai/gpt-4o-mini-transcribe`, `deepgram/nova-3`.
+         *
+         * Deepgram is matched VENDOR-qualified, never by the bare engine name:
+         * a bare "nova-2"/"nova-3" also matches `amazon/nova-2-lite-v1`, a chat
+         * model in the catalogue that would then be misrouted into the very 400
+         * this class exists to remove.
+         */
+        fun isDedicatedTranscriptionModel(modelId: String): Boolean {
+            val id = modelId.lowercase(Locale.ROOT)
+            return id.contains("whisper") ||
+                id.contains("transcribe") || // gpt-4o[-mini]-transcribe
+                id.contains("deepgram/")
+        }
+    }
+
+    // -- ASR ------------------------------------------------------------------
+
+    /**
+     * Inverts the base class's rule, and that inversion is what makes it
+     * general. The base gates on a small allowlist of chat-audio stems, which
+     * is right when the fallback is a REST endpoint accepting arbitrary
+     * third-party ASR ids. Here the fallback accepts only DEDICATED
+     * transcription models — a small, recognisable family — so the default
+     * flips: anything not obviously a transcription model is treated as a chat
+     * model. That covers gemini, gpt-audio, qwen-omni and every future
+     * audio-capable chat model without a second allowlist to maintain.
+     */
+    override fun usesChatBasedASR(model: com.openminis.app.data.model.LLMModel): Boolean =
+        !isDedicatedTranscriptionModel(model.id)
+
+    // -- TTS ------------------------------------------------------------------
+
+    /**
+     * Only chat-audio models can produce audio here.
+     *
+     * Deliberately NOT extended to fish-audio and friends: whether those serve
+     * audio through this protocol on OpenRouter is unverified, and sending them
+     * a chat-audio request would trade one 400 for another. They keep the
+     * inherited path until someone confirms otherwise.
+     */
+    private fun usesChatAudioOutput(modelId: String): Boolean {
+        val id = modelId.lowercase(Locale.ROOT)
+        if (!id.contains("audio")) return false
+        return id.contains("gpt") || id.contains("openai")
+    }
+
+    /**
+     * Pick the `audio.voice` value.
+     *
+     * Callers disagree on what [VoiceOutputRequest.voice] means: for vendors
+     * where a catalog entry IS a voice (ElevenLabs voice_id, Doubao speaker)
+     * the entry id is passed straight through, and Quick Test follows that
+     * convention. For chat-audio the model and the voice are separate axes, so
+     * that convention arrives as `voice: "openai/gpt-audio"` and the upstream
+     * answers "Invalid value: 'openai/gpt-audio'. Supported values are:
+     * 'alloy', …" — a second 400 hiding behind the first.
+     *
+     * So: honour a voice the vendor actually knows, otherwise fall back to the
+     * default rather than forwarding something certain to fail. An
+     * unrecognised-but-real voice (if OpenAI adds one) degrades to the default
+     * instead of erroring, the safer direction for TTS.
+     */
+    private fun resolvedVoice(requested: String?, modelId: String): String {
+        val want = requested?.takeIf { it.isNotEmpty() } ?: return defaultVoiceOutputVoice()
+        val lowered = want.lowercase(Locale.ROOT)
+        if (KNOWN_VOICES.contains(lowered)) return lowered
+        Log.i(
+            "VoiceProvider",
+            "OpenRouter chat-audio: ignoring non-voice '$want' for $modelId, using ${defaultVoiceOutputVoice()}",
+        )
+        return defaultVoiceOutputVoice()
+    }
+
+    /**
+     * The only route that produces audio is `POST /v1/chat/completions` in the
+     * audio-preview shape, with three hard constraints (each verified against
+     * the live API):
+     *   - `modalities: ["text","audio"]` + `audio: {voice, format}`;
+     *   - `stream: true` is MANDATORY — otherwise "Audio output requires
+     *     stream: true";
+     *   - while streaming, `audio.format` accepts ONLY `pcm16` — `wav` returns
+     *     "does not support 'wav' when stream=true".
+     *
+     * The SSE body is an ordinary chat-completions stream with two extra fields
+     * per delta: `audio.data` (base64 PCM16 chunk) and `audio.transcript`. We
+     * accumulate the PCM and wrap it in a WAV container, because the caller
+     * feeds this to MediaPlayer/ExoPlayer and headerless PCM is not openable.
+     */
+    override suspend fun synthesize(request: VoiceOutputRequest): ByteArray {
+        val modelId = request.model ?: defaultVoiceOutputModel()
+        if (!usesChatAudioOutput(modelId)) {
+            // Not a known chat-audio model — behave exactly as before rather
+            // than guessing. (This path still 400s on OpenRouter, but that is
+            // the pre-existing state for those ids, not a regression, and it
+            // keeps a working relay-hosted TTS model working if one exists.)
+            return super.synthesize(request)
+        }
+
+        val url = composedUrlString("/v1/chat/completions")
+        val body = JSONObject().apply {
+            put("model", modelId)
+            put("modalities", JSONArray().put("text").put("audio"))
+            put(
+                "audio",
+                JSONObject()
+                    .put("voice", resolvedVoice(request.voice, modelId))
+                    // pcm16 is the ONLY value accepted while streaming, and
+                    // streaming is mandatory — so this is fixed, not a choice.
+                    .put("format", "pcm16"),
+            )
+            put("stream", true)
+            put(
+                "messages",
+                JSONArray().put(
+                    JSONObject().put("role", "user").put("content", request.input),
+                ),
+            )
+        }
+        val builder = Request.Builder()
+            .url(url)
+            .post(body.toString().toRequestBody("application/json".toMediaType()))
+        applyVoiceAuth(builder)
+
+        val pcm = ByteArrayOutputStream()
+        val transcript = StringBuilder()
+        withContext(Dispatchers.IO) {
+            httpClient.newCall(builder.build()).execute().use { response ->
+                if (!response.isSuccessful) {
+                    // Drain the body so the server's message survives into the
+                    // error — an opaque "HTTP 400" is what made this bug hard
+                    // to place in the first place.
+                    val errBody = response.body?.bytes()
+                    if (response.code == 401 || response.code == 403) {
+                        Log.e("VoiceProvider", "OpenRouter voice auth failed: HTTP ${response.code}")
+                        throw VoiceProviderException.Auth()
+                    }
+                    Log.e(
+                        "VoiceProvider",
+                        "OpenRouter chat-audio failed: HTTP ${response.code} " +
+                            "body=${errBody?.toString(Charsets.UTF_8).orEmpty()}",
+                    )
+                    throw VoiceProviderException.Http(response.code, errBody)
+                }
+                val source = response.body?.source()
+                    ?: throw VoiceProviderException.Parse("OpenRouter returned an empty body")
+                while (true) {
+                    val line = source.readUtf8Line() ?: break
+                    if (!line.startsWith("data:")) continue
+                    val payload = line.removePrefix("data:").trim()
+                    if (payload == "[DONE]") break
+                    val obj = runCatching { JSONObject(payload) }.getOrNull() ?: continue
+                    val choices = obj.optJSONArray("choices") ?: continue
+                    for (i in 0 until choices.length()) {
+                        val audio = choices.optJSONObject(i)
+                            ?.optJSONObject("delta")
+                            ?.optJSONObject("audio")
+                            ?: continue
+                        audio.optString("data").takeIf { it.isNotEmpty() }?.let { b64 ->
+                            runCatching { Base64.decode(b64, Base64.DEFAULT) }
+                                .getOrNull()?.let { pcm.write(it) }
+                        }
+                        audio.optString("transcript").takeIf { it.isNotEmpty() }
+                            ?.let { transcript.append(it) }
+                    }
+                }
+            }
+        }
+
+        val pcmBytes = pcm.toByteArray()
+        if (pcmBytes.isEmpty()) {
+            throw VoiceProviderException.Parse(
+                "OpenRouter returned no audio data for $modelId" +
+                    if (transcript.isEmpty()) "" else " (transcript: ${transcript.take(80)})",
+            )
+        }
+        Log.i(
+            "VoiceProvider",
+            "OpenRouter chat-audio ok model=$modelId pcmBytes=${pcmBytes.size} " +
+                "transcriptChars=${transcript.length}",
+        )
+        return wrapPcm16InWav(pcmBytes, PCM_SAMPLE_RATE)
     }
 }

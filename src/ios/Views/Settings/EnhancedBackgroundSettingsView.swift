@@ -190,6 +190,13 @@ struct EnhancedBackgroundSettingsView: View {
             // locally so a later plain navigation doesn't re-arm the borders.
             let consumed = deepLink.consumeFocus()
             if !consumed.isEmpty { focus = consumed }
+            // [T-ios-scene-create-watchdog-corelocation] This screen shows the
+            // location-permission row, and the status is no longer read in the
+            // manager's init (that IPC is what tripped the scene-create
+            // watchdog). Refresh it here so the row is accurate even if this
+            // view is somehow reached before setup() ran, and so it reflects a
+            // permission the user changed in Settings.app while we were away.
+            keepAlive.refreshLocationAuthStatus()
         }
     }
 

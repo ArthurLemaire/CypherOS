@@ -8,6 +8,7 @@ import android.graphics.Rect
 import android.os.Build
 import android.view.Display
 import android.view.accessibility.AccessibilityNodeInfo
+import com.openminis.app.accessibility.AccessibilityRecoveryManager
 import com.openminis.app.accessibility.MinisAccessibilityService
 import com.openminis.app.accessibility.NodeRegistry
 import com.openminis.app.logging.AppLogger
@@ -103,6 +104,40 @@ First-run: enable "Minis" under Settings → Accessibility, then `service ping`.
                     args,
                     "PERMISSION_DENIED",
                     "Agent is not allowed to use android-a11y-cli. Open Settings → Permissions → Integrations to change.",
+                )
+            }
+        }
+        // [T-android-a11y-force-stop-recovery] A force-stop (system Settings'
+        // "Force stop", or an OEM "clear" button) makes the framework strip our
+        // component out of Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES. It
+        // never self-heals, so without this every subsequent a11y call just
+        // returns SERVICE_NOT_RUNNING and the user has no idea the grant is the
+        // problem. Detect it here — the single point every real operation
+        // passes through — and offer a repair (one-tap via Shizuku when
+        // available, otherwise a trip to Settings).
+        //
+        // `service` / `--version` are exempt for the same reason they bypass
+        // the gate above: they are how you DIAGNOSE this state, and prompting
+        // from `service status` would be circular.
+        //
+        // runBlocking matches the established pattern for permission gates in
+        // the sibling handlers (Calendar / Contacts / BrowserUse) — offload
+        // handlers are invoked off the main thread on a sandbox worker, and
+        // `handle` is not a suspend fun. The prompt self-cancels after
+        // AccessibilityRecoveryManager.PROMPT_TIMEOUT_MS so this can never
+        // block the worker indefinitely.
+        if (sub != "service" && sub != "--version") {
+            val usable = kotlinx.coroutines.runBlocking {
+                AccessibilityRecoveryManager.ensureGrantOrPrompt(context)
+            }
+            if (!usable) {
+                return err(
+                    args,
+                    "SERVICE_NOT_RUNNING",
+                    "Accessibility permission was revoked (this happens after a force-stop). " +
+                        "Re-enable Minis under Settings → Accessibility, or use Settings → " +
+                        "Permissions → Integrations to repair it with Shizuku.",
+                    exit = 77,
                 )
             }
         }

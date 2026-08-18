@@ -61,9 +61,25 @@ interface SpeechRecognitionEngine {
     /**
      * Optional: called by [SpeechRecognitionManager] when a prior [start] ended
      * in an unrecoverable error so the engine can remember it and report
-     * `isAvailable = false` for the remainder of the process lifetime.
+     * `isAvailable = false`.
+     *
+     * Degradation is PER-ENGINE by design: `refreshAvailability()` is
+     * `engines.any { it.isAvailable }`, so a poisoned system engine must not
+     * mask a working provider engine.
      */
     fun markDegraded() {}
+
+    /**
+     * [T-android-voice-entry-always-available] Undo [markDegraded].
+     *
+     * Degradation used to be permanent for the process lifetime with no reset
+     * path, so a single transient failure (mic held by another app, permission
+     * not yet granted, a provider that was misconfigured and has since been
+     * fixed) disabled the engine until the app was restarted. The user
+     * explicitly re-entering voice mode or picking this engine is the signal
+     * that conditions may have changed — give it another chance.
+     */
+    fun clearDegraded() {}
 
     interface Listener {
         /** Incremental interim result. Only fires if [supportsPartialResults]. */
@@ -86,6 +102,15 @@ interface SpeechRecognitionEngine {
 enum class RecognitionError {
     /** No speech detected / silence. Recoverable — the user can try again. */
     NO_MATCH,
+
+    /**
+     * [T-android-asr-silent-failure] Speech WAS detected (our VAD saw a
+     * voiced segment) but the recognizer produced no text. Distinct from
+     * [NO_MATCH] because the UI deliberately swallows NO_MATCH — it means
+     * "you didn't say anything", which is exactly the wrong message when the
+     * user spoke for 30 s and got nothing. This one must be shown.
+     */
+    TRANSCRIPTION_FAILED,
 
     /** Engine reported network failure (cloud recognizers). */
     NETWORK,

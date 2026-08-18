@@ -20,6 +20,7 @@ import java.io.ByteArrayOutputStream
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.log10
+import kotlin.math.max
 import kotlin.math.sqrt
 
 /**
@@ -41,6 +42,31 @@ class ProviderSpeechRecognitionEngine(private val appContext: Context) : SpeechR
         private const val SAMPLE_RATE = 16_000
         /** Hard cap on a single take (60 s at 16 kHz PCM16 mono ≈ 1.9 MB). */
         private const val MAX_RECORD_SECONDS = 60
+
+        // ── [T-android-vad] ──
+        /**
+         * Cloud ASR has no per-request length ceiling the way Apple's system
+         * recogniser does, so a segment may run to the full session cap
+         * (iOS VoiceInputPanel.swift:488-489).
+         */
+        private const val CLOUD_MAX_SEGMENT_SECONDS = 300
+
+        /**
+         * Segments shorter than this are dropped on a silence close, matching
+         * iOS `minSegmentSeconds` (VoiceInputPanel.swift:607). A cough or a
+         * door would otherwise cost a paid transcription request.
+         */
+        private const val MIN_SEGMENT_SECONDS = 2.0f
+
+        /** Below this we stay silent; above it the user gets told why (iOS :661). */
+        private const val TOO_SHORT_TOAST_FLOOR = 0.3f
+
+        /**
+         * [T-android-vad-merge-segments] How long to keep the mic open waiting
+         * for the user to top up a sub-2s utterance. Matches the iOS
+         * force-flush timer (VoiceInputPanel.swift:609).
+         */
+        private const val HOLD_FLUSH_MS = 5_000L
     }
 
     override val id: String = "provider"
@@ -57,9 +83,29 @@ class ProviderSpeechRecognitionEngine(private val appContext: Context) : SpeechR
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var captureJob: Job? = null
     private var transcribeJob: Job? = null
+    /** [T-android-vad-merge-segments] Sub-threshold segments held for merge. */
+    private val pendingSegments = mutableListOf<ByteArray>()
+    private var holdFlushJob: Job? = null
     private val recording = AtomicBoolean(false)
     private val cancelled = AtomicBoolean(false)
     private var degraded = false
+
+    /**
+     * [T-android-vad] Live Silero detector for the segmented path, null when
+     * idle or when running the legacy record-until-stop loop.
+     */
+    @Volatile
+    private var detector: VoiceActivityDetector? = null
+
+    /**
+     * Whether to segment with Silero instead of recording until the user taps
+     * stop. Defaults ON: this engine had no endpointing at all, so the VAD is
+     * strictly better here. Kept as a flag so a device where the native VAD
+     * fails to load can be dropped back to the legacy loop rather than losing
+     * voice input entirely.
+     */
+    @Volatile
+    var useVad: Boolean = true
 
     /**
      * [T-voice-asr-group-failover] STICKY fail-over (mirrors iOS
@@ -71,11 +117,22 @@ class ProviderSpeechRecognitionEngine(private val appContext: Context) : SpeechR
     @Volatile
     private var stickyEntryId: String? = null
 
+    // [T-android-safemode-lateinit-crash-147] subsystemsReady() first — the
+    // safe call rules out a null Application, not an unassigned lateinit,
+    // whose getter throws. Speech recognition can be started from a
+    // shortcut/assistant intent that never went through MainActivity's guard.
+    // Every caller already treats null as "no provider configured".
     private fun repository() =
-        (appContext.applicationContext as? MinisApp)?.providerRepository
+        (appContext.applicationContext as? MinisApp)
+            ?.takeIf { it.subsystemsReady() }
+            ?.providerRepository
 
     override fun markDegraded() {
         degraded = true
+    }
+
+    override fun clearDegraded() {
+        degraded = false
     }
 
     @SuppressLint("MissingPermission") // caller ensures RECORD_AUDIO per interface contract
@@ -101,6 +158,21 @@ class ProviderSpeechRecognitionEngine(private val appContext: Context) : SpeechR
             return
         }
         cancelled.set(false)
+        // [T-android-vad-merge-segments] A fresh session must not inherit audio
+        // held from the previous one.
+        pendingSegments.clear()
+        holdFlushJob?.cancel()
+        holdFlushJob = null
+
+        // [T-android-vad] VAD-segmented path. Before this, the provider engine
+        // had NO endpointing at all: it recorded until the user tapped stop or
+        // hit the 60 s cap, so a custom-model user had to manually bracket
+        // every utterance. Silero now closes a segment after ~5 s of silence
+        // and the mic stops, exactly as on iOS.
+        if (useVad) {
+            startVadCapture(locale, repo, candidates, listener)
+            return
+        }
 
         captureJob = scope.launch {
             val minBuf = AudioRecord.getMinBufferSize(
@@ -224,16 +296,219 @@ class ProviderSpeechRecognitionEngine(private val appContext: Context) : SpeechR
         }
     }
 
+    // ── [T-android-vad] VAD-segmented capture ─────────────────────────────
+
+    /**
+     * Silence-segmented capture. Silero closes a segment after ~5 s of silence;
+     * we then transcribe that segment and STOP the mic, matching iOS
+     * (`VoiceInputPanel.swift:642-669`) — the user re-taps for the next
+     * utterance rather than the mic staying hot.
+     */
+    private fun startVadCapture(
+        locale: Locale,
+        repo: com.openminis.app.data.repository.ProviderRepository,
+        candidates: List<Pair<com.openminis.app.data.model.ProviderInstance, com.openminis.app.data.model.ModelEntry>>,
+        listener: SpeechRecognitionEngine.Listener,
+    ) {
+        val det = VoiceActivityDetector(
+            appContext,
+            object : VoiceActivityListener {
+                override fun onVoiceStart() {
+                    Log.i(TAG, "[vad] speech start")
+                }
+
+                override fun onLevel(level: Float) {
+                    // Map the detector's perceptual [0,1] back onto the [0,12]
+                    // dB-ish scale SpeechRecognitionManager normalizes from, so
+                    // both engines drive the waveform identically.
+                    listener.onRmsDb(level * 12f)
+                }
+
+                override fun onVoiceEnd(wav: ByteArray, reason: SegmentEndReason, spokenSeconds: Float) {
+                    if (cancelled.get()) return
+
+                    // [T-android-vad-merge-segments] ACCUMULATE, don't discard.
+                    //
+                    // iOS holds each silence-closed segment in `pendingSegments`
+                    // and tests the 2 s minimum against the RUNNING TOTAL
+                    // (VoiceInputPanel.swift:635-663). Android used to drop every
+                    // sub-2s segment on its own, so natural stop-start speech —
+                    // "yes" (0.8 s), pause, "send it" (0.9 s) — could NEVER be
+                    // dictated: each piece was binned and the mic switched off.
+                    // The 2 s floor still does its job (one isolated cough is
+                    // still one short segment), it just applies to the whole
+                    // held utterance now.
+                    pendingSegments.add(wav)
+                    val heldSeconds = WavSegmentMerger.totalSeconds(pendingSegments)
+
+                    if (reason == SegmentEndReason.SILENCE_DETECTED &&
+                        heldSeconds < MIN_SEGMENT_SECONDS
+                    ) {
+                        Log.i(
+                            TAG,
+                            "[vad] holding ${"%.2f".format(spokenSeconds)}s segment " +
+                                "(total ${"%.2f".format(heldSeconds)}s < ${MIN_SEGMENT_SECONDS}s)",
+                        )
+                        // Keep the mic OPEN so the next burst can top it up.
+                        // Force-flush after HOLD_FLUSH_MS of real silence so a
+                        // genuine cough still resolves (to a "too short" toast)
+                        // instead of leaving the mic on indefinitely.
+                        holdFlushJob?.cancel()
+                        holdFlushJob = scope.launch {
+                            kotlinx.coroutines.delay(HOLD_FLUSH_MS)
+                            if (cancelled.get()) return@launch
+                            val held = WavSegmentMerger.totalSeconds(pendingSegments)
+                            Log.i(TAG, "[vad] hold expired at ${"%.2f".format(held)}s — settling")
+                            stopVad()
+                            if (held > TOO_SHORT_TOAST_FLOOR) {
+                                listener.onError(
+                                    RecognitionError.NO_MATCH,
+                                    "Too short — hold the mic and speak.",
+                                )
+                            }
+                            pendingSegments.clear()
+                        }
+                        return
+                    }
+
+                    holdFlushJob?.cancel()
+                    holdFlushJob = null
+                    val merged = WavSegmentMerger.merge(pendingSegments) ?: wav
+                    if (pendingSegments.size > 1) {
+                        Log.i(
+                            TAG,
+                            "[vad] merged ${pendingSegments.size} segments → " +
+                                "${"%.2f".format(heldSeconds)}s",
+                        )
+                    }
+                    pendingSegments.clear()
+
+                    if (reason == SegmentEndReason.SILENCE_DETECTED) {
+                        // Silence = the user stopped. Mic off, then transcribe.
+                        stopVad()
+                    }
+                    transcribeJob = scope.launch {
+                        transcribeSegment(merged, locale, repo, candidates, listener)
+                    }
+                }
+
+                override fun onSessionLimit(limit: SessionLimit) {
+                    // Allowance exhausted, not a failure. The library has
+                    // already delivered any closed segment; nothing is pending
+                    // here, so just settle the mic.
+                    Log.i(TAG, "[vad] session limit $limit — stopping")
+                    stopVad()
+                }
+
+                override fun onCaptureError(message: String) {
+                    stopVad()
+                    recording.set(false)
+                    listener.onError(RecognitionError.AUDIO_ERROR, message)
+                }
+            },
+        ).also {
+            // iOS splits this by engine: 59 s for Apple's system ASR (which
+            // rejects >60 s per request) and the full 300 s session cap for
+            // cloud providers, which have no such per-request ceiling
+            // (VoiceInputPanel.swift:488-489). This IS the cloud path.
+            it.maxSegmentSeconds = CLOUD_MAX_SEGMENT_SECONDS
+        }
+
+        val err = det.start()
+        if (err != null) {
+            recording.set(false)
+            listener.onError(RecognitionError.AUDIO_ERROR, err)
+            return
+        }
+        detector = det
+        listener.onReadyForSpeech()
+    }
+
+    /** Transcribe one segment. Extracted so the VAD and legacy paths share it. */
+    private suspend fun transcribeSegment(
+        wav: ByteArray,
+        locale: Locale,
+        repo: com.openminis.app.data.repository.ProviderRepository,
+        candidates: List<Pair<com.openminis.app.data.model.ProviderInstance, com.openminis.app.data.model.ModelEntry>>,
+        listener: SpeechRecognitionEngine.Listener,
+    ) {
+        val ordered = stickyEntryId
+            ?.let { sticky -> candidates.indexOfFirst { it.second.id == sticky } }
+            ?.takeIf { it > 0 }
+            ?.let { i -> candidates.drop(i) + candidates.take(i) }
+            ?: candidates
+        var lastError: Exception? = null
+        for ((instance, entry) in ordered) {
+            if (cancelled.get()) return
+            val provider = VoiceProviderFactory.make(instance, repo.loadApiKey(instance.id))
+            if (provider == null) {
+                Log.w(TAG, "candidate ${instance.label} cannot serve voice input — skipping")
+                continue
+            }
+            try {
+                val response = provider.transcribe(
+                    VoiceInputRequest(
+                        audioData = wav,
+                        model = entry.baseModel.id,
+                        language = locale.toLanguageTag(),
+                        resolvedModel = entry.model,
+                    ),
+                )
+                if (cancelled.get()) return
+                stickyEntryId = entry.id
+                val text = response.text.trim()
+                if (text.isEmpty()) {
+                    listener.onError(RecognitionError.NO_MATCH, "Empty transcription.")
+                } else {
+                    listener.onFinal(text)
+                }
+                return
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "transcribe failed on ${entry.model.displayName}: ${e.message} — trying next candidate")
+                lastError = e
+            }
+        }
+        if (!cancelled.get()) {
+            val e = lastError
+            val kind = when {
+                e is VoiceProviderException.Auth -> RecognitionError.PERMISSION_DENIED
+                e is java.io.IOException -> RecognitionError.NETWORK
+                else -> RecognitionError.UNKNOWN
+            }
+            listener.onError(kind, e?.message ?: "All voice-input candidates failed.")
+        }
+    }
+
+    private fun stopVad() {
+        detector?.let { runCatching { it.stop() } }
+        detector = null
+        recording.set(false)
+    }
+
+    /** [T-android-vad] See SystemSpeechRecognitionEngine.setBackgrounded. */
+    fun setBackgrounded(backgrounded: Boolean) {
+        detector?.isBackgrounded = backgrounded
+    }
+
     override fun stop() {
         // Flip the capture loop off; the capture coroutine then hands the take
         // to the transcription step, which delivers onFinal/onError.
         recording.set(false)
+        detector?.let { runCatching { it.stop() } }
+        detector = null
     }
 
     override fun cancel() {
         cancelled.set(true)
         recording.set(false)
         transcribeJob?.cancel()
+        holdFlushJob?.cancel()
+        holdFlushJob = null
+        // Drop held audio: a cancelled session's partial utterance must never
+        // surface in a later one.
+        pendingSegments.clear()
     }
 
     /** Rough dB estimate over the chunk for the UI waveform. */

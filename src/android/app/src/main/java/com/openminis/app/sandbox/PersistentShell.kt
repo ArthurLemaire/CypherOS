@@ -7,6 +7,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.BufferedWriter
+import java.io.File
 import java.io.OutputStreamWriter
 import java.nio.charset.StandardCharsets
 import java.util.UUID
@@ -30,6 +31,14 @@ class PersistentShell(
 
     companion object {
         private const val TAG = "PersistentShell"
+
+        /**
+         * [T-android-shell-death-diagnosability] Death-capture windows. The
+         * head must comfortably hold proot's error line(s) printed BEFORE the
+         * multi-KB talloc leak dump; the tail shows how the output ended.
+         */
+        private const val OUTPUT_HEAD_MAX = 1024
+        private const val OUTPUT_TAIL_MAX = 2048
     }
 
     @Volatile
@@ -72,16 +81,108 @@ class PersistentShell(
         }
 
         try {
-            withContext(Dispatchers.IO) { startProcess() }
+            withContext(Dispatchers.IO) {
+                // [T-android-seccomp-selfheal / GH#186] The guest /bin/sh is
+                // itself a dynamically linked binary, so on an affected kernel
+                // it can die during dynamic linking before it ever reads a
+                // command — the shell simply never comes up, which surfaces to
+                // the user as "[Shell not running] (exit code: -1)". Give it
+                // one retry with PROOT_NO_SECCOMP=1 under the same narrow
+                // conditions used for one-shot commands.
+                //
+                // Timed around startProcess() (which sleeps 200ms before
+                // returning): if the shell is already dead when it returns, it
+                // died during that window, i.e. essentially instantly.
+                val spawnedAt = System.currentTimeMillis()
+                startProcess()
+                val aliveMs = System.currentTimeMillis() - spawnedAt
+
+                if (!useNoSeccomp && !isAlive) {
+                    val exit = runCatching { process?.exitValue() }.getOrNull() ?: lastExitCode
+                    if (SeccompFallbackPolicy.shouldRetryWithoutSeccomp(
+                            exitCode = exit,
+                            durationMs = aliveMs,
+                            producedOutput = false,
+                            alreadyRetried = false,
+                        )
+                    ) {
+                        com.openminis.app.logging.AppLogger.warning(
+                            TAG,
+                            SeccompFallbackPolicy.retryLogLine(exit, aliveMs, "persistent shell startup"),
+                        )
+                        // Sticky for this shell's lifetime: every later respawn
+                        // keeps the workaround instead of rediscovering it.
+                        useNoSeccomp = true
+                        startProcess()
+                        if (isAlive) {
+                            com.openminis.app.logging.AppLogger.warning(
+                                TAG,
+                                "[proot-retry] persistent shell came up with " +
+                                    "${SeccompFallbackPolicy.NO_SECCOMP_ENV}=1 — this device " +
+                                    "needs the seccomp workaround (GH#186)",
+                            )
+                        }
+                    }
+                }
+            }
+        } catch (t: Throwable) {
+            // [T-android-shell-spawn-outcome] Previously swallowed: the only
+            // handler here was `finally { isStarting.set(false) }`, so a throw
+            // out of startProcess() (ProcessBuilder.start() IOException —
+            // ENOENT on the proot binary, EACCES, EAGAIN under memory
+            // pressure) unwound with NOTHING written anywhere. The caller then
+            // saw isAlive == false and reported the generic "[Shell not
+            // running]", which is exactly the dead end the field reports keep
+            // hitting. Record it and rethrow — swallowing the cause is what
+            // made this class of failure undiagnosable.
+            com.openminis.app.logging.AppLogger.error(
+                TAG,
+                "spawn threw: ${t.javaClass.simpleName}: ${t.message}",
+            )
+            throw t
         } finally {
             isStarting.set(false)
         }
     }
 
+    /**
+     * [T-android-seccomp-selfheal / GH#186] Once the seccomp workaround proves
+     * necessary on this device, keep it for every subsequent respawn of this
+     * shell. Without stickiness the shell would crash-and-retry on every
+     * restart, doubling startup latency for exactly the users already hitting
+     * the bug.
+     */
+    @Volatile
+    private var useNoSeccomp = false
+
     private fun startProcess() {
         Log.i(TAG, "Starting persistent shell process")
 
         val rootfsManager = RootfsManager.getInstance(context)
+
+        // [T-android-shell-death-diagnosability] One-line spawn context in the
+        // FILE log. Field reports of "[Shell not running] (exit code: -1)" have
+        // had two distinct causes already (missing proot ELF loaders after
+        // bc2566b2, and at least one custom-ROM death we couldn't classify),
+        // and a user log that only says "process exited" cannot tell them
+        // apart. Loader presence is the first thing to rule out: without
+        // PROOT_LOADER, proot bare-execve's rootfs busybox and SELinux kills
+        // it on Android 10+ (see a25d93f7).
+        com.openminis.app.logging.AppLogger.info(
+            TAG,
+            "spawn ctx: proot=${rootfsManager.prootBinary.exists()} " +
+                "rootfs=${File(rootfsManager.rootfsDir, "bin/busybox").exists()} " +
+                "loader64=${PRootKernel.prootLoaderPath.isNotEmpty()} " +
+                "loader32=${PRootKernel.prootLoader32Path.isNotEmpty()}",
+        )
+        // Fresh capture per process incarnation — a respawned shell must not
+        // report its predecessor's dying output as its own.
+        synchronized(outputTail) {
+            outputHead.setLength(0)
+            outputTail.setLength(0)
+            outputTotal = 0
+        }
+        lastExitCode = null
 
         val cmd = mutableListOf<String>()
         cmd.add(rootfsManager.prootBinary.absolutePath)
@@ -146,6 +247,12 @@ class PersistentShell(
             env[key] = value
         }
 
+        // [T-android-seccomp-selfheal / GH#186] Applied last so nothing above
+        // can clobber it once this device is known to need it.
+        if (useNoSeccomp) {
+            env[SeccompFallbackPolicy.NO_SECCOMP_ENV] = SeccompFallbackPolicy.NO_SECCOMP_VALUE
+        }
+
         val p = processBuilder.start()
         process = p
         stdinWriter = BufferedWriter(OutputStreamWriter(p.outputStream, StandardCharsets.UTF_8))
@@ -176,8 +283,80 @@ class PersistentShell(
             Thread.sleep(200)
         } catch (_: InterruptedException) {}
 
+        // [T-android-shell-spawn-outcome] Record the OUTCOME of the spawn, not
+        // just that one was attempted. "Starting persistent shell process"
+        // followed by silence is the signature every field report has, and it
+        // cannot distinguish "proot is running fine" from "proot exited during
+        // the 200ms window" — the two cases that lead to completely different
+        // investigations. Logged to the FILE log (AppLogger, not Log.i) because
+        // that is what a user can actually send us; logcat is gone by then.
+        val alive = isAlive
+        val exit = runCatching { process?.exitValue() }.getOrNull()
+        val early = synchronized(outputTail) { outputHead.toString().take(300) }
+        com.openminis.app.logging.AppLogger.info(
+            TAG,
+            "spawn outcome: alive=$alive" +
+                (if (exit != null) " exit=$exit" else "") +
+                " loader=${PRootKernel.prootLoaderPath.isNotEmpty()}" +
+                " noSeccomp=$useNoSeccomp" +
+                (if (early.isNotEmpty()) " early=${early.replace('\n', '|')}" else ""),
+        )
         Log.i(TAG, "Persistent shell started")
     }
+
+    /**
+     * [T-android-shell-death-diagnosability] Captured shell output for
+     * premature-death reporting, including chunks that arrive with no pending
+     * callback — which readLoop previously discarded outright. In release
+     * builds stderr is merged into stdout (redirectErrorStream), so proot's
+     * dying words land exactly in that discarded window.
+     *
+     * HEAD + rolling TAIL, not tail-only. The first crDroid field log proved
+     * tail-only insufficient: proot prints its one-line cause FIRST ("proot
+     * error: …") and then talloc_enable_leak_report() dumps a multi-KB
+     * allocation tree at exit — which evicted the cause and left us staring at
+     * HandlerEntry leak rows. The head is where the answer lives; the tail
+     * still shows how it ended.
+     */
+    private val outputHead = StringBuilder()
+    private val outputTail = StringBuilder()
+    private var outputTotal = 0
+
+    private fun appendTail(text: String) {
+        synchronized(outputTail) {
+            outputTotal += text.length
+            if (outputHead.length < OUTPUT_HEAD_MAX) {
+                outputHead.append(text.take(OUTPUT_HEAD_MAX - outputHead.length))
+            }
+            outputTail.append(text)
+            val over = outputTail.length - OUTPUT_TAIL_MAX
+            if (over > 0) outputTail.delete(0, over)
+        }
+    }
+
+    /**
+     * Captured output (trimmed) for premature-death reporting: the head (where
+     * proot's error line lives), plus the tail when output outgrew the head
+     * window, with the elided middle marked.
+     */
+    fun deathTail(): String = synchronized(outputTail) {
+        val head = outputHead.toString().trim()
+        if (outputTotal <= OUTPUT_HEAD_MAX) return head // head holds everything
+        // Tail buffer starts at byte (outputTotal - tail.length); the head
+        // covers [0, OUTPUT_HEAD_MAX). Drop any overlap from the tail so the
+        // two windows concatenate without duplication.
+        val overlap = OUTPUT_HEAD_MAX - (outputTotal - outputTail.length)
+        val tail = outputTail.substring(overlap.coerceIn(0, outputTail.length)).trim()
+        if (tail.isEmpty()) return head
+        val elided = (-overlap).coerceAtLeast(0)
+        val sep = if (elided > 0) "\n…[$elided bytes elided]…\n" else "\n"
+        "$head$sep$tail"
+    }
+
+    /** Exit code of the dead shell process, when known. */
+    @Volatile
+    var lastExitCode: Int? = null
+        private set
 
     private fun readLoop(p: Process) {
         try {
@@ -187,6 +366,7 @@ class PersistentShell(
                 val n = stream.read(buffer)
                 if (n < 0) break
                 val text = String(buffer, 0, n, StandardCharsets.UTF_8)
+                appendTail(text)
 
                 val cb = pendingCallback
                 if (cb != null) {
@@ -228,6 +408,21 @@ class PersistentShell(
             cb.onComplete?.invoke(cb.output.toString(), -1)
             pendingCallback = null
         }
+
+        // [T-android-shell-death-diagnosability] Name the cause in the FILE
+        // log. exitValue distinguishes death classes (signal deaths are
+        // 128+n: 132=SIGILL, 139=SIGSEGV, 159=SIGSYS/seccomp), and the tail
+        // carries proot's own error line in release builds. Without these,
+        // a field log reads "started → exited" 25ms apart and is
+        // unactionable — precisely the shape of the crDroid report.
+        val exit = runCatching { p.waitFor() }.getOrNull()
+        lastExitCode = exit
+        val tail = deathTail()
+        com.openminis.app.logging.AppLogger.error(
+            TAG,
+            "shell process exited code=$exit" +
+                (if (tail.isNotEmpty()) " capture=${tail.take(1200)}" else " capture=(no output)"),
+        )
 
         process = null
         stdinWriter = null
@@ -271,7 +466,20 @@ class PersistentShell(
 
         val writer = stdinWriter
         if (writer == null || !isAlive) {
-            return Pair("[Shell not running]", -1)
+            // [T-android-shell-death-diagnosability] Surface WHY the shell is
+            // down, not just that it is. The exit code and proot's own last
+            // words (captured by outputTail; stderr is merged into stdout in
+            // release) turn "[Shell not running]" from a dead end into a
+            // self-describing report — both for the agent reading the tool
+            // result and for the screenshot a user sends us.
+            val exit = lastExitCode
+            val tail = deathTail()
+            val detail = buildString {
+                append("[Shell not running]")
+                if (exit != null) append(" proot exit=$exit")
+                if (tail.isNotEmpty()) append("\n${tail.take(300)}")
+            }
+            return Pair(detail, -1)
         }
 
         val marker = UUID.randomUUID().toString().take(8)

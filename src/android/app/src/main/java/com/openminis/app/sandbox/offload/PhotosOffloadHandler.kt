@@ -73,7 +73,7 @@ class PhotosOffloadHandler(private val context: Context) : NativeOffloadHandler 
                 "near" -> handleNear(args)
                 "albums" -> handleAlbums(args)
                 "album" -> handleAlbum(args)
-                "export" -> handleExport(args)
+                "export" -> handleExport(args, request.sessionId)
                 "import", "save" -> handleImport(args)
                 "create-album" -> handleCreateAlbum(args)
                 "favorite" -> handleFavorite(args)
@@ -453,18 +453,31 @@ class PhotosOffloadHandler(private val context: Context) : NativeOffloadHandler 
     // ── export (T64) ─────────────────────────────────────────────────────
 
     /**
-     * Copy the asset bytes to the host filesystem at
-     * `<filesDir>/photos-export/<id>_<safe-name>.<ext>` and report the
-     * absolute host path. iOS uses the Linux-mounted `/var/minis/offloads/`
-     * but Android's offloads dir is bind-mounted per session and the
-     * handler doesn't see the session id — we report `host_path` instead
-     * so the agent has a concrete location even if Linux-side access
-     * requires copying through a shell tool.
+     * Copy the asset bytes into the CALLING SESSION's offloads dir
+     * (`<filesDir>/minis-sessions/<sessionId>/offloads/`) and report the
+     * sandbox-visible `/var/minis/offloads/<name>` path plus a `minis://`
+     * URL, matching iOS `PhotosOffload.m` (which exports to
+     * `/var/minis/offloads/` directly).
+     *
+     * [GH#139] This used to write to `<filesDir>/photos-export/` and return
+     * only `host_path`. That path is inside no PRoot bind mount, so the
+     * Linux sandbox cannot read it and `minis-open` rejects it (it accepts
+     * only http/https/about/minis URLs) — the agent could list photo
+     * metadata but never actually look at an exported photo. An older
+     * comment here claimed the handler "doesn't see the session id"; that
+     * stopped being true when T340 added `sessionId` to
+     * [NativeOffloadRequest], so the export is now session-scoped the same
+     * way `ModelUseOffloadHandler.sessionScopedHostFile` already does it.
+     *
+     * `sessionId` is null for offloads launched outside a chat (interactive
+     * terminal). There is no session offloads dir to write into then, so we
+     * keep the app-private fallback — but say plainly in the response that
+     * the file is NOT reachable from Linux, instead of implying it is.
      *
      * --size thumb / medium re-encode to JPEG at 256px / 1024px max edge
      * via BitmapFactory; original copies the resource bytes as-is.
      */
-    private fun handleExport(args: OffloadArgs): NativeOffloadResult {
+    private fun handleExport(args: OffloadArgs, sessionId: String?): NativeOffloadResult {
         val id = args.getLong("id")
             ?: return NativeOffloadResult(2, "android-photos export: --id <asset_id> is required\n")
         val size = (args.get("size") ?: "original").lowercase()
@@ -510,7 +523,16 @@ class PhotosOffloadHandler(private val context: Context) : NativeOffloadHandler 
             ) + "\n",
         )
 
-        val outDir = File(context.filesDir, "photos-export").also { it.mkdirs() }
+        // [GH#139] Session-scoped when we know the caller's chat, so the export
+        // lands in the dir PRoot bind-mounts at /var/minis/offloads for THIS
+        // session. Mirrors ModelUseOffloadHandler.sessionScopedHostFile and
+        // PRootKernel.resolveSessionHostPath, which use the same layout.
+        val sandboxVisible = sessionId != null
+        val outDir = if (sandboxVisible) {
+            File(context.filesDir, "minis-sessions/$sessionId/offloads").also { it.mkdirs() }
+        } else {
+            File(context.filesDir, "photos-export").also { it.mkdirs() }
+        }
         val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_").take(64)
         val ext = displayName.substringAfterLast('.', "")
             .ifEmpty { if (mediaType == "video") "mp4" else "jpg" }
@@ -533,7 +555,26 @@ class PhotosOffloadHandler(private val context: Context) : NativeOffloadHandler 
                 .put("media_type", mediaType)
                 .put("format", if (size == "original") "original" else "jpeg")
                 .put("export_size", size)
-                .put("note", "Written to host filesDir; reachable as `host_path` via shell tools. Linux-side bind-mount path varies per session.")
+            // [GH#139] Hand back the paths the agent can actually USE: the
+            // sandbox path for shell tools, and the minis:// URL that
+            // `minis-open` accepts for in-chat preview / model rendering.
+            if (sandboxVisible) {
+                data.put("linux_path", "/var/minis/offloads/${outFile.name}")
+                    .put("minis_url", "minis://offloads/${outFile.name}")
+                    .put(
+                        "note",
+                        "Exported into this chat's offloads dir. Use `linux_path` from shell " +
+                            "tools, or `minis_url` with minis-open to preview it in chat.",
+                    )
+            } else {
+                data.put(
+                    "note",
+                    "No chat session for this offload (interactive terminal), so the export " +
+                        "went to app-private storage: `host_path` is NOT reachable from the " +
+                        "Linux sandbox and minis-open cannot open it. Run the export from a " +
+                        "chat to get a /var/minis/offloads path.",
+                )
+            }
             if (width > 0) data.put("width", width)
             if (height > 0) data.put("height", height)
             NativeOffloadResult(0, OffloadOutput.formatBody(data.toString(2), args) + "\n")
@@ -590,8 +631,17 @@ class PhotosOffloadHandler(private val context: Context) : NativeOffloadHandler 
      * (Android API 29+) — there's no "create empty album" API.
      */
     private fun handleImport(args: OffloadArgs): NativeOffloadResult {
-        val path = args.get("path")
-            ?: return NativeOffloadResult(2, "android-photos import: --path <file> is required\n")
+        // [T-photos-positional-path] Accept `import <file>` as well as
+        // `import --path <file>`, matching apple-photos (iOS 048d2d9f). The
+        // file is this subcommand's only natural argument, so the bare form is
+        // what an LLM (or a human) reaches for first; requiring the flag turned
+        // a correct-looking call into an argument error. positional[0] is the
+        // subcommand itself, so the path is positional[1].
+        val path = args.get("path") ?: args.positional.getOrNull(1)
+            ?: return NativeOffloadResult(
+                2,
+                "android-photos import: a file path is required (positional or --path <file>)\n",
+            )
         val src = File(path)
         if (!src.exists() || !src.isFile) {
             return NativeOffloadResult(
@@ -980,7 +1030,8 @@ Usage:
   android-photos albums [--type user|smart|all]
   android-photos album --id <bucket_id> | --name <bucket_name> [--limit N]
   android-photos export --id <asset_id> [--size thumb|medium|original]
-  android-photos import --path <file> [--album-name <name>]   (alias: save)
+  android-photos import <file> [--album-name <name>]          (alias: save)
+                       (--path <file> also accepted)
   android-photos create-album --name <name>
   android-photos favorite --id <asset_id>                     (Android 11+)
   android-photos delete --ids <id1,id2,...> --confirm
@@ -998,9 +1049,12 @@ Android edge cases vs apple-photos:
   - On Android 11+ modifying or deleting another app's media triggers
     RecoverableSecurityException. Surfaced as `error: write_denied`
     since the CLI sandbox can't show the system consent dialog.
-  - Export writes to host filesDir; the JSON returns `host_path`. The
-    Linux-side bind-mount path varies per session, so we don't mirror
-    iOS `data.path = /var/minis/offloads/...` exactly.
+  - Export writes into the calling chat's offloads dir and returns
+    `linux_path` (/var/minis/offloads/...) and `minis_url`
+    (minis://offloads/...) alongside `host_path`, matching iOS. Outside a
+    chat (interactive terminal) there is no session dir, so only
+    `host_path` is returned and the note says it is not reachable from
+    the Linux sandbox.
 
 Errors return JSON: {"error":"...","message":"..."}.
 """

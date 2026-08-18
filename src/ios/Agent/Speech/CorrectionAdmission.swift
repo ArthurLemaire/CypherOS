@@ -32,6 +32,12 @@ enum CorrectionAdmission {
         /// meaningfully shorter than the long side (else "abc"⊆"abcd" trivially
         /// matches near-equal strings and lets rewrites through).
         static let maxAcronymLengthFraction = 0.9
+        /// Signal 4: Levenshtein similarity of the two consonant skeletons at or
+        /// above which a same-syllable-count Latin pair counts as a near-sound.
+        /// 0.30 is the loosest value that still admits linux↔minis (skeletons
+        /// lnx/mns, sim 0.33) while rejecting cursor↔claude (crsr/cld, 0.25) —
+        /// the latter already passes Signal 1 anyway.
+        static let latinSkeletonSimilarity = 0.30
     }
 
     /// Why a span was admitted or rejected — surfaced in logs (privacy-safe: it
@@ -40,13 +46,14 @@ enum CorrectionAdmission {
         case homophone(sim: Double)   // phonetic near-match
         case acronym                  // one side is an ordered subsequence of the other
         case digitNorm                // Chinese-number ↔ arabic / alphanumeric term
+        case latinPhonetic            // Latin near-sound (consonant skeleton match)
         case rejectedReword(sim: Double)
         case rejectedReorder          // same characters, only order changed
         case rejectedTooGlobal(locality: Double)
 
         var isAdmitted: Bool {
             switch self {
-            case .homophone, .acronym, .digitNorm: return true
+            case .homophone, .acronym, .digitNorm, .latinPhonetic: return true
             case .rejectedReword, .rejectedReorder, .rejectedTooGlobal: return false
             }
         }
@@ -56,6 +63,7 @@ enum CorrectionAdmission {
             case .homophone(let s): return "homophone(sim=\(String(format: "%.2f", s)))"
             case .acronym: return "acronym"
             case .digitNorm: return "digit_norm"
+            case .latinPhonetic: return "latin_phonetic"
             case .rejectedReword(let s): return "reword(sim=\(String(format: "%.2f", s)))"
             case .rejectedReorder: return "reorder"
             case .rejectedTooGlobal(let l): return "too_global(loc=\(String(format: "%.2f", l)))"
@@ -109,6 +117,17 @@ enum CorrectionAdmission {
             return .acronym
         }
 
+        // Signal 4 — Latin near-sound (linux→minis). Levenshtein over the full
+        // key scores these ~0.40 because the consonants differ outright, but the
+        // words share syllable rhythm and a consonant landmark, which is what an
+        // ASR actually confuses. Gated on the ORIGINAL text being Latin-script:
+        // PinyinNormalizer renders Chinese as toneless a-z, so testing the KEY
+        // for "purely a-z" would not exclude Chinese at all and would let
+        // unrelated pairs like 挂载/规则 (guazai/guize) through.
+        if isLatinOrigin(a), isLatinOrigin(b), isLatinPhoneticSimilar(keyA, keyB) {
+            return .latinPhonetic
+        }
+
         return .rejectedReword(sim: sim)
     }
 
@@ -142,6 +161,95 @@ enum CorrectionAdmission {
             it = long.index(after: f)
         }
         return true
+    }
+
+    /// True when the ORIGINAL span is Latin-script — ASCII letters, digits and
+    /// separators only, with at least one letter. Used to keep Signal 4 off
+    /// Chinese input: `PinyinNormalizer` renders 挂载 as "guazai", which is
+    /// indistinguishable from a real Latin word once you only look at the key.
+    static func isLatinOrigin(_ s: String) -> Bool {
+        var sawLetter = false
+        for ch in s {
+            if ch.isLetter {
+                guard ch.isASCII else { return false }
+                sawLetter = true
+            } else if !(ch.isWhitespace || ch.isNumber && ch.isASCII || ch == "-" || ch == "_" || ch == ".") {
+                return false
+            }
+        }
+        return sawLetter
+    }
+
+    /// True when two Latin phonetic keys plausibly sound alike to an ASR: same
+    /// syllable count (vowel-group parity), and consonant skeletons that are
+    /// Levenshtein-similar AND share a consonant at the same skeleton index.
+    ///
+    /// Why the skeleton rather than a consonant multiset: a bag of consonants
+    /// throws away order, and linux/minis (l,n,x vs m,n,s) then scores exactly
+    /// the same as linux/ninja (l,n,x vs n,n,j) — 0.20 either way — so no
+    /// threshold can separate the real confusion from the spurious one. The
+    /// skeleton keeps position, and the same-index anchor requires the shared
+    /// consonant to actually land in the same slot ("n" is 2nd in both lnx and
+    /// mns). cat/dog has no shared consonant at any index and is rejected.
+    ///
+    /// This signal is deliberately loose — it answers "could an ASR have
+    /// confused these?", not "should this correction apply". The locality guard
+    /// here and the vocabulary evidence downstream are the real gatekeepers.
+    /// Known accepted false positive: linux↔ninja (indistinguishable from
+    /// linux↔minis on every feature available here).
+    static func isLatinPhoneticSimilar(_ keyA: String, _ keyB: String) -> Bool {
+        let vowels: Set<Character> = ["a", "e", "i", "o", "u"]
+
+        // Syllable count = number of maximal vowel-character groups.
+        func syllableCount(_ s: String) -> Int {
+            var count = 0, inVowel = false
+            for c in s {
+                if vowels.contains(c) {
+                    if !inVowel { count += 1; inVowel = true }
+                } else {
+                    inVowel = false
+                }
+            }
+            return count
+        }
+        let scA = syllableCount(keyA), scB = syllableCount(keyB)
+        guard scA > 0, scB > 0, scA == scB else { return false }
+
+        let skelA = Array(keyA.filter { !vowels.contains($0) })
+        let skelB = Array(keyB.filter { !vowels.contains($0) })
+        guard !skelA.isEmpty, !skelB.isEmpty else { return false }
+
+        // Same-index consonant anchor.
+        var anchored = false
+        for i in 0..<min(skelA.count, skelB.count) where skelA[i] == skelB[i] {
+            anchored = true
+            break
+        }
+        guard anchored else { return false }
+
+        // Levenshtein similarity over the skeletons.
+        let distance = levenshtein(skelA, skelB)
+        let longest = max(skelA.count, skelB.count)
+        let sim = longest > 0 ? 1.0 - Double(distance) / Double(longest) : 0.0
+        return sim >= Config.latinSkeletonSimilarity
+    }
+
+    /// Plain Levenshtein edit distance over character arrays (two-row DP).
+    private static func levenshtein(_ a: [Character], _ b: [Character]) -> Int {
+        if a.isEmpty { return b.count }
+        if b.isEmpty { return a.count }
+        var previous = Array(0...b.count)
+        var current = [Int](repeating: 0, count: b.count + 1)
+        for i in 1...a.count {
+            current[0] = i
+            for j in 1...b.count {
+                current[j] = a[i - 1] == b[j - 1]
+                    ? previous[j - 1]
+                    : min(previous[j - 1], previous[j], current[j - 1]) + 1
+            }
+            previous = current
+        }
+        return previous[b.count]
     }
 
     /// One side carries Chinese number words while the other carries Arabic

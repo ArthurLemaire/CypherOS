@@ -93,7 +93,9 @@ struct GetSessionStatusIntent: AppIntent {
         var lastMessage = ""
         var lastTool = ""
         if let vm = ViewModelCache.shared.get(for: sessionID) {
-            if let lastAssistant = vm.messages.last(where: { $0.role == .assistant }) {
+            // [T-bgnotif-internal-text-leak] Internal bridge turns are
+            // model-facing instructions, never a reportable status.
+            if let lastAssistant = vm.messages.last(where: { $0.role == .assistant && !$0.isInternalBridge }) {
                 // Last text content
                 let textBlocks = lastAssistant.blocks
                     .filter { $0.kind == .text }

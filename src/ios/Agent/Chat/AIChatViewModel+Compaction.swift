@@ -278,6 +278,21 @@ extension AIChatViewModel {
     /// A "round" runs from one user message up to (but not including) the
     /// previous user message — i.e. assistant + tool_use/tool_result messages
     /// that follow a user message belong to that user's round.
+    ///
+    /// [T-ios-compact-orphan-toolcall] IMPORTANT: not every `user` message is a
+    /// legal round boundary. Tool results are carried as `role: .user` messages
+    /// (`AIChatViewModel:5566`), so cutting at one of those splits an
+    /// assistant(tool_use) / user(tool_result) pair down the middle: the
+    /// tool_use falls before `priorIdx` and is dropped, while its
+    /// function_call_output survives inside preAnchor. OpenAI-compatible APIs
+    /// reject that outright with
+    ///     [400] No tool call found for function call output with call_id …
+    /// and because the bad slice is recomputed identically on every retry, the
+    /// whole conversation wedges — it fails across every fallback model and is
+    /// unrecoverable without clearing the session. Field report 2026-08-13:
+    /// `call_M1ate3tSzXCh3c1lr8QCsild`, priorIdx=24 landing on the tool_result
+    /// whose tool_use sat at [23]. Boundaries are therefore restricted to user
+    /// messages that carry NO toolResult part.
     func walkBackUserTurnsBounded(
         anchorIdx: Int,
         maxUserTextTurns: Int,
@@ -295,6 +310,15 @@ extension AIChatViewModel {
         for i in stride(from: anchorIdx, through: 0, by: -1) {
             let msg = agentHistory[i]
             guard msg.role == .user else { continue }
+            // [T-ios-compact-orphan-toolcall] A user message carrying a
+            // toolResult is the SECOND half of an assistant/tool round, not the
+            // start of a new one. Cutting here strands its function_call_output
+            // without the function_call. Skip it as a boundary candidate.
+            let carriesToolResult = msg.parts.contains { part in
+                if case .toolResult = part { return true }
+                return false
+            }
+            if carriesToolResult { continue }
             let candidateMessageCount = anchorIdx - i + 1
             if candidateMessageCount > maxMessages {
                 // Including this user round would exceed cap. Stop — keep
@@ -505,10 +529,22 @@ extension AIChatViewModel {
         // agentHistory by scanning agentHistory in order for an entry whose role
         // matches and whose dbMessageId corresponds to a raw row persisted recently.
         // We take the LAST such entry to bias toward the end of history.
+        //
+        // [T-ios-grok-context-underestimate] This is the EXPECTED path for
+        // in-loop auto-compaction, not a failure. `sourceSortOrder` is only
+        // ever assigned by loadSession when hydrating UI messages from the DB
+        // (AIChatViewModel+Persistence ~314/337); a message created during the
+        // current run never carries one. The in-loop caller anchors on
+        // `messages.last(...)` (AIChatViewModel ~4740) — the turn still being
+        // streamed — so `bso` is nil by construction every single time, and
+        // "last agentHistory entry with a dbMessageId" is the correct boundary
+        // rather than a degraded guess. Logged at debug because a user report
+        // of "9 compactions, 9 fallbacks" read as a 100% failure rate when it
+        // was in fact 100% expected.
         if firstKeptMessageId == nil {
             if let lastMatching = agentHistory.last(where: { $0.dbMessageId != nil }) {
                 firstKeptMessageId = lastMatching.dbMessageId
-                logger.info("[Compact] boundaryUIMsg.sourceSortOrder was nil — falling back to last agentHistory entry with dbMessageId=\(lastMatching.dbMessageId?.prefix(8) ?? "?")")
+                logger.debug("[Compact] boundaryUIMsg.sourceSortOrder was nil (expected for in-session/in-loop boundaries) — using last agentHistory entry with dbMessageId=\(lastMatching.dbMessageId?.prefix(8) ?? "?")")
             }
         }
 
@@ -571,6 +607,19 @@ extension AIChatViewModel {
         logger.info("[Compact] range: startIdx=\(startIdx) endExclusive=\(endExclusive) historyCount=\(endExclusive - startIdx)")
 
         isCompacting = true
+        // [T-ios-inloop-compact-freeze] When invoked mid-agent-loop
+        // (allowDuringProcessing=true) isProcessing is ALREADY true and must
+        // stay true after compaction — the loop keeps running. The old
+        // unconditional `defer { isProcessing = false }` fired the
+        // "loop finished" didSet mid-loop (post-stop sync hold, deferred-
+        // reload drain, tracker/badge bookkeeping), and left the rest of the
+        // loop running with isProcessing=false: sync-driven
+        // reloadMessagesFromDB was no longer deferred and could rebuild
+        // `messages` wholesale, detaching the live streaming ChatMessage —
+        // every later round persisted to DB but never rendered, and the real
+        // loop end became a false→false no-op (no snapshot replay, tracker
+        // never cleared → false ⏸️ badge). Restore the entry value instead.
+        let wasProcessingOnEntry = isProcessing
         isProcessing = true
 
         // Sweep stale compact-status rows from prior attempts (e.g. a leftover
@@ -594,7 +643,7 @@ extension AIChatViewModel {
 
         defer {
             isCompacting = false
-            isProcessing = false
+            isProcessing = wasProcessingOnEntry
             compactTask = nil
         }
 
@@ -664,8 +713,24 @@ extension AIChatViewModel {
             statusMsg.isCompactLoading = false
             return
         } catch {
-            logger.error("[Compact] Summary generation failed: \(error)")
-            statusMsg.content = "Compaction failed: \(error.localizedDescription)"
+            // [T-compact-segment-retry-any-error] Reaching here means the
+            // segment retry is EXHAUSTED, not that the first attempt failed:
+            // `generateCompactSummaryWithSplitting` only rethrows once it can no
+            // longer split (a single indivisible message, or depth 3 / 8 leaf
+            // segments), or when the error is one splitting cannot fix
+            // (cancelled / offline — see `isSegmentRetryableError`). So this is
+            // the point where showing the server's own words is genuinely
+            // useful rather than premature.
+            // Distinguish the two ways we get here, so the message never claims
+            // a retry that did not happen. Device testing surfaced this: pulling
+            // the mock server's plug produced "failed after retrying in
+            // segments" for an NSURLErrorDomain -1004 that was (correctly) never
+            // retried at all.
+            let didSegment = Self.isSegmentRetryableError(error)
+            logger.error("[Compact] Summary generation failed (segmented=\(didSegment)): \(error)")
+            statusMsg.content = didSegment
+                ? "Compaction failed after retrying in segments: \(error.localizedDescription)"
+                : "Compaction failed: \(error.localizedDescription)"
             statusMsg.isCompactLoading = false
             return
         }
@@ -827,7 +892,14 @@ extension AIChatViewModel {
         // above has reset isCompacting/isProcessing/compactTask to a clean
         // idle state. Failure exits intentionally don't drain (messages stay
         // queued and user-cancellable).
-        schedulePostCompactDrain()
+        // [T-ios-inloop-compact-freeze] Mid-loop invocation must NOT schedule
+        // the drain: the still-running agent loop drains its own queue at the
+        // injection points, and schedulePostCompactDrain would overwrite
+        // `currentTask` (the loop's task handle — Stop would then cancel the
+        // drain instead of the loop) and run a second loop concurrently.
+        if !wasProcessingOnEntry {
+            schedulePostCompactDrain()
+        }
     }
 
     /// Build a text representation of messages for summarization.
@@ -886,22 +958,47 @@ extension AIChatViewModel {
         do {
             try Task.checkCancellation()
             return try await generateCompactSummary(conversationText: conversationText, statusMsg: statusMsg)
-        } catch let error where isContextTooLargeError(error) && messages.count >= 2 && depth < 3 {
-            // Split messages into two halves and summarize each
+        } catch let error where Self.isSegmentRetryableError(error) && messages.count >= 2 && depth < 3 {
+            // [T-compact-segment-retry-any-error] Split on ANY non-network,
+            // non-cancellation failure — not just a recognised "context too
+            // large" one.
+            //
+            // Why the widening: the old guard was `isContextTooLargeError`, a
+            // substring match over nine hand-collected phrases ("token limit",
+            // "prompt is too long", …). That list is a guess about how each
+            // provider words an over-length refusal, and it is provably
+            // incomplete — OpenMinis#133 reports
+            // `[context_length_exceeded] Your input exceeds the context window
+            // of this model`, whose only matching substring is "context window",
+            // and which several providers emit with different wording again.
+            // Every miss meant the split path was skipped and compaction failed
+            // outright.
+            //
+            // Splitting is a safe response to an unrecognised error: the worst
+            // case is that we spend two smaller LLM calls to reach the same
+            // failure, and depth < 3 bounds that at 8 leaf calls. A summary
+            // built from halves is never worse than no summary at all, which is
+            // what the narrow guard produced. So the burden of proof is
+            // inverted — retry unless the error is one where retrying is
+            // pointless (offline / cancelled), rather than only when we happen
+            // to recognise the phrasing.
             let mid = messages.count / 2
             let firstHalf = Array(messages[..<mid])
             let secondHalf = Array(messages[mid...])
 
-            logger.info("[Compact] Splitting \(messages.count) messages into \(firstHalf.count) + \(secondHalf.count) (depth=\(depth))")
-            statusMsg.content = "Compacting conversation... (splitting into parts)"
+            logger.info("[Compact] Retry segments: splitting \(messages.count) messages into \(firstHalf.count) + \(secondHalf.count) (depth=\(depth)) after error: \(String(describing: error).prefix(200))")
+            // Surfaced verbatim so this retry is distinguishable from a plain
+            // first-pass compaction in screenshots and bug reports.
+            statusMsg.content = "Retry segments \(firstHalf.count)+\(secondHalf.count)..."
 
             let summary1 = try await generateCompactSummaryWithSplitting(messages: firstHalf, statusMsg: statusMsg, depth: depth + 1)
             try Task.checkCancellation()
             let summary2 = try await generateCompactSummaryWithSplitting(messages: secondHalf, statusMsg: statusMsg, depth: depth + 1)
             try Task.checkCancellation()
 
-            // Merge the two summaries into one
-            statusMsg.content = "Compacting conversation... (merging summaries)"
+            // Merge the two summaries into ONE message — the caller stores a
+            // single summary string, so segmentation is invisible downstream.
+            statusMsg.content = "Retry segments \(firstHalf.count)+\(secondHalf.count) (merging)..."
             let mergeInput = """
             Merge these partial summaries into a single cohesive context summary. \
             Frame everything as past events (what was asked, what was done) rather than as \
@@ -928,18 +1025,42 @@ extension AIChatViewModel {
         }
     }
 
-    /// Check if an error indicates the input was too large for the model's context window.
-    private func isContextTooLargeError(_ error: Error) -> Bool {
-        let desc = String(describing: error).lowercased()
-        return desc.contains("too many tokens")
-            || desc.contains("context length")
-            || desc.contains("max_tokens")
-            || desc.contains("content is too long")
-            || desc.contains("exceeds the model")
-            || desc.contains("request too large")
-            || desc.contains("prompt is too long")
-            || desc.contains("token limit")
-            || desc.contains("context window")
+    /// [T-compact-segment-retry-any-error] Should a failed summary attempt be
+    /// retried by splitting the input in half?
+    ///
+    /// Everything EXCEPT the two cases where a smaller request cannot help:
+    ///
+    ///   * cancellation — the user (or a session switch) stopped the work; a
+    ///     retry would fight that and `Task.checkCancellation()` would throw
+    ///     again immediately anyway;
+    ///   * network/offline — the request never reached a model, so the payload
+    ///     size is irrelevant and splitting just doubles the failed round-trips.
+    ///
+    /// This deliberately REPLACES the old `isContextTooLargeError` substring
+    /// allow-list ("token limit", "prompt is too long", …). That list tried to
+    /// enumerate how every provider words an over-length refusal and was
+    /// provably incomplete — OpenMinis#133's `context_length_exceeded` wording
+    /// slipped past several of its variants — and each miss silently disabled
+    /// the split path. A server-side 4xx/5xx we cannot classify is exactly the
+    /// case where trying a smaller payload is worth one attempt.
+    static func isSegmentRetryableError(_ error: Error) -> Bool {
+        if error is CancellationError { return false }
+        if let llm = error as? LLMError {
+            switch llm {
+            case .cancelled, .networkError:
+                return false
+            default:
+                return true
+            }
+        }
+        let ns = error as NSError
+        if ns.domain == NSURLErrorDomain {
+            // URLError covers offline / DNS / TLS / timeout — all payload-size
+            // independent. `.cancelled` also arrives here when a stream is torn
+            // down mid-flight.
+            return false
+        }
+        return true
     }
 
     /// Call the current LLM to generate a compact summary.

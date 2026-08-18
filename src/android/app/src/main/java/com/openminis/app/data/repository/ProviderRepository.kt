@@ -6,6 +6,10 @@ import android.util.Base64
 import com.openminis.app.data.db.ProviderConfigDao
 import com.openminis.app.data.db.ProviderConfigMetaKeys
 import com.openminis.app.data.db.ProviderConfigSnapshot
+import com.openminis.app.data.db.ProviderThinkingRuleEntity
+import com.openminis.app.provider.thinking.ThinkingRule
+import com.openminis.app.provider.thinking.ThinkingRuleCoding
+import com.openminis.app.provider.thinking.ThinkingRuleResolver
 import com.openminis.app.data.db.ProviderDatabase
 import com.openminis.app.data.db.compositeEntryKey
 import com.openminis.app.data.db.toProviderConfig
@@ -24,9 +28,11 @@ import com.openminis.app.data.model.SystemVoiceIds
 import com.openminis.app.data.model.VoiceProviderTemplate
 import com.openminis.app.data.model.hasAudioInput
 import com.openminis.app.data.model.hasAudioOutput
+import com.openminis.app.data.model.hasImageInput
 import com.openminis.app.data.model.hasVoiceModality
 import com.openminis.app.data.model.isVoiceTemplateSeedShape
 import com.openminis.app.data.model.withInferredVoiceModality
+import com.openminis.app.provider.ModelReleaseIndex
 import com.openminis.app.provider.ModelsDevApi
 import com.openminis.app.provider.anthropic.AnthropicModelsApi
 import com.openminis.app.provider.gemini.GeminiModelsApi
@@ -186,18 +192,39 @@ class ProviderRepository(private val context: Context) {
 
     init {
         loadScope.launch {
-            val loaded = loadConfig()
-            synchronized(configLock) {
-                // Only adopt the disk config if nothing has written in the
-                // meantime. A write during the load window (rare — writes come
-                // from user/refresh actions that themselves need config) flips
-                // _configLoaded true and takes precedence; we must not clobber
-                // it with the stale on-disk snapshot.
-                if (!_configLoaded.value) {
-                    _config.value = loaded
-                    _configLoaded.value = true
+            // [T-android-provider-empty-load-wipe] loadConfig() THROWS when the
+            // store is unreadable (rather than returning an empty config that a
+            // later save would write over real data). Contain it here: an
+            // uncaught throw in this coroutine reaches the default uncaught
+            // handler and crashes cold start — in a LOOP, for as long as the DB
+            // stays unreadable, which is precisely the post-crash state the
+            // refusal exists for. Swallowing it leaves _configLoaded false, so
+            // ensureConfigLoaded retries on the next access.
+            try {
+                val loaded = loadConfig()
+                synchronized(configLock) {
+                    // Only adopt the disk config if nothing has written in the
+                    // meantime. A write during the load window (rare — writes come
+                    // from user/refresh actions that themselves need config) flips
+                    // _configLoaded true and takes precedence; we must not clobber
+                    // it with the stale on-disk snapshot.
+                    if (!_configLoaded.value) {
+                        _config.value = loaded
+                        _configLoaded.value = true
+                        android.util.Log.i(
+                            "ProviderRepo",
+                            "[ProviderStore] async loader adopted ${loaded.instances.size} instances",
+                        )
+                    }
                 }
+            } catch (e: Exception) {
+                android.util.Log.e(
+                    "ProviderRepo",
+                    "[ProviderStore] initial load failed; leaving config unloaded for retry: ${e.message}",
+                )
             }
+            // Completed in every path, including the failure one: awaitConfigLoaded()
+            // callers (refreshAllModelsIfNeeded) would otherwise suspend forever.
             if (!configLoadComplete.isCompleted) configLoadComplete.complete(Unit)
             // [T-android-provider-voice] Reconcile voice-template seeds after
             // the initial load (add new template models, drop retired seeds,
@@ -248,12 +275,27 @@ class ProviderRepository(private val context: Context) {
      */
     private suspend fun loadConfigSuspending(): ProviderConfig {
         val rawJson = prefs.getString("config", null)
+        // [T-android-provider-empty-load-wipe] Distinguish "the DB says zero"
+        // from "we could not ask the DB". Swallowing the exception as 0 made a
+        // transient DAO failure (locked/mid-write file after a crash) look
+        // exactly like a fresh install: the loader fell through to an empty
+        // ProviderConfig(), and the next mutation's persistToDbAndMirror wrote
+        // that emptiness over a fully populated store — wiping every provider.
+        // Observed on Pixel 6 after a ConcurrentModificationException crash
+        // left provider.db mid-write: 18 instances became 5.
+        var daoReadFailed = false
         val instanceCount = try {
             providerDao.instanceCount()
         } catch (e: Exception) {
             android.util.Log.w("ProviderRepo", "[ProviderStore] DAO instanceCount failed: ${e.message}")
+            daoReadFailed = true
             0
         }
+        android.util.Log.i(
+            "ProviderRepo",
+            "[ProviderStore] load: dbInstances=$instanceCount daoFailed=$daoReadFailed " +
+                "mirrorBytes=${rawJson?.length ?: -1}",
+        )
 
         val (dbConfig, dbHashStored) = if (instanceCount > 0) {
             try {
@@ -271,6 +313,7 @@ class ProviderRepository(private val context: Context) {
                 cfg to storedHash
             } catch (e: Exception) {
                 android.util.Log.w("ProviderRepo", "[ProviderStore] DB load failed, falling back to JSON: ${e.message}")
+                daoReadFailed = true
                 null to null
             }
         } else {
@@ -351,6 +394,25 @@ class ProviderRepository(private val context: Context) {
                     "${dbConfig.instances.size} DB instances as authoritative",
             )
             return dbConfig
+        }
+
+        // [T-android-provider-empty-load-wipe] Reaching here means BOTH stores
+        // came back empty. That is legitimate on a fresh install — but if the
+        // DB read actually FAILED (rather than honestly reporting zero rows),
+        // an empty config is a lie we are about to persist over real data.
+        // Refuse: throwing keeps _configLoaded false, so ensureConfigLoaded
+        // retries on the next access instead of caching the empty value, and
+        // no mutation can run against a phantom-empty config.
+        if (daoReadFailed) {
+            android.util.Log.e(
+                "ProviderRepo",
+                "[ProviderStore] REFUSING empty config — DB read failed and JSON mirror " +
+                    "unusable; not overwriting a possibly-populated store",
+            )
+            throw IllegalStateException(
+                "Provider store unreadable (DB read failed, JSON mirror unusable) — " +
+                    "refusing to load an empty config that would overwrite existing providers",
+            )
         }
         return ProviderConfig()
     }
@@ -435,13 +497,36 @@ class ProviderRepository(private val context: Context) {
      * Idempotent and cheap once loaded (just a volatile read). Synchronized on
      * [configLock] so it can't race the async loader's emit.
      */
-    private fun ensureConfigLoaded() {
+    // internal (was private): the debug server's read-only provider.* handlers
+    // read `config.value` directly and must be able to force the lazy load —
+    // on a cold process they otherwise report an EMPTY config, which reads as
+    // "all your providers are gone" rather than "not loaded yet".
+    internal fun ensureConfigLoaded() {
         if (_configLoaded.value) return
         synchronized(configLock) {
             if (_configLoaded.value) return
-            _config.value = loadConfig()
+            // [T-android-provider-empty-load-wipe] loadConfig() throws when the
+            // store is unreadable. Do NOT let that escape into the caller: this
+            // runs from UI handlers (every read-modify-write mutator calls it),
+            // and a throw there crashes whichever gesture triggered it. Leaving
+            // _configLoaded false means the next access retries, and callers
+            // see the empty placeholder — which is safe, because the mutators'
+            // saves cannot overwrite a store the loader refused to read.
+            val loaded = try {
+                loadConfig()
+            } catch (e: Exception) {
+                android.util.Log.e(
+                    "ProviderRepo",
+                    "[ProviderStore] ensureConfigLoaded failed; staying unloaded for retry: ${e.message}",
+                )
+                return
+            }
+            _config.value = loaded
             _configLoaded.value = true
         }
+        // [T-android-thinking-rules-phase2] Warm the resolver's custom-rule cache once
+        // config is available, so the (sync) request builder can read user rules.
+        loadAllThinkingRulesIntoCache()
         if (!configLoadComplete.isCompleted) configLoadComplete.complete(Unit)
     }
 
@@ -459,6 +544,14 @@ class ProviderRepository(private val context: Context) {
         // suppresses the emission. T273 bumps `revision` so equals always
         // returns false and 18+ collectAsState callers see the new value.
         synchronized(configLock) {
+            // [T-android-provider-empty-load-wipe] No "block empty saves" guard
+            // here on purpose: mutators pass the SAME object as _config.value
+            // and mutate it in place, so at this point an empty `config` and an
+            // empty `_config.value` are the same list — a legitimate
+            // "user deleted their last provider" is indistinguishable from a
+            // phantom-empty load. The wipe is prevented at the source instead
+            // (loadConfigSuspending refuses to return a blank config when the
+            // DB read failed rather than honestly reporting zero rows).
             // persistToDbAndMirror returns the canonicalized config (entries'
             // uuid in composite "{instanceId}/{modelId}" form). Emit that so
             // subsequent in-memory reads — which compare entry.id by string
@@ -490,16 +583,59 @@ class ProviderRepository(private val context: Context) {
                 modelGroups = canonical.modelGroups.toMutableList(),
                 agentLoopModelEntryIds = canonical.agentLoopModelEntryIds.toMutableList(),
                 agentLoopGroupIds = canonical.agentLoopGroupIds.toMutableList(),
-                revision = config.revision + 1,
+                revision = ProviderConfig.nextRevision(),
             )
         }
     }
 
-    val instances: List<ProviderInstance> get() = _config.value.instances
+    // [T-android-provider-mutator-lock] Snapshot, not the live list. The
+    // declared type is List, but the backing object is the MutableList that
+    // mutators append to in place — so a caller iterating this (e.g.
+    // ProvidersCollection.childIds) could take a ConcurrentModificationException
+    // from a concurrent addInstance. Copying under the lock costs a few objects
+    // and removes the hazard for every current and future caller.
+    val instances: List<ProviderInstance>
+        get() = synchronized(configLock) { _config.value.instances.toList() }
 
-    fun addInstance(instance: ProviderInstance) {
+    /**
+     * [T-android-provider-emitted-list-cow] A PRIVATE working copy of the
+     * current config for a mutator to modify.
+     *
+     * The lock alone does not make mutation safe, because Compose readers do
+     * not take it: `_config.value` is the object collectors are iterating, and
+     * mutating its lists in place throws ConcurrentModificationException *in
+     * the reader's* frame — reproduced on Pixel 6 as a crash inside
+     * UnifiedModelPickerSheet's LazyColumn while three imports ran
+     * concurrently:
+     *
+     *   ArrayList$Itr.checkForComodification → UnifiedModelPickerSheet
+     *     → LazyListIntervalContent.<init> → Snapshot.observe
+     *
+     * saveConfig already EMITS defensive copies; the gap was that the next
+     * mutator read that emitted object back and mutated it. Copy-on-write here
+     * closes the loop: a mutator never touches a published object, so whatever
+     * a reader is iterating stays frozen for the life of that iteration.
+     */
+    private fun workingCopy(): ProviderConfig {
+        val live = _config.value
+        return live.copy(
+            instances = live.instances.toMutableList(),
+            modelEntries = live.modelEntries.toMutableList(),
+            // Deep-copy the groups too: ModelGroup.memberEntryIds is itself a
+            // MutableList that removeEntry/removeGroup edit in place, so a
+            // shallow list copy would still expose the published members to a
+            // reader mid-iteration.
+            modelGroups = live.modelGroups
+                .map { g -> g.copy(memberEntryIds = g.memberEntryIds.toMutableList()) }
+                .toMutableList(),
+            agentLoopModelEntryIds = live.agentLoopModelEntryIds.toMutableList(),
+            agentLoopGroupIds = live.agentLoopGroupIds.toMutableList(),
+        )
+    }
+
+    fun addInstance(instance: ProviderInstance): Unit = synchronized(configLock) {
         ensureConfigLoaded()
-        val config = _config.value
+        val config = workingCopy()
         config.instances.add(instance)
         // Seed built-in model entries ONLY when the seed is appropriate for this
         // instance. Mirrors iOS ProviderConfigStore.addInstance:
@@ -571,7 +707,7 @@ class ProviderRepository(private val context: Context) {
      */
     fun ensureVoiceTemplateModels() = synchronized(configLock) {
         ensureConfigLoaded()
-        val config = _config.value
+        val config = workingCopy()
         var changed = false
         for (instance in config.instances) {
             val tpl = VoiceProviderTemplate.template(instance.customBaseURL) ?: continue
@@ -634,9 +770,9 @@ class ProviderRepository(private val context: Context) {
         return officialHosts.none { custom.contains(it) }
     }
 
-    fun updateInstance(instance: ProviderInstance) {
+    fun updateInstance(instance: ProviderInstance): Unit = synchronized(configLock) {
         ensureConfigLoaded()
-        val config = _config.value
+        val config = workingCopy()
         val idx = config.instances.indexOfFirst { it.id == instance.id }
         if (idx >= 0) {
             val prior = config.instances[idx]
@@ -667,10 +803,10 @@ class ProviderRepository(private val context: Context) {
         }
     }
 
-    fun removeInstance(instanceId: String) {
+    fun removeInstance(instanceId: String): Unit = synchronized(configLock) {
         ensureConfigLoaded()
         invalidateModelCache(instanceId)
-        val config = _config.value
+        val config = workingCopy()
         val removedEntryIds = config.modelEntries
             .filter { it.providerInstanceId == instanceId }
             .map { it.id }
@@ -693,6 +829,12 @@ class ProviderRepository(private val context: Context) {
 
         saveConfig(config)
         deleteApiKey(instanceId)
+        // [T-android-thinking-rules-phase2] The instance is gone — drop its custom
+        // rules from Room and the resolver cache (they can never fire again).
+        runCatching {
+            runBlocking { providerDao.deleteThinkingRulesForInstance(instanceId) }
+            ThinkingRuleResolver.setCustomRules(instanceId, emptyList())
+        }
     }
 
     /**
@@ -704,15 +846,23 @@ class ProviderRepository(private val context: Context) {
      * iCloud sync on every image call. Does not invalidate the model cache —
      * the endpoint choice never moves the model list.
      */
-    fun setImageEndpointResolved(instanceId: String, endpoint: ImageEndpointMode) {
-        ensureConfigLoaded()
-        val config = _config.value
-        val idx = config.instances.indexOfFirst { it.id == instanceId }
-        if (idx < 0) return
-        if (config.instances[idx].imageEndpointResolved == endpoint) return
-        config.instances[idx].imageEndpointResolved = endpoint
-        saveConfig(config)
-    }
+    // [T-android-provider-mutator-lock] `ProviderInstance` has mutable `var`
+    // fields, so `workingCopy()`'s list copy is not enough on its own — the
+    // instance objects inside it are still the published ones. Replace the
+    // element with a `.copy()` rather than writing through to the shared
+    // object. Called from ModelUseOffloadHandler on an offload worker thread
+    // during image generation, so the unsynchronized write had no
+    // happens-before with main-thread readers.
+    fun setImageEndpointResolved(instanceId: String, endpoint: ImageEndpointMode): Unit =
+        synchronized(configLock) {
+            ensureConfigLoaded()
+            val config = workingCopy()
+            val idx = config.instances.indexOfFirst { it.id == instanceId }
+            if (idx < 0) return@synchronized
+            if (config.instances[idx].imageEndpointResolved == endpoint) return@synchronized
+            config.instances[idx] = config.instances[idx].copy(imageEndpointResolved = endpoint)
+            saveConfig(config)
+        }
 
     fun instance(id: String): ProviderInstance? =
         _config.value.instances.find { it.id == id }
@@ -721,16 +871,42 @@ class ProviderRepository(private val context: Context) {
         _config.value.instances.filter { it.providerType == providerType && it.isEnabled }
 
     fun entriesFor(instanceId: String): List<ModelEntry> =
-        _config.value.modelEntries.filter { it.providerInstanceId == instanceId }
+        _config.value.modelEntries
+            .filter { it.providerInstanceId == instanceId }
+            .sortedWith(releaseRankOrder)
 
     fun visibleEntries(instanceId: String): List<ModelEntry> =
-        _config.value.modelEntries.filter { it.providerInstanceId == instanceId && !it.isHidden }
+        _config.value.modelEntries
+            .filter { it.providerInstanceId == instanceId && !it.isHidden }
+            .sortedWith(releaseRankOrder)
 
     fun allVisibleEntries(): List<ModelEntry> =
         _config.value.let { config ->
             val enabledIds = config.instances.filter { it.isEnabled }.map { it.id }.toSet()
-            config.modelEntries.filter { it.providerInstanceId in enabledIds && !it.isHidden }
+            config.modelEntries
+                .filter { it.providerInstanceId in enabledIds && !it.isHidden }
+                .sortedWith(releaseRankOrder)
         }
+
+    /**
+     * [T-model-release-ranking] Newest / most capable model first, so a picker
+     * never opens on a stale (or, as in OpenMinis#83, an uncallable) model.
+     * These lists previously came back in raw config order, which is insertion
+     * order from the provider's /models response — effectively arbitrary.
+     * Falls back to the model id so the ordering is total and stable when two
+     * entries rank identically; otherwise the list could visibly reshuffle
+     * between reads. Mirrors iOS `ProviderConfigStore.releaseRankOrder`.
+     */
+    private val releaseRankOrder = Comparator<ModelEntry> { a, b ->
+        val ra = ModelReleaseIndex.rank(
+            a.baseModel.id, a.baseModel.displayName, a.baseModel.contextWindow
+        )
+        val rb = ModelReleaseIndex.rank(
+            b.baseModel.id, b.baseModel.displayName, b.baseModel.contextWindow
+        )
+        val byRank = ModelReleaseIndex.comparator.compare(ra, rb)
+        if (byRank != 0) byRank else a.baseModel.id.compareTo(b.baseModel.id)
+    }
 
     // ── [T-newchat-default-model-fallback-android] last-used + newest-model ──
 
@@ -844,8 +1020,9 @@ class ProviderRepository(private val context: Context) {
         ensureConfigLoaded()
         // Hot path for concurrent autoRefreshModels coroutines (one per
         // enabled instance) — without this lock, two replaceEntries() calls
-        // race on the shared config.modelEntries ArrayList.
-        val config = _config.value
+        // race on the shared config.modelEntries ArrayList. The working copy
+        // additionally keeps this refresh off the list Compose is iterating.
+        val config = workingCopy()
         val existing = config.modelEntries.filter { it.providerInstanceId == instanceId }
         val existingEntryIds = existing.map { it.id }.toSet()
 
@@ -952,23 +1129,39 @@ class ProviderRepository(private val context: Context) {
     }
 
     // --- Model Entry management ---
+    //
+    // [T-android-provider-mutator-lock] Every read-modify-write mutator below
+    // holds configLock for its WHOLE body, not just the saveConfig at the end.
+    //
+    // These mutate `_config.value`'s inner MutableLists IN PLACE — the very
+    // lists already handed to collectors (the pickers filter over
+    // config.modelEntries on the main thread). Mutating them from an IO thread
+    // while a composition iterates throws ConcurrentModificationException in
+    // the READER. 5399fe270 removed one such walk (ProviderConfig.equals inside
+    // StateFlow emission) but left every consumer exposed; the shared mutable
+    // list is the actual defect, and the lock is what serialises it against
+    // saveConfig's defensive copy (which only snapshots AFTER the mutation).
+    // configLock is a plain JVM monitor, so the nested saveConfig re-entry is
+    // fine — replaceEntries / ensureVoiceTemplateModels already rely on that.
 
-    fun addEntry(entry: ModelEntry) {
+    fun addEntry(entry: ModelEntry): Unit = synchronized(configLock) {
         ensureConfigLoaded()
-        val config = _config.value
+        val config = workingCopy()
         if (!entry.isCustom) {
             val exists = config.modelEntries.any {
                 it.providerInstanceId == entry.providerInstanceId && it.baseModel.id == entry.baseModel.id
             }
-            if (exists) return
+            // Explicit label: a bare `return` in an expression body reads as if
+            // it might only leave the synchronized lambda.
+            if (exists) return@addEntry
         }
         config.modelEntries.add(entry)
         saveConfig(config)
     }
 
-    fun updateEntry(entry: ModelEntry) {
+    fun updateEntry(entry: ModelEntry): Unit = synchronized(configLock) {
         ensureConfigLoaded()
-        val config = _config.value
+        val config = workingCopy()
         val idx = config.modelEntries.indexOfFirst { it.id == entry.id }
         if (idx >= 0) {
             config.modelEntries[idx] = entry.copy(userModifiedAt = System.currentTimeMillis())
@@ -976,9 +1169,9 @@ class ProviderRepository(private val context: Context) {
         }
     }
 
-    fun removeEntry(entryId: String) {
+    fun removeEntry(entryId: String): Unit = synchronized(configLock) {
         ensureConfigLoaded()
-        val config = _config.value
+        val config = workingCopy()
         config.modelEntries.removeAll { it.id == entryId }
         config.modelGroups.forEach { group ->
             group.memberEntryIds.removeAll { it == entryId }
@@ -993,26 +1186,32 @@ class ProviderRepository(private val context: Context) {
 
     // --- Model Group management ---
 
-    fun addGroup(group: ModelGroup) {
+    fun addGroup(group: ModelGroup): Unit = synchronized(configLock) {
         ensureConfigLoaded()
-        val config = _config.value
+        val config = workingCopy()
         config.modelGroups.add(group)
         saveConfig(config)
     }
 
-    fun updateGroup(group: ModelGroup) {
+    fun updateGroup(group: ModelGroup): Unit = synchronized(configLock) {
         ensureConfigLoaded()
-        val config = _config.value
+        val config = workingCopy()
         val idx = config.modelGroups.indexOfFirst { it.id == group.id }
         if (idx >= 0) {
-            config.modelGroups[idx] = group
+            // Defensive re-wrap: callers routinely pass `published.copy(...)`,
+            // and data-class copy() shares memberEntryIds BY REFERENCE with the
+            // published group. Storing that object would put published inner
+            // state back inside a working copy, quietly undoing the invariant.
+            config.modelGroups[idx] = group.copy(
+                memberEntryIds = group.memberEntryIds.toMutableList(),
+            )
             saveConfig(config)
         }
     }
 
-    fun removeGroup(groupId: String) {
+    fun removeGroup(groupId: String): Unit = synchronized(configLock) {
         ensureConfigLoaded()
-        val config = _config.value
+        val config = workingCopy()
         config.modelGroups.removeAll { it.id == groupId }
         if (config.defaultPrimaryGroupId == groupId) {
             config.defaultPrimaryGroupId = null
@@ -1026,14 +1225,17 @@ class ProviderRepository(private val context: Context) {
         if (config.voiceOutputGroupId == groupId) {
             config.voiceOutputGroupId = null
         }
+        if (config.visionGroupId == groupId) {
+            config.visionGroupId = null
+        }
         config.agentLoopGroupIds.removeAll { it == groupId }
         saveConfig(config)
     }
 
     /** Set the agent-loop-visible entry ID list (individual model entries). */
-    fun setAgentLoopEntryIds(ids: List<String>) {
+    fun setAgentLoopEntryIds(ids: List<String>): Unit = synchronized(configLock) {
         ensureConfigLoaded()
-        val config = _config.value
+        val config = workingCopy()
         config.agentLoopModelEntryIds.clear()
         // [T-android-agentloop-dup-key-crash] Dedup at the sink (preserving
         // first-seen order). addAgentLoopEntry guards against dups, but any
@@ -1046,9 +1248,9 @@ class ProviderRepository(private val context: Context) {
     }
 
     /** Set the agent-loop-visible group ID list. */
-    fun setAgentLoopGroupIds(ids: List<String>) {
+    fun setAgentLoopGroupIds(ids: List<String>): Unit = synchronized(configLock) {
         ensureConfigLoaded()
-        val config = _config.value
+        val config = workingCopy()
         config.agentLoopGroupIds.clear()
         // [T-android-agentloop-dup-key-crash] Dedup at the sink (see above) so
         // no write path can persist duplicate group ids → duplicate LazyColumn
@@ -1110,6 +1312,118 @@ class ProviderRepository(private val context: Context) {
     }
 
     /**
+     * [T-android-provider-reorder] Reorder provider instances (drag-to-sort in
+     * the Providers list). Mirrors iOS `ProviderConfigStore.reorderInstances`.
+     *
+     * [newOrder] is a list of instance ids. Unknown ids are dropped and any
+     * instance missing from it is appended in its existing relative order, so a
+     * caller that only knows about ONE provider-type section can pass just that
+     * section's ids and leave the rest untouched — which is exactly what the
+     * per-section drag in ProviderListScreen does.
+     *
+     * Persistence: `sort_order` is derived from list position at save time
+     * (ProviderConfigMapping writes `sortOrder = idx`) and the DAO reads back
+     * `ORDER BY sort_order ASC`, so permuting the list IS the persistence — no
+     * per-row column write is needed.
+     *
+     * Unlike iOS there is no dirty-marking step here: Android keeps provider
+     * config local-only (Room + the JSON mirror), with no CloudKit upload, so
+     * the "pure reorder doesn't mark dirty" bug iOS had to fix has no analogue.
+     * `saveConfig` bumps `revision`, which is the Android-side equivalent
+     * concern — it guarantees the StateFlow re-emits even though a pure
+     * permutation compares equal under data-class structural equality.
+     */
+    fun reorderInstances(newOrder: List<String>): Unit = synchronized(configLock) {
+        ensureConfigLoaded()
+        val config = workingCopy()
+        val current = config.instances.toList()
+        if (current.isEmpty()) return
+
+        val byId = current.associateBy { it.id }
+        val seen = LinkedHashSet<String>()
+        val reordered = ArrayList<ProviderInstance>(current.size)
+        for (id in newOrder) {
+            val inst = byId[id] ?: continue      // drop unknown ids
+            if (!seen.add(id)) continue          // drop duplicates
+            reordered.add(inst)
+        }
+        // Anything the caller didn't mention keeps its existing relative order.
+        for (inst in current) {
+            if (seen.add(inst.id)) reordered.add(inst)
+        }
+
+        // No-op guard: skip the DB write + StateFlow churn when nothing moved.
+        if (reordered.map { it.id } == current.map { it.id }) return
+
+        // [T-android-reorder-unlocked-mutation] Mutate under configLock.
+        //
+        // `config.instances` is the shared MutableList inside _config.value,
+        // and clear()/addAll() ran unprotected here — exactly the window the
+        // configLock KDoc above was written to close (it cites the
+        // "ConcurrentModificationException → ArrayList.next" crash seen on
+        // Pixel 6 / 4a). Concurrent readers iterate that same list with no
+        // lock: hasFoldedShadowDuplicates() and shadowVoiceProviders() are
+        // called from ProviderListScreen during composition — on the main
+        // thread, and recomposition fires precisely BECAUSE this reorder just
+        // emitted — while the background model-refresh fan-out reads it too.
+        //
+        // The empty window was the worse half: a saveConfig snapshotting
+        // between clear() and addAll() would persist ZERO instances to Room
+        // and the JSON mirror, wiping the user's providers.
+        //
+        // synchronized is reentrant, so the nested saveConfig (which takes the
+        // same lock) is fine. Matches ensureVoiceTemplateModels / replaceEntries.
+        synchronized(configLock) {
+            config.instances.clear()
+            config.instances.addAll(reordered)
+            saveConfig(config)
+        }
+    }
+
+    /**
+     * [T-android-modelgroup-reorder] Reorder the user's Model Groups
+     * (drag-to-sort in the Model Groups screen). Mirrors iOS
+     * `ProviderConfigStore.reorderGroups` (4ba54ff5) and follows the exact
+     * contract of [reorderInstances] above: unknown ids dropped, duplicates
+     * collapsed, unmentioned groups appended in their existing relative order,
+     * no-op guard, and the list mutation held under [configLock] — same
+     * CME/empty-window rationale as documented on reorderInstances
+     * ([T-android-reorder-unlocked-mutation]).
+     *
+     * Persistence needs nothing extra: ProviderConfigMapping writes each
+     * group's `sort_order` from its list index at save time and the DAO reads
+     * `ORDER BY sort_order ASC`, so list position IS the stored order.
+     */
+    fun reorderModelGroups(newOrder: List<String>): Unit = synchronized(configLock) {
+        ensureConfigLoaded()
+        val config = workingCopy()
+        val current = config.modelGroups.toList()
+        if (current.isEmpty()) return
+
+        val byId = current.associateBy { it.id }
+        val seen = LinkedHashSet<String>()
+        val reordered = ArrayList<ModelGroup>(current.size)
+        for (id in newOrder) {
+            val group = byId[id] ?: continue     // drop unknown ids
+            if (!seen.add(id)) continue          // drop duplicates
+            reordered.add(group)
+        }
+        // Anything the caller didn't mention keeps its existing relative order.
+        for (group in current) {
+            if (seen.add(group.id)) reordered.add(group)
+        }
+
+        // No-op guard: skip the DB write + StateFlow churn when nothing moved.
+        if (reordered.map { it.id } == current.map { it.id }) return
+
+        synchronized(configLock) {
+            config.modelGroups.clear()
+            config.modelGroups.addAll(reordered)
+            saveConfig(config)
+        }
+    }
+
+    /**
      * Resolve the effective model entries visible to the agent loop (minis-model-use).
      * Expands groups to their members, unions with individual entries, dedupes by ID,
      * and filters to entries of enabled provider instances. Mirrors iOS
@@ -1146,16 +1460,16 @@ class ProviderRepository(private val context: Context) {
 
     var defaultPrimaryGroupId: String?
         get() = _config.value.defaultPrimaryGroupId
-        set(value) {
-            val config = _config.value
+        set(value) = synchronized(configLock) {
+            val config = workingCopy()
             config.defaultPrimaryGroupId = value
             saveConfig(config)
         }
 
     var defaultSubGroupId: String?
         get() = _config.value.defaultSubGroupId
-        set(value) {
-            val config = _config.value
+        set(value) = synchronized(configLock) {
+            val config = workingCopy()
             config.defaultSubGroupId = value
             saveConfig(config)
         }
@@ -1164,21 +1478,197 @@ class ProviderRepository(private val context: Context) {
 
     var voiceInputGroupId: String?
         get() = _config.value.voiceInputGroupId
-        set(value) {
+        set(value) = synchronized(configLock) {
             ensureConfigLoaded()
-            val config = _config.value
+            val config = workingCopy()
             config.voiceInputGroupId = value
             saveConfig(config)
         }
 
     var voiceOutputGroupId: String?
         get() = _config.value.voiceOutputGroupId
-        set(value) {
+        set(value) = synchronized(configLock) {
             ensureConfigLoaded()
-            val config = _config.value
+            val config = workingCopy()
             config.voiceOutputGroupId = value
             saveConfig(config)
         }
+
+    // --- Vision group [T-android-vision-group / GH#182] ---
+
+    var visionGroupId: String?
+        get() = _config.value.visionGroupId
+        set(value) = synchronized(configLock) {
+            ensureConfigLoaded()
+            val config = workingCopy()
+            config.visionGroupId = value
+            saveConfig(config)
+        }
+
+    /** True when a Vision Group is bound AND still exists. Gates read_image
+     *  tool exposure for main models that cannot natively see images. */
+    fun hasVisionGroupConfigured(): Boolean {
+        val gid = _config.value.visionGroupId ?: return false
+        return _config.value.modelGroups.any { it.id == gid }
+    }
+
+    /** Bound Vision group's display name, or null. */
+    fun visionGroupName(): String? {
+        val gid = _config.value.visionGroupId ?: return null
+        return _config.value.modelGroups.find { it.id == gid }?.name
+    }
+
+    /**
+     * [T-android-vision-group] Ordered vision-capable fail-over candidates from
+     * the bound Vision Group. Mirrors resolveVoiceInputCandidates: filters
+     * members to enabled instances whose model declares image input, honours
+     * the group's routing strategy (`fallback` keeps order; `loadBalance`
+     * rotates the start by [loadBalanceSeed] so separate reads spread across
+     * members). Returns [] when no group is bound or no member is usable — the
+     * caller (ReadImageTool) then returns a clear failure text.
+     */
+    fun resolveVisionCandidates(loadBalanceSeed: Int = 0): List<Pair<ProviderInstance, ModelEntry>> {
+        ensureConfigLoaded()
+        val config = _config.value
+
+        fun providerEntry(memberId: String): Pair<ProviderInstance, ModelEntry>? {
+            val entry = config.modelEntries.find { it.id == memberId } ?: return null
+            val inst = config.instances.find { it.id == entry.providerInstanceId } ?: return null
+            if (!inst.isEnabled || !entry.model.hasImageInput) return null
+            return inst to entry
+        }
+
+        val gid = config.visionGroupId ?: return emptyList()
+        val group = config.modelGroups.find { it.id == gid } ?: return emptyList()
+        var members = group.memberEntryIds.mapNotNull { providerEntry(it) }
+        if (group.strategy == RoutingStrategy.loadBalance && members.size > 1) {
+            val offset = kotlin.math.abs(loadBalanceSeed) % members.size
+            members = members.drop(offset) + members.take(offset)
+        }
+        val out = mutableListOf<Pair<ProviderInstance, ModelEntry>>()
+        for (m in members) {
+            if (out.none { it.second.id == m.second.id }) out.add(m)
+        }
+        return out
+    }
+
+    // --- Thinking rules (custom) [T-android-thinking-rules-phase2] ---
+    //
+    // User-authored rules live in provider.db (provider_thinking_rules), keyed by
+    // provider-instance id, in sort_order priority order. Built-in vendor rules are
+    // never stored. On every mutation we publish the instance's rules into the
+    // ThinkingRuleResolver cache so the (sync) request-builder can read them.
+
+    /** Load one instance's custom rules from Room, in stored order. */
+    fun thinkingRules(instanceId: String): List<ThinkingRule> = runBlocking {
+        runCatching { providerDao.loadThinkingRules(instanceId).map { ThinkingRuleCoding.toRule(it) } }
+            .getOrDefault(emptyList())
+    }
+
+    /** The persisted ids for one instance's custom rules, parallel to [thinkingRules]. */
+    fun thinkingRuleIds(instanceId: String): List<String> = runBlocking {
+        runCatching { providerDao.loadThinkingRules(instanceId).map { it.id } }.getOrDefault(emptyList())
+    }
+
+    /** First model id served by [instanceId], for the resolution-trace sample. Null if none. */
+    fun firstModelId(instanceId: String): String? {
+        ensureConfigLoaded()
+        return _config.value.modelEntries.firstOrNull { it.providerInstanceId == instanceId }?.model?.id
+    }
+
+    /** Warm the resolver cache with every instance's custom rules (called on config load). */
+    fun loadAllThinkingRulesIntoCache() {
+        runCatching {
+            val rows = runBlocking { providerDao.loadAllThinkingRules() }
+            val byInstance = rows.groupBy { it.providerInstanceId }
+                .mapValues { (_, rs) -> rs.sortedBy { it.sortOrder }.map { ThinkingRuleCoding.toRule(it) } }
+            ThinkingRuleResolver.setAllCustomRules(byInstance)
+        }
+    }
+
+    private fun republishThinkingCache(instanceId: String) {
+        ThinkingRuleResolver.setCustomRules(instanceId, thinkingRules(instanceId))
+    }
+
+    /**
+     * Insert or update a custom rule. [id] null ⇒ new rule minted at the TOP of the
+     * list (position 0) — a rule overriding a built-in is useless below it; existing
+     * rules shift down. A non-null [id] updates in place, preserving position.
+     * Returns the rule id.
+     */
+    fun saveThinkingRule(instanceId: String, rule: ThinkingRule, id: String? = null): String = runBlocking {
+        val existing = providerDao.loadThinkingRules(instanceId).toMutableList()
+        val ruleId = id ?: java.util.UUID.randomUUID().toString()
+        val idx = existing.indexOfFirst { it.id == ruleId }
+        if (idx >= 0) {
+            // Update in place at its current sort_order.
+            existing[idx] = ThinkingRuleCoding.toEntity(rule, ruleId, instanceId, existing[idx].sortOrder)
+        } else {
+            // New rule at the top; everything else shifts down.
+            existing.add(0, ThinkingRuleCoding.toEntity(rule, ruleId, instanceId, 0))
+        }
+        val renumbered = existing.mapIndexed { i, e -> e.copy(sortOrder = i) }
+        providerDao.replaceThinkingRules(instanceId, renumbered)
+        republishThinkingCache(instanceId)
+        ruleId
+    }
+
+    /** Delete a custom rule by id. Hard delete — Android provider config is local-only,
+     *  so there is no sync channel that could resurrect it (no tombstone needed). */
+    fun deleteThinkingRule(instanceId: String, id: String) = runBlocking {
+        providerDao.deleteThinkingRule(id)
+        // Renumber survivors so sort_order stays dense.
+        val survivors = providerDao.loadThinkingRules(instanceId)
+            .sortedBy { it.sortOrder }
+            .mapIndexed { i, e -> e.copy(sortOrder = i) }
+        providerDao.replaceThinkingRules(instanceId, survivors)
+        republishThinkingCache(instanceId)
+    }
+
+    /** Reorder an instance's custom rules to match [orderedIds] (a permutation). */
+    fun reorderThinkingRules(instanceId: String, orderedIds: List<String>) = runBlocking {
+        val byId = providerDao.loadThinkingRules(instanceId).associateBy { it.id }
+        val reordered = orderedIds.mapNotNull { byId[it] }
+            .mapIndexed { i, e -> e.copy(sortOrder = i) }
+        // Keep any id the caller omitted (defensive against a partial list) appended.
+        val omitted = byId.values.filter { it.id !in orderedIds }.map { it }
+        providerDao.replaceThinkingRules(instanceId, reordered + omitted)
+        republishThinkingCache(instanceId)
+    }
+
+    /**
+     * Built-in rules relevant to THIS instance, for the Provider-detail UI. Mirrors iOS
+     * builtInRulesForDisplay: resolve the vendor context from the instance's base URL,
+     * then keep every AllModels-scoped rule (endpoint/provider-type defaults) plus any
+     * ModelPattern rule the provider actually serves a matching model for. An empty
+     * catalog keeps everything (list must not be mysteriously empty before first fetch).
+     */
+    fun builtInThinkingRulesForDisplay(instanceId: String): List<ThinkingRule> {
+        ensureConfigLoaded()
+        val config = _config.value
+        val inst = config.instances.find { it.id == instanceId } ?: return emptyList()
+        val base = (inst.effectiveBaseURL ?: "").lowercase()
+        val ctx = com.openminis.app.provider.thinking.ThinkingResolveContext(
+            modelId = "",
+            supportsReasoning = null,
+            declaredEffortValues = null,
+            level = com.openminis.app.data.model.ThinkingLevel.OFF,
+            maxTokens = 0,
+            isOpenRouter = base.contains("openrouter.ai"),
+            usesUnifiedReasoningEffort = base.contains("volces") || base.contains("ark.") || base.contains("venice.ai"),
+            isMistral = base.contains("mistral.ai"),
+            isDashScope = base.contains("dashscope"),
+            offEffort = null,
+        )
+        val modelIds = config.modelEntries.filter { it.providerInstanceId == instanceId }.map { it.model.id }
+        return ThinkingRuleResolver.builtInRules(ctx).filter { rule ->
+            when (rule.scope) {
+                is ThinkingRule.Scope.AllModels -> true
+                is ThinkingRule.Scope.ModelPattern ->
+                    modelIds.isEmpty() || modelIds.any { rule.scope.matches(it) }
+            }
+        }
+    }
 
     /**
      * Ensure a default Voice INPUT group exists and is bound when the user
@@ -1188,9 +1678,9 @@ class ProviderRepository(private val context: Context) {
      * when a valid binding already exists. Mirrors iOS
      * ProviderConfigStore.ensureDefaultVoiceInputGroup.
      */
-    fun ensureDefaultVoiceInputGroup(): String? {
+    fun ensureDefaultVoiceInputGroup(): String? = synchronized(configLock) {
         ensureConfigLoaded()
-        val config = _config.value
+        val config = workingCopy()
         config.voiceInputGroupId?.let { gid ->
             if (config.modelGroups.any { it.id == gid }) return gid
         }
@@ -1214,9 +1704,9 @@ class ProviderRepository(private val context: Context) {
      * "Voice Output" with the System TTS auto sentinel (device TextToSpeech,
      * best voice per reply language). Mirrors iOS ensureDefaultVoiceOutputGroup.
      */
-    fun ensureDefaultVoiceOutputGroup(): String? {
+    fun ensureDefaultVoiceOutputGroup(): String? = synchronized(configLock) {
         ensureConfigLoaded()
-        val config = _config.value
+        val config = workingCopy()
         config.voiceOutputGroupId?.let { gid ->
             if (config.modelGroups.any { it.id == gid }) return gid
         }
@@ -1245,7 +1735,7 @@ class ProviderRepository(private val context: Context) {
             prefs.edit().putString("voice.input.overrideEntryId", value).apply()
             synchronized(configLock) {
                 val config = _config.value
-                _config.value = config.copy(revision = config.revision + 1)
+                _config.value = config.copy(revision = ProviderConfig.nextRevision())
             }
         }
 
@@ -1380,7 +1870,7 @@ class ProviderRepository(private val context: Context) {
             prefs.edit().putString("voice.output.overrideEntryId", value).apply()
             synchronized(configLock) {
                 val config = _config.value
-                _config.value = config.copy(revision = config.revision + 1)
+                _config.value = config.copy(revision = ProviderConfig.nextRevision())
             }
         }
 
@@ -1438,6 +1928,41 @@ class ProviderRepository(private val context: Context) {
         return VoiceOutputChoice(isSystemEngine = true, entry = null)
     }
 
+    /**
+     * [T-android-voice-picker-active] Which MEMBER of a bound voice group is
+     * the one that would actually serve the next request — the id the picker
+     * marks "Active" when no explicit override is set.
+     *
+     * Deliberately derived here rather than recomputed in the picker: this is
+     * the same first-usable-member-in-group-order walk that
+     * [resolveVoiceInputChoice] / [resolveVoiceOutputChoice] perform, and a
+     * second copy in the UI would silently drift from the runtime rule the
+     * moment either resolver's usability test changes. Returns null when no
+     * member is usable (the group can serve nothing).
+     *
+     * Note this reports the group's *static* first choice. Under
+     * `loadBalance`, or after a fail-over, the request may land on a later
+     * member; the badge answers "which one leads", which is what the row's
+     * fallback-strategy chip already promises.
+     */
+    fun activeVoiceGroupMemberId(output: Boolean): String? {
+        ensureConfigLoaded()
+        val config = _config.value
+        val gid = if (output) config.voiceOutputGroupId else config.voiceInputGroupId
+        val group = config.modelGroups.find { it.id == gid } ?: return null
+        for (memberId in group.memberEntryIds) {
+            // System sentinels are always usable — the on-device engine needs
+            // no instance and is never disabled.
+            if (memberId.startsWith(SystemVoiceIds.BUILTIN_PROVIDER_ID)) return memberId
+            val entry = config.modelEntries.find { it.id == memberId } ?: continue
+            val inst = config.instances.find { it.id == entry.providerInstanceId } ?: continue
+            if (!inst.isEnabled) continue
+            val usable = if (output) entry.model.hasAudioOutput else entry.model.hasAudioInput
+            if (usable) return memberId
+        }
+        return null
+    }
+
     /** Bound Voice Output group's display name, or null. */
     fun voiceOutputGroupName(): String? {
         val gid = _config.value.voiceOutputGroupId ?: return null
@@ -1476,9 +2001,12 @@ class ProviderRepository(private val context: Context) {
     fun setVoiceShadowDisabled(instanceId: String, disabled: Boolean) {
         prefs.edit().putBoolean("voiceShadowDisabled.$instanceId", disabled).apply()
         // Bump revision so Compose collectors re-read the shadow list.
-        val config = _config.value
+        // The read must be INSIDE the lock: reading _config.value outside it
+        // and re-publishing that snapshot afterwards would silently revert any
+        // save that landed in between (lost update). The other two
+        // revision-bump sites already read inside their block.
         synchronized(configLock) {
-            _config.value = config.copy(revision = config.revision + 1)
+            _config.value = _config.value.copy(revision = ProviderConfig.nextRevision())
         }
     }
 
@@ -1501,7 +2029,9 @@ class ProviderRepository(private val context: Context) {
     fun shadowVoiceProviders(): List<ShadowVoiceProvider> {
         ensureConfigLoaded()
         val config = _config.value
-        val candidates = config.instances.filter { inst ->
+        // [T-android-reorder-unlocked-mutation] Snapshot first — same
+        // main-thread composition reader as hasFoldedShadowDuplicates.
+        val candidates = config.instances.toList().filter { inst ->
             inst.isEnabled && hasVoiceModels(inst.id) && !isVoiceShadowDisabled(inst.id) &&
                 com.openminis.app.provider.voice.VoiceProviderFactory.supports(inst, loadApiKey(inst.id))
         }
@@ -1541,7 +2071,13 @@ class ProviderRepository(private val context: Context) {
      */
     fun hasFoldedShadowDuplicates(): Boolean {
         val seen = mutableSetOf<String>()
-        for (inst in _config.value.instances) {
+        // [T-android-reorder-unlocked-mutation] Snapshot before iterating.
+        // This runs on the MAIN thread from ProviderListScreen's composition,
+        // so taking configLock here would block the UI behind a DB write.
+        // toList() copies under no contention and removes the CME risk
+        // outright — the writer's structural edits can no longer be observed
+        // mid-iteration.
+        for (inst in _config.value.instances.toList()) {
             if (!inst.isEnabled || !hasVoiceModels(inst.id)) continue
             val key = normalizedShadowKey(inst.customBaseURL)
             if (key.isEmpty()) continue
@@ -1753,6 +2289,18 @@ class ProviderRepository(private val context: Context) {
     fun loadApiKey(instanceId: String): String? {
         return encryptedPrefs.getString("apikey_$instanceId", null)
     }
+
+    /**
+     * [T-empty-key-compat-endpoints] The credential the ROUTING layers should
+     * use: the stored key, or "" for instances where an empty key is a valid
+     * configuration (third-party OpenAI/Anthropic-compatible endpoint — see
+     * ProviderInstance.allowsEmptyAPIKey). Returns null only when the instance
+     * genuinely has no usable credential, so existing `?: return/continue`
+     * call sites keep their skip semantics for everything else (notably OAuth
+     * instances without a token, which must stay unauthenticated).
+     */
+    fun usableApiKey(instance: ProviderInstance): String? =
+        loadApiKey(instance.id) ?: if (instance.allowsEmptyAPIKey) "" else null
 
     fun deleteApiKey(instanceId: String) {
         encryptedPrefs.edit().remove("apikey_$instanceId").apply()
@@ -2064,11 +2612,20 @@ class ProviderRepository(private val context: Context) {
                     isHidden = isHidden,
                 ))
             }
-            // Import replaces built-in entries directly (not via replaceEntries which takes LLMModel list)
-            val cfg = _config.value
-            cfg.modelEntries.removeAll { it.providerInstanceId == instance.id }
-            cfg.modelEntries.addAll(entries)
-            saveConfig(cfg)
+            // Import replaces built-in entries directly (not via replaceEntries which takes LLMModel list).
+            // [T-android-provider-mutator-lock] Lock + working copy, like every
+            // other mutator. This function is the actual provider.import /
+            // Share-import path, and it read `_config.value` back — the object
+            // addInstance had just PUBLISHED — and mutated its live list. That
+            // is the exact race behind both device CMEs; the earlier sweep
+            // missed it because the audit went by function name and this one
+            // isn't called add*/update*/remove*.
+            synchronized(configLock) {
+                val cfg = workingCopy()
+                cfg.modelEntries.removeAll { it.providerInstanceId == instance.id }
+                cfg.modelEntries.addAll(entries)
+                saveConfig(cfg)
+            }
         }
 
         return resolvedLabel

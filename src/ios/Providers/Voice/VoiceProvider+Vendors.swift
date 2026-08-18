@@ -850,3 +850,256 @@ private extension String {
         addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? self
     }
 }
+
+// MARK: - OpenRouter (TTS) — chat.completions + audio modality, NOT /v1/audio/speech
+
+/// OpenRouter voice output.
+///
+/// OpenRouter does not implement OpenAI's dedicated TTS endpoint at all:
+/// `POST /api/v1/audio/speech` answers `{"error":{"message":"Model <id> does
+/// not exist","code":400}}` for EVERY model id, including `openai/tts-1`.
+/// That 400 — not a missing model — is what users saw for every OpenRouter
+/// voice entry from fish-audio to gpt-audio.
+///
+/// The only route that produces audio is `POST /api/v1/chat/completions` with
+/// the audio-preview shape, which carries three hard constraints (each
+/// verified against the live API with a real key):
+///   • `modalities: ["text","audio"]` + `audio: {voice, format}`;
+///   • `stream: true` is MANDATORY — otherwise
+///     `{"error":{"message":"Audio output requires stream: true"}}`;
+///   • while streaming, `audio.format` accepts ONLY `pcm16` — `wav` returns
+///     "does not support 'wav' when stream=true. Supported values are:
+///     'pcm16'".
+///
+/// The SSE body is an ordinary chat-completions stream with two extra fields
+/// per delta: `audio.data` (base64 PCM16 chunk) and `audio.transcript`. We
+/// accumulate the PCM and wrap it in a WAV container, because `synthesize`
+/// must return something `AVAudioPlayer(data:)` can open and headerless PCM
+/// is not that.
+final class OpenRouterVoiceProvider: VoiceProvider {
+
+    private let orLogger = AppLogger(category: "VoiceProvider")
+
+    /// OpenAI's audio-preview models emit 24 kHz mono PCM16; OpenRouter proxies
+    /// that stream unchanged. There is no field in the response announcing the
+    /// rate, so it is fixed here — a wrong value would play at the wrong pitch,
+    /// which is immediately audible if it ever changes.
+    private static let pcmSampleRate = 24000
+
+    /// Only chat-audio models can produce audio here. Mirrors the reasoning of
+    /// `usesChatBasedASR`: the audio-capable CHAT family is small and
+    /// enumerable, so it is the special case, and anything else keeps the
+    /// inherited behaviour rather than being force-routed into a shape it may
+    /// not support.
+    ///
+    /// Deliberately NOT extended to fish-audio and friends: whether those serve
+    /// audio through this protocol on OpenRouter is unverified, and sending
+    /// them a chat-audio request would trade one 400 for another. They keep the
+    /// old path until someone confirms otherwise.
+    private func usesChatAudioOutput(modelId: String) -> Bool {
+        let id = modelId.lowercased()
+        guard id.contains("audio") else { return false }
+        return id.contains("gpt") || id.contains("openai")
+    }
+
+    // MARK: - ASR
+
+    /// OpenRouter splits transcription across TWO endpoints that serve
+    /// DISJOINT model sets, and it says so itself:
+    ///
+    ///   • `POST /api/v1/audio/transcriptions` — dedicated ASR models only.
+    ///     `openai/whisper-1` works here and returns
+    ///     `{"text":"The quick brown fox…"}`. Asking it for a chat model gives
+    ///     `{"error":{"message":"Model google/gemini-3.6-flash does not
+    ///     exist","code":400}}` — the reported bug, and the same wording the
+    ///     missing TTS endpoint produces, which is what made it look like the
+    ///     endpoint was absent.
+    ///   • `POST /api/v1/chat/completions` with `input_audio` — chat models
+    ///     with audio input. `google/gemini-3.6-flash`, `google/gemini-2.5-flash`
+    ///     and `openai/gpt-audio-mini` all transcribe correctly here (verified
+    ///     against the live API with real speech, not silence). Asking it for
+    ///     whisper gives "openai/whisper-1 is a transcription model and cannot
+    ///     be used with the chat/completions endpoint."
+    ///
+    /// So this CANNOT be routed by provider type alone, even though every
+    /// failing id in the report was on OpenRouter: sending everything through
+    /// chat would break `whisper-1`, which works today. The split is per model,
+    /// and OpenRouter's own error text is the specification.
+    ///
+    /// Inverting the base class's rule is what makes it general. The base gates
+    /// on a small allowlist of chat-audio stems (gpt/qwen + "audio"), which is
+    /// right when the fallback is a REST endpoint that accepts arbitrary
+    /// third-party ASR ids. Here the fallback only accepts DEDICATED
+    /// transcription models — a small, recognisable family — so the default
+    /// flips: anything that is not obviously a transcription model is treated
+    /// as a chat model. That covers gemini, gpt-audio, qwen-omni and every
+    /// future audio-capable chat model without another allowlist to maintain.
+    override func usesChatBasedASR(model: LLMModel) -> Bool {
+        !Self.isDedicatedTranscriptionModel(model.id)
+    }
+
+    /// Ids that belong to the `/audio/transcriptions` endpoint. Deliberately
+    /// narrow and name-based: these are the ASR engines OpenRouter actually
+    /// routes there, and a false positive sends a working chat model back to
+    /// the endpoint that 400s.
+    ///
+    /// Every pattern here was probed against the live endpoint rather than
+    /// guessed, because OpenRouter publishes no catalogue to derive them from:
+    /// `GET /api/v1/models` lists the 400 CHAT models and contains no ASR id at
+    /// all, yet `openai/whisper-1` transcribes fine — the two endpoints have
+    /// separate, and for ASR non-enumerable, model sets. Confirmed working on
+    /// `/audio/transcriptions`: `openai/whisper-1`,
+    /// `openai/gpt-4o-transcribe`, `openai/gpt-4o-mini-transcribe`,
+    /// `deepgram/nova-3`.
+    ///
+    /// Deepgram is matched VENDOR-qualified, never by the bare engine name:
+    /// `nova-2`/`nova-3` alone also matches `amazon/nova-2-lite-v1`, a chat
+    /// model that is in the catalogue — and sending it here returns "Model
+    /// amazon/nova-2-lite-v1 does not exist", i.e. exactly the 400 this fix
+    /// exists to remove.
+    static func isDedicatedTranscriptionModel(_ modelId: String) -> Bool {
+        let id = modelId.lowercased()
+        return id.contains("whisper")
+            || id.contains("transcribe")     // gpt-4o[-mini]-transcribe
+            || id.contains("deepgram/")
+    }
+
+    /// The voices OpenAI's audio-preview models accept, as returned verbatim in
+    /// their own 400 ("Supported values are: …"). Used only to recognise a
+    /// valid name, never to pick one — the fallback is `defaultVoiceOutputVoice()`.
+    private static let knownVoices: Set<String> = [
+        "alloy", "echo", "fable", "onyx", "nova", "shimmer", "coral",
+        "verse", "ballad", "ash", "sage", "marin", "cedar",
+    ]
+
+    /// Pick the `audio.voice` value.
+    ///
+    /// Callers do not agree on what `VoiceOutputRequest.voice` means: for
+    /// vendors where a catalog entry IS a voice (ElevenLabs voice_id, Doubao
+    /// speaker) the entry id is passed straight through, and Quick Test follows
+    /// that convention by sending `entry.model.id`. For OpenRouter chat-audio
+    /// the model and the voice are separate axes, so that convention arrives as
+    /// `voice: "openai/gpt-audio"` and the upstream answers
+    /// "Invalid value: 'openai/gpt-audio'. Supported values are: 'alloy', …" —
+    /// a second 400 hiding behind the first one this class fixes.
+    ///
+    /// So: honour a voice the vendor actually knows, and otherwise fall back to
+    /// the default rather than forwarding something that is certain to fail.
+    /// An unrecognised-but-real voice (if OpenAI adds one) degrades to the
+    /// default instead of erroring, which is the safer direction for TTS.
+    private func resolvedVoice(_ requested: String?, modelId: String) -> String {
+        guard let requested, !requested.isEmpty else { return defaultVoiceOutputVoice() }
+        let lowered = requested.lowercased()
+        if Self.knownVoices.contains(lowered) { return lowered }
+        orLogger.info("OpenRouter chat-audio: ignoring non-voice '\(requested)' for \(modelId), using \(defaultVoiceOutputVoice())")
+        return defaultVoiceOutputVoice()
+    }
+
+    override func synthesize(_ request: VoiceOutputRequest) async throws -> Data {
+        let modelId = request.model ?? defaultVoiceOutputModel()
+        guard usesChatAudioOutput(modelId: modelId) else {
+            // Not a known chat-audio model — behave exactly as before rather
+            // than guessing. (This path still 400s on OpenRouter, but that is
+            // the pre-existing state for those ids, not a regression, and it
+            // keeps a working relay-hosted TTS model working if one exists.)
+            return try await super.synthesize(request)
+        }
+
+        let urlStr = composedURLString(path: "/v1/chat/completions")
+        guard let url = URL(string: urlStr) else {
+            throw VoiceProviderError.parseError("Invalid URL: \(urlStr)")
+        }
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        applyVoiceAuth(&urlRequest)
+
+        let body: [String: Any] = [
+            "model": modelId,
+            "modalities": ["text", "audio"],
+            "audio": [
+                "voice": resolvedVoice(request.voice, modelId: modelId),
+                // pcm16 is the ONLY value accepted while streaming, and
+                // streaming is mandatory — so this is fixed, not a preference.
+                "format": "pcm16",
+            ],
+            "stream": true,
+            "messages": [
+                ["role": "user", "content": request.input],
+            ],
+        ]
+        urlRequest.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (bytes, response) = try await URLSession.shared.bytes(for: urlRequest)
+        guard let http = response as? HTTPURLResponse else {
+            throw VoiceProviderError.parseError("Non-HTTP response")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            // Drain the body so the server's message survives into the error —
+            // an opaque "HTTP 400" is what made this bug hard to place.
+            var errData = Data()
+            for try await b in bytes { errData.append(b) }
+            if http.statusCode == 401 || http.statusCode == 403 {
+                orLogger.error("OpenRouter voice auth failed: HTTP \(http.statusCode)")
+                throw VoiceProviderError.authError
+            }
+            orLogger.error("OpenRouter chat-audio failed: HTTP \(http.statusCode) body=\(String(data: errData, encoding: .utf8) ?? "")")
+            throw VoiceProviderError.httpError(http.statusCode, errData)
+        }
+
+        var pcm = Data()
+        var transcript = ""
+        for try await line in bytes.lines {
+            guard line.hasPrefix("data:") else { continue }
+            let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+            if payload == "[DONE]" { break }
+            guard let chunk = payload.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: chunk) as? [String: Any],
+                  let choices = obj["choices"] as? [[String: Any]] else { continue }
+            for choice in choices {
+                guard let delta = choice["delta"] as? [String: Any],
+                      let audio = delta["audio"] as? [String: Any] else { continue }
+                if let b64 = audio["data"] as? String,
+                   let part = Data(base64Encoded: b64) {
+                    pcm.append(part)
+                }
+                if let t = audio["transcript"] as? String { transcript += t }
+            }
+        }
+
+        guard !pcm.isEmpty else {
+            throw VoiceProviderError.parseError(
+                "OpenRouter returned no audio data for \(modelId)"
+                + (transcript.isEmpty ? "" : " (transcript: \(transcript.prefix(80)))"))
+        }
+        orLogger.info("OpenRouter chat-audio ok model=\(modelId) pcmBytes=\(pcm.count) transcriptChars=\(transcript.count)")
+        return Self.wrapPCM16InWAV(pcm, sampleRate: Self.pcmSampleRate)
+    }
+
+    /// Wrap signed 16-bit little-endian mono PCM in a minimal WAV container so
+    /// `AVAudioPlayer(data:)` can open it.
+    static func wrapPCM16InWAV(_ pcm: Data, sampleRate: Int) -> Data {
+        let channels = 1, bitsPerSample = 16
+        let byteRate = sampleRate * channels * bitsPerSample / 8
+        let blockAlign = channels * bitsPerSample / 8
+        let dataSize = UInt32(pcm.count)
+        var wav = Data()
+        func le32(_ v: UInt32) { var x = v.littleEndian; wav.append(Data(bytes: &x, count: 4)) }
+        func le16(_ v: UInt16) { var x = v.littleEndian; wav.append(Data(bytes: &x, count: 2)) }
+        wav.append("RIFF".data(using: .ascii)!)
+        le32(36 + dataSize)
+        wav.append("WAVE".data(using: .ascii)!)
+        wav.append("fmt ".data(using: .ascii)!)
+        le32(16)
+        le16(1)                          // PCM
+        le16(UInt16(channels))
+        le32(UInt32(sampleRate))
+        le32(UInt32(byteRate))
+        le16(UInt16(blockAlign))
+        le16(UInt16(bitsPerSample))
+        wav.append("data".data(using: .ascii)!)
+        le32(dataSize)
+        wav.append(pcm)
+        return wav
+    }
+}

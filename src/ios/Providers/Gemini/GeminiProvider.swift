@@ -3,6 +3,10 @@ import os.log
 
 private let logger = AppLogger(category: "GeminiProvider")
 
+/// [T-thinking-rules-phase2] Shared category with the OpenAI/Anthropic paths so one grep
+/// shows every provider's thinking resolution (design §8).
+private let thinkingLogger = AppLogger(category: "Thinking")
+
 /// URLSession with a long read timeout for SSE streaming.
 /// URLSession.shared uses a 60-second timeoutIntervalForRequest which can kill
 /// long-running streams (e.g. large file_write generation). This session gives
@@ -287,92 +291,25 @@ final class GeminiProvider: LLMProvider {
     //   Gemini 2.5 Pro  — thinkingBudget, cannot disable, minimum 128
     //   Gemini 2.5 Flash — thinkingBudget 0 disables
     //   Gemini 2.5 Flash Lite — no thinking support
+    /// [T-thinking-rules-phase2] The per-family rules now live in
+    /// `ThinkingRuleResolver.geminiThinkingConfig` so every vendor's thinking contract is
+    /// described in ONE place. Behaviour is byte-for-byte unchanged — pinned by
+    /// ThinkingWireGeminiAnthropicSnapshotTests (182 rows generated from the previous
+    /// implementation of this method and committed before the migration).
     private func minimalThinkingConfig() -> [String: Any] {
-        let id = model.id.lowercased()
-
-        // Gemini 3.x models use thinkingLevel
-        if id.contains("gemini-3") {
-            if id.contains("flash") {
-                logger.debug("[Gemini] thinkingLevel=minimal for model \(self.model.id)")
-                return ["thinkingLevel": "minimal"]
-            } else {
-                // Pro — cannot disable, use lowest
-                logger.debug("[Gemini] thinkingLevel=low for model \(self.model.id)")
-                return ["thinkingLevel": "low"]
-            }
-        }
-
-        // Gemini 2.5 models use thinkingBudget
-        if id.contains("2.5-pro") {
-            logger.debug("[Gemini] thinkingBudget=128 (minimum) for model \(self.model.id)")
-            return ["thinkingBudget": 128]
-        }
-        if id.contains("2.5-flash-lite") {
-            // Flash Lite doesn't think by default, no config needed
-            return [:]
-        }
-
-        // Specialized models (TTS, image-gen, embedding, etc.) don't support thinking at all
-        let noThinkingSuffixes = ["-tts", "-image", "-embedding", "-vision"]
-        if noThinkingSuffixes.contains(where: { id.hasSuffix($0) || id.contains("\($0)-") }) {
-            logger.debug("[Gemini] No thinking config for specialized model \(self.model.id)")
-            return [:]
-        }
-
-        // Default: disable thinking (works for 2.5 Flash and unknown models)
-        logger.debug("[Gemini] thinkingBudget=0 (disabled) for model \(self.model.id)")
-        return ["thinkingBudget": 0]
+        let cfg = ThinkingRuleResolver.geminiThinkingConfig(modelId: model.id, level: .off)
+        thinkingLogger.info("[resolve] provider=gemini model=\(model.id) level=off keys=[\(cfg.keys.sorted().joined(separator: ","))]")
+        return cfg
     }
 
     /// Thinking config when user explicitly enables thinking mode.
+    /// Thinking config when the user explicitly enables thinking mode.
+    /// [T-thinking-rules-phase2] See `minimalThinkingConfig` — the family rules now live
+    /// in `ThinkingRuleResolver.geminiThinkingConfig`.
     private func elevatedThinkingConfig(level: ThinkingLevel) -> [String: Any] {
-        let id = model.id.lowercased()
-
-        if id.contains("gemini-3") {
-            let geminiLevel: String = switch level {
-            case .off: "minimal"
-            case .low: "low"
-            case .medium: "medium"
-            case .high, .xhigh, .max, .ultra: "high"
-            }
-            logger.debug("[Gemini] thinkingLevel=\(geminiLevel), includeThoughts=true for model \(self.model.id)")
-            return ["thinkingLevel": geminiLevel, "includeThoughts": true]
-        }
-        if id.contains("2.5-pro") {
-            let budget: Int = switch level {
-            case .off: 128
-            case .low: 2048
-            case .medium: 8192
-            case .high: 16384
-            case .xhigh, .max, .ultra: 32768
-            }
-            logger.debug("[Gemini] thinkingBudget=\(budget), includeThoughts=true for model \(self.model.id)")
-            return ["thinkingBudget": budget, "includeThoughts": true]
-        }
-        if id.contains("2.5-flash") && !id.contains("lite") {
-            let budget: Int = switch level {
-            case .off: 0
-            case .low: 1024
-            case .medium: 4096
-            case .high: 8192
-            case .xhigh, .max, .ultra: 16384
-            }
-            logger.debug("[Gemini] thinkingBudget=\(budget), includeThoughts=true for model \(self.model.id)")
-            return ["thinkingBudget": budget, "includeThoughts": true]
-        }
-
-        // Unknown model with thinking enabled — use conservative budgets.
-        // thinkingBudget: 0 is invalid on models that require thinking (e.g.
-        // 2.5 Pro variants with non-standard IDs), so use 128 as the floor.
-        let budget: Int = switch level {
-        case .off: 128
-        case .low: 1024
-        case .medium: 4096
-        case .high: 8192
-        case .xhigh, .max, .ultra: 16384
-        }
-        logger.debug("[Gemini] thinkingBudget=\(budget), includeThoughts=true (fallback) for model \(self.model.id)")
-        return ["thinkingBudget": budget, "includeThoughts": true]
+        let cfg = ThinkingRuleResolver.geminiThinkingConfig(modelId: model.id, level: level)
+        thinkingLogger.info("[resolve] provider=gemini model=\(model.id) level=\(level.rawValue) keys=[\(cfg.keys.sorted().joined(separator: ","))]")
+        return cfg
     }
 
     private func buildRequestBody(

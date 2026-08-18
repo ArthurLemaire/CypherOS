@@ -45,9 +45,12 @@ struct AssistantMenuKey: Equatable {
 }
 
 /// Value key for the tool-capsule long-press menu. `blockId` identifies the
-/// tool; `isProcessing` toggles the "Re-run From Here" branch. The clipboard
-/// dump is built lazily at tap time and deliberately excluded from the key.
+/// tool; `isProcessing` toggles the "Re-run From Here" branch;
+/// `canRevokeMemoryWrite` toggles the "Undo This Memory Write" branch. The
+/// clipboard dump and the written-memory text are built lazily at tap time and
+/// deliberately excluded from the key.
 struct ToolMenuKey: Equatable {
     let blockId: UUID
     let isProcessing: Bool
+    let canRevokeMemoryWrite: Bool
 }

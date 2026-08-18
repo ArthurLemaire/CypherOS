@@ -1,6 +1,7 @@
 import Foundation
 import SQLite3
 import SwiftAnthropic
+import UIKit
 import os.log
 
 private let logger = AppLogger(category: "ChatStore")
@@ -51,12 +52,16 @@ struct ChatSession: Identifiable, Codable, Hashable {
     var remoteDeviceId: String?   // non-nil if this session came from another device via iCloud
     var remoteDeviceName: String? // human-readable name of the remote device
     var pinnedAt: Date?       // non-nil if session is pinned; timestamp of when it was pinned
+    var folderId: String?     // non-nil if filed into a folder; NULL = ungrouped
 
     /// Whether this session is from a remote device (read-only).
     var isRemote: Bool { remoteDeviceId != nil }
 
     /// Whether this session is pinned to the top of the list.
     var isPinned: Bool { pinnedAt != nil }
+
+    /// Whether this session belongs to a folder.
+    var isFiled: Bool { folderId != nil }
 
     // MARK: - Equatable / Hashable (cheap, content-via-proxy)
     //
@@ -82,6 +87,11 @@ struct ChatSession: Identifiable, Codable, Hashable {
         lhs.id == rhs.id
             && lhs.updatedAt == rhs.updatedAt
             && lhs.pinnedAt == rhs.pinnedAt
+            // `folderId` MUST be compared: moving a session between folders
+            // changes neither `updatedAt` nor any other compared field, so
+            // without this the sidebar would keep rendering the row in its old
+            // section until some unrelated mutation bumped the diff.
+            && lhs.folderId == rhs.folderId
             && lhs.title == rhs.title
             && lhs.category == rhs.category
             && lhs.source == rhs.source
@@ -96,6 +106,71 @@ struct ChatSession: Identifiable, Codable, Hashable {
         // Mirror ==: cheap, identity + updatedAt. Avoids hashing long strings.
         hasher.combine(id)
         hasher.combine(updatedAt)
+    }
+}
+
+/// A user-created folder that groups sessions on the home list.
+///
+/// Named "Folder" rather than "Group" on purpose: the codebase already has
+/// three other "group"s — `ModelGroup` (the LLM provider fallback group behind
+/// the home FAB's "New Chat with Group"), the `__grp__` draft-session id
+/// encoding (which embeds a ModelGroup id), and SwiftUI's `Group {}`.
+///
+/// Identity is a locally generated UUID, and `name` deliberately carries no
+/// uniqueness constraint:
+///
+/// - **Why not key on the name.** Renaming would stop being a single-field
+///   edit and become an identity change (delete old key, create new key,
+///   migrate every member). That multi-row operation tears across devices: if
+///   device A renames while device B files sessions under the old name, B's
+///   sessions end up referencing a key that no longer exists and silently fall
+///   back to ungrouped. With a UUID, a rename is one LWW field on `FolderV2`
+///   and members are untouched.
+/// - **Why duplicate names are allowed.** Two devices each creating "Work"
+///   offline produce two distinct UUIDs, and both are kept. Auto-merging is
+///   irreversible and two same-named folders are not necessarily the same
+///   thing; the user can always move sessions across and dissolve the leftover.
+///   Consequence: any *name-based* lookup must tolerate multiple matches (see
+///   `findFolderByName`).
+struct ChatFolder: Identifiable, Codable, Hashable {
+    let id: String
+    var name: String
+    var icon: String?         // SF Symbol name; nil = use the composed icon
+    var color: String?        // theme color token
+    var origin: String        // "manual" | "ai" — provenance only, no behavior
+    var sortIndex: Int        // reserved for V2 drag-reorder
+    var pinnedAt: Date?       // non-nil = folder pinned above unpinned folders
+    /// One-sentence description (≤100 chars). Auto-grouping context; never
+    /// rendered in the home list, but shown as the Move-to-Group picker row
+    /// subtitle and surfaced for editing in the rename dialog.
+    var desc: String?
+    let createdAt: Date
+    var updatedAt: Date
+
+    var isPinned: Bool { pinnedAt != nil }
+
+    init(
+        id: String = UUID().uuidString,
+        name: String,
+        icon: String? = nil,
+        color: String? = nil,
+        origin: String = "manual",
+        sortIndex: Int = 0,
+        pinnedAt: Date? = nil,
+        desc: String? = nil,
+        createdAt: Date = Date(),
+        updatedAt: Date = Date()
+    ) {
+        self.id = id
+        self.name = name
+        self.icon = icon
+        self.color = color
+        self.origin = origin
+        self.sortIndex = sortIndex
+        self.pinnedAt = pinnedAt
+        self.desc = desc
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
     }
 }
 
@@ -394,6 +469,53 @@ actor ChatStore {
 
         openDatabase()
         createTables()
+        armRebootGuardIfDegraded()
+    }
+
+    // MARK: - [T-ios-reboot-config-loss] Protected-data reboot guard
+
+    /// True when the DB cannot actually serve queries after open. After a
+    /// device reboot iOS can relaunch the app in the background BEFORE first
+    /// unlock (BGTask / CloudKit push / location session). minis.db carries
+    /// the default completeUntilFirstUserAuthentication protection class, so
+    /// sqlite3_open "succeeds" lazily but every statement fails — the session
+    /// list reads as empty and the home screen looks freshly installed until
+    /// the process is killed. Nothing is deleted (we never drop/recreate on
+    /// failure), so a post-unlock reopen fully restores the store.
+    private var dbDegraded = false
+
+    private func probeDBUsable() -> Bool {
+        var stmt: OpaquePointer?
+        let rc = sqlite3_prepare_v2(db, "SELECT count(*) FROM sessions", -1, &stmt, nil)
+        sqlite3_finalize(stmt)
+        return rc == SQLITE_OK
+    }
+
+    private func armRebootGuardIfDegraded() {
+        guard !probeDBUsable() else { return }
+        dbDegraded = true
+        logger.error("[RebootGuard] minis.db unusable after open — likely launched before first unlock; arming post-unlock reopen")
+        // Recover when protected data unlocks, plus on every foreground
+        // activation (covers the unlock racing observer registration).
+        // Observers stay registered after recovery; reopenIfDegraded no-ops.
+        for name in [UIApplication.protectedDataDidBecomeAvailableNotification,
+                     UIApplication.didBecomeActiveNotification] {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: nil) { _ in
+                Task { await ChatStore.shared.reopenIfDegraded() }
+            }
+        }
+    }
+
+    func reopenIfDegraded() {
+        guard dbDegraded else { return }
+        reloadDatabase()
+        guard probeDBUsable() else {
+            logger.warning("[RebootGuard] reopen attempt still degraded — will retry on the next unlock/activation signal")
+            return
+        }
+        dbDegraded = false
+        invalidateSessionListCache()
+        logger.info("[RebootGuard] minis.db reopened after unlock — session store restored")
     }
 
     /// Initialize with a custom base URL (for testing).
@@ -481,6 +603,21 @@ actor ChatStore {
         addColumnIfMissing(table: "sessions", column: "remote_origin_device_id", definition: "TEXT")
         addColumnIfMissing(table: "sync_devices", column: "upload_types", definition: "TEXT NOT NULL DEFAULT ''")
         addColumnIfMissing(table: "sessions", column: "pinned_at", definition: "REAL")
+        // Folder membership. NULL = ungrouped. Intentionally NOT a declared FK:
+        // a folder_id pointing at a folder that does not exist locally is a
+        // legitimate transient state (the session's SessionV2 record can arrive
+        // before its FolderV2 record, and a folder deleted on another device
+        // leaves references behind). Such orphans render as ungrouped rather
+        // than failing a constraint — see foldersById callers in ContentView.
+        addColumnIfMissing(table: "sessions", column: "folder_id", definition: "TEXT")
+        // Folder pinning (mirrors sessions.pinned_at). Also present in the
+        // CREATE TABLE DDL above — per the add-column wipe trap, a new column
+        // must exist in BOTH the initial DDL and the idempotent migration.
+        addColumnIfMissing(table: "folders", column: "pinned_at", definition: "REAL")
+        // One-sentence group description (≤100 chars): written at creation
+        // (typed or AI-suggested), edited in the rename dialog, and fed to
+        // the auto-grouping prompt as context. Not rendered in the list.
+        addColumnIfMissing(table: "folders", column: "description", definition: "TEXT")
         addColumnIfMissing(table: "messages", column: "updated_at", definition: "REAL")
         // [T-error-persist-ios] Device-local error string shown on a failed
         // assistant turn (provider/network/empty-response/context-full/…). Persisted
@@ -645,6 +782,26 @@ actor ChatStore {
             )
         """)
         exec("DELETE FROM deleted_record_tombstones WHERE deleted_at < \(Date().timeIntervalSince1970 - 30 * 24 * 60 * 60)")
+        // Session folders (home-list grouping). `id` is a locally generated
+        // UUID — uniqueness needs no cross-device coordination, which is why
+        // it beats keying on the name when devices create folders offline.
+        // `name` deliberately has NO UNIQUE constraint: two devices may each
+        // create a "Work" folder and both are kept (see ChatFolder's doc
+        // comment for the full rationale).
+        exec("""
+            CREATE TABLE IF NOT EXISTS folders (
+                id          TEXT PRIMARY KEY,
+                name        TEXT NOT NULL,
+                icon        TEXT,
+                color       TEXT,
+                origin      TEXT NOT NULL DEFAULT 'manual',
+                sort_index  INTEGER NOT NULL DEFAULT 0,
+                pinned_at   REAL,
+                description TEXT,
+                created_at  REAL NOT NULL,
+                updated_at  REAL NOT NULL
+            )
+        """)
         exec("""
             CREATE TABLE IF NOT EXISTS sync_devices (
                 device_id   TEXT PRIMARY KEY,
@@ -752,6 +909,38 @@ actor ChatStore {
             )
         """)
         exec("CREATE INDEX IF NOT EXISTS idx_webapp_shortcuts_created ON webapp_shortcuts(created_at DESC)")
+
+        purgeUnusableSessionRows()
+    }
+
+    /// [T-ios-listsessions-cstring-trap] Delete session rows whose primary key
+    /// is NULL or empty.
+    ///
+    /// SQLite does NOT imply NOT NULL for a non-INTEGER `TEXT PRIMARY KEY`, so
+    /// such a row is legal at the storage layer but unusable at every layer
+    /// above it: it cannot be opened, deleted, or synced by id, and its
+    /// `sqlite3_column_text` returns NULL — which trapped `String(cString:)` and
+    /// SIGABRT'd the app inside `listSessions()` on every launch (crash loop
+    /// 09:13:09 → 09:14:15). `listSessions` now skips these defensively; this
+    /// clears them at startup so they stop being re-encountered.
+    ///
+    /// Child rows are removed first: `messages.session_id` has a FK to
+    /// `sessions(id)` and `PRAGMA foreign_keys=ON` is set, so deleting the
+    /// parent alone would fail. Orphaned children (session_id NULL / pointing at
+    /// a NULL-id parent) can't be reattached to anything, so they go too.
+    private func purgeUnusableSessionRows() {
+        var stmt: OpaquePointer?
+        var count = 0
+        if sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM sessions WHERE id IS NULL OR id = ''", -1, &stmt, nil) == SQLITE_OK,
+           sqlite3_step(stmt) == SQLITE_ROW {
+            count = Int(sqlite3_column_int64(stmt, 0))
+        }
+        sqlite3_finalize(stmt)
+        guard count > 0 else { return }
+
+        logger.error("[ChatStore] purging \(count) unusable session row(s) with NULL/empty id (T-ios-listsessions-cstring-trap)")
+        exec("DELETE FROM messages WHERE session_id IS NULL OR session_id = ''")
+        exec("DELETE FROM sessions WHERE id IS NULL OR id = ''")
     }
 
     private func exec(_ sql: String) {
@@ -922,6 +1111,41 @@ actor ChatStore {
         return sqlite3_step(stmt) == SQLITE_ROW ? Int(sqlite3_column_int64(stmt, 0)) : 0
     }
 
+    // MARK: - Safe column readers
+
+    // [T-ios-listsessions-cstring-trap] `String(cString:)` traps the process on a
+    // NULL pointer, and `sqlite3_column_text` legitimately returns NULL for a
+    // SQL NULL. The `sessions` schema declares `id TEXT PRIMARY KEY` — and in
+    // SQLite a non-INTEGER PRIMARY KEY does NOT imply NOT NULL (a long-standing
+    // documented quirk), so a single row with a NULL id is enough to abort the
+    // app. That is the 09:13:09 / 09:14:15 crash loop: `refreshSessionList` ran
+    // on every launch, hit the same dirty row, and SIGABRT'd before the UI came
+    // up, so the user could never reach a screen to fix it.
+    //
+    // `String(decoding:as:)` is used rather than `String(cString:)` because it
+    // also cannot trap on malformed UTF-8 — it substitutes U+FFFD. A corrupted
+    // byte sequence in a TEXT column therefore degrades to a visibly-mangled
+    // title instead of taking the process down.
+
+    /// Non-optional TEXT column → String. NULL / invalid UTF-8 degrade to a
+    /// (possibly empty) String instead of trapping.
+    private static func colText(_ stmt: OpaquePointer?, _ col: Int32) -> String {
+        guard let ptr = sqlite3_column_text(stmt, col) else { return "" }
+        let len = Int(sqlite3_column_bytes(stmt, col))
+        guard len > 0 else { return "" }
+        return String(decoding: UnsafeBufferPointer(start: ptr, count: len), as: UTF8.self)
+    }
+
+    /// Nullable TEXT column → String?. Distinguishes SQL NULL (nil) from an
+    /// empty string, matching the previous `.map { String(cString: $0) }` shape.
+    private static func colTextOpt(_ stmt: OpaquePointer?, _ col: Int32) -> String? {
+        guard sqlite3_column_type(stmt, col) != SQLITE_NULL,
+              let ptr = sqlite3_column_text(stmt, col) else { return nil }
+        let len = Int(sqlite3_column_bytes(stmt, col))
+        guard len > 0 else { return "" }
+        return String(decoding: UnsafeBufferPointer(start: ptr, count: len), as: UTF8.self)
+    }
+
     func listSessions() -> [ChatSession] {
         // ─── crash triage (sqlite3MutexMisuseAssert in column_text) ───
         // Capture the calling context whenever this enters so we can match
@@ -1025,7 +1249,11 @@ actor ChatStore {
                      WHERE m.session_id = s.id
                        AND m.role = 'user'
                        AND (m.part_flags & \(userMask)) != 0
-                     ORDER BY m.sort_order DESC LIMIT 1)
+                     ORDER BY m.sort_order DESC LIMIT 1),
+                   -- Appended LAST on purpose: the decode below reads columns
+                   -- by index, so a new column goes at the end to leave every
+                   -- existing index untouched.
+                   s.folder_id
             FROM sessions s ORDER BY s.updated_at DESC
             """
             // Note: `remote_tombstoned_at` column still exists on the
@@ -1035,18 +1263,30 @@ actor ChatStore {
             // ChatStore.deleteSessionLocalOnly + TombstoneManager.
         var stmt: OpaquePointer?
         var sessions: [ChatSession] = []
+        // Count of unusable rows dropped this pass (NULL/empty primary key).
+        // Logged once after the loop rather than per row so a systematically
+        // corrupt table can't itself become a logging flood.
+        var skippedRows = 0
 
         if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
             while sqlite3_step(stmt) == SQLITE_ROW {
-                let id = String(cString: sqlite3_column_text(stmt, 0))
-                let title = sqlite3_column_text(stmt, 1).map { String(cString: $0) }
-                let modelId = String(cString: sqlite3_column_text(stmt, 2))
+                // A row whose primary key is NULL/empty can't be opened, deleted
+                // or synced by id — it is unusable rather than merely odd. Skip
+                // it (loudly) instead of surfacing a session that breaks every
+                // later lookup. This is the guard that breaks the crash loop.
+                let id = Self.colText(stmt, 0)
+                guard !id.isEmpty else {
+                    skippedRows += 1
+                    continue
+                }
+                let title = Self.colTextOpt(stmt, 1)
+                let modelId = Self.colText(stmt, 2)
                 let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 3))
                 let updatedAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 4))
-                let category = sqlite3_column_text(stmt, 5).map { String(cString: $0) }
+                let category = Self.colTextOpt(stmt, 5)
                 // Latest assistant text (preferred) → latest user text (fallback).
-                let assistantRaw = sqlite3_column_text(stmt, 6).map { String(cString: $0) }
-                let userRaw = sqlite3_column_text(stmt, 7).map { String(cString: $0) }
+                let assistantRaw = Self.colTextOpt(stmt, 6)
+                let userRaw = Self.colTextOpt(stmt, 7)
                 let assistantText = assistantRaw.flatMap { extractTextFromPartsJSON($0) }
                 let userText = userRaw.flatMap { extractTextFromPartsJSON($0) }
                 // sort_order of each picked row (columns 12/13). Prefer whichever
@@ -1079,22 +1319,28 @@ actor ChatStore {
                 // a measurable Debug-build drag on the very session-switch path
                 // being profiled, and drowned out every other signal. Dropped;
                 // the last-message extractor logic above is unchanged.
-                let source = sqlite3_column_text(stmt, 8).map { String(cString: $0) }
+                let source = Self.colTextOpt(stmt, 8)
                 let lastSyncedAt: Date? = sqlite3_column_type(stmt, 9) != SQLITE_NULL
                     ? Date(timeIntervalSince1970: sqlite3_column_double(stmt, 9)) : nil
-                let remoteDeviceId = sqlite3_column_text(stmt, 10).map { String(cString: $0) }
+                let remoteDeviceId = Self.colTextOpt(stmt, 10)
                 let pinnedAt: Date? = sqlite3_column_type(stmt, 11) != SQLITE_NULL
                     ? Date(timeIntervalSince1970: sqlite3_column_double(stmt, 11)) : nil
+                let folderId = Self.colTextOpt(stmt, 14)
 
                 sessions.append(ChatSession(
                     id: id, title: title, category: category, modelId: modelId,
                     createdAt: createdAt, updatedAt: updatedAt, lastMessage: lastMessage,
                     source: source, lastSyncedAt: lastSyncedAt,
-                    remoteDeviceId: remoteDeviceId, pinnedAt: pinnedAt
+                    remoteDeviceId: remoteDeviceId, pinnedAt: pinnedAt,
+                    folderId: folderId
                 ))
             }
         }
         sqlite3_finalize(stmt)
+
+        if skippedRows > 0 {
+            iCloudLogger.error("[ChatStore.listSessions] skipped \(skippedRows) unusable session row(s) with NULL/empty id — see T-ios-listsessions-cstring-trap")
+        }
 
         // [T-ios-listsessions-cache] Store the freshly-built list; subsequent
         // calls return this same array until a mutation invalidates it.
@@ -1572,10 +1818,32 @@ actor ChatStore {
     /// Load a page of messages for a session, ordered by sort_order ASC.
     /// `maxChars` caps each message's text length; if truncated, `truncated`
     /// is true so callers can append a sentinel like "…[truncated]".
-    func loadMessagePage(sessionId: String, offset: Int = 0, limit: Int = 20, maxChars: Int = 1000) -> [(messageId: String, role: String, createdAt: Date, text: String, truncated: Bool)] {
+    /// [T-sessions-cli-messages-date-filter] (GH#200) `startDate`/`endDate` are
+    /// an inclusive `created_at` range, mirroring `searchMessages` above (which
+    /// already supported it — only this messages path did not, so the CLI's
+    /// documented `--start/--end` silently returned the whole session).
+    /// Both default to nil, so every existing caller keeps its behavior.
+    func loadMessagePage(sessionId: String, offset: Int = 0, limit: Int = 20, maxChars: Int = 1000,
+                         startDate: Date? = nil, endDate: Date? = nil) -> [(messageId: String, role: String, createdAt: Date, text: String, truncated: Bool)] {
+        // Date predicates are appended BEFORE the LIMIT/OFFSET binds, so the
+        // bind indices shift — hence the running `bindIndex` instead of the
+        // previous hardcoded 1/2/3.
+        var conditions = ["session_id = ?"]
+        var doubleBindings: [(Int32, Double)] = []
+        var bindIndex: Int32 = 2
+        if let startDate {
+            conditions.append("created_at >= ?")
+            doubleBindings.append((bindIndex, startDate.timeIntervalSince1970))
+            bindIndex += 1
+        }
+        if let endDate {
+            conditions.append("created_at <= ?")
+            doubleBindings.append((bindIndex, endDate.timeIntervalSince1970))
+            bindIndex += 1
+        }
         let sql = """
             SELECT id, role, created_at, parts_json
-            FROM messages WHERE session_id = ?
+            FROM messages WHERE \(conditions.joined(separator: " AND "))
             ORDER BY sort_order ASC, created_at ASC
             LIMIT ? OFFSET ?
         """
@@ -1584,8 +1852,11 @@ actor ChatStore {
 
         if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
             sqlite3_bind_text(stmt, 1, (sessionId as NSString).utf8String, -1, nil)
-            sqlite3_bind_int(stmt, 2, Int32(limit))
-            sqlite3_bind_int(stmt, 3, Int32(offset))
+            for (idx, value) in doubleBindings {
+                sqlite3_bind_double(stmt, idx, value)
+            }
+            sqlite3_bind_int(stmt, bindIndex, Int32(limit))
+            sqlite3_bind_int(stmt, bindIndex + 1, Int32(offset))
 
             while sqlite3_step(stmt) == SQLITE_ROW {
                 let messageId = String(cString: sqlite3_column_text(stmt, 0))
@@ -1612,12 +1883,34 @@ actor ChatStore {
     }
 
     /// Get total message count for a session.
-    func messageCount(sessionId: String) -> Int {
-        let sql = "SELECT COUNT(*) FROM messages WHERE session_id = ?"
+    ///
+    /// [T-sessions-cli-messages-date-filter] (GH#200) Takes the same optional
+    /// range as `loadMessagePage` so a filtered query reports the count WITHIN
+    /// the range. Without this the CLI would page against a `total` describing
+    /// the whole session — the caller would think there were more pages of
+    /// in-range messages than exist. Both default to nil (unfiltered).
+    func messageCount(sessionId: String, startDate: Date? = nil, endDate: Date? = nil) -> Int {
+        var conditions = ["session_id = ?"]
+        var doubleBindings: [(Int32, Double)] = []
+        var bindIndex: Int32 = 2
+        if let startDate {
+            conditions.append("created_at >= ?")
+            doubleBindings.append((bindIndex, startDate.timeIntervalSince1970))
+            bindIndex += 1
+        }
+        if let endDate {
+            conditions.append("created_at <= ?")
+            doubleBindings.append((bindIndex, endDate.timeIntervalSince1970))
+            bindIndex += 1
+        }
+        let sql = "SELECT COUNT(*) FROM messages WHERE \(conditions.joined(separator: " AND "))"
         var stmt: OpaquePointer?
         var count = 0
         if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
             sqlite3_bind_text(stmt, 1, (sessionId as NSString).utf8String, -1, nil)
+            for (idx, value) in doubleBindings {
+                sqlite3_bind_double(stmt, idx, value)
+            }
             if sqlite3_step(stmt) == SQLITE_ROW {
                 count = Int(sqlite3_column_int(stmt, 0))
             }
@@ -1627,7 +1920,7 @@ actor ChatStore {
     }
 
     func getSession(_ id: String) -> ChatSession? {
-        let sql = "SELECT id, title, model_id, created_at, updated_at, category, source, pinned_at FROM sessions WHERE id = ?"
+        let sql = "SELECT id, title, model_id, created_at, updated_at, category, source, pinned_at, folder_id FROM sessions WHERE id = ?"
         var stmt: OpaquePointer?
         var session: ChatSession?
 
@@ -1642,11 +1935,12 @@ actor ChatStore {
                 let source = sqlite3_column_text(stmt, 6).map { String(cString: $0) }
                 let pinnedAt: Date? = sqlite3_column_type(stmt, 7) != SQLITE_NULL
                     ? Date(timeIntervalSince1970: sqlite3_column_double(stmt, 7)) : nil
+                let folderId = sqlite3_column_text(stmt, 8).map { String(cString: $0) }
 
                 session = ChatSession(
                     id: id, title: title, category: category, modelId: modelId,
                     createdAt: createdAt, updatedAt: updatedAt, source: source,
-                    pinnedAt: pinnedAt
+                    pinnedAt: pinnedAt, folderId: folderId
                 )
             }
         }
@@ -1714,6 +2008,376 @@ actor ChatStore {
         sqlite3_finalize(stmt)
         markDirty(recordType: "Session", recordId: id)
         return newPinned
+    }
+
+    // MARK: - Folders
+
+    /// All folders, most recently updated first.
+    func listFolders() -> [ChatFolder] {
+        let sql = """
+            SELECT id, name, icon, color, origin, sort_index, created_at, updated_at, pinned_at, description
+            FROM folders ORDER BY updated_at DESC
+            """
+        var stmt: OpaquePointer?
+        var folders: [ChatFolder] = []
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                let id = Self.colText(stmt, 0)
+                // Same guard as listSessions: a row with no primary key can't be
+                // opened, moved into, or synced by id — skip rather than surface.
+                guard !id.isEmpty else { continue }
+                let pinnedAt: Date? = sqlite3_column_type(stmt, 8) != SQLITE_NULL
+                    ? Date(timeIntervalSince1970: sqlite3_column_double(stmt, 8)) : nil
+                folders.append(ChatFolder(
+                    id: id,
+                    name: Self.colText(stmt, 1),
+                    icon: Self.colTextOpt(stmt, 2),
+                    color: Self.colTextOpt(stmt, 3),
+                    origin: Self.colTextOpt(stmt, 4) ?? "manual",
+                    sortIndex: Int(sqlite3_column_int64(stmt, 5)),
+                    pinnedAt: pinnedAt,
+                    desc: Self.colTextOpt(stmt, 9),
+                    createdAt: Date(timeIntervalSince1970: sqlite3_column_double(stmt, 6)),
+                    updatedAt: Date(timeIntervalSince1970: sqlite3_column_double(stmt, 7))
+                ))
+            }
+        }
+        sqlite3_finalize(stmt)
+        return folders
+    }
+
+    /// Create a folder and return it. `id` is a fresh UUID. `desc` is the
+    /// one-sentence auto-grouping context, capped at 100 characters.
+    @discardableResult
+    func createFolder(name: String, icon: String? = nil, color: String? = nil, origin: String = "manual", desc: String? = nil) -> ChatFolder {
+        let cappedDesc = desc.flatMap { d -> String? in
+            let t = d.trimmingCharacters(in: .whitespacesAndNewlines)
+            return t.isEmpty ? nil : String(t.prefix(100))
+        }
+        let folder = ChatFolder(name: name, icon: icon, color: color, origin: origin, desc: cappedDesc)
+        let sql = """
+            INSERT INTO folders (id, name, icon, color, origin, sort_index, description, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, (folder.id as NSString).utf8String, -1, nil)
+            sqlite3_bind_text(stmt, 2, (folder.name as NSString).utf8String, -1, nil)
+            if let icon = folder.icon {
+                sqlite3_bind_text(stmt, 3, (icon as NSString).utf8String, -1, nil)
+            } else {
+                sqlite3_bind_null(stmt, 3)
+            }
+            if let color = folder.color {
+                sqlite3_bind_text(stmt, 4, (color as NSString).utf8String, -1, nil)
+            } else {
+                sqlite3_bind_null(stmt, 4)
+            }
+            sqlite3_bind_text(stmt, 5, (folder.origin as NSString).utf8String, -1, nil)
+            sqlite3_bind_int64(stmt, 6, Int64(folder.sortIndex))
+            bindOptionalText(stmt, index: 7, value: folder.desc)
+            sqlite3_bind_double(stmt, 8, folder.createdAt.timeIntervalSince1970)
+            sqlite3_bind_double(stmt, 9, folder.updatedAt.timeIntervalSince1970)
+            sqlite3_step(stmt)
+        }
+        sqlite3_finalize(stmt)
+        markDirty(recordType: "Folder", recordId: folder.id)
+        return folder
+    }
+
+    /// Rename a folder and (optionally) update its description. Field edits
+    /// only — the UUID key is what keeps members untouched and lets the
+    /// change merge as LWW fields rather than delete+create+migrate across
+    /// devices. `desc: nil` leaves the stored description alone; an empty
+    /// string clears it.
+    func renameFolder(_ id: String, name: String, desc: String? = nil) {
+        let cappedDesc = desc.map { String($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(100)) }
+        let sql = cappedDesc != nil
+            ? "UPDATE folders SET name = ?, description = ?, updated_at = ? WHERE id = ?"
+            : "UPDATE folders SET name = ?, updated_at = ? WHERE id = ?"
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, (name as NSString).utf8String, -1, nil)
+            if let d = cappedDesc {
+                if d.isEmpty {
+                    sqlite3_bind_null(stmt, 2)
+                } else {
+                    sqlite3_bind_text(stmt, 2, (d as NSString).utf8String, -1, nil)
+                }
+                sqlite3_bind_double(stmt, 3, Date().timeIntervalSince1970)
+                sqlite3_bind_text(stmt, 4, (id as NSString).utf8String, -1, nil)
+            } else {
+                sqlite3_bind_double(stmt, 2, Date().timeIntervalSince1970)
+                sqlite3_bind_text(stmt, 3, (id as NSString).utf8String, -1, nil)
+            }
+            sqlite3_step(stmt)
+        }
+        sqlite3_finalize(stmt)
+        markDirty(recordType: "Folder", recordId: id)
+    }
+
+    /// Toggle a folder's pin. Mirrors toggleSessionPin; also bumps
+    /// updated_at so the change rides FolderV2's LWW cleanly.
+    @discardableResult
+    func toggleFolderPin(_ id: String) -> Bool {
+        invalidateSessionListCache()
+        var isPinned = false
+        var checkStmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, "SELECT pinned_at FROM folders WHERE id = ?", -1, &checkStmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(checkStmt, 1, (id as NSString).utf8String, -1, nil)
+            if sqlite3_step(checkStmt) == SQLITE_ROW {
+                isPinned = sqlite3_column_type(checkStmt, 0) != SQLITE_NULL
+            }
+        }
+        sqlite3_finalize(checkStmt)
+
+        let newPinned = !isPinned
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, "UPDATE folders SET pinned_at = ?, updated_at = ? WHERE id = ?", -1, &stmt, nil) == SQLITE_OK {
+            if newPinned {
+                sqlite3_bind_double(stmt, 1, Date().timeIntervalSince1970)
+            } else {
+                sqlite3_bind_null(stmt, 1)
+            }
+            sqlite3_bind_double(stmt, 2, Date().timeIntervalSince1970)
+            sqlite3_bind_text(stmt, 3, (id as NSString).utf8String, -1, nil)
+            sqlite3_step(stmt)
+        }
+        sqlite3_finalize(stmt)
+        markDirty(recordType: "Folder", recordId: id)
+        return newPinned
+    }
+
+    /// Dissolve a folder: delete the folder row and clear its members'
+    /// `folder_id`. **No session is deleted.** Returns the ids of the sessions
+    /// that were moved back to ungrouped.
+    ///
+    /// The same clearing runs when a peer's FolderV2 tombstone arrives, so
+    /// "folder deleted" always means "members become ungrouped", never
+    /// "members are deleted".
+    @discardableResult
+    func dissolveFolder(_ id: String) -> [String] {
+        invalidateSessionListCache()
+        let memberIds = sessionIdsInFolder(id)
+
+        var stmt: OpaquePointer?
+        let clearSql = "UPDATE sessions SET folder_id = NULL WHERE folder_id = ?"
+        if sqlite3_prepare_v2(db, clearSql, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, (id as NSString).utf8String, -1, nil)
+            sqlite3_step(stmt)
+        }
+        sqlite3_finalize(stmt)
+
+        stmt = nil
+        let deleteSql = "DELETE FROM folders WHERE id = ?"
+        if sqlite3_prepare_v2(db, deleteSql, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, (id as NSString).utf8String, -1, nil)
+            sqlite3_step(stmt)
+        }
+        sqlite3_finalize(stmt)
+
+        // Each freed session needs its own push — folder_id lives on SessionV2.
+        for sid in memberIds {
+            markDirty(recordType: "Session", recordId: sid)
+        }
+        markDirty(recordType: "Folder", recordId: id, operation: "delete")
+        return memberIds
+    }
+
+    /// Session ids belonging to `folderId`, most recently updated first.
+    func sessionIdsInFolder(_ folderId: String) -> [String] {
+        let sql = "SELECT id FROM sessions WHERE folder_id = ? ORDER BY updated_at DESC"
+        var stmt: OpaquePointer?
+        var ids: [String] = []
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, (folderId as NSString).utf8String, -1, nil)
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                let id = Self.colText(stmt, 0)
+                if !id.isEmpty { ids.append(id) }
+            }
+        }
+        sqlite3_finalize(stmt)
+        return ids
+    }
+
+    /// Move sessions into `folderId`, or out of any folder when it is nil.
+    func setFolder(_ folderId: String?, forSessions sessionIds: [String]) {
+        guard !sessionIds.isEmpty else { return }
+        invalidateSessionListCache()
+        let sql = "UPDATE sessions SET folder_id = ? WHERE id = ?"
+        for sid in sessionIds {
+            var stmt: OpaquePointer?
+            if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+                if let folderId {
+                    sqlite3_bind_text(stmt, 1, (folderId as NSString).utf8String, -1, nil)
+                } else {
+                    sqlite3_bind_null(stmt, 1)
+                }
+                sqlite3_bind_text(stmt, 2, (sid as NSString).utf8String, -1, nil)
+                sqlite3_step(stmt)
+            }
+            sqlite3_finalize(stmt)
+            markDirty(recordType: "Session", recordId: sid)
+        }
+    }
+
+    /// Set a session's folder only if it is currently ungrouped. Returns true
+    /// if the write happened.
+    ///
+    /// This is the automatic-grouping write path: a user who has already filed
+    /// a session by hand must never have that overridden by the sub-model's
+    /// guess, and the check has to be part of the same statement rather than a
+    /// read-then-write in the caller.
+    @discardableResult
+    func setFolderIfUnfiled(_ folderId: String, forSession sessionId: String) -> Bool {
+        invalidateSessionListCache()
+        let sql = "UPDATE sessions SET folder_id = ? WHERE id = ? AND folder_id IS NULL"
+        var changed = false
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, (folderId as NSString).utf8String, -1, nil)
+            sqlite3_bind_text(stmt, 2, (sessionId as NSString).utf8String, -1, nil)
+            sqlite3_step(stmt)
+            changed = sqlite3_changes(db) > 0
+        }
+        sqlite3_finalize(stmt)
+        if changed {
+            markDirty(recordType: "Session", recordId: sessionId)
+        }
+        return changed
+    }
+
+    /// Resolve a folder *name* to a folder, for the sub-model paths that emit
+    /// names rather than ids.
+    ///
+    /// Matching is trimmed and case-insensitive so a model answering "work"
+    /// still finds "Work". Because duplicate names are allowed by design, this
+    /// can match several folders; the most recently *active* one wins — active
+    /// meaning the folder with the newest member session, NOT the newest
+    /// `folders.updated_at` (which only tracks renames, so a long-abandoned
+    /// folder renamed yesterday would otherwise beat one in daily use).
+    func findFolderByName(_ name: String) -> ChatFolder? {
+        let needle = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !needle.isEmpty else { return nil }
+        let matches = listFolders().filter {
+            $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == needle
+        }
+        guard matches.count > 1 else { return matches.first }
+
+        let activity = folderLastActivity()
+        return matches.max { a, b in
+            let aKey = activity[a.id]
+            let bKey = activity[b.id]
+            switch (aKey, bKey) {
+            case let (x?, y?): return x < y
+            // A folder with any member outranks an empty one.
+            case (nil, _?): return true
+            case (_?, nil): return false
+            // Both empty — fall back to the older folder, which is more likely
+            // to be the one the user thinks of as "the" folder by that name.
+            case (nil, nil): return a.createdAt > b.createdAt
+            }
+        }
+    }
+
+    /// folderId → newest member `updated_at`. Folders with no members are absent.
+    func folderLastActivity() -> [String: Date] {
+        let sql = """
+            SELECT folder_id, MAX(updated_at) FROM sessions
+            WHERE folder_id IS NOT NULL GROUP BY folder_id
+            """
+        var stmt: OpaquePointer?
+        var out: [String: Date] = [:]
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                let fid = Self.colText(stmt, 0)
+                guard !fid.isEmpty else { continue }
+                out[fid] = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 1))
+            }
+        }
+        sqlite3_finalize(stmt)
+        return out
+    }
+
+    /// Apply an inbound FolderV2 upsert: LWW by updatedAt against the local
+    /// row; missing locally → insert. Local-only — never marks dirty (the
+    /// cloud already holds this state; re-queueing would ping-pong).
+    func applyRemoteFolder(_ f: ChatFolder) {
+        var localUpdatedAt: Double?
+        var checkStmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, "SELECT updated_at FROM folders WHERE id = ?", -1, &checkStmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(checkStmt, 1, (f.id as NSString).utf8String, -1, nil)
+            if sqlite3_step(checkStmt) == SQLITE_ROW {
+                localUpdatedAt = sqlite3_column_double(checkStmt, 0)
+            }
+        }
+        sqlite3_finalize(checkStmt)
+
+        if let localTs = localUpdatedAt, localTs >= f.updatedAt.timeIntervalSince1970 {
+            iCloudLogger.info("[iCloud] applyRemoteFolder SKIP (local newer/equal): id=\(f.id.prefix(8))")
+            return
+        }
+        invalidateSessionListCache()
+        let sql = """
+            INSERT INTO folders (id, name, icon, color, origin, sort_index, pinned_at, description, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                name = excluded.name, icon = excluded.icon, color = excluded.color,
+                origin = excluded.origin, sort_index = excluded.sort_index,
+                pinned_at = excluded.pinned_at,
+                description = excluded.description,
+                updated_at = excluded.updated_at
+            """
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, (f.id as NSString).utf8String, -1, nil)
+            sqlite3_bind_text(stmt, 2, (f.name as NSString).utf8String, -1, nil)
+            bindOptionalText(stmt, index: 3, value: f.icon)
+            bindOptionalText(stmt, index: 4, value: f.color)
+            sqlite3_bind_text(stmt, 5, (f.origin as NSString).utf8String, -1, nil)
+            sqlite3_bind_int64(stmt, 6, Int64(f.sortIndex))
+            if let pinTs = f.pinnedAt {
+                sqlite3_bind_double(stmt, 7, pinTs.timeIntervalSince1970)
+            } else {
+                sqlite3_bind_null(stmt, 7)
+            }
+            bindOptionalText(stmt, index: 8, value: f.desc)
+            sqlite3_bind_double(stmt, 9, f.createdAt.timeIntervalSince1970)
+            sqlite3_bind_double(stmt, 10, f.updatedAt.timeIntervalSince1970)
+            sqlite3_step(stmt)
+        }
+        sqlite3_finalize(stmt)
+        iCloudLogger.info("[iCloud] applyRemoteFolder APPLIED: id=\(f.id.prefix(8)) name=\(f.name)")
+    }
+
+    /// Apply an inbound FolderV2 tombstone: clear members' folder_id and drop
+    /// the folder row. **Never deletes a session** — folder deletion means
+    /// "members become ungrouped" on every device. Local-only (no markDirty):
+    /// the deleting peer already pushed both its tombstone and its members'
+    /// folder_id=NULL session updates; re-queueing here would delete-loop.
+    func applyRemoteFolderDeletion(id: String) {
+        invalidateSessionListCache()
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, "UPDATE sessions SET folder_id = NULL WHERE folder_id = ?", -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, (id as NSString).utf8String, -1, nil)
+            sqlite3_step(stmt)
+        }
+        sqlite3_finalize(stmt)
+        stmt = nil
+        if sqlite3_prepare_v2(db, "DELETE FROM folders WHERE id = ?", -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, (id as NSString).utf8String, -1, nil)
+            sqlite3_step(stmt)
+        }
+        sqlite3_finalize(stmt)
+        // Match dissolveFolder's local behavior: leave a tombstone so a
+        // fetchRecentV2 race can't resurrect the folder record we just dropped.
+        recordDeletedRecordTombstone(type: "Folder", id: id)
+        iCloudLogger.info("[iCloud] applyRemoteFolderDeletion: id=\(id.prefix(8))")
+    }
+
+    /// Fetch one folder (sync builder path).
+    func getFolder(_ id: String) -> ChatFolder? {
+        listFolders().first(where: { $0.id == id })
     }
 
     func getMemoryEnabled(sessionId: String) -> Bool {
@@ -2147,7 +2811,12 @@ actor ChatStore {
 
         let totalElapsed = (CFAbsoluteTimeGetCurrent() - totalStart) * 1000
         let jsonElapsed = jsonDecodeTime * 1000
-        logger.info("[ChatStore.loadMessages] \(sessionId) — \(messages.count) messages in \(String(format: "%.1f", totalElapsed))ms (JSON decode: \(String(format: "%.1f", jsonElapsed))ms, SQL+IO: \(String(format: "%.1f", totalElapsed - jsonElapsed))ms)")
+        // Only report loads that are actually slow. This fired on every
+        // loadMessages regardless of duration, and the overwhelming majority are
+        // a few milliseconds — noise that buries the outliers worth seeing.
+        if totalElapsed > 20 {
+            logger.info("[ChatStore.loadMessages] \(sessionId) — \(messages.count) messages in \(String(format: "%.1f", totalElapsed))ms (JSON decode: \(String(format: "%.1f", jsonElapsed))ms, SQL+IO: \(String(format: "%.1f", totalElapsed - jsonElapsed))ms)")
+        }
 
         // DIAG: Detect sortOrder anomalies (duplicates, gaps). Small cost — O(n) scan.
         // loadMessages doesn't populate sortOrder on RawMessage, so re-query it.
@@ -2181,9 +2850,11 @@ actor ChatStore {
                 let tailSO = sortOrders.suffix(5).map(String.init).joined(separator: ",")
                 logger.error("[SortOrder] head 15: \(headSO)")
                 logger.error("[SortOrder] tail 5:  \(tailSO)")
-            } else {
-                logger.info("[SortOrder] OK sid=\(sessionId.prefix(8)) count=\(sortOrders.count) range=\(minSo)..\(maxSo) dense=\(expectedIfDense == sortOrders.count)")
             }
+            // The healthy branch used to log an "[SortOrder] OK …" line on every
+            // loadMessages — 6,628 lines in a single day (2026-08-11), the
+            // largest single source of log noise. The ANOMALY branch above is
+            // what carries signal: duplicates and gaps are real data problems.
         }
 
         return messages
@@ -3473,10 +4144,26 @@ actor ChatStore {
     }
 
     /// Fetch all messages that have token usage, joined with their session's model_id.
+    /// [T-ios-usage-orphan-rows GH#168] LEFT JOIN, not INNER JOIN.
+    ///
+    /// The Usage page is built entirely from this query, so any row it drops is
+    /// silently missing from the user's reported totals. With an INNER JOIN, a
+    /// message whose `sessions` row is gone — deleted, orphaned by a failed
+    /// sync/migration, or never written — vanished from the totals even though
+    /// its `token_usage` is still sitting in the table. The tokens were really
+    /// billed by the provider, so the page under-reported with no way to tell.
+    ///
+    /// LEFT JOIN keeps those rows; `model_id` then comes back NULL, which
+    /// `UsageStatsView` already handles (unknown ids fall back to the raw id
+    /// for the display name and to the "Other" provider group).
+    ///
+    /// This does NOT recover usage from sessions the user deleted outright —
+    /// `deleteSession` removes the message rows themselves (:2960). It only
+    /// stops orphaned-but-present rows from being discarded.
     func fetchUsageStats() -> [UsageRecord] {
         let sql = """
             SELECT s.model_id, m.token_usage, m.created_at, m.session_id
-            FROM messages m JOIN sessions s ON m.session_id = s.id
+            FROM messages m LEFT JOIN sessions s ON m.session_id = s.id
             WHERE m.token_usage IS NOT NULL
         """
         var stmt: OpaquePointer?
@@ -3484,10 +4171,16 @@ actor ChatStore {
 
         if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
             while sqlite3_step(stmt) == SQLITE_ROW {
-                let modelId = String(cString: sqlite3_column_text(stmt, 0))
-                let usageStr = String(cString: sqlite3_column_text(stmt, 1))
+                // `model_id` is NULL for an orphaned message (no sessions row).
+                // sqlite3_column_text returns a NULL pointer there, and
+                // String(cString:) on NULL is undefined behaviour — so the
+                // LEFT JOIN above REQUIRES this guarded read, not the bare
+                // String(cString:) the INNER JOIN could get away with.
+                let modelId = sqlite3_column_text(stmt, 0).map { String(cString: $0) } ?? ""
+                guard let usagePtr = sqlite3_column_text(stmt, 1) else { continue }
+                let usageStr = String(cString: usagePtr)
                 let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 2))
-                let sessionId = String(cString: sqlite3_column_text(stmt, 3))
+                let sessionId = sqlite3_column_text(stmt, 3).map { String(cString: $0) } ?? ""
 
                 guard let usageData = usageStr.data(using: .utf8),
                       let usage = try? JSONDecoder().decode(StoredTokenUsage.self, from: usageData) else {
@@ -3846,7 +4539,33 @@ extension RawMessage {
                 if role == .assistant {
                     let visible = Self.stripSystemReminders(s)
                     if !visible.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        blocks.append(AssistantBlock(kind: .text, content: visible))
+                        // [T-ios-longmsg-cell-split] Split a very long reply into
+                        // several text blocks instead of one enormous cell.
+                        //
+                        // A contiguous assistant reply used to become exactly ONE
+                        // `.text` block no matter how long, and the message list
+                        // gives each block its own cell — so a 9156-char answer
+                        // became a single 20615pt cell backed by one UITextView.
+                        // Field log from the render-collapse report shows exactly
+                        // that shape: `blocks=288` markdown blocks all inside one
+                        // AssistantBlock, and `visibleCells=1` for the whole
+                        // 50559pt list while dragging.
+                        //
+                        // Splitting keeps EVERY character — this is not a clip.
+                        // It only changes how many cells carry them, which bounds
+                        // each UITextView/CALayer and lets UICollectionView
+                        // recycle off-screen parts (the same reasoning as
+                        // PaginatedMarkdownView, whose fence-aware splitter is
+                        // reused here rather than reimplemented).
+                        //
+                        // Load-time only, on purpose: this is the DB path, so a
+                        // message is split once it is finished and persisted.
+                        // The streaming path builds its blocks in memory and is
+                        // untouched, which is what keeps split points from
+                        // shifting under a growing message.
+                        for segment in Self.splitLongAssistantText(visible) {
+                            blocks.append(AssistantBlock(kind: .text, content: segment))
+                        }
                     }
                 }
                 // Extract structured attachment metadata from <user-attached-files> XML
@@ -4101,6 +4820,46 @@ extension RawMessage {
     /// Remove `<system-reminder>...</system-reminder>` segments from display text
     /// before display. Markers are kept in agentHistory so the model still sees them
     /// on resume/continue, but they should never surface in the chat bubble.
+    /// [T-ios-longmsg-cell-split] Split an over-long assistant reply into
+    /// paragraph-aligned segments so no single cell has to back an enormous
+    /// CALayer. Returns `[text]` unchanged for normal replies.
+    ///
+    /// Thresholds come from measurement, not taste. The reported collapse
+    /// carried 9156 chars in one block and measured 20615.3pt on the reporter's
+    /// @3x device (61846px) and 20711.5pt when reproduced on an iPhone 11
+    /// (41423px). Splitting at 4000 chars puts that message into ~3 cells of
+    /// roughly 5-7K pt each — comfortably under any per-layer limit and, more
+    /// importantly, small enough that the list stops being one giant cell
+    /// (`visibleCells=1` in the field log) and can recycle normally.
+    ///
+    /// `splitMarkdownIntoSegments` is reused verbatim from
+    /// `PaginatedMarkdownView` (T-markdown-preview-paginate), which solved the
+    /// same CALayer problem for document preview in May. It is fence-aware, so
+    /// a fenced code block is never cut in half, and each returned segment
+    /// parses independently under cmark.
+    ///
+    /// Known limitation: a single markdown TABLE longer than the threshold
+    /// still lands in one segment, because the splitter only breaks at blank
+    /// lines outside fences and table rows carry none. Tables therefore stay
+    /// exactly as they render today — no better, no worse.
+    static func splitLongAssistantText(_ text: String) -> [String] {
+        guard text.count > longTextSplitThreshold else { return [text] }
+        let segments = splitMarkdownIntoSegments(text, targetSize: longTextSegmentTarget)
+        // Defensive: never let splitting lose or empty out content. If the
+        // splitter returns nothing usable, keep the original single block —
+        // a too-tall cell is far better than a vanished reply.
+        let rejoinedCount = segments.reduce(0) { $0 + $1.count }
+        guard !segments.isEmpty, rejoinedCount >= text.count / 2 else { return [text] }
+        return segments
+    }
+
+    /// Replies longer than this are split. Below it, behaviour is byte-identical
+    /// to before (one block, one cell).
+    private static let longTextSplitThreshold = 4000
+    /// Target size per segment; the splitter overshoots to the next paragraph
+    /// break, and never cuts inside a fenced code block.
+    private static let longTextSegmentTarget = 4000
+
     static func stripSystemReminders(_ text: String) -> String {
         guard text.contains("<system-reminder>") else { return text }
         let pattern = "<system-reminder>[\\s\\S]*?</system-reminder>"
@@ -4205,8 +4964,9 @@ extension ChatStore {
         // live record) can't resurrect it. Session/Message/SessionFile have
         // their own session-level tombstone path (recordDeletedSessionTombstone).
         if operation == "delete",
-           ["Skill", "EnvVarItem", "CompactMarker", "MCPServerItem",
-            "ProviderInstanceV3", "ProviderModelEntryV3", "ProviderModelGroupV3"].contains(recordType) {
+           ["Skill", "EnvVarItem", "CompactMarker", "MCPServerItem", "Folder",
+            "ProviderInstanceV3", "ProviderModelEntryV3", "ProviderModelGroupV3",
+            "ProviderThinkingRuleV3"].contains(recordType) {
             recordDeletedRecordTombstone(type: recordType, id: recordId)
         }
         // Trace priority=0 (user-driven) writes so we can follow a
@@ -4334,6 +5094,7 @@ extension ChatStore {
         case "EnvVar":          return "EnvVarV2"
         case "SyncDevice":      return "SyncDeviceV2"
         case "Soul":            return "SoulV2"
+        case "Folder":          return "FolderV2"
         case "MCPServers":      return "MCPServersV2"   // [T-mcp-integration-ios]
         default:                return v1Type
         }
@@ -4729,6 +5490,7 @@ extension ChatStore {
     /// can still drain).
     fileprivate static let v2SyncRecordTypes: [String] = [
         "SessionV2", "MessageV2", "CompactMarkerV2", "SessionFileV2",
+        "FolderV2",
         "SkillV2", "ProviderConfigV2", "EnvVarV2", "EnvVarItem",
         "SyncDeviceV2", "SoulV2",
         // File-backed singletons. Without these in the whitelist,
@@ -4743,6 +5505,11 @@ extension ChatStore {
         // dual-written until all peers upgrade; inbound v2 is dropped
         // on v3 builds (ProviderV3Bootstrap.isEnabled gate).
         "ProviderInstanceV3", "ProviderModelEntryV3", "ProviderModelGroupV3",
+        // [T-icloud-thinking-rules-sync] Per-rule custom thinking rules. Omitting a
+        // type here is the exact failure MCPServersV2 hit below: dirty rows get
+        // written but loadDirtyRecords filters them out, so nothing ever uploads
+        // and the type fails SILENTLY.
+        "ProviderThinkingRuleV3",
         // [T-mcp-per-server-sync] Per-server MCP records, plus the legacy
         // whole-file type. MCPServersV2 was NEVER in this whitelist — its
         // dirty rows were written but filtered out by loadDirtyRecords
@@ -5098,6 +5865,20 @@ extension ChatStore {
         exec("COMMIT")
     }
 
+    /// [T-icloud-migration-reset] Wipe the pushed-record ledger so a migration
+    /// restarted from scratch re-counts (and re-pushes) everything.
+    ///
+    /// Only for the explicit "reset migration progress" action. Clearing this
+    /// on any other path would make already-uploaded records look un-pushed and
+    /// send them again. Returns the row count removed, for the log.
+    @discardableResult
+    func clearAllPushedRecords() -> Int {
+        let before = countPushedRecords()
+        exec("DELETE FROM sync_pushed_records")
+        iCloudLogger.info("[iCloud] clearAllPushedRecords: removed \(before) rows")
+        return before
+    }
+
     /// Distinct count of recordNames in `sync_pushed_records`. The
     /// migration UI's "Records pushed" numerator.
     func countPushedRecords() -> Int {
@@ -5216,12 +5997,18 @@ extension ChatStore {
     /// Merge a remote session into local sessions table.
     /// - `remotePinnedAtRaw`: The raw pinnedAt Date from CKRecord. nil = old device (field absent),
     ///   epoch 0 = explicitly unpinned, positive = pinned timestamp.
-    func mergeRemoteSession(_ session: ChatSession, fromDeviceId: String, memoryEnabled: Bool = true, modelBinding: String? = nil, remotePinnedAtRaw: Date? = nil) {
+    /// - `remoteHasFolderField`: whether the inbound record carried the
+    ///   folderId key AT ALL. Old-build peers omit it entirely; for them the
+    ///   local folder assignment must be preserved, whereas a new-build peer
+    ///   sending an explicit nil means "ungrouped on that device" and, when
+    ///   remote is newer, that wins (folder_id rides the session's LWW).
+    func mergeRemoteSession(_ session: ChatSession, fromDeviceId: String, memoryEnabled: Bool = true, modelBinding: String? = nil, remotePinnedAtRaw: Date? = nil, remoteFolderId: String? = nil, remoteHasFolderField: Bool = false) {
         invalidateSessionListCache()
         // Check if local session exists and its updated_at + pinned_at
         var localUpdatedAt: Double?
         var localPinnedAt: Double?
-        let checkSql = "SELECT updated_at, pinned_at FROM sessions WHERE id = ?"
+        var localFolderId: String?
+        let checkSql = "SELECT updated_at, pinned_at, folder_id FROM sessions WHERE id = ?"
         var checkStmt: OpaquePointer?
         if sqlite3_prepare_v2(db, checkSql, -1, &checkStmt, nil) == SQLITE_OK {
             sqlite3_bind_text(checkStmt, 1, (session.id as NSString).utf8String, -1, nil)
@@ -5230,6 +6017,7 @@ extension ChatStore {
                 if sqlite3_column_type(checkStmt, 1) != SQLITE_NULL {
                     localPinnedAt = sqlite3_column_double(checkStmt, 1)
                 }
+                localFolderId = sqlite3_column_text(checkStmt, 2).map { String(cString: $0) }
             }
         }
         sqlite3_finalize(checkStmt)
@@ -5271,7 +6059,12 @@ extension ChatStore {
             // Local exists — only update title/category/etc if remote is newer
             if remoteUpdated > localTs {
                 iCloudLogger.info("[iCloud] mergeRemoteSession UPDATE (remote newer): id=\(session.id) remoteTs=\(remoteUpdated) localTs=\(localTs)")
-                let sql = "UPDATE sessions SET title = ?, category = ?, updated_at = ?, memory_enabled = ?, model_binding = ?, pinned_at = ? WHERE id = ?"
+                // folder_id is written ONLY when the peer's record carried
+                // the field — an old build's record omitting it must not wipe
+                // a local folder assignment (same tolerance pinnedAt got).
+                let sql = remoteHasFolderField
+                    ? "UPDATE sessions SET title = ?, category = ?, updated_at = ?, memory_enabled = ?, model_binding = ?, pinned_at = ?, folder_id = ? WHERE id = ?"
+                    : "UPDATE sessions SET title = ?, category = ?, updated_at = ?, memory_enabled = ?, model_binding = ?, pinned_at = ? WHERE id = ?"
                 var stmt: OpaquePointer?
                 if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
                     bindOptionalText(stmt, index: 1, value: session.title)
@@ -5284,7 +6077,12 @@ extension ChatStore {
                     } else {
                         sqlite3_bind_null(stmt, 6)
                     }
-                    sqlite3_bind_text(stmt, 7, (session.id as NSString).utf8String, -1, nil)
+                    if remoteHasFolderField {
+                        bindOptionalText(stmt, index: 7, value: remoteFolderId)
+                        sqlite3_bind_text(stmt, 8, (session.id as NSString).utf8String, -1, nil)
+                    } else {
+                        sqlite3_bind_text(stmt, 7, (session.id as NSString).utf8String, -1, nil)
+                    }
                     sqlite3_step(stmt)
                 }
                 sqlite3_finalize(stmt)
@@ -5301,6 +6099,34 @@ extension ChatStore {
                 iCloudLogger.info("[iCloud] mergeRemoteSession SKIP (local newer): id=\(session.id) localTs=\(localTs) remoteTs=\(remoteUpdated) delta=\(String(format: "%+.3f", delta))s from=\(fromDeviceId)")
                 if remoteUpdated > localTs {
                     iCloudLogger.warning("[iCloud] mergeRemoteSession SKIP despite remote-newer: id=\(session.id) localTs=\(localTs) remoteTs=\(remoteUpdated) — should not happen")
+                }
+                // Folder membership needs the same skip-branch sub-merge as
+                // pin state, and for the same root cause: filing a session
+                // does NOT bump updated_at (an organizational move must not
+                // resort the list), so a peer's folder move arrives with an
+                // unchanged session timestamp, lands in THIS branch, and
+                // would otherwise never apply anywhere.
+                //
+                // Conservative rule, mirroring the stale-unpin guard below:
+                // adopt the remote folder only when we have no local opinion
+                // (local NULL). remote-NULL-vs-local-set and set-vs-set-
+                // different keep local — without a per-field timestamp we
+                // can't rank the two writes, and this is the local-newer
+                // branch. Known accepted limitation (same class as pin's):
+                // a bare "move out of folder" with no other session activity
+                // does not propagate; the dissolve path is unaffected since
+                // it also ships a FolderV2 tombstone that clears members.
+                if remoteHasFolderField, localFolderId == nil, let remoteFid = remoteFolderId {
+                    let fSql = "UPDATE sessions SET folder_id = ? WHERE id = ? AND folder_id IS NULL"
+                    var fStmt: OpaquePointer?
+                    if sqlite3_prepare_v2(db, fSql, -1, &fStmt, nil) == SQLITE_OK {
+                        sqlite3_bind_text(fStmt, 1, (remoteFid as NSString).utf8String, -1, nil)
+                        sqlite3_bind_text(fStmt, 2, (session.id as NSString).utf8String, -1, nil)
+                        sqlite3_step(fStmt)
+                    }
+                    sqlite3_finalize(fStmt)
+                    iCloudLogger.info("[iCloud] mergeRemoteSession folder sub-merge: id=\(session.id.prefix(8)) -> folder \(remoteFid.prefix(8))")
+                    NotificationCenter.default.post(name: .sessionDidUpdate, object: session.id)
                 }
                 // Even if we skip the main update, still merge pin state if remote has pin info
                 // and the resolved pin differs from local
@@ -5332,7 +6158,7 @@ extension ChatStore {
             }
             // Local doesn't have this session — insert
             iCloudLogger.info("[iCloud] mergeRemoteSession INSERT: id=\(session.id) title=\(session.title ?? "nil") from=\(fromDeviceId)")
-            let sql = "INSERT INTO sessions (id, title, category, model_id, created_at, updated_at, remote_origin_device_id, memory_enabled, model_binding, pinned_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            let sql = "INSERT INTO sessions (id, title, category, model_id, created_at, updated_at, remote_origin_device_id, memory_enabled, model_binding, pinned_at, folder_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             var stmt: OpaquePointer?
             if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
                 sqlite3_bind_text(stmt, 1, (session.id as NSString).utf8String, -1, nil)
@@ -5349,6 +6175,10 @@ extension ChatStore {
                 } else {
                     sqlite3_bind_null(stmt, 10)
                 }
+                // A folder_id referencing a folder we don't have yet is fine —
+                // the list renders it as ungrouped until FolderV2 arrives
+                // (fetchRecentV2 ordering gives no cross-type guarantees).
+                bindOptionalText(stmt, index: 11, value: remoteHasFolderField ? remoteFolderId : nil)
                 sqlite3_step(stmt)
             }
             sqlite3_finalize(stmt)

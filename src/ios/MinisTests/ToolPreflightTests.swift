@@ -1,4 +1,5 @@
 import XCTest
+@testable import Minis
 
 /// [T-preflight-empty-string-allowed] preflightValidateToolCall must
 /// distinguish "field absent / JSON null" (block) from "field present with a

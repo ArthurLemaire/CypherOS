@@ -1,6 +1,7 @@
 package com.openminis.app.service
 
 import android.content.Context
+import android.os.SystemClock
 import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -43,6 +44,42 @@ object SessionActivityTracker {
 
     private val _currentToolStatus = MutableStateFlow("Idle")
     val currentToolStatus: StateFlow<String> = _currentToolStatus.asStateFlow()
+
+    /**
+     * [T-android-live-update-completed] `SystemClock.elapsedRealtime()` at the
+     * moment the LAST active session finished, i.e. when [activeSessions] went
+     * non-empty → empty. Null while anything is still streaming, and reset to
+     * null by [setActive] so a fresh run never inherits a stale finish stamp.
+     *
+     * Why this exists: the foreground service keeps running after the task ends
+     * (the user is still *present* in the chat — see [shouldRunService]), so the
+     * ongoing notification / Android 16 Live Update chip stays on screen. Its
+     * elapsed timer was computed from the SERVICE start time, which meant it
+     * kept ticking up long after the agent stopped working — users reported the
+     * dynamic island showing a running task that had already completed.
+     *
+     * With this stamp the notification can freeze the timer at the real task
+     * duration and swap in a completed icon + label. Mirrors iOS
+     * `AgentActivityAttributes.ContentState.finishedAt`, which drives the same
+     * "static total run time" resting state there.
+     */
+    private val _lastTaskFinishedAtMs = MutableStateFlow<Long?>(null)
+    val lastTaskFinishedAtMs: StateFlow<Long?> = _lastTaskFinishedAtMs.asStateFlow()
+
+    /**
+     * [T-android-live-update-completed] `SystemClock.elapsedRealtime()` at the
+     * moment the CURRENT run began — i.e. when [activeSessions] went empty →
+     * non-empty. Null while nothing is running.
+     *
+     * The foreground service's own `startTimeMs` is stamped once in onCreate and
+     * covers the whole *presence* window (the service outlives individual tasks),
+     * so it answers "how long have you been in this chat", not "how long did this
+     * task take". Anchoring the notification's elapsed time here instead makes
+     * the displayed duration mean the run, and makes consecutive runs in one
+     * sitting each start from zero rather than accumulating.
+     */
+    private val _currentRunStartedAtMs = MutableStateFlow<Long?>(null)
+    val currentRunStartedAtMs: StateFlow<Long?> = _currentRunStartedAtMs.asStateFlow()
 
     /**
      * T-bg-overlay phase 1: tool name currently dispatched to the agent
@@ -260,6 +297,10 @@ object SessionActivityTracker {
      */
     fun setActive(sessionId: String, onStop: (() -> Unit)? = null) {
         val wasIdle = !shouldRunService()
+        // [T-android-live-update-completed] Capture BEFORE mutating: a run
+        // "begins" only on the empty → non-empty edge. A second concurrent
+        // session joining an in-flight run must not restart the clock.
+        val wasRunIdle = _activeSessions.value.isEmpty()
         _activeSessions.value = _activeSessions.value + sessionId
         if (onStop != null) {
             synchronized(streamCancellers) { streamCancellers[sessionId] = onStop }
@@ -273,6 +314,14 @@ object SessionActivityTracker {
         _lastToolName.value = null
         _lastToolTitle.value = null
         _lastToolStatus.value = null
+        // [T-android-live-update-completed] A new run supersedes any completed
+        // resting state — drop the finish stamp so the notification goes back to
+        // a live ticking timer instead of staying frozen at the previous total,
+        // and re-anchor the clock so this run's duration starts from zero.
+        if (wasRunIdle) {
+            _lastTaskFinishedAtMs.value = null
+            _currentRunStartedAtMs.value = SystemClock.elapsedRealtime()
+        }
         Log.d(TAG, "Session activated: $sessionId (total: ${_activeSessions.value.size})")
 
         if (wasIdle) {
@@ -299,6 +348,14 @@ object SessionActivityTracker {
             _currentToolName.value = null
             _currentToolTitle.value = null
             _isToolRunning.value = false
+            // [T-android-live-update-completed] Stamp the finish moment so the
+            // ongoing notification can freeze its elapsed timer at the real task
+            // duration instead of tracking service uptime. Only set when the
+            // session was genuinely active — a defensive setInactive for a
+            // never-started session must not fake a completion.
+            if (wasActive) {
+                _lastTaskFinishedAtMs.value = SystemClock.elapsedRealtime()
+            }
             // [T-android-overlay-reply-status-34599] Preserve the last
             // tool outcome AND the last reply excerpt across stream
             // teardown so the overlay observer in

@@ -12,17 +12,19 @@ import kotlinx.coroutines.flow.asStateFlow
  * T322 / [T-android-privileged-backend]: lifecycle + permission gateway for
  * Shizuku-protocol privileged execution.
  *
- * Thin façade around a single [ShizukuBackend], which itself recognises BOTH
- * the official Shizuku manager and AXManager — they share the same client-side
- * binder slot, so there is no "active backend" choice to make at this layer.
- * Public API ([snapshot], [isReady], [runProcess], [openShizukuApp],
- * [openInstallPage], [requestPermission]) is unchanged from earlier callers.
+ * Thin façade around a single [ShizukuBackend], which recognises ALL THREE
+ * Shizuku-protocol providers — the official Shizuku manager, AXManager, and
+ * Sui (root module) — because they share the same client-side binder slot, so
+ * there is no "active backend" choice to make at this layer. Public API
+ * ([snapshot], [isReady], [runProcess], [openShizukuApp], [openInstallPage],
+ * [requestPermission]) is unchanged from earlier callers.
  *
- * State machine:
- *   NOT_INSTALLED      No Shizuku-protocol manager app on device.
- *   NOT_RUNNING        Manager installed but binder not bound.
- *   NEED_PERMISSION    Binder up but Minis not authorized.
+ * State machine ([T-android-sui-support]: binder-first — a live binder wins
+ * before any package check, which is what lets APK-less Sui be detected):
  *   READY              Binder up + permission held — calls work.
+ *   NEED_PERMISSION    Binder up but Minis not authorized.
+ *   NOT_RUNNING        No binder, but a manager APK is installed — start it.
+ *   NOT_INSTALLED      No binder and no manager APK — nothing available.
  */
 object ShizukuManager {
     private const val TAG = "ShizukuManager"
@@ -33,6 +35,13 @@ object ShizukuManager {
         val state: State,
         val version: Int = -1,
         val uid: Int = -1,
+        /**
+         * [T-android-sui-support] True when the live binder came from Sui (a
+         * root module) rather than a manager APK. DISPLAY ONLY — drives the
+         * "Sui (root)" label and hides the "Open Manager App" row that Sui
+         * has no activity for. Never gate behaviour on it.
+         */
+        val isSui: Boolean = false,
     )
 
     data class ProcessResult(
@@ -65,7 +74,15 @@ object ShizukuManager {
 
     fun isReady(): Boolean = _snapshot.value.state == State.READY
 
+    /**
+     * Whether a manager **APK** is installed. [T-android-sui-support] This is
+     * NOT an availability check — Sui provides the binder with no APK. Use
+     * [isReady] / [snapshot] for "can we actually run privileged commands".
+     */
     fun isInstalled(): Boolean = backend?.isInstalled() == true
+
+    /** [T-android-sui-support] Display-only: is the live binder Sui's? */
+    fun isSui(): Boolean = _snapshot.value.isSui
 
     /** First installed Shizuku-protocol manager package, or null. */
     fun installedManagerPackage(): String? = backend?.installedManagerPackage()
@@ -125,10 +142,19 @@ object ShizukuManager {
         // Only log on real transitions — refresh() is fired by every settings
         // screen entry + every listener callback, so logging unconditionally
         // floods logcat with NOT_RUNNING repeats.
-        if (snap.state != prev.state || snap.version != prev.version || snap.uid != prev.uid) {
+        if (snap.state != prev.state || snap.version != prev.version ||
+            snap.uid != prev.uid || snap.isSui != prev.isSui
+        ) {
+            // [T-android-sui-support] provider= is the field to ask GH#110 /
+            // GH#97 reporters for: it distinguishes a Sui-supplied binder from
+            // a manager APK without needing any (unsupported) sender probe.
+            val provider = when {
+                snap.isSui -> "sui"
+                else -> b.installedManagerPackage() ?: "none"
+            }
             AppLogger.info(
                 TAG,
-                "state=${snap.state} ver=${snap.version} uid=${snap.uid} manager=${b.installedManagerPackage() ?: "none"} ($reason)",
+                "state=${snap.state} ver=${snap.version} uid=${snap.uid} provider=$provider ($reason)",
             )
         }
     }

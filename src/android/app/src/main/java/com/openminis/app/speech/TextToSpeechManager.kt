@@ -1,6 +1,8 @@
 package com.openminis.app.speech
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
@@ -18,15 +20,57 @@ class TextToSpeechManager : TextToSpeech.OnInitListener {
 
     companion object {
         private const val TAG = "TextToSpeech"
+
+        /**
+         * [T-android-tts-silent-blackhole] Upper bound on waiting for the
+         * engine to bind. Generous because low-end devices cold-start their
+         * TTS service; a device with NO engine may never call onInit, and this
+         * is what turns that into a detectable failure instead of a hang.
+         */
+        const val INIT_TIMEOUT_MS = 4_000L
         private val HAN_REGEX = Regex("[\\u4e00-\\u9fff\\u3400-\\u4dbf]")
         // [T-android-tts-intranumber-guard] The sentence-boundary set moved to
         // SpeechSentenceSplitter.SENTENCE_ENDERS — a single source of truth
         // shared with ReadAloudPlayer, so the two TTS paths can't drift.
     }
 
+    // @Volatile: written on the binder thread in onInit / nulled on main in
+    // shutdown(), and read from both — the posted pre-init replay relies on
+    // seeing a torn-down engine rather than a stale non-null.
+    @Volatile
     private var tts: TextToSpeech? = null
+    @Volatile
     var isInitialized = false
         private set
+
+    /**
+     * [T-android-tts-silent-blackhole] True when the engine reported ERROR at
+     * init — typically a device with no functional TTS engine installed
+     * (common on Chinese ROMs without Google TTS, e.g. ColorOS). Callers can
+     * use this + [awaitReady] to distinguish "not ready YET" from "will never
+     * speak", instead of silently dropping text.
+     */
+    var initFailed = false
+        private set
+
+    /**
+     * Resolves once [onInit] runs: true on SUCCESS, false on ERROR. Engine
+     * binding is asynchronous, so the first utterances can easily arrive
+     * before this settles — see [preInitQueue].
+     */
+    private val initResult = kotlinx.coroutines.CompletableDeferred<Boolean>()
+
+    /**
+     * [T-android-tts-silent-blackhole] Utterances that arrived before init
+     * settled. `speak()` used to DROP text whenever `!isInitialized` — since
+     * init is async, the very first utterance after construction was silently
+     * lost (LazyReadAloudPlayer constructs the engine on first tap, so the
+     * first Read Aloud tap spoke nothing on every device). Buffered here and
+     * replayed in order from [onInit] instead. Guarded by [queueLock];
+     * `onInit` may arrive on a binder thread.
+     */
+    private val preInitQueue = mutableListOf<String>()
+    private val queueLock = Any()
 
     private val _isSpeaking = MutableStateFlow(false)
     val isSpeaking: StateFlow<Boolean> = _isSpeaking.asStateFlow()
@@ -75,9 +119,53 @@ class TextToSpeechManager : TextToSpeech.OnInitListener {
                 setOnUtteranceProgressListener(createProgressListener())
             }
             Log.d(TAG, "TTS initialized successfully")
+            // Replay whatever arrived while the engine was binding, in order.
+            val queued = synchronized(queueLock) {
+                val copy = preInitQueue.toList()
+                preInitQueue.clear()
+                copy
+            }
+            // [T-android-tts-init-thread] Post the replay to the MAIN thread.
+            //
+            // onInit arrives on a binder thread. speakQueued touches
+            // pendingTexts (a plain MutableList that speak()/stop()/the
+            // progress listener also mutate) and `tts` (which shutdown()
+            // nulls), with no happens-before against any of them. Disposing the
+            // ChatScreen inside the ~4 s init window — rotate the device, or
+            // navigate away right after enabling read-replies — therefore
+            // raced a ConcurrentModificationException on pendingTexts, or a
+            // speak() against an already shut-down engine. Same lifecycle shape
+            // as the VAD SIGSEGV fixed in 91c7b2944.
+            //
+            // Re-check liveness inside the post: shutdown() can land between
+            // the binder callback and the main-thread turn.
+            if (queued.isNotEmpty()) {
+                Handler(Looper.getMainLooper()).post {
+                    if (tts != null && isInitialized) {
+                        for (text in queued) speakQueued(text)
+                    } else {
+                        Log.d(TAG, "pre-init replay dropped — engine shut down during init")
+                    }
+                }
+            }
         } else {
+            initFailed = true
+            synchronized(queueLock) { preInitQueue.clear() }
+            _isSpeaking.value = false
             Log.e(TAG, "TTS initialization failed with status: $status")
         }
+        initResult.complete(status == TextToSpeech.SUCCESS)
+    }
+
+    /**
+     * [T-android-tts-silent-blackhole] Suspend until init settles (bounded by
+     * [timeoutMs] — a device with no engine may never call [onInit] at all).
+     * @return true when the engine is usable.
+     */
+    suspend fun awaitReady(timeoutMs: Long = INIT_TIMEOUT_MS): Boolean {
+        if (isInitialized) return true
+        if (initFailed) return false
+        return kotlinx.coroutines.withTimeoutOrNull(timeoutMs) { initResult.await() } ?: false
     }
 
     /**
@@ -85,7 +173,20 @@ class TextToSpeechManager : TextToSpeech.OnInitListener {
      * Automatically detects language from text content.
      */
     fun speak(text: String) {
-        if (!isInitialized || text.isBlank()) return
+        if (text.isBlank()) return
+        if (!isInitialized) {
+            // [T-android-tts-silent-blackhole] Engine still binding (or dead).
+            // Buffer instead of dropping; onInit replays in order. On a failed
+            // init the queue is discarded there — nothing can ever speak it.
+            if (!initFailed) {
+                synchronized(queueLock) {
+                    preInitQueue.clear() // speak() semantics: flush what came before
+                    preInitQueue.add(text)
+                }
+                _isSpeaking.value = true
+            }
+            return
+        }
 
         isPaused = false
         pendingTexts.clear()
@@ -96,7 +197,19 @@ class TextToSpeechManager : TextToSpeech.OnInitListener {
         autoDetectAndSetLanguage(text)
 
         val params = buildSpeechParams()
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, params, generateUtteranceId())
+        // [T-android-tts-rom-compat] speak() returns ERROR synchronously when
+        // the engine rejects the request (missing language data, engine died —
+        // both real on OEM/AOSP engines without Google TTS). The result used
+        // to be discarded, so isSpeaking stayed true with NO utterance in
+        // flight and no progress callback ever coming — ReadAloudPlayer's
+        // completion poll then spun forever and the whole read-aloud queue
+        // wedged for the rest of the process.
+        val rc = tts?.speak(text, TextToSpeech.QUEUE_FLUSH, params, generateUtteranceId())
+        if (rc != TextToSpeech.SUCCESS) {
+            Log.w(TAG, "speak rejected by engine (rc=$rc len=${text.length})")
+            _isSpeaking.value = false
+            return
+        }
         _isSpeaking.value = true
     }
 
@@ -104,13 +217,35 @@ class TextToSpeechManager : TextToSpeech.OnInitListener {
      * Adds text to the speech queue without interrupting (QUEUE_ADD).
      */
     fun speakQueued(text: String) {
-        if (!isInitialized || text.isBlank()) return
+        if (text.isBlank()) return
+        if (!isInitialized) {
+            // [T-android-tts-diag] A field report of "read replies is on but
+            // nothing is spoken" could not be diagnosed from the log: this
+            // path emitted nothing at all, so whether text ever reached the
+            // engine was unknowable. Queued-before-init is the one silent
+            // outcome that looks identical to success from the caller's side.
+            Log.i(TAG, "speakQueued deferred (init pending) len=${text.length} initFailed=$initFailed")
+            if (!initFailed) {
+                synchronized(queueLock) { preInitQueue.add(text) }
+                _isSpeaking.value = true
+            }
+            return
+        }
+        Log.i(TAG, "speakQueued len=${text.length}")
 
         pendingTexts.add(text)
         autoDetectAndSetLanguage(text)
 
         val params = buildSpeechParams()
-        tts?.speak(text, TextToSpeech.QUEUE_ADD, params, generateUtteranceId())
+        // [T-android-tts-rom-compat] Same rejected-enqueue guard as speak().
+        val rc = tts?.speak(text, TextToSpeech.QUEUE_ADD, params, generateUtteranceId())
+        if (rc != TextToSpeech.SUCCESS) {
+            Log.w(TAG, "speakQueued rejected by engine (rc=$rc len=${text.length})")
+            // Only clear the flag when nothing else is in flight — a QUEUE_ADD
+            // rejection must not mark an ongoing earlier utterance as done.
+            if (pendingTexts.isEmpty()) _isSpeaking.value = false
+            return
+        }
         _isSpeaking.value = true
     }
 
@@ -169,6 +304,9 @@ class TextToSpeechManager : TextToSpeech.OnInitListener {
         pendingTexts.clear()
         pausedAtIndex = 0
         sentenceBuffer.setLength(0)
+        // A stop while the engine is still binding must also drop the buffered
+        // utterances, or they'd blurt out the moment onInit lands.
+        synchronized(queueLock) { preInitQueue.clear() }
         _isSpeaking.value = false
     }
 
@@ -225,7 +363,27 @@ class TextToSpeechManager : TextToSpeech.OnInitListener {
     /**
      * Detects if text contains Han characters and sets language accordingly.
      */
+    /**
+     * [T-android-system-voice-catalog] Engine voice name to speak with; null =
+     * auto (per-utterance language detection below). Set per utterance by
+     * ReadAloudPlayer from the capsule's picked system voice. When the named
+     * voice exists it wins over language auto-detection — same as iOS, where a
+     * picked voice is used regardless of the reply's language.
+     */
+    @Volatile
+    var preferredVoiceName: String? = null
+
     private fun autoDetectAndSetLanguage(text: String) {
+        preferredVoiceName?.let { wanted ->
+            val v = runCatching { tts?.voices?.firstOrNull { it.name == wanted } }.getOrNull()
+            if (v != null) {
+                val rc = tts?.setVoice(v)
+                if (rc == TextToSpeech.SUCCESS) return
+                Log.w(TAG, "setVoice($wanted) rejected (rc=$rc) — falling back to auto language")
+            } else {
+                Log.w(TAG, "preferred voice '$wanted' not found on this engine — falling back to auto language")
+            }
+        }
         val locale = if (HAN_REGEX.containsMatchIn(text)) {
             Locale.SIMPLIFIED_CHINESE
         } else {
@@ -250,10 +408,19 @@ class TextToSpeechManager : TextToSpeech.OnInitListener {
             }
 
             override fun onDone(utteranceId: String?) {
-                pausedAtIndex++
-                // Only mark as not speaking if nothing else is queued
-                if (pausedAtIndex >= pendingTexts.size) {
-                    _isSpeaking.value = false
+                // [T-android-tts-init-thread] Progress callbacks arrive on a
+                // binder thread. This used to bump pausedAtIndex and read
+                // pendingTexts.size straight from there, while togglePause()
+                // takes a subList VIEW of that same list on main — a
+                // concurrent stop() clearing it makes the view throw. Confine
+                // both to the main thread so pendingTexts/pausedAtIndex have a
+                // single owner.
+                Handler(Looper.getMainLooper()).post {
+                    pausedAtIndex++
+                    // Only mark as not speaking if nothing else is queued
+                    if (pausedAtIndex >= pendingTexts.size) {
+                        _isSpeaking.value = false
+                    }
                 }
             }
 

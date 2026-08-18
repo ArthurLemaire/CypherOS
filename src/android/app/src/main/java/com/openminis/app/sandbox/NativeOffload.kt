@@ -57,6 +57,21 @@ object NativeOffloadServer {
     private const val MAGIC_RSP = 0x52464F4E  // 'N' 'O' 'F' 'R'
     private const val VERSION = 1
 
+    /** [T-android-offload-tmp-leak] Filename prefix of a handler reply file. */
+    private const val REPLY_PREFIX = ".native-offload-"
+
+    /**
+     * How long a reply file may live before the in-session sweep may remove it.
+     *
+     * The real gap between writing the file and the rewritten `/bin/cat` reading
+     * it is sub-millisecond, so 10 minutes is enormously conservative — it
+     * exists only so a stopped/slow tracee can never lose its output.
+     */
+    private const val REPLY_TTL_MS = 10 * 60 * 1000L
+
+    /** Run the opportunistic sweep every N replies, not on every single one. */
+    private const val SWEEP_EVERY_N_REPLIES = 50L
+
     const val socketName: String = SOCKET_NAME
 
     private val handlers = ConcurrentHashMap<String, NativeOffloadHandler>()
@@ -101,6 +116,62 @@ object NativeOffloadServer {
         }
         Log.i(TAG, "listening on abstract socket '$SOCKET_NAME' " +
             "handlers=${handlers.keys.sorted()} tmpDir=${rootfsTmpDir?.absolutePath}")
+
+        // [T-android-offload-tmp-leak] Sweep reply files orphaned by earlier
+        // app processes. See sweepStaleReplies for why this is safe here and
+        // why the mechanism leaks in the first place.
+        sweepStaleReplies(all = true)
+    }
+
+    /**
+     * [T-android-offload-tmp-leak] Delete `.native-offload-*` reply files.
+     *
+     * WHY THESE LEAK. Each offload call writes the handler's combined output to
+     * `<rootfs>/tmp/.native-offload-<pid>-<seq>` and returns the GUEST path;
+     * proot's native_offload extension then rewrites the tracee's execve into
+     * `/bin/cat <tmpfile>`. So the host cannot delete the file at reply time —
+     * `cat` has not run yet, and deleting it would turn every offload call into
+     * "No such file or directory". Nothing else ever removed them either
+     * (`delete`/`cleanup` were zero occurrences in this file), so one file
+     * accumulated per offload call, forever: measured on a dev device, 35 files
+     * spanning 12 days and surviving many app restarts, growing +1 per call.
+     * On a heavy user's device this reached thousands of files / GBs, showing
+     * up as an inflated "Shell container" figure on the storage screen.
+     *
+     * WHY DELETING IS SAFE HERE.
+     *  - [all] = true is used at server start. Any file present then belongs to
+     *    a PREVIOUS app process: its tracee died with that process, so no `cat`
+     *    can still be pending on it.
+     *  - [all] = false keeps files younger than [REPLY_TTL_MS] and is used
+     *    opportunistically while serving. The TTL is what makes it safe: it only
+     *    ever removes files far older than the microseconds between writing the
+     *    reply and the rewritten `cat` reading it. A pathologically stopped
+     *    tracee (SIGSTOP between execve-enter and the read) is the sole way to
+     *    exceed it, and that already means the caller is not reading its output.
+     *
+     * Failures are logged and swallowed: a leaked temp file must never break an
+     * offload call.
+     */
+    private fun sweepStaleReplies(all: Boolean) {
+        val dir = rootfsTmpDir ?: return
+        try {
+            val cutoff = System.currentTimeMillis() - REPLY_TTL_MS
+            var removed = 0
+            var bytes = 0L
+            dir.listFiles { f -> f.isFile && f.name.startsWith(REPLY_PREFIX) }?.forEach { f ->
+                if (!all && f.lastModified() > cutoff) return@forEach
+                val len = f.length()
+                if (f.delete()) {
+                    removed++
+                    bytes += len
+                }
+            }
+            if (removed > 0) {
+                Log.i(TAG, "swept $removed stale reply file(s), freed ${bytes / 1024}KB (all=$all)")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "sweepStaleReplies failed: ${e.message}")
+        }
     }
 
     private fun bindWithRetry(): LocalServerSocket? {
@@ -203,9 +274,18 @@ object NativeOffloadServer {
         val tmpDir = rootfsTmpDir ?: throw IllegalStateException("server not started")
         tmpDir.mkdirs()
         val seq = counter.incrementAndGet()
-        val tmpHost = File(tmpDir, ".native-offload-$pid-$seq")
+        val tmpHost = File(tmpDir, "$REPLY_PREFIX$pid-$seq")
         tmpHost.writeText(result.output)
         val tmpGuest = "/tmp/${tmpHost.name}"
+
+        // [T-android-offload-tmp-leak] Bound growth WITHIN a long-running
+        // process. The start-time sweep only catches files from previous
+        // processes, but a single session can issue thousands of offload calls
+        // (agent loops shelling out repeatedly), so without this the leak simply
+        // moves from "across restarts" to "within one run". Age-gated, so the
+        // file just written — and any other still awaiting its `cat` — is never
+        // touched. Sampled rather than run per reply to keep the hot path cheap.
+        if (seq % SWEEP_EVERY_N_REPLIES == 0L) sweepStaleReplies(all = false)
 
         Log.d(TAG, "reply name='$name' exit=${result.exitCode} outBytes=${result.output.length} " +
             "tmpGuest=$tmpGuest elapsed=${elapsedMs}ms")

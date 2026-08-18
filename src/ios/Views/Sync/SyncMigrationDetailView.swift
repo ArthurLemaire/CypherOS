@@ -13,6 +13,7 @@ struct SyncMigrationDetailView: View {
     @State private var showRequestMigrationConfirm = false
     @State private var showCancelMigrationConfirm = false
     @State private var showForceDeleteV1Confirm = false
+    @State private var showResetMigrationConfirm = false
     @State private var forceDeleteV1Status: String? = nil
     @State private var forceDeleteV1InProgress = false
     // iCloud Zones inventory section
@@ -88,6 +89,10 @@ struct SyncMigrationDetailView: View {
         // top), and gave users a misleading sense of progress. The new
         // v1-zone control is a manual "Force Delete V1 Zone" button.
         let lastError: String?
+        /// [T-icloud-migration-suspended-ui] Nothing is driving the migration
+        /// until the app is relaunched. Distinct from `status`, which stays
+        /// "in_progress" across a deferral.
+        let isSuspended: Bool
     }
 
     var body: some View {
@@ -285,7 +290,23 @@ struct SyncMigrationDetailView: View {
                         title: String(localized: "Records pushed"),
                         done: m.pushDone, total: m.pushTotal
                     )
-                    LabeledContent(String(localized: "Estimated time"), value: estimateETA(remaining: max(0, m.pushTotal - m.pushDone), rps: vm.ratePerSecond))
+                    // [T-icloud-migration-suspended-ui] A deferred phase leaves
+                    // `status` at "in_progress" even though nothing is running,
+                    // so the sheet used to show an active status over a frozen
+                    // counter plus an ETA computed from a rate of zero. Say
+                    // plainly that it is paused and name the one action that
+                    // resumes it, and drop the meaningless estimate.
+                    if m.isSuspended {
+                        HStack(spacing: 8) {
+                            Image(systemName: "pause.circle.fill")
+                                .foregroundStyle(.orange)
+                            Text("Paused — reopen Minis to continue")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        LabeledContent(String(localized: "Estimated time"), value: estimateETA(remaining: max(0, m.pushTotal - m.pushDone), rps: vm.ratePerSecond))
+                    }
                     Button(role: .destructive) {
                         showCancelMigrationConfirm = true
                     } label: {
@@ -293,10 +314,20 @@ struct SyncMigrationDetailView: View {
                             .foregroundStyle(.red)
                             .frame(maxWidth: .infinity, alignment: .center)
                     }
+                    // [T-icloud-migration-reset] Escape hatch for a migration
+                    // that no retry can un-stick (OpenMinis#154). Distinct from
+                    // "Force Delete V1 Zone" below: this only discards LOCAL
+                    // progress, nothing on the server.
+                    Button {
+                        showResetMigrationConfirm = true
+                    } label: {
+                        Text("Reset Migration Progress")
+                            .frame(maxWidth: .infinity, alignment: .center)
+                    }
                 } header: {
                     Text("Migration")
                 } footer: {
-                    Text("Backfilling pre-v2 history into v2's shared zone. Already-uploaded records stay on iCloud if you cancel.")
+                    Text("Backfilling pre-v2 history into v2's shared zone. Already-uploaded records stay on iCloud if you cancel.\n\nIf migration is stuck and retrying doesn't help, Reset Migration Progress clears the local progress so it can start over. Your iCloud data is not deleted.")
                         .font(.caption)
                 }
 
@@ -391,6 +422,19 @@ struct SyncMigrationDetailView: View {
             Button("Keep Migrating", role: .cancel) {}
         } message: {
             Text("Already-uploaded records stay on iCloud. Pending history backfill stops; you can request again later.")
+        }
+        .confirmationDialog("Reset Migration Progress?", isPresented: $showResetMigrationConfirm, titleVisibility: .visible) {
+            Button("Reset Progress", role: .destructive) {
+                if #available(iOS 17.0, *) {
+                    Task {
+                        await MigrationEngine.shared.resetMigrationProgress()
+                        await refresh()
+                    }
+                }
+            }
+            Button("Keep Current Progress", role: .cancel) {}
+        } message: {
+            Text("Clears this device's migration progress so it can start over — the phase, the pushed-record ledger and the backfill position.\n\nYour iCloud data is NOT deleted and the v1 zone is untouched. Records already uploaded may be re-sent, which iCloud absorbs harmlessly. Use this when migration is stuck and retrying doesn't help.")
         }
         .confirmationDialog(
             "Force Delete V1 Zone?",
@@ -979,7 +1023,8 @@ struct SyncMigrationDetailView: View {
                 pushTotal: s.pushTotal,
                 v1Deleted: s.v1Deleted,
                 v1DeletePending: s.v1DeletePending,
-                lastError: s.lastError
+                lastError: s.lastError,
+                isSuspended: s.isSuspended
             )
         }
         vm = next

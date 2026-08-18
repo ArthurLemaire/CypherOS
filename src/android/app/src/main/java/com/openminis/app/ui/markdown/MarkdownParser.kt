@@ -355,6 +355,11 @@ object MarkdownParser {
         var fenceChar = '`'
         var fenceLen = 0
 
+        // [T-android-latex-code-mask] Precomputed once: which indices sit
+        // inside a fence or inline code, so a closing `$`/`$$` can never be
+        // matched across a code boundary (issue #117 defect 3).
+        val codeMask = buildCodeMask(chars)
+
         fun atLineStart(idx: Int): Boolean = idx == 0 || chars[idx - 1] == '\n' || chars[idx - 1] == '\r'
 
         while (i < n) {
@@ -427,7 +432,7 @@ object MarkdownParser {
             if (chars[i] == '\\' && i + 1 < n && chars[i + 1] == '[') {
                 val end = findClose(chars, i + 2, "\\]")
                 if (end != null) {
-                    val latex = chars.substring(i + 2, end)
+                    val latex = stripBlockquoteMarkers(chars.substring(i + 2, end))
                     spans.add(MathSpan(makePlaceholder(spans.size), latex, true))
                     out.append(spans.last().placeholder)
                     i = end + 2
@@ -449,9 +454,12 @@ object MarkdownParser {
 
             // $$ … $$ — display math.
             if (chars[i] == '$' && i + 1 < n && chars[i + 1] == '$') {
-                val end = findDoubleDollar(chars, i + 2)
-                if (end != null) {
-                    val latex = chars.substring(i + 2, end)
+                val end = findDoubleDollar(chars, i + 2, codeMask)
+                // [T-android-latex-code-mask] The closer must be outside code
+                // (codeMask, above) AND a multi-line body must still look like
+                // a formula — otherwise an unclosed `$$` swallows prose.
+                if (end != null && isPlausibleDisplayBody(chars.substring(i + 2, end))) {
+                    val latex = stripBlockquoteMarkers(chars.substring(i + 2, end))
                     spans.add(MathSpan(makePlaceholder(spans.size), latex, true))
                     out.append(spans.last().placeholder)
                     i = end + 2
@@ -461,7 +469,7 @@ object MarkdownParser {
 
             // $ … $ — inline math (with currency-skip heuristic).
             if (chars[i] == '$' && i + 1 < n && chars[i + 1] != '$' && chars[i + 1] != ' ') {
-                val end = findSingleDollar(chars, i + 1)
+                val end = findSingleDollar(chars, i + 1, codeMask)
                 if (end != null) {
                     val latex = chars.substring(i + 1, end)
                     if (looksLikeMath(latex)) {
@@ -482,6 +490,44 @@ object MarkdownParser {
 
     private fun makePlaceholder(idx: Int): String = "${ORC}MATH$idx$ORC"
 
+    /**
+     * Strip blockquote markers from a multi-line math body. Math is extracted
+     * before block-level parsing, so a display formula written inside a
+     * blockquote drags the continuation lines' `> ` markers into the LaTeX:
+     *
+     *     > $$
+     *     > E = mc^2
+     *     > $$
+     *
+     * used to yield `"\n> E = mc^2\n> "` and render a literal `>`. Only strip
+     * when *every* non-blank line after the first carries a `^ {0,3}> ?`
+     * marker — that proves the span really sits inside a quote, and protects
+     * legitimate formula content whose lines begin with `>` (comparisons,
+     * matrix rows). Mirrors iOS MarkdownMathExtractor.stripBlockquoteMarkers.
+     */
+    private fun stripBlockquoteMarkers(latex: String): String {
+        if (!latex.contains('\n')) return latex
+
+        // The opening `$$` / `\[` is consumed by the caller, so the first
+        // segment is the tail of the marker line and never carries a marker
+        // of its own — validate and strip only lines 2…n.
+        val lines = latex.split("\n").toMutableList()
+        var sawMarker = false
+        for (idx in 1 until lines.size) {
+            val line = lines[idx]
+            var cursor = 0
+            while (cursor < line.length && line[cursor] == ' ' && cursor < 3) cursor++
+            if (cursor >= line.length) continue // blank line: neutral
+            if (line[cursor] != '>') return latex // a bare line — not a quote
+            sawMarker = true
+            cursor++
+            if (cursor < line.length && line[cursor] == ' ') cursor++
+            lines[idx] = line.substring(cursor)
+        }
+        if (!sawMarker) return latex
+        return lines.joinToString("\n")
+    }
+
     private fun findClose(chars: String, from: Int, close: String): Int? {
         val n = chars.length
         var i = from
@@ -496,22 +542,131 @@ object MarkdownParser {
         return null
     }
 
-    private fun findDoubleDollar(chars: String, from: Int): Int? {
+    /**
+     * [T-android-latex-code-mask] (issue #117 defect 3, iOS bce7e2ed)
+     *
+     * The main [extractMath] loop skips fenced blocks and inline code when
+     * deciding where a formula may *open*, but the closing-delimiter searches
+     * were blind forward scans. So one bare `$$` in prose — a model that
+     * forgot to close it, or text merely *explaining* LaTeX — paired with a
+     * `$$` inside a later ``` fence and swallowed every paragraph between
+     * them, including the fence's own opening line. The renderer then saw the
+     * orphaned closing ``` as a NEW fence and turned the remainder into a code
+     * block: the "a whole section suddenly disappeared" symptom.
+     *
+     * This precomputes, once per parse, which indices sit inside fenced blocks
+     * or inline code, mirroring the main loop's rules. A closer inside the mask
+     * is rejected.
+     */
+    private fun buildCodeMask(chars: String): BooleanArray {
+        val n = chars.length
+        val mask = BooleanArray(n)
+        var i = 0
+        var inFence = false
+        var fenceChar = '`'
+        var fenceLen = 0
+
+        fun atLineStart(idx: Int): Boolean =
+            idx == 0 || chars[idx - 1] == '\n' || chars[idx - 1] == '\r'
+
+        while (i < n) {
+            if (!inFence && atLineStart(i)) {
+                val c = chars[i]
+                if (c == '`' || c == '~') {
+                    var fl = 0
+                    var j = i
+                    while (j < n && chars[j] == c) { fl++; j++ }
+                    if (fl >= 3) {
+                        inFence = true; fenceChar = c; fenceLen = fl
+                        while (i < n && chars[i] != '\n') { mask[i] = true; i++ }
+                        if (i < n) { mask[i] = true; i++ }
+                        continue
+                    }
+                }
+            }
+            if (inFence) {
+                if (atLineStart(i) && chars[i] == fenceChar) {
+                    var fl = 0
+                    var j = i
+                    while (j < n && chars[j] == fenceChar) { fl++; j++ }
+                    if (fl >= fenceLen) {
+                        inFence = false
+                        while (i < n && chars[i] != '\n') { mask[i] = true; i++ }
+                        if (i < n) { mask[i] = true; i++ }
+                        continue
+                    }
+                }
+                mask[i] = true; i++
+                continue
+            }
+            // Inline code span: `…` / ``…`` — same run-matching rule the main
+            // loop uses when it copies these verbatim.
+            if (chars[i] == '`') {
+                var run = 0
+                var j = i
+                while (j < n && chars[j] == '`') { run++; j++ }
+                var k = j
+                var closed = -1
+                while (k < n) {
+                    if (chars[k] == '`') {
+                        var r2 = 0
+                        var m = k
+                        while (m < n && chars[m] == '`') { r2++; m++ }
+                        if (r2 == run) { closed = m; break }
+                        k = m
+                    } else k++
+                }
+                val end = if (closed > 0) closed else j
+                for (idx in i until end) mask[idx] = true
+                i = end
+                continue
+            }
+            i++
+        }
+        return mask
+    }
+
+    /**
+     * [T-android-latex-code-mask] A multi-line `$$` body must still look like a
+     * formula, so a genuinely unclosed `$$` cannot eat prose even when the
+     * closer is outside any code span. Single-line `$$…$$` is accepted
+     * unconditionally, leaving ordinary display math untouched. Mirrors iOS.
+     */
+    private fun isPlausibleDisplayBody(body: String): Boolean {
+        if (!body.contains('\n')) return true
+        // A blank line means a paragraph break — prose, not one formula.
+        if (Regex("\\n[ \\t]*\\n").containsMatchIn(body)) return false
+        // The conventional block shape puts the closing `$$` alone on its own
+        // line, i.e. the body ends with a newline (plus optional indent). That
+        // is a strong enough signal on its own — requiring a LaTeX glyph here
+        // too would wrongly demote glyph-free but valid math such as
+        // "$$\n1 + 2 = 3\n$$" to plain text.
+        if (Regex("\\n[ \\t]*$").containsMatchIn(body)) return true
+        // Otherwise the closer is mid-line, which is the shape a stray
+        // delimiter in prose produces — require a LaTeX-ish glyph.
+        return body.any { it == '\\' || it == '^' || it == '_' || it == '{' || it == '}' }
+    }
+
+    private fun findDoubleDollar(chars: String, from: Int, codeMask: BooleanArray?): Int? {
         val n = chars.length
         var i = from
         while (i < n - 1) {
-            if (chars[i] == '$' && chars[i + 1] == '$') return i
+            if (chars[i] == '$' && chars[i + 1] == '$' &&
+                (codeMask == null || !codeMask[i])
+            ) return i
             i++
         }
         return null
     }
 
-    private fun findSingleDollar(chars: String, from: Int): Int? {
+    private fun findSingleDollar(chars: String, from: Int, codeMask: BooleanArray?): Int? {
         val n = chars.length
         var i = from
         while (i < n) {
             if (chars[i] == '\\' && i + 1 < n) { i += 2; continue }
-            if (chars[i] == '$' && (i == 0 || chars[i - 1] != ' ')) return i
+            if (chars[i] == '$' && (i == 0 || chars[i - 1] != ' ') &&
+                (codeMask == null || !codeMask[i])
+            ) return i
             if (chars[i] == '\n') return null
             i++
         }

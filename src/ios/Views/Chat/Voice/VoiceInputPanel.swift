@@ -8,6 +8,102 @@ import Speech
 // Shared VAD + ASR state machine. Drives the inline voice input
 // (InlineVoiceInputView); resolves the ASR provider via VoiceProviderResolver.
 
+/// [T-voice-input-failure-feedback] (#144/#134/#142) Why a voice utterance
+/// produced no text.
+///
+/// Every case here used to be an early `return` with at most a `VoiceLog` line:
+/// the spinner stopped, the transcript did not change, and the user could not
+/// tell "I spoke too briefly" from "the ASR server 401'd" from "the text was
+/// dropped because I was editing". Naming the failures is what makes those
+/// distinguishable — both to the user (toast) and to us (log grep).
+///
+/// Modelled on Android's `RecognitionError`
+/// (SystemSpeechRecognitionEngine.kt:345-382), which already had this
+/// distinction — notably a real `NO_MATCH` state, which iOS lacked.
+enum VoiceInputFailure: Equatable {
+    /// Capture stopped with less than `minSegmentSeconds` of audio.
+    case tooShort(seconds: Double)
+    /// Audio was sent and the request SUCCEEDED, but the transcript was empty.
+    /// The single most confusing failure: nothing errored, nothing appeared.
+    case noSpeechRecognized
+    /// Recognition result arrived while the user was hand-editing the
+    /// transcript, so appending would have clobbered their edit.
+    case droppedWhileEditing
+    /// Microphone permission denied.
+    case micPermissionDenied
+    /// Mic is granted but Speech recognition is not — on-device ASR cannot run.
+    /// Previously indistinguishable from a generic transcribe error.
+    case speechPermissionDenied
+    /// No usable ASR provider could be constructed (missing API key / bad
+    /// config). Previously surfaced as a bogus *network* error.
+    case noUsableProvider
+    /// The provider chain ran and every candidate threw.
+    case transcribeFailed(String)
+    /// Starting the audio engine failed.
+    case startFailed(String)
+
+    /// User-facing, already-localized. Kept short — these are toast lines.
+    var message: String {
+        switch self {
+        case .tooShort:
+            return String(localized: "Too short — hold on and speak a little longer",
+                          comment: "Voice input: recording below the minimum length, discarded")
+        case .noSpeechRecognized:
+            return String(localized: "No speech recognized — please try again",
+                          comment: "Voice input: ASR succeeded but returned an empty transcript")
+        case .droppedWhileEditing:
+            return String(localized: "Speech ignored while editing — finish editing first",
+                          comment: "Voice input: result discarded because the user was editing the transcript")
+        case .micPermissionDenied:
+            return String(localized: "Microphone access denied — enable it in Settings",
+                          comment: "Voice input: microphone permission denied")
+        case .speechPermissionDenied:
+            return String(localized: "Speech recognition access denied — enable it in Settings",
+                          comment: "Voice input: Speech recognition permission denied")
+        case .noUsableProvider:
+            return String(localized: "No usable speech-to-text model — check the voice settings",
+                          comment: "Voice input: no ASR provider could be built (missing key/config)")
+        case .transcribeFailed(let detail):
+            return detail
+        case .startFailed(let detail):
+            return detail
+        }
+    }
+
+    /// SF Symbol for the toast.
+    var systemImage: String {
+        switch self {
+        case .noSpeechRecognized, .tooShort: return "waveform.slash"
+        case .micPermissionDenied, .speechPermissionDenied: return "mic.slash.fill"
+        case .droppedWhileEditing: return "pencil.slash"
+        default: return "exclamationmark.triangle.fill"
+        }
+    }
+
+    /// Stable tag for log grepping — the field diagnosis handle for #134/#142.
+    var logTag: String {
+        switch self {
+        case .tooShort: return "tooShort"
+        case .noSpeechRecognized: return "noSpeechRecognized"
+        case .droppedWhileEditing: return "droppedWhileEditing"
+        case .micPermissionDenied: return "micPermissionDenied"
+        case .speechPermissionDenied: return "speechPermissionDenied"
+        case .noUsableProvider: return "noUsableProvider"
+        case .transcribeFailed: return "transcribeFailed"
+        case .startFailed: return "startFailed"
+        }
+    }
+}
+
+/// [T-voice-input-failure-feedback] (#144) Thrown when every ASR candidate was
+/// skipped because no provider could be constructed (missing API key / bad
+/// config). A distinct type so the catch site can classify it as
+/// `.noUsableProvider` rather than a generic transcribe failure — this used to
+/// surface as `URLError(.cannotLoadFromNetwork)`, i.e. a *network* error for
+/// what is really a *configuration* one.
+struct NoUsableASRProviderError: LocalizedError {
+    var errorDescription: String? { VoiceInputFailure.noUsableProvider.message }
+}
 
 @MainActor
 final class VoiceInputViewModel: ObservableObject {
@@ -52,6 +148,29 @@ final class VoiceInputViewModel: ObservableObject {
     @Published var transcribeError: String?
     @Published var retryCountdown: Int?
     @Published var canManualRetry = false
+
+    /// [T-voice-input-failure-feedback] (#144) Last reason a voice utterance
+    /// produced no text. Published so the panel can reflect it inline; also
+    /// toasted by `report(_:)` so it is visible in COMPACT mode, where the
+    /// existing `stateLabel` and error pill do not render at all (that
+    /// expanded-only limitation is why these failures read as "nothing
+    /// happened").
+    @Published var lastFailure: VoiceInputFailure?
+
+    /// Surface a failure: log it with a greppable tag and toast it.
+    ///
+    /// Toast rather than an inline row on purpose — an inline pill inserts a
+    /// row into the panel VStack and shifts the mic button, which users already
+    /// complained about (see the note in InlineVoiceInputView's error pill).
+    ///
+    /// `silent: true` records the failure for diagnostics without a toast, for
+    /// paths that are expected during normal use and would otherwise nag.
+    func report(_ failure: VoiceInputFailure, silent: Bool = false) {
+        lastFailure = failure
+        VoiceLog.log("[voice-failure] \(failure.logTag): \(failure.message)")
+        guard !silent else { return }
+        MinisToast.show(failure.message, duration: 2.2, systemImage: failure.systemImage)
+    }
     private var retryAudioData: Data?
     private var retryTimer: Timer?
     private var isAutoRetry = false
@@ -248,6 +367,14 @@ final class VoiceInputViewModel: ObservableObject {
         }
     }
 
+    /// True when the resolved ASR is Apple's on-device recognizer — the only
+    /// case where Speech permission matters. Mirrors `prewarmIfSystem`'s test.
+    /// A nil `inputProvider` also counts: `transcribeWithFailover` falls back to
+    /// `SystemVoiceProvider.shared` when the candidate chain is empty.
+    private var willUseSystemASR: Bool {
+        inputProvider == nil || inputProvider is SystemVoiceProvider
+    }
+
     func stopListening() {
         vad.stop()
         state = .waiting
@@ -265,7 +392,7 @@ final class VoiceInputViewModel: ObservableObject {
     /// (continuous dictation) — segments transcribe as silence is detected while
     /// capture keeps running, so we never stop it just to transcribe.
     func handleMainButtonTap() {
-        VoiceLog.log("handleMainButtonTap called, state=\(state), vad.isRunning=\(vad.isRunning), isSpeaking=\(vad.isSpeaking), runningDuration=\(String(format: "%.1f", vad.runningDuration))s")
+        VoiceLog.log("[VoiceInputDebug] handleMainButtonTap called, state=\(state), vad.isRunning=\(vad.isRunning), isSpeaking=\(vad.isSpeaking), runningDuration=\(String(format: "%.1f", vad.runningDuration))s, ttsPlaying=\(VoiceOutputPlayer.shared.isPlaying), micPerm=\(VoiceActivityDetector.microphonePermission)")
         if vad.isRunning {
             let wasSpeaking = vad.isSpeaking
             let duration = vad.runningDuration
@@ -296,7 +423,7 @@ final class VoiceInputViewModel: ObservableObject {
             // System (offline) ASR also needs Speech permission — request it
             // (no-op once granted) before starting capture.
             Task {
-                await SystemVoiceProvider.ensureSpeechAuthorization()
+                await self.ensureSpeechAuthReportingDenial()
                 self.prewarmIfSystem()
                 self.startVAD()
             }
@@ -304,6 +431,7 @@ final class VoiceInputViewModel: ObservableObject {
             Task { await requestPermissionAndStart() }
         case .denied:
             permissionDenied = true
+            report(.micPermissionDenied)
         }
     }
 
@@ -343,7 +471,13 @@ final class VoiceInputViewModel: ObservableObject {
         // Mutually exclusive with TTS playback: stop any reply being read aloud so
         // it doesn't echo into the mic / fight the audio session, and mark capture
         // active so further reply TTS is suppressed until we stop.
+        // [VoiceInputDebug] Record whether TTS was actually speaking when the mic
+        // was tapped — that is the case where the session has to switch
+        // .playback → .record, which is what used to lose the first tap.
+        let ttsWasPlaying = VoiceOutputPlayer.shared.isPlaying
+        VoiceLog.log("[VoiceInputDebug] startVAD enter ttsPlaying=\(ttsWasPlaying) vad.isRunning=\(vad.isRunning)")
         VoiceOutputPlayer.shared.stopAll()
+        VoiceLog.log("[VoiceInputDebug] TTS stopAll() returned (synchronous); session release is async")
         VoiceModePreference.shared.isCapturing = true
         do {
             // System ASR (SFSpeechRecognizer) limits each recognition request
@@ -357,25 +491,58 @@ final class VoiceInputViewModel: ObservableObject {
             state = .recording
             startError = nil
             transcribeError = nil
+            lastFailure = nil
             beginRecordingLabelCycle()
             startRippleAnimation()
             resetIdleTimer()
             startTotalRecordingTimer()
+            VoiceLog.log("[VoiceInputDebug] startVAD OK — state=.recording")
         } catch {
             VoiceModePreference.shared.isCapturing = false
             logger.error("Failed to start VAD: \(error.localizedDescription)")
+            // [VoiceInputDebug] This is the branch that produced the reported
+            // "first tap only stopped the speech" symptom: TTS was stopped above,
+            // then vad.start() threw, so no recording began and the panel fell
+            // back to .waiting with no visible error state change.
+            VoiceLog.log("[VoiceInputDebug] startVAD FAILED — recording NOT started, ttsWasPlaying=\(ttsWasPlaying), error=\(error.localizedDescription)")
             startError = error.localizedDescription
             state = .waiting
+            // [T-voice-input-failure-feedback] (#144) `startError` only renders
+            // in expandedBody; in compact mode this failed start looked exactly
+            // like a dead mic button. Toast so it is visible either way.
+            report(.startFailed(error.localizedDescription))
         }
     }
 
     private func requestPermissionAndStart() async {
         let granted = await VoiceActivityDetector.requestMicrophonePermission()
         VoiceLog.log("mic permission request result: granted=\(granted)")
-        guard granted else { permissionDenied = true; return }
-        await SystemVoiceProvider.ensureSpeechAuthorization()
+        guard granted else {
+            permissionDenied = true
+            report(.micPermissionDenied)
+            return
+        }
+        await ensureSpeechAuthReportingDenial()
         prewarmIfSystem()
         startVAD()
+    }
+
+    /// [T-voice-input-failure-feedback] (#144) Request Speech authorization and
+    /// SAY SO when it is refused.
+    ///
+    /// The result of `ensureSpeechAuthorization()` used to be discarded at both
+    /// call sites. With the mic granted but Speech denied, capture started
+    /// normally and only the on-device recognizer failed — every utterance
+    /// surfaced the generic `unsupported("Speech recognition permission not
+    /// granted")` string, never an actionable "grant Speech permission".
+    ///
+    /// Only reported when the system ASR is actually the one that would run;
+    /// with a remote (Whisper-style) provider configured, Speech permission is
+    /// irrelevant and warning about it would be noise.
+    private func ensureSpeechAuthReportingDenial() async {
+        let ok = await SystemVoiceProvider.ensureSpeechAuthorization()
+        guard !ok, willUseSystemASR else { return }
+        report(.speechPermissionDenied)
     }
 
     private func beginRecordingLabelCycle() {
@@ -485,6 +652,13 @@ final class VoiceInputViewModel: ObservableObject {
             guard totalSeconds >= Self.minSegmentSeconds else {
                 VoiceLog.log("silence auto-stop: below min threshold, discarding \(String(format: "%.1f", totalSeconds))s")
                 pendingSegments.removeAll(keepingCapacity: true)
+                // [T-voice-input-failure-feedback] (#134) Speaking under
+                // minSegmentSeconds then falling silent used to discard the
+                // audio with no UI change at all — the single likeliest cause of
+                // "I tapped the mic, said something, and got nothing".
+                // Only speak up if the user actually produced some audio;
+                // a bare mic-open/mic-close with ~zero capture is not a failure.
+                if totalSeconds > 0.3 { report(.tooShort(seconds: totalSeconds)) }
                 return
             }
             #if DEBUG
@@ -492,7 +666,7 @@ final class VoiceInputViewModel: ObservableObject {
             #endif
             let merged = Self.mergeWavSegments(pendingSegments)
             pendingSegments.removeAll(keepingCapacity: true)
-            if let merged { transcribeAudio(merged) }
+            transcribeMerged(merged)
 
         case .maxLengthReached:
             #if DEBUG
@@ -500,7 +674,7 @@ final class VoiceInputViewModel: ObservableObject {
             #endif
             let merged = Self.mergeWavSegments(pendingSegments)
             pendingSegments.removeAll(keepingCapacity: true)
-            if let merged { transcribeAudio(merged) }
+            transcribeMerged(merged)
 
         case .manualFlush:
             guard totalSeconds >= Self.minSegmentSeconds else {
@@ -512,7 +686,7 @@ final class VoiceInputViewModel: ObservableObject {
             #endif
             let merged = Self.mergeWavSegments(pendingSegments)
             pendingSegments.removeAll(keepingCapacity: true)
-            if let merged { transcribeAudio(merged) }
+            transcribeMerged(merged)
         }
     }
 
@@ -629,7 +803,21 @@ final class VoiceInputViewModel: ObservableObject {
         #endif
         let merged = Self.mergeWavSegments(pendingSegments)
         pendingSegments.removeAll(keepingCapacity: true)
-        if let merged { transcribeAudio(merged) }
+        transcribeMerged(merged)
+    }
+
+    /// [T-voice-input-failure-feedback] (#144) Send a merged utterance, or say
+    /// so when the merge produced nothing.
+    ///
+    /// `mergeWavSegments` returns nil when every segment is header-only (≤44
+    /// bytes). All four call sites used to be a bare `if let merged { … }` with
+    /// no `else`, so that outcome discarded the utterance in total silence.
+    private func transcribeMerged(_ merged: Data?) {
+        guard let merged else {
+            report(.noSpeechRecognized)
+            return
+        }
+        transcribeAudio(merged)
     }
 
     /// Transcribe ONE (possibly merged) utterance. The VAD engine keeps running
@@ -687,6 +875,12 @@ final class VoiceInputViewModel: ObservableObject {
         let task = Task { [weak self] in
             guard let self else { return }
             var text = ""
+            // Scoped to THIS attempt on purpose. `self.transcribeError` is only
+            // cleared on success, so a failure from an earlier utterance is
+            // still set here — testing it instead would suppress the
+            // "no speech recognized" report on the next empty-but-successful
+            // attempt, re-creating the exact silent failure this fixes.
+            var attemptFailed = false
             do {
                 try Task.checkCancellation()
                 text = try await self.transcribeWithFailover(audioData: audioData,
@@ -706,6 +900,20 @@ final class VoiceInputViewModel: ObservableObject {
                 VoiceLog.log("ERROR transcription failed: \(error.localizedDescription)")
                 self.logger.error("Transcription failed: \(error.localizedDescription)")
                 self.transcribeError = error.localizedDescription
+                attemptFailed = true
+                // [T-voice-input-failure-feedback] (#144) The error pill this
+                // feeds renders only in expandedBody, so in compact mode the
+                // failure was invisible. Toast it too. Suppressed while a retry
+                // is pending — the countdown UI already explains that state and
+                // a toast per attempt would nag.
+                let failure: VoiceInputFailure = error is NoUsableASRProviderError
+                    ? .noUsableProvider
+                    : .transcribeFailed(error.localizedDescription)
+                if !Self.isTransientNetworkError(error) {
+                    self.report(failure)
+                } else {
+                    self.lastFailure = failure
+                }
                 if Self.isTransientNetworkError(error) && !self.isAutoRetry {
                     self.retryAudioData = audioData
                     self.startRetryCountdown()
@@ -723,6 +931,21 @@ final class VoiceInputViewModel: ObservableObject {
                 self.transcript = self.transcript.isEmpty ? text : self.transcript + " " + text
                 VoiceLog.log("UI update: text=\"\(self.transcript)\"")
                 self.onTranscript?(self.transcript)
+            } else if generation != self.transcriptGeneration {
+                // Superseded by clearAndRearm()/cancelTranscription() (e.g. the
+                // user sent the message while this was in flight). Expected —
+                // record it, but don't nag.
+                VoiceLog.log("[voice-failure] staleGeneration: result dropped (gen \(generation) != \(self.transcriptGeneration))")
+            } else if self.isEditingTranscript {
+                self.report(.droppedWhileEditing)
+            } else if !attemptFailed {
+                // [T-voice-input-failure-feedback] (#134) The request SUCCEEDED
+                // and returned an empty string. This is the path that used to
+                // vanish without a trace: no throw, no error pill, no transcript
+                // change. Whisper returning "", the chat-ASR prompt honoring
+                // "output an empty string", and SystemVoiceProvider's 8s
+                // watchdog salvaging an empty result all land here.
+                self.report(.noSpeechRecognized)
             }
             if self.pendingTranscriptions > 0 {
                 self.pendingTranscriptions -= 1
@@ -753,9 +976,19 @@ final class VoiceInputViewModel: ObservableObject {
             return try await SystemVoiceProvider.shared.transcribe(request).text
         }
         var lastError: Error?
+        var skippedCandidates = 0
         for (i, entry) in candidates.enumerated() {
             try Task.checkCancellation()
-            guard let provider = VoiceProviderResolver.inputProvider(for: entry) else { continue }
+            guard let provider = VoiceProviderResolver.inputProvider(for: entry) else {
+                // [T-voice-input-failure-feedback] (#144) A candidate whose
+                // provider can't be built (missing API key / bad config) used to
+                // be skipped invisibly; if EVERY candidate skipped, `lastError`
+                // stayed nil and we threw a bogus URLError(.cannotLoadFromNetwork)
+                // — reporting a *network* problem for a *configuration* one.
+                skippedCandidates += 1
+                VoiceLog.log("ASR fail-over: \(entry.model.displayName) skipped — provider unavailable (missing key/config)")
+                continue
+            }
             let request = VoiceInputRequest(audioData: audioData,
                                             model: entry.model.id,
                                             language: language,
@@ -780,7 +1013,11 @@ final class VoiceInputViewModel: ObservableObject {
                              (i + 1 < candidates.count ? " — trying next candidate" : " — chain exhausted"))
             }
         }
-        throw lastError ?? URLError(.cannotLoadFromNetwork)
+        if let lastError { throw lastError }
+        // Every candidate was skipped for want of a usable provider — a config
+        // problem, so name it as one instead of blaming the network.
+        VoiceLog.log("[voice-failure] noUsableProvider: all \(skippedCandidates) candidate(s) unavailable")
+        throw NoUsableASRProviderError()
     }
 
     func cancelTranscription() {

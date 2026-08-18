@@ -1404,11 +1404,113 @@ extension AIChatViewModel {
     }
 
     func effectiveAgentHistory() -> [AgentMessage] {
-        let result = effectiveAgentHistoryUncounted()
+        let result = Self.dropOrphanedToolParts(effectiveAgentHistoryUncounted(), logger: logger)
         // One-line breadcrumb on every inference call so a "summary-only"
         // regression is visible in logs without scraping agent traces.
         logger.info("[Compact] effectiveAgentHistory: returning \(result.count) msg(s) from agentHistory.count=\(self.agentHistory.count) markerId=\(self.cachedLatestMarker?.id.prefix(8) ?? "nil")")
         return result
+    }
+
+    /// [T-ios-compact-orphan-toolcall] Last line of defence before a history
+    /// slice becomes a provider request: every `toolResult`
+    /// (function_call_output) must have a matching `toolUse` (function_call)
+    /// somewhere in the same slice, and vice versa. An unmatched pair is a hard
+    /// 400 on OpenAI-compatible APIs —
+    ///     No tool call found for function call output with call_id …
+    /// — and, because the slice is recomputed deterministically, it repeats on
+    /// every retry and every fallback model, wedging the conversation until the
+    /// user clears the session.
+    ///
+    /// Any orphan reaching here is a bug upstream (the walk-back boundary and
+    /// the preAnchor prune are both supposed to preserve pairing), so this
+    /// logs loudly rather than silently papering over it. Recovery mirrors the
+    /// long-standing pass `runAgentLoop` runs over the FULL `agentHistory`
+    /// (AIChatViewModel ~4556) — that one cannot help here because compaction
+    /// slices the history *after* it runs, which is precisely how this orphan
+    /// is born:
+    ///
+    ///   * orphaned function_call_output → drop it. Its call is gone from the
+    ///     slice, and nothing can reconstruct it.
+    ///   * orphaned function_call → synthesise an error tool_result rather than
+    ///     deleting the call. Deleting would silently discard the assistant's
+    ///     own reasoning; the placeholder keeps the turn intact and tells the
+    ///     model that round failed. Same wording/shape as the existing pass.
+    ///
+    /// Messages emptied by the drop are removed, since a parts-less message is
+    /// itself invalid on several providers.
+    static func dropOrphanedToolParts(_ history: [AgentMessage], logger: AppLogger) -> [AgentMessage] {
+        var toolUseIds: Set<String> = []
+        var toolResultIds: Set<String> = []
+        for msg in history {
+            for part in msg.parts {
+                switch part {
+                case .toolUse(let id, _, _): toolUseIds.insert(id)
+                case .toolResult(let id, _, _, _, _, _, _, _): toolResultIds.insert(id)
+                default: break
+                }
+            }
+        }
+        let orphanedResults = toolResultIds.subtracting(toolUseIds)
+        var orphanedUses = toolUseIds.subtracting(toolResultIds)
+
+        // [T-ios-compact-orphan-toolcall] IN-FLIGHT EXEMPTION. The tool_uses in
+        // the FINAL assistant message are not orphans when the loop is still
+        // between "model asked for tools" and "results appended" — agentHistory
+        // legitimately looks unpaired for the whole of that window
+        // (AIChatViewModel appends the assistant turn ~5263 and its tool results
+        // only ~5569). `keepAliveHistory = effectiveAgentHistory()` snapshots
+        // inside exactly that gap, so without this exemption a cache-warmup
+        // request would carry fabricated "Tool execution was interrupted"
+        // results for tools that were about to run normally — poisoning the
+        // cached prefix and, worse, telling the model its tools had failed.
+        // Trailing unanswered calls need no repair anyway: a request ending on
+        // an assistant tool_use is exactly what the API expects mid-round.
+        if let last = history.last, last.role == .assistant {
+            for part in last.parts {
+                if case .toolUse(let id, _, _) = part { orphanedUses.remove(id) }
+            }
+        }
+
+        guard !orphanedResults.isEmpty || !orphanedUses.isEmpty else { return history }
+
+        logger.warning("[CompactDiag] orphan tool parts in OUTGOING history — repairing. orphanedOutputs=\(orphanedResults.count) [\(orphanedResults.sorted().prefix(3).joined(separator: ","))] orphanedCalls=\(orphanedUses.count) [\(orphanedUses.sorted().prefix(3).joined(separator: ","))] historyCount=\(history.count)")
+
+        var cleaned: [AgentMessage] = []
+        cleaned.reserveCapacity(history.count)
+        for var msg in history {
+            let kept = msg.parts.filter { part in
+                if case .toolResult(let id, _, _, _, _, _, _, _) = part {
+                    return !orphanedResults.contains(id)
+                }
+                return true
+            }
+            if kept.isEmpty { continue }
+            msg.parts = kept
+            cleaned.append(msg)
+
+            // Follow an assistant turn holding orphaned calls with the
+            // placeholder results it never got, so the pair is complete.
+            guard msg.role == .assistant else { continue }
+            let unanswered = kept.compactMap { part -> (String, String)? in
+                if case .toolUse(let id, let name, _) = part, orphanedUses.contains(id) {
+                    return (id, name)
+                }
+                return nil
+            }
+            if !unanswered.isEmpty {
+                cleaned.append(AgentMessage(
+                    role: .user,
+                    parts: unanswered.map { id, name in
+                        AgentContentPart.toolResult(
+                            id: id, name: name,
+                            content: "Tool execution was interrupted by an unexpected error.",
+                            isError: true
+                        )
+                    }
+                ))
+            }
+        }
+        return cleaned
     }
 
     func effectiveAgentHistoryUncounted() -> [AgentMessage] {

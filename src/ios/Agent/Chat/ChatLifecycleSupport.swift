@@ -167,6 +167,18 @@ final class SessionActivityTracker: ObservableObject {
            activeSessions.contains(realId) { return true }
         return false
     }
+
+    /// `isActive` in aggregation-pass form: active ids with draft aliases
+    /// resolved IN, so callers sweeping a whole list (the sidebar grouping)
+    /// build this once and do plain hash lookups per member instead of
+    /// entering the tracker per member. O(active + aliases) — tiny.
+    var resolvedActiveSessionIds: Set<String> {
+        var out = activeSessions
+        for (draftId, realId) in draftAliases where activeSessions.contains(realId) {
+            out.insert(draftId)
+        }
+        return out
+    }
 }
 
 /// Keeps the screen awake while any chat session is running a task, when the
@@ -520,6 +532,34 @@ final class ViewModelCache {
         }
     }
 
+    /// [T-ios-stacknav-transition-attributegraph-race] Suspend every streaming
+    /// vm across a WHOLE-TREE re-mount, then resume after `seconds`.
+    ///
+    /// Distinct from `suspendAllStreamingUI` above: that one sets the
+    /// scroll/background THROTTLE (`streamingUIUpdatesSuspended`), this one
+    /// sets the teardown GUARD (`transitionSuspended`), which is what keeps
+    /// `objectWillChange` out of a hosting subgraph UIKit is destroying.
+    ///
+    /// The one caller is `MinisApp`'s `.id(appLanguage)` re-key: changing the
+    /// app language drops and re-mounts the entire view tree, including a chat
+    /// that may be mid-stream underneath the Settings sheet. That is the same
+    /// race the two ContentView observers guard for push/pop, but there is no
+    /// "outgoing session" to name — every mounted vm is outgoing — so it fans
+    /// out over the cache.
+    func suspendAllForTreeRemount(resumeAfter seconds: TimeInterval = 0.4) {
+        var suspended: [AIChatViewModel] = []
+        for (_, vm) in cache where vm.isProcessing {
+            vm.setSuspendedForTransition(true)
+            suspended.append(vm)
+        }
+        guard !suspended.isEmpty else { return }
+        // Strong refs to the suspended vms are intentional: they must outlive
+        // the window to be resumed, and the cache owns them regardless.
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) {
+            for vm in suspended { vm.setSuspendedForTransition(false) }
+        }
+    }
+
     /// Resume streaming UI updates on ALL cached VMs, flushing any chunks
     /// that accumulated while backgrounded. Called from MinisApp on
     /// scenePhase → .active so the user sees the latest content
@@ -551,12 +591,47 @@ final class ViewModelCache {
     // MARK: - Pending Transfer
 
     /// Stash for input content being moved to another session.
+    ///
+    /// [T-ios-moveto-transfer-race] `targetId` and `createdAt` are load-bearing.
+    /// The slot used to hold content only, so whichever AIChatView appeared
+    /// first consumed it — if the push to the intended target was swallowed by
+    /// a transition race, the content landed in whatever session the user
+    /// happened to open next, or sat in the slot until they opened the target
+    /// by hand. Consumers must now match `targetId` before consuming, and
+    /// treat an entry older than `staleAfter` as abandoned.
     struct PendingTransfer {
+        let targetId: String
         let inputText: String
         let attachments: [InputAttachment]
+        let createdAt: Date
+
+        /// A transfer that was never consumed this long after being staged has
+        /// missed its navigation; it must not ambush a later session.
+        static let staleAfter: TimeInterval = 30
+
+        var isStale: Bool { Date().timeIntervalSince(createdAt) > Self.staleAfter }
+
+        init(targetId: String, inputText: String, attachments: [InputAttachment]) {
+            self.targetId = targetId
+            self.inputText = inputText
+            self.attachments = attachments
+            self.createdAt = Date()
+        }
     }
 
-    /// Set by MoveToSessionSheet, consumed by AIChatView on appear.
+    /// Set by MoveToSessionSheet, consumed by AIChatView on appear — but only
+    /// by the view whose session id matches `targetId`.
     static var pendingTransfer: PendingTransfer?
+
+    /// Drop a staged transfer, deleting any attachment files it still owns so a
+    /// discarded move doesn't leak cache entries.
+    static func discardPendingTransfer(reason: String) {
+        guard let transfer = pendingTransfer else { return }
+        pendingTransfer = nil
+        for a in transfer.attachments {
+            try? FileManager.default.removeItem(at: a.cacheURL)
+        }
+        logger.info("[MoveTo] Discarded pending transfer for target=\(transfer.targetId) reason=\(reason)")
+    }
 }
 

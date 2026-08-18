@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -26,12 +27,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
@@ -77,7 +81,9 @@ fun Modifier.minisTextKitSelectionGesture(
     /** Set true when the LazyColumn uses `reverseLayout = true` (chat lists). */
     reverseLayout: Boolean = false,
     onLongPressEngaged: () -> Unit = {},
-): Modifier = pointerInput(controller, listState, reverseLayout) {
+): Modifier = composed {
+    val hapticFeedback = androidx.compose.ui.platform.LocalHapticFeedback.current
+    pointerInput(controller, listState, reverseLayout) {
     val longPressTimeoutMs = android.view.ViewConfiguration.getLongPressTimeout().toLong()
     val touchSlopPx = viewConfiguration.touchSlop
     awaitEachGesture {
@@ -132,6 +138,14 @@ fun Modifier.minisTextKitSelectionGesture(
         // user bubble's own long-press → action menu).
         val hit = controller.hitTestStrict(lastWindowPoint) ?: return@awaitEachGesture
         controller.beginSelectionWord(hit)
+        // Fired HERE, not at the long-press timeout: the strict hit-test above
+        // returns null over a non-selectable region, and buzzing before it
+        // would give feedback for a selection that never happened. This is
+        // also why it lives in the gesture rather than at the call site —
+        // `onLongPressEngaged` has a no-op default that every caller was
+        // taking, so text selection had no haptic at all while every other
+        // long-press menu in the app did.
+        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
         onLongPressEngaged()
         // Take ownership so LazyColumn doesn't reinterpret subsequent motion
         // as a scroll.
@@ -172,6 +186,7 @@ fun Modifier.minisTextKitSelectionGesture(
         } finally {
             controller.dragIntent.value = null
         }
+    }
     }
 }
 
@@ -744,7 +759,21 @@ fun MinisSelectionToolbarHost(
         // border + stronger shadow so the bar pops out of the chat background
         // in dark mode (bare `surface` was nearly invisible there).
         val barColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        // [T-android-table-toolbar-overflow] Cap the bar to the screen width so
+        // it can't spill past the edge. A table selection appends Copy Table /
+        // Copy Table Image to an already-long row (Copy · Add to Input · Read
+        // Aloud · Copy Markdown · Copy Rich Text), which overran the screen —
+        // the horizontalScroll below clips the overflow, but without this cap
+        // the Popup sized the Surface to full content width and the extra
+        // buttons rendered off the right edge, unreachable.
+        val ctxForWidth = androidx.compose.ui.platform.LocalContext.current
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        val maxBarWidth = with(density) {
+            ctxForWidth.resources.displayMetrics.widthPixels.toFloat().toDp() - 16.dp
+        }
         Surface(
+            // Cap the Surface width; the scrollable Row inside then clips to it.
+            modifier = Modifier.widthIn(max = maxBarWidth),
             shape = RoundedCornerShape(10.dp),
             color = barColor,
             tonalElevation = 3.dp,
@@ -756,10 +785,9 @@ fun MinisSelectionToolbarHost(
         ) {
             // Make the action row horizontally scrollable so it survives
             // narrow viewports + many actions ("Copy" + "Add to input box" +
-            // "Copy Markdown" + "Copy Rich Text" can easily exceed 360 px
-            // on small phones). Wrapping the Row in a horizontalScroll
-            // keeps the popup width clamped to the toolbar's measured
-            // width while letting the user swipe to reach hidden buttons.
+            // "Copy Markdown" + "Copy Rich Text" + table actions can easily
+            // exceed the screen width). horizontalScroll lets the user swipe
+            // to reach buttons past the capped Surface width.
             val toolbarScroll = androidx.compose.foundation.rememberScrollState()
             Row(
                 modifier = Modifier
@@ -782,73 +810,147 @@ fun MinisSelectionToolbarHost(
                 val labelReadAloud = androidx.compose.ui.res.stringResource(com.openminis.app.R.string.selection_read_aloud)
                 val toastCopiedAsMarkdown = androidx.compose.ui.res.stringResource(com.openminis.app.R.string.selection_copied_as_markdown_toast)
                 val toastCopiedAsRichText = androidx.compose.ui.res.stringResource(com.openminis.app.R.string.selection_copied_as_rich_text_toast)
-                MinisToolbarButton(label = labelCopy) {
-                    val text = controller.selectedPlainText()
-                    if (text.isNotEmpty()) {
-                        clipboard.setText(AnnotatedString(text))
-                        haptics.performHapticFeedback(
-                            androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress
-                        )
-                        toast(context.getString(com.openminis.app.R.string.selection_copied_toast, preview(text)))
-                    }
-                    controller.clearSelection()
-                }
-                if (actions?.onAddToInput != null) {
-                    MinisToolbarDivider()
-                    MinisToolbarButton(label = labelAddToInput) {
+                // [T-android-markdown-table-copy-actions] Copy Table / Copy
+                // Table Image, when the selected message contains a table.
+                //
+                // This is the toolbar that ACTUALLY shows for a MinisTextKit
+                // selection (a table-cell long-press). The table actions were
+                // previously wired only into MinisMarkdownTextToolbar — the
+                // Compose-SelectionContainer toolbar that this MinisTextKit
+                // selection never triggers — so the buttons registered fine
+                // (debug.selectionState: tableActionsHit=true) but appeared in
+                // a toolbar the user never sees.
+                val tableActions = controller.selectionTableActions()
+                val labelCopyTable = androidx.compose.ui.res.stringResource(
+                    com.openminis.app.R.string.markdown_table_copy_table)
+                val labelCopyTableImage = androidx.compose.ui.res.stringResource(
+                    com.openminis.app.R.string.markdown_table_copy_table_image)
+
+                // Actions are collected into a list first so the bar can show a
+                // few and push the rest into an overflow menu. Ordered by how
+                // often they are wanted: Copy leads, the two markdown variants
+                // trail, table actions last (they apply to the whole table, not
+                // to what the user just selected).
+                val items = buildList {
+                    add(SelectionAction(labelCopy) {
                         val text = controller.selectedPlainText()
-                        if (text.isNotEmpty()) actions.onAddToInput.invoke(text)
+                        if (text.isNotEmpty()) {
+                            clipboard.setText(AnnotatedString(text))
+                            haptics.performHapticFeedback(
+                                androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress
+                            )
+                            toast(context.getString(
+                                com.openminis.app.R.string.selection_copied_toast, preview(text)))
+                        }
                         controller.clearSelection()
+                    })
+                    if (actions?.onAddToInput != null) {
+                        add(SelectionAction(labelAddToInput) {
+                            val text = controller.selectedPlainText()
+                            if (text.isNotEmpty()) actions.onAddToInput.invoke(text)
+                            controller.clearSelection()
+                        })
+                    }
+                    // [T-android-selection-readaloud] Speak ONLY the selected
+                    // substring (not the message's markdown source) through
+                    // Minis TTS.
+                    if (actions?.onReadAloud != null) {
+                        add(SelectionAction(labelReadAloud) {
+                            val text = controller.selectedPlainText()
+                            if (text.isNotEmpty()) actions.onReadAloud.invoke(text)
+                            controller.clearSelection()
+                        })
+                    }
+                    // Copy Markdown / Copy Rich Text are ALWAYS offered when the
+                    // selection contains rendered text. Earlier we gated them on
+                    // resolveSelectionMarkdown() returning non-null, but that hid
+                    // them in common cases (user bubbles before SideEffect
+                    // publish, the recompose race after a previous click, cross-
+                    // shard selections where the cache briefly hadn't populated).
+                    // Resolve lazily at click time and fall back to plain text.
+                    add(SelectionAction(labelCopyMarkdown) {
+                        val source = actions?.resolveSelectionMarkdown?.invoke()
+                            ?: controller.selectedPlainText()
+                        if (source.isNotEmpty()) {
+                            MarkdownClipboard.copyMarkdown(context, source)
+                            toast(toastCopiedAsMarkdown)
+                        }
+                        controller.clearSelection()
+                    })
+                    add(SelectionAction(labelCopyRichText) {
+                        val source = actions?.resolveSelectionMarkdown?.invoke()
+                            ?: controller.selectedPlainText()
+                        if (source.isNotEmpty()) {
+                            MarkdownClipboard.copyRichText(context, source)
+                            toast(toastCopiedAsRichText)
+                        }
+                        controller.clearSelection()
+                    })
+                    if (tableActions != null) {
+                        add(SelectionAction(labelCopyTable) {
+                            tableActions.copyTableMarkdown()
+                            controller.clearSelection()
+                        })
+                        add(SelectionAction(labelCopyTableImage) {
+                            tableActions.copyTableImage()
+                            controller.clearSelection()
+                        })
                     }
                 }
-                // [T-android-selection-readaloud] Speak ONLY the selected
-                // substring (controller.selectedPlainText(), not the message's
-                // markdown source) through Minis TTS.
-                if (actions?.onReadAloud != null) {
+
+                // Mirror iOS's edit menu: a few actions inline, the rest behind
+                // a chevron. On iOS UIEditMenuInteraction provides that overflow
+                // for free; this bar is hand-built, so it is implemented here.
+                //
+                // The horizontalScroll above still exists as a backstop for very
+                // narrow screens, but it was never a good primary answer — an
+                // action reachable only by swiping a 40dp bar is an action most
+                // users never find.
+                val inlineCount = MAX_INLINE_SELECTION_ACTIONS
+                val inlineItems = items.take(inlineCount)
+                val overflowItems = items.drop(inlineCount)
+
+                inlineItems.forEachIndexed { index, item ->
+                    if (index > 0) MinisToolbarDivider()
+                    MinisToolbarButton(label = item.label, onClick = item.onClick)
+                }
+                if (overflowItems.isNotEmpty()) {
                     MinisToolbarDivider()
-                    MinisToolbarButton(label = labelReadAloud) {
-                        val text = controller.selectedPlainText()
-                        if (text.isNotEmpty()) actions.onReadAloud.invoke(text)
-                        controller.clearSelection()
+                    var overflowOpen by remember(items.size) { mutableStateOf(false) }
+                    Box {
+                        MinisToolbarButton(label = "⋯") { overflowOpen = true }
+                        androidx.compose.material3.DropdownMenu(
+                            expanded = overflowOpen,
+                            onDismissRequest = { overflowOpen = false },
+                        ) {
+                            for (item in overflowItems) {
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text(item.label) },
+                                    onClick = {
+                                        overflowOpen = false
+                                        item.onClick()
+                                    },
+                                )
+                            }
+                        }
                     }
-                }
-                // Copy Markdown / Copy Rich Text are ALWAYS shown when the
-                // selection contains rendered text. Earlier we gated them on
-                // resolveSelectionMarkdown() returning non-null (single
-                // message + markdown cached), but that hid the buttons in
-                // common cases — user bubbles before SideEffect publish, the
-                // recompose race after a previous Copy Markdown click, cross-
-                // shard selections within a single message where the cache
-                // briefly hadn't populated, etc. Resolve lazily at click time
-                // and fall back to the selected plain text if no markdown
-                // source is available — Copy Markdown without a source then
-                // behaves like Copy, while Copy Rich Text still produces an
-                // HTML+plain dual clip (with the plain text round-tripped
-                // through MarkdownClipboard).
-                MinisToolbarDivider()
-                MinisToolbarButton(label = labelCopyMarkdown) {
-                    val source = actions?.resolveSelectionMarkdown?.invoke()
-                        ?: controller.selectedPlainText()
-                    if (source.isNotEmpty()) {
-                        MarkdownClipboard.copyMarkdown(context, source)
-                        toast(toastCopiedAsMarkdown)
-                    }
-                    controller.clearSelection()
-                }
-                MinisToolbarDivider()
-                MinisToolbarButton(label = labelCopyRichText) {
-                    val source = actions?.resolveSelectionMarkdown?.invoke()
-                        ?: controller.selectedPlainText()
-                    if (source.isNotEmpty()) {
-                        MarkdownClipboard.copyRichText(context, source)
-                        toast(toastCopiedAsRichText)
-                    }
-                    controller.clearSelection()
                 }
             }
         }
     }
 }
+
+/** One entry in the selection toolbar — inline button or overflow menu row. */
+private class SelectionAction(val label: String, val onClick: () -> Unit)
+
+/**
+ * How many actions stay on the bar before the rest move into the overflow menu.
+ *
+ * Three, matching what iOS's edit menu shows before its own chevron. The bar is
+ * anchored to a selection the user is looking at, so it has to stay narrow
+ * enough not to cover the text it belongs to.
+ */
+private const val MAX_INLINE_SELECTION_ACTIONS = 3
 
 @Composable
 private fun MinisToolbarDivider() {

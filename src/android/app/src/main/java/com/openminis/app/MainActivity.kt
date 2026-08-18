@@ -7,6 +7,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.LocaleList
+import android.provider.Settings
+import com.openminis.app.accessibility.AccessibilityRecoveryManager
 import android.graphics.Color
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -117,6 +119,42 @@ class MainActivity : ComponentActivity() {
         super.attachBaseContext(com.openminis.app.i18n.LocaleWrap.wrap(newBase))
     }
 
+    /**
+     * T-android-safemode-lateinit-crash: escape hatch for a process whose
+     * [MinisApp.onCreate] early-returned under safe-mode.
+     *
+     * That early return is irreversible within the process — the
+     * repositories stay unassigned no matter what the safe-mode flag says
+     * afterwards — so there is nothing this Activity can do to become
+     * usable. Killing the process is the recovery: the next launch runs
+     * Application.onCreate from the top, and by then the burst detector's
+     * 24h suppress window (set by the dismiss the user just performed)
+     * keeps safe-mode from tripping again, so init completes normally.
+     *
+     * We deliberately do NOT auto-relaunch an Activity here. Doing so from
+     * a dying process races the system's own task restart on some OEM
+     * builds (MIUI included) and can produce two tasks. Exiting cleanly
+     * and letting the user's next tap start the app is predictable.
+     */
+    private fun finishAndRestartProcess() {
+        try {
+            android.widget.Toast.makeText(
+                this,
+                getString(R.string.crash_safe_mode_restart_needed),
+                android.widget.Toast.LENGTH_LONG,
+            ).show()
+        } catch (t: Throwable) {
+            android.util.Log.w("MainActivity", "restart toast failed: ${t.message}")
+        }
+        finish()
+        // Let the toast render before tearing the process down. The delay
+        // runs on the main looper of a process we are about to kill, which
+        // is fine — nothing else is scheduled on it at this point.
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            android.os.Process.killProcess(android.os.Process.myPid())
+        }, 1200L)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -174,11 +212,45 @@ class MainActivity : ComponentActivity() {
         // Pop the share/dismiss dialog directly and finish() on close so
         // the user's next launch starts fresh. The dialog UI uses
         // AlertDialog (system-level) which doesn't touch MinisApp state.
-        if (com.openminis.app.crash.CrashFrequencyDetector.isSafeMode()) {
-            android.util.Log.w("MainActivity", "safe-mode ON — showing crash share dialog and finishing")
+        // T-android-safemode-lateinit-crash: gate on the Application's own
+        // "did init actually run" flag, NOT on isSafeMode(). The two are
+        // not equivalent, and the difference was a hard crash loop:
+        // finishClose() sets safe-mode back to false as soon as the user
+        // dismisses the share dialog, but MinisApp.onCreate already
+        // early-returned and never re-runs for the life of the process.
+        // Any MainActivity created after that dismissal (launcher icon —
+        // including the MainActivityIconDark alias — notification tap, or
+        // MIUI restoring the task) therefore sailed past the old
+        // isSafeMode() check and hit `app.chatRepository` inside
+        // setContent(), throwing UninitializedPropertyAccessException on
+        // the first Compose frame (onAttachedToWindow →
+        // setOnViewTreeOwnersAvailable). That crash wrote another
+        // crash-*.log, which re-tripped the burst detector on the next
+        // launch — a self-sustaining loop the user could not escape.
+        //
+        // `subsystemsInitialized` only goes true after every repository is
+        // assigned, so it stays false for exactly as long as composing is
+        // genuinely unsafe.
+        val minisApp = application as? MinisApp
+        if (minisApp == null || !minisApp.subsystemsInitialized) {
+            android.util.Log.w(
+                "MainActivity",
+                "app subsystems not initialized (safeMode=" +
+                    "${com.openminis.app.crash.CrashFrequencyDetector.isSafeMode()}) — " +
+                    "showing crash share dialog and finishing",
+            )
             com.openminis.app.crash.CrashFrequencyDetector.maybeShowOnActivity(
                 activity = this,
-                onClosed = { finish() },
+                // T-android-safemode-lateinit-crash: plain finish() here is a
+                // dead end on the second launch. maybeShowOnActivity invokes
+                // onClosed immediately when pendingShareFiles is null, which
+                // is exactly the state after the user dismissed the dialog on
+                // the previous launch — the app would close the instant it was
+                // tapped, reading as "Minis won't open at all". The process
+                // still holds a permanently uninitialized Application, so the
+                // only real recovery is a fresh process: tell the user, then
+                // exit hard so the next tap gets a clean init.
+                onClosed = { finishAndRestartProcess() },
                 saveLauncher = { zip, onSaveDone ->
                     pendingCrashZip = zip
                     pendingCrashSaveOnClosed = onSaveDone
@@ -297,6 +369,66 @@ class MainActivity : ComponentActivity() {
                 }
         }
 
+        // [T-android-a11y-force-stop-recovery] Bridge: the accessibility-grant
+        // repair prompt. Raised from the a11y tool path when the framework has
+        // stripped our component out of ENABLED_ACCESSIBILITY_SERVICES (the
+        // force-stop case). Two shapes depending on whether Shizuku can do the
+        // privileged write for us.
+        //
+        // setCancelable(true) + setOnCancelListener, unlike the settings gate
+        // above: the spec requires that an interrupted dialog counts as a
+        // cancel and does not wedge the waiting agent turn. Every exit path —
+        // button, back press, outside tap — resolves the continuation exactly
+        // once (respond() no-ops if already resolved, e.g. after a timeout).
+        lifecycleScope.launch {
+            AccessibilityRecoveryManager.pendingPrompt
+                .filterNotNull()
+                .collect { prompt ->
+                    val b = AlertDialog.Builder(this@MainActivity)
+                        .setTitle(getString(R.string.a11y_repair_dialog_title))
+                        .setCancelable(true)
+                        .setOnCancelListener {
+                            AccessibilityRecoveryManager.respond(
+                                AccessibilityRecoveryManager.Decision.CANCEL
+                            )
+                        }
+                        .setNegativeButton(R.string.a11y_repair_cancel) { d, _ ->
+                            d.dismiss()
+                            AccessibilityRecoveryManager.respond(
+                                AccessibilityRecoveryManager.Decision.CANCEL
+                            )
+                        }
+                    if (prompt.shizukuAvailable) {
+                        b.setMessage(getString(R.string.a11y_repair_dialog_message_shizuku))
+                            .setPositiveButton(R.string.a11y_repair_action_repair) { d, _ ->
+                                d.dismiss()
+                                AccessibilityRecoveryManager.respond(
+                                    AccessibilityRecoveryManager.Decision.REPAIR
+                                )
+                            }
+                    } else {
+                        b.setMessage(getString(R.string.a11y_repair_dialog_message_manual))
+                            .setPositiveButton(R.string.a11y_repair_action_open_settings) { d, _ ->
+                                d.dismiss()
+                                try {
+                                    startActivity(
+                                        Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        }
+                                    )
+                                } catch (_: Throwable) {
+                                    // Some OEMs hide this panel; the user can
+                                    // still reach it from Settings manually.
+                                }
+                                AccessibilityRecoveryManager.respond(
+                                    AccessibilityRecoveryManager.Decision.OPEN_SETTINGS
+                                )
+                            }
+                    }
+                    b.show()
+                }
+        }
+
         // Apply saved language before composing UI
         applySavedLanguage()
 
@@ -304,9 +436,24 @@ class MainActivity : ComponentActivity() {
         // `shared_content=true` extra after persisting a PendingShare to
         // share_prefs. Process it now so ShareCoordinator's in-memory
         // buffer is populated before any ChatScreen composes.
-        if (intent?.getBooleanExtra("shared_content", false) == true) {
-            com.openminis.app.share.ShareCoordinator.processPendingShare(this)
-        }
+        //
+        // [T-android-share-launch-crash] Deliberately UNCONDITIONAL, matching
+        // iOS `checkForPendingShare()` which runs on every launch
+        // (MinisApp.swift:279) rather than keying off a launch parameter.
+        // Gating on the extra made the share unrecoverable in exactly the case
+        // the OEM-crash fallback creates: when ShareReceiverActivity cannot
+        // start MainActivity at all, the extra is never delivered, so a user
+        // who then opens the app from the launcher had their already-persisted
+        // share sit unread — the toast tells them to open the app, and opening
+        // it did nothing. Reading it here is the safety net that makes that
+        // advice true.
+        //
+        // Safe to call on every launch: processPendingShare returns
+        // immediately when share_prefs holds no record (the overwhelmingly
+        // common case), and consumes-and-clears the record when it does, so a
+        // share is never injected twice. Staleness is still enforced inside
+        // (LAUNCH_MAX_AGE_MS), so an abandoned record cannot resurface later.
+        com.openminis.app.share.ShareCoordinator.processPendingShare(this)
 
         // Wire FLAG_KEEP_SCREEN_ON to (Appearance → Keep Screen Awake) AND
         // SessionActivityTracker.activeSessions. Lock held iff toggle is on
@@ -326,7 +473,8 @@ class MainActivity : ComponentActivity() {
             com.openminis.app.debug.DebugRPCHandler.currentActivity = java.lang.ref.WeakReference(this)
         }
 
-        val app = application as MinisApp
+        // Non-null and fully initialized — proven by the guard above.
+        val app = requireNotNull(application as? MinisApp)
 
         // Parse deep link from launch intent. A real deep-link in the
         // launch intent always wins over a saved-state restore (the

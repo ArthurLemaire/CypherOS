@@ -11,6 +11,8 @@ import com.openminis.app.data.model.LLMResponse
 import com.openminis.app.data.model.LLMStreamChunk
 import com.openminis.app.data.model.LLMUsage
 import com.openminis.app.data.model.ThinkingLevel
+import com.openminis.app.provider.thinking.ThinkingResolveContext
+import com.openminis.app.provider.thinking.ThinkingRuleResolver
 import com.openminis.app.provider.LLMProvider
 import com.openminis.app.provider.applyUserAgentOverride
 import com.openminis.app.provider.safeOptString
@@ -31,6 +33,7 @@ import okhttp3.Handshake
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
@@ -90,6 +93,15 @@ class OpenAIProvider private constructor(
 ) : LLMProvider {
     override val name = "OpenAI"
 
+    /**
+     * [T-android-thinking-rules-phase2] Owning provider-instance id, set by
+     * ProviderFactory after construction (mirrors how [codexAccountId] is a
+     * post-construction var). Lets the thinking resolver look up this instance's
+     * user-authored custom rules from [com.openminis.app.provider.thinking.ThinkingRuleResolver]'s
+     * cache. Null → no custom rules (identical to Phase-1 built-in-only behaviour).
+     */
+    var thinkingRuleInstanceId: String? = null
+
     /** API Key constructor (Chat Completions API by default; set useResponsesAPI=true for /v1/responses). */
     constructor(
         apiKey: String,
@@ -132,8 +144,26 @@ class OpenAIProvider private constructor(
          * [T-android-stale-conn-retry-hang] Streaming time-to-first-byte
          * budget: response HEADERS must arrive within this window. Does NOT
          * bound the SSE body — a flowing stream stays unlimited.
+         *
+         * [T-android-ttfb-upload-split / #188] This window now starts at
+         * `requestBodyEnd` (upload complete), NOT at call start — a large
+         * multimodal body over a slow proxy could burn the whole 30s just
+         * uploading, so a healthy-but-slow server looked like a dead
+         * connection. See [STREAM_UPLOAD_CAP_MS] for the upload-phase bound.
          */
         private const val STREAM_TTFB_TIMEOUT_MS = 30_000L
+
+        /**
+         * [T-android-ttfb-upload-split / #188] Overall ceiling for the UPLOAD
+         * phase (call start → requestBodyEnd). Keeps the watchdog effective if
+         * the body upload itself wedges (writeTimeout is 30s per write op, but a
+         * trickling proxy can dribble bytes forever without tripping it). Chosen
+         * generous so a legitimately large body over a slow link isn't cut off:
+         * the writeTimeout(30s) already bounds a fully-stalled socket; this only
+         * catches the slow-but-never-idle case. Once upload completes the tighter
+         * [STREAM_TTFB_TIMEOUT_MS] takes over.
+         */
+        private const val STREAM_UPLOAD_CAP_MS = 120_000L
 
         /**
          * Factory for OAuth-bearer OpenAI-compatible providers that aren't
@@ -263,7 +293,14 @@ class OpenAIProvider private constructor(
      * one. Mirrors iOS OpenAIProvider.applyKeyAuth.
      */
     private fun Request.Builder.applyKeyAuth(token: String): Request.Builder =
-        if (isAzure) header("api-key", token) else header("Authorization", "Bearer $token")
+        // [T-empty-key-compat-endpoints] A keyless third-party endpoint
+        // (ollama, LM Studio, LiteLLM, private relays) is a supported
+        // configuration. Send NO auth header rather than a malformed
+        // `Authorization: Bearer ` / empty `api-key:` — strict gateways
+        // reject the empty form, an absent header is universally fine.
+        if (token.isEmpty()) this
+        else if (isAzure) header("api-key", token)
+        else header("Authorization", "Bearer $token")
 
     /**
      * Build the request URL for Azure OpenAI, mirroring the official AzureOpenAI
@@ -366,8 +403,76 @@ class OpenAIProvider private constructor(
     /** Detect OpenRouter base URL. */
     private val isOpenRouter: Boolean = basePath.contains("openrouter.ai")
 
+    /**
+     * [OpenMinis#191] OpenRouter does NOT enable Anthropic prompt caching
+     * automatically — unlike the OpenAI / Grok / Moonshot / Groq models it
+     * hosts, which cache with no opt-in. Claude requests must carry an explicit
+     * `cache_control` breakpoint or nothing is cached at all, which is why the
+     * reporter measured `cache_read_input_tokens` / `cache_write_tokens` pinned
+     * at 0 across every turn and a 3-6x cost overrun.
+     *
+     * Matched on the `anthropic/` model-id prefix, OpenRouter's namespace for
+     * the Claude family (`anthropic/claude-sonnet-4.5`, `anthropic/claude-opus-4.1`,
+     * …). Scoped to OpenRouter AND that prefix so every other model on the
+     * gateway keeps a byte-identical request body.
+     *
+     * Note the gate is the HOST-matched [isOpenRouter], never a compat flag:
+     * on iOS the equivalent `useOpenRouterCompat` only selects the legacy
+     * `max_tokens` / no-`stream_options` body shape and Mistral sets it too, so
+     * keying on it would have leaked the field into Mistral requests. Android's
+     * [isOpenRouter] is already host-matched, the same way [isDashScope] is.
+     *
+     * Carries the same caveat as [isMistral]: a relay or vanity domain without
+     * `openrouter.ai` in its URL is not recognised, which fails safe — the
+     * request simply goes out unchanged, i.e. today's behaviour.
+     */
+    private val needsOpenRouterAnthropicCacheControl: Boolean
+        get() = isOpenRouter && model.id.lowercase().startsWith("anthropic/")
+
     /** Detect DashScope (Alibaba Qwen) base URL. */
     private val isDashScope: Boolean = basePath.contains("dashscope")
+
+    /**
+     * [T-android-mistral-reasoning-422] (GH OpenMinis#87, iOS 29065ca0)
+     * Detect Mistral's OpenAI-compatible endpoint.
+     *
+     * Mistral's AssistantMessage is a CLOSED schema
+     * (`additionalProperties: false`; only role/content/tool_calls/prefix), so
+     * `reasoning_content` on a prior assistant turn is rejected outright with
+     * HTTP 422 `extra_forbidden`. Their native reasoning representation is a
+     * different, Mistral-signed mechanism (content ThinkChunks), not this
+     * field. Note the REQUEST schema has no additionalProperties:false, which
+     * is why only multi-turn history carrying reasoning_content ever 422'd
+     * while spec-external top-level params went through fine.
+     *
+     * Case-insensitive to match iOS (LLMProviderFactory lowercases before the
+     * same `contains("mistral.ai")` test) — hosts are case-insensitive, so a
+     * user typing `API.Mistral.AI` must still be recognised.
+     *
+     * Known limits, both inherited from iOS's identical predicate: a relay that
+     * proxies Mistral models under its own hostname is not detected (still
+     * 422s), and a URL that merely mentions mistral.ai in a query string would
+     * over-suppress (harmless — the field is optional for everyone else).
+     */
+    private val isMistral: Boolean = basePath.lowercase().contains("mistral.ai")
+
+    /**
+     * [OpenMinis#163] Talking to xAI's own API (api.x.ai), as opposed to a relay
+     * that merely serves grok-named models. Mirrors iOS OpenAIProvider.isXAI.
+     *
+     * Scopes the "catalog declares no effort tiers → omit reasoning_effort" skip
+     * to first-party xAI. The bundled catalog marks 2090 entries across many
+     * vendors with the same empty-tier shape (relay-hosted Claude, GPT-5, Qwen,
+     * and grok itself behind poe / fastrouter / anyapi); while omitting the
+     * field is arguably more correct for some of those too, none of those routes
+     * has been verified, so the skip stays where the 400 was actually observed.
+     *
+     * URL matching alone is sufficient: ProviderFactory always populates a base
+     * for xAI, defaulting to https://api.x.ai/v1 when the user set no override.
+     */
+    private val isXAI: Boolean = basePath.lowercase().let {
+        it.contains("api.x.ai") || it.contains("//x.ai")
+    }
 
     /**
      * [T-unified-reasoning-effort] Whether this endpoint applies OpenAI's
@@ -376,19 +481,32 @@ class OpenAIProvider private constructor(
      * DeepSeek / MiniMax) that, at their vendor-native endpoint, would instead
      * use a `thinking:{}` object or self-reason with no toggle.
      *
-     * Two known such gateways (mirrors iOS OpenAIProvider.usesUnifiedReasoningEffort):
+     * Three known such gateways (mirrors iOS OpenAIProvider.usesUnifiedReasoningEffort):
      *   • Volcengine Ark (`ark.` / `volces` in the base URL) — re-exposes
      *     doubao/deepseek/glm/kimi through a single OpenAI-compatible surface
      *     where thinking is controlled ONLY by `reasoning_effort` (min tier
      *     `minimal`); the vendor-native `thinking:{}` shape is not honored.
      *   • Azure OpenAI ([isAzure]) — reasoning is `reasoning_effort` for every
      *     model surfaced through the deployment.
+     *   • Venice.ai (`api.venice.ai`) — [OpenMinis#86] resells deepseek / claude /
+     *     aion behind one OpenAI-compatible surface. Its ChatCompletionRequest
+     *     schema is `additionalProperties: false`, so an unknown root key is
+     *     rejected at validation time — BEFORE model dispatch — with
+     *     `400 Unrecognized key(s) in object: 'thinking'`. That is why every
+     *     model failed and why turning thinking OFF did not help: the
+     *     `{"type":"disabled"}` branch still sends the key. Venice natively
+     *     accepts root `reasoning_effort`, a superset of the tiers the generic
+     *     path emits, so no value mapping is needed.
      *
      * Gated tightly so official direct endpoints (DeepSeek/GLM/Kimi native,
-     * which DO want their own thinking shape) are never mis-routed.
+     * which DO want their own thinking shape) are never mis-routed. Caveat (same
+     * class as [isMistral]): a relay or vanity domain that does not carry these
+     * hosts in its URL is still exposed.
      */
     private val usesUnifiedReasoningEffort: Boolean =
-        isAzure || basePath.lowercase().let { it.contains("volces") || it.contains("ark.") }
+        isAzure || basePath.lowercase().let {
+            it.contains("volces") || it.contains("ark.") || it.contains("api.venice.ai")
+        }
 
     /**
      * [T-thinking-off-explicit] The wire value for "thinking OFF", or null to
@@ -509,14 +627,37 @@ class OpenAIProvider private constructor(
         } else if (usesChatCompletionsAPI) {
             buildRequestBody(messages, systemPrompt, maxTokens, stream = true, temperature = temperature, imageParts = imageParts, tools = tools, thinkingLevel = thinkingLevel)
         } else {
-            buildResponsesAPIBody(messages, systemPrompt, maxTokens, stream = true, tools = tools, thinkingLevel = thinkingLevel)
+            buildResponsesAPIBody(messages, systemPrompt, maxTokens, stream = true, imageParts = imageParts, tools = tools, thinkingLevel = thinkingLevel)
         }
         // T302: serialize the request body exactly once. Pre-T302 we called
         // body.toString() three times per request (debug log + OAuth byte
         // build + non-OAuth RequestBody), each materialising a fresh 30+ MB
         // string for long agent loops with heavy tool outputs. Stacked, that
         // pushed memory-tight devices (HONOR PTP-AN00) past the OOM line.
-        val bodyStr = body.toString()
+        // [T-android-mem-probe-trust] Bracket the serialisation itself. The
+        // 2026-08-15 field log recorded `bodyLen=2342987` on the request before
+        // a process death but nothing about its memory cost, so "did building
+        // this body kill us?" could not be answered from the log. We measure
+        // around the call and report the realised length, so an OOM thrown here
+        // now arrives with an attributed stack instead of anonymously.
+        val memBefore = com.openminis.app.diagnostics.MemorySnapshot.capture()
+        val serStartNs = System.nanoTime()
+        val bodyStr = try {
+            body.toString()
+        } catch (t: Throwable) {
+            com.openminis.app.diagnostics.LargeAllocProbe.report(
+                "openai.body.toString", -1, "model=${model.id} messages=${messages.size}",
+                memBefore, serStartNs, failure = t,
+            )
+            throw t
+        }
+        if (bodyStr.length >= com.openminis.app.diagnostics.LargeAllocProbe.NOTABLE_BYTES) {
+            com.openminis.app.diagnostics.LargeAllocProbe.report(
+                "openai.body.toString", bodyStr.length.toLong(),
+                "model=${model.id} messages=${messages.size}",
+                memBefore, serStartNs, failure = null,
+            )
+        }
         val request = buildRequest(bodyStr)
         val headerMap = mutableMapOf<String, String>()
         for (name in request.headers.names()) {
@@ -551,28 +692,65 @@ class OpenAIProvider private constructor(
             )
         }
 
-        val call = client.newCall(request)
+        // [T-android-ttfb-upload-split / #188] Attach per-call state the trace
+        // listener fills in (upload-done timestamp + physical connection) so the
+        // watchdog below can (a) start the TTFB clock only after upload and
+        // (b) evict THIS ONE connection on timeout.
+        val watchState = CallWatchState()
+        val call = client.newCall(request.newBuilder().tag(CallWatchState::class.java, watchState).build())
         // [T-android-stale-conn-retry-hang] Time-to-first-byte watchdog. A
         // request written into a dead pooled h2 tunnel (local proxy socket
         // survives a network flap) produces NO further events — no headers,
         // no failure — until the 600s read timeout, so the UI showed
-        // "thinking" forever. Bound ONLY the header phase: if response
-        // headers haven't arrived within STREAM_TTFB_TIMEOUT_MS, cancel the
-        // call and surface a normal retryable error (auto-retry then gets a
-        // fresh connection — NetworkMonitor now evicts the shared pool on
-        // transitions). Once execute() returns, the watchdog is cancelled and
-        // a flowing SSE stream has NO total-duration limit, as before.
+        // "thinking" forever.
+        //
+        // [T-android-ttfb-upload-split / #188] The window is split in two so
+        // slow-but-healthy uploads aren't mistaken for a dead connection:
+        //   1. UPLOAD phase (call start → requestBodyEnd): bounded loosely by
+        //      STREAM_UPLOAD_CAP_MS. writeTimeout(30s) already catches a fully
+        //      stalled socket; this only catches slow-trickle-forever.
+        //   2. TTFB phase (requestBodyEnd → response headers): the tight
+        //      STREAM_TTFB_TIMEOUT_MS budget, measured FROM upload completion.
+        // On timeout we cancel the call AND evict just this connection so the
+        // auto-retry gets a fresh one (a sibling session's connection is never
+        // touched — no evictAll). Once headers arrive the watchdog stops and a
+        // flowing SSE stream has NO total-duration limit, as before.
         val ttfbTimedOut = java.util.concurrent.atomic.AtomicBoolean(false)
         val headersArrived = java.util.concurrent.atomic.AtomicBoolean(false)
+        val callStartNanos = System.nanoTime()
         val ttfbWatchdog = launch {
-            delay(STREAM_TTFB_TIMEOUT_MS)
-            if (!headersArrived.get()) {
+            val pollMs = 250L
+            var timedOutPhase: String? = null
+            while (!headersArrived.get()) {
+                val uploadDoneAt = watchState.uploadDoneAtNanos.get()
+                val nowNanos = System.nanoTime()
+                if (uploadDoneAt == 0L) {
+                    // Still uploading (or connecting) — loose upload-phase cap.
+                    val elapsedMs = (nowNanos - callStartNanos) / 1_000_000L
+                    if (elapsedMs >= STREAM_UPLOAD_CAP_MS) { timedOutPhase = "upload"; break }
+                } else {
+                    // Upload finished — tight TTFB budget measured from that point.
+                    val sinceUploadMs = (nowNanos - uploadDoneAt) / 1_000_000L
+                    if (sinceUploadMs >= STREAM_TTFB_TIMEOUT_MS) { timedOutPhase = "ttfb"; break }
+                }
+                delay(pollMs)
+            }
+            if (timedOutPhase != null && !headersArrived.get()) {
                 ttfbTimedOut.set(true)
+                val budgetS = if (timedOutPhase == "ttfb") STREAM_TTFB_TIMEOUT_MS / 1000 else STREAM_UPLOAD_CAP_MS / 1000
                 com.openminis.app.logging.AppLogger.warning(
                     "OpenAIProvider",
-                    "[T-android-stale-conn-retry-hang] no response headers after ${STREAM_TTFB_TIMEOUT_MS / 1000}s — cancelling call (stale pooled connection?)",
+                    "[T-android-ttfb-upload-split] no response headers ($timedOutPhase phase, ${budgetS}s) — cancelling call + evicting connection (stale pooled connection?)",
                 )
                 call.cancel()
+                // Targeted eviction: close ONLY this call's physical connection so
+                // the retry can't reuse it. Never evictAll — concurrent sessions
+                // may hold healthy connections in the shared pool.
+                try {
+                    watchState.connection.get()?.socket()?.close()
+                } catch (_: Throwable) {
+                    // Best-effort; call.cancel() already unblocks execute().
+                }
             }
         }
         val response = try {
@@ -580,7 +758,7 @@ class OpenAIProvider private constructor(
         } catch (e: IOException) {
             if (ttfbTimedOut.get()) {
                 throw LLMError.TransientError(
-                    "no response from server (${STREAM_TTFB_TIMEOUT_MS / 1000}s) — check network/proxy",
+                    "no response from server (${STREAM_TTFB_TIMEOUT_MS / 1000}s TTFB) — check network/proxy",
                 )
             }
             throw e
@@ -688,9 +866,12 @@ class OpenAIProvider private constructor(
         // the model to in-context-learn it (see T249 / T257 history).
         val reasoningAccum = StringBuilder()
         var sawReasoningField = false
-        var hasThinkTags = isDashScope || model.id.contains("qwen")
-        thinkTagBuffer = StringBuilder()
-        insideThinkTag = false
+        // [T-android-think-prefix-stream] One parser per streaming turn. Handles
+        // ALL models: a turn with no `<think>` prefix passes through verbatim, so
+        // there is no vendor allowlist to keep in sync (the old `hasThinkTags`
+        // heuristic only armed extraction for DashScope/qwen ids, which meant
+        // MiniMax M3 relied on the mid-stream `text.contains("<think>")` fallback).
+        val thinkParser = ThinkPrefixStreamParser()
 
         // T321: turn-level SSE counters for empty-response triage.
         var sseEventCount = 0
@@ -699,11 +880,17 @@ class OpenAIProvider private constructor(
         var toolCallEventCount = 0
         var sawFinishReason = false
         var sawUsageBlock = false
+        // [T-android-responses-missing-finished] Hoisted out of the try block so
+        // the stream tail can emit Finished for streams that end WITHOUT a
+        // `data: [DONE]` sentinel — see the emission site after the read loop.
+        var finishReason: String? = null
+        // True once the [DONE] branch has emitted Finished, so the tail below
+        // does not send a second one.
+        var sentFinished = false
 
         try {
             send(LLMStreamChunk.Started)
             var line: String?
-            var finishReason: String? = null
 
             // Branch streaming parser based on API format
             val isResponsesAPI = !usesChatCompletionsAPI
@@ -721,20 +908,27 @@ class OpenAIProvider private constructor(
                     if (it.startsWith(" ")) it.removePrefix(" ") else it
                 }
                 if (payload == "[DONE]") {
-                    // Flush any remaining buffered content from think tag extraction
-                    if (hasThinkTags && thinkTagBuffer.isNotEmpty()) {
-                        val remaining = thinkTagBuffer.toString()
-                        thinkTagBuffer = StringBuilder()
-                        if (insideThinkTag) {
-                            send(LLMStreamChunk.ThinkingDelta(remaining))
-                        } else {
-                            send(LLMStreamChunk.Text(remaining))
+                    // [T-android-think-prefix-stream] Flush whatever the parser
+                    // still holds (a cross-chunk tag tail, or an unterminated
+                    // <think>). Idempotent, so the finish_reason path may also
+                    // call it. Withheld trailing whitespace is dropped by design.
+                    thinkParser.finishTurn().let { fin ->
+                        if (fin.thinking.isNotEmpty()) {
+                            reasoningAccum.append(fin.thinking)
+                            send(LLMStreamChunk.ThinkingDelta(fin.thinking))
                         }
+                        if (fin.visible.isNotEmpty()) send(LLMStreamChunk.Text(fin.visible))
                     }
-                    if (sawReasoningField) {
+                    // [T-android-think-prefix-stream] Persist reasoning captured
+                    // EITHER from the `reasoning_content` field or from a
+                    // `<think>` prefix. Gating solely on sawReasoningField would
+                    // stream think-tag reasoning live and then drop it — the
+                    // thinking bubble would vanish on session reload.
+                    if (sawReasoningField || reasoningAccum.isNotEmpty()) {
                         send(LLMStreamChunk.ReasoningContent(reasoningAccum.toString()))
                     }
                     send(LLMStreamChunk.Finished(finishReason))
+                    sentFinished = true
                     break
                 }
 
@@ -997,24 +1191,23 @@ class OpenAIProvider private constructor(
                             }
                         }
 
-                        // Text content (with <think> tag extraction for Qwen/DashScope)
+                        // [T-android-think-prefix-stream] Text content. Models that
+                        // embed reasoning as a `<think>…</think>` PREFIX of
+                        // `content` (MiniMax M3, some Qwen/DeepSeek deployments)
+                        // are split by ThinkPrefixStreamParser, which replaced the
+                        // old extractThinkTags scanner. That scanner searched for
+                        // `<think>` at ANY offset, so a reply merely explaining the
+                        // tag had its prose swallowed into the thinking bubble, and
+                        // it passed M3's post-`</think>` "\n\n" straight through so
+                        // every such body began with a blank line.
                         delta?.safeOptString("content", "")?.let { text ->
                             if (text.isNotEmpty()) {
-                                if (hasThinkTags) {
-                                    val extracted = extractThinkTags(text)
-                                    if (extracted.thinking.isNotEmpty()) send(LLMStreamChunk.ThinkingDelta(extracted.thinking))
-                                    if (extracted.visible.isNotEmpty()) send(LLMStreamChunk.Text(extracted.visible))
-                                } else {
-                                    // Check if think tags start appearing
-                                    if (text.contains("<think>")) {
-                                        hasThinkTags = true
-                                        val extracted = extractThinkTags(text)
-                                        if (extracted.thinking.isNotEmpty()) send(LLMStreamChunk.ThinkingDelta(extracted.thinking))
-                                        if (extracted.visible.isNotEmpty()) send(LLMStreamChunk.Text(extracted.visible))
-                                    } else {
-                                        send(LLMStreamChunk.Text(text))
-                                    }
+                                val out = thinkParser.feed(text)
+                                if (out.thinking.isNotEmpty()) {
+                                    reasoningAccum.append(out.thinking)
+                                    send(LLMStreamChunk.ThinkingDelta(out.thinking))
                                 }
+                                if (out.visible.isNotEmpty()) send(LLMStreamChunk.Text(out.visible))
                             }
                         }
 
@@ -1072,15 +1265,15 @@ class OpenAIProvider private constructor(
                 }
             }
 
-            // Flush any remaining buffered content
-            if (hasThinkTags && thinkTagBuffer.isNotEmpty()) {
-                val remaining = thinkTagBuffer.toString()
-                thinkTagBuffer = StringBuilder()
-                if (insideThinkTag) {
-                    send(LLMStreamChunk.ThinkingDelta(remaining))
-                } else {
-                    send(LLMStreamChunk.Text(remaining))
+            // [T-android-think-prefix-stream] Stream-end flush, for streams that
+            // end without a `[DONE]` sentinel. finishTurn() is idempotent, so
+            // running after the [DONE] path already flushed is a no-op.
+            thinkParser.finishTurn().let { fin ->
+                if (fin.thinking.isNotEmpty()) {
+                    reasoningAccum.append(fin.thinking)
+                    send(LLMStreamChunk.ThinkingDelta(fin.thinking))
                 }
+                if (fin.visible.isNotEmpty()) send(LLMStreamChunk.Text(fin.visible))
             }
 
             // Emit ToolCallComplete for all accumulated tool calls
@@ -1113,6 +1306,50 @@ class OpenAIProvider private constructor(
             // T321: stream ended — final tally + warning if we never saw a
             // finish_reason. The latter is the strongest signal of a server-
             // side truncation / connection-dropped scenario.
+            // [T-android-responses-missing-finished] Emit the terminal chunk for
+            // streams that end without a `data: [DONE]` sentinel.
+            //
+            // Finished was only ever sent from the [DONE] branch. Chat
+            // Completions always sends that sentinel, but the Responses API
+            // terminates with `response.completed` and many relays simply close
+            // the socket afterwards — no [DONE] ever arrives. The read loop then
+            // exits normally, the channel closes, and no Finished is emitted.
+            //
+            // Downstream, ChatViewModel.runAgentLoop only ever assigns
+            // turnFinishReason from a Finished chunk, so it stayed null and the
+            // turn was reported as "stream closed without a finish reason" —
+            // the red "连接中断，此回复可能不完整" banner on a reply that was in
+            // fact complete. It looked intermittent because it depends on the
+            // relay: those that do append [DONE] worked, the rest did not, which
+            // is why the same model on the same account failed only sometimes,
+            // and why Chat Completions models (deepseek) never showed it.
+            //
+            // Gated on sawFinishReason: reaching here WITHOUT one is a genuine
+            // truncation, and must keep falling through to the warning below so
+            // the interrupted-reply UI still fires for real drops.
+            if (sawFinishReason && !sentFinished) {
+                // Mirror the [DONE] branch's ordering: flush the think-tag
+                // parser and reasoning blob before the terminal chunk, or a
+                // trailing <think> tail would be dropped and reasoning would
+                // vanish on reload.
+                thinkParser.finishTurn().let { fin ->
+                    if (fin.thinking.isNotEmpty()) {
+                        reasoningAccum.append(fin.thinking)
+                        send(LLMStreamChunk.ThinkingDelta(fin.thinking))
+                    }
+                    if (fin.visible.isNotEmpty()) send(LLMStreamChunk.Text(fin.visible))
+                }
+                if (sawReasoningField || reasoningAccum.isNotEmpty()) {
+                    send(LLMStreamChunk.ReasoningContent(reasoningAccum.toString()))
+                }
+                send(LLMStreamChunk.Finished(finishReason))
+                sentFinished = true
+                com.openminis.app.logging.AppLogger.info(
+                    "OpenAIProvider",
+                    "[T321] stream ended without [DONE] — emitted Finished(finishReason=$finishReason) from tail"
+                )
+            }
+
             if (!sawFinishReason) {
                 com.openminis.app.logging.AppLogger.warning(
                     "OpenAIProvider",
@@ -1357,6 +1594,130 @@ class OpenAIProvider private constructor(
     }
 
     /**
+     * [T-android-image-edit-endpoint] Call `/images/edits` for image-to-image
+     * (reference-image) generation. Android previously had no such endpoint, so
+     * minis-model-use returned `image_edit_not_supported` for every
+     * input-image + pure-image-generator call — the gap this closes. Mirrors
+     * iOS `OpenAIProvider.editImage`.
+     *
+     * Request: multipart/form-data with `image` (file), `prompt`, `model`, `n`,
+     * plus optional `size` / `quality`.
+     * Response: identical shape to `/images/generations`
+     * (`{ data: [{ b64_json?, url? }] }`), so [parseImageGenerationsResult] is
+     * reused verbatim.
+     *
+     * Multi-image: the first attachment goes in as `image`, any extras as
+     * `image[]` — same field naming as iOS. Providers that only accept a single
+     * reference image reject the extras themselves; nothing is silently dropped
+     * on our side.
+     */
+    suspend fun editImage(
+        prompt: String,
+        images: List<LLMMessage.ImagePart>,
+        n: Int = 1,
+        size: String? = null,
+        quality: String? = null,
+    ): LLMResponse = withContext(Dispatchers.IO) {
+        if (images.isEmpty()) {
+            throw LLMError.ProviderError("images/edits requires at least one input image")
+        }
+        val token = getToken()
+        // Same override precedence as generateImage: explicit path override →
+        // Azure deployments path → basePath. Only the default differs.
+        val imagePath = imagePathOverride?.takeIf { it.isNotBlank() } ?: "/images/edits"
+        val abs = absoluteEndpointOverride
+        val url = when {
+            abs != null && abs.startsWith("/") -> hostRootURL(abs) ?: "$basePath$imagePath"
+            isAzure -> azureUrl(imagePath) ?: "$basePath$imagePath"
+            else -> "$basePath$imagePath"
+        }
+
+        // b64_json auto-probe, mirroring generateImage: some providers reject
+        // response_format on the edits route, so retry once without it.
+        val userSetResponseFormat = imageExtraBody.containsKey("response_format")
+        var triedWithoutFormat = userSetResponseFormat
+        while (true) {
+            val multipart = MultipartBody.Builder().setType(MultipartBody.FORM)
+            multipart.addFormDataPart("model", model.id)
+            multipart.addFormDataPart("prompt", prompt)
+            multipart.addFormDataPart("n", n.toString())
+            if (size != null) multipart.addFormDataPart("size", size)
+            if (quality != null) multipart.addFormDataPart("quality", quality)
+            if (!triedWithoutFormat) multipart.addFormDataPart("response_format", "b64_json")
+            // Passthrough body fields arrive as JSON scalars; multipart carries
+            // text only, so stringify. `model` is re-pinned below so a stray
+            // override can't misroute the request (same rule as generateImage).
+            for ((k, v) in imageExtraBody) {
+                if (k == "model") continue
+                multipart.addFormDataPart(k, v?.toString() ?: "")
+            }
+
+            for ((idx, img) in images.withIndex()) {
+                val ext = img.mimeType.substringAfterLast('/', "").ifEmpty { "png" }
+                val fieldName = if (idx == 0) "image" else "image[]"
+                multipart.addFormDataPart(
+                    fieldName,
+                    "image$idx.$ext",
+                    img.data.toRequestBody(img.mimeType.toMediaType()),
+                )
+            }
+
+            val builder = Request.Builder()
+                .url(url)
+                .post(multipart.build())
+                .applyKeyAuth(token)
+            for ((key, value) in extraHeaders) {
+                builder.header(key, value)
+            }
+            for ((key, value) in imageExtraHeaders) {
+                builder.header(key, value)
+            }
+            builder.applyUserAgentOverride(customUserAgent)
+            val request = builder.build()
+
+            com.openminis.app.logging.AppLogger.info(
+                "OpenAIProvider",
+                "[ModelUseRoute] → images/edits url=$url model=${model.id} n=$n " +
+                    "size=$size quality=$quality images=${images.size} " +
+                    "respFormat=${if (triedWithoutFormat) "<none>" else "b64_json"}",
+            )
+
+            val response = client.newCall(request).execute()
+            val statusCode = response.code
+            val responseBody = response.body?.string() ?: ""
+            response.close()
+
+            if (!triedWithoutFormat && statusCode == 400 &&
+                (responseBody.lowercase().contains("response_format") || responseBody.contains("b64_json"))
+            ) {
+                com.openminis.app.logging.AppLogger.info(
+                    "OpenAIProvider",
+                    "[ModelUseRoute] images/edits rejected b64_json — retrying without response_format",
+                )
+                triedWithoutFormat = true
+                continue
+            }
+
+            if (statusCode !in 200..299) {
+                com.openminis.app.logging.AppLogger.warning(
+                    "OpenAIProvider",
+                    "[ModelUseRoute] images/edits HTTP $statusCode body=${responseBody.take(300)}",
+                )
+                throw mapHttpError(statusCode, responseBody)
+            }
+
+            val json = try {
+                JSONObject(responseBody)
+            } catch (e: Exception) {
+                throw LLMError.ProviderError("images/edits returned non-JSON body: ${e.message}")
+            }
+            return@withContext parseImageGenerationsResult(json)
+        }
+        @Suppress("UNREACHABLE_CODE")
+        throw LLMError.ProviderError("images/edits: unreachable")
+    }
+
+    /**
      * Parse the `/images/generations` response into an [LLMResponse] carrying
      * the decoded image bytes as [LLMMediaAttachment]s. Supports `b64_json`
      * (inline) and `url` (downloaded) item shapes. Mirrors iOS
@@ -1462,7 +1823,33 @@ class OpenAIProvider private constructor(
         // Provider-specific thinking params. We always call this — some
         // models (e.g. DeepSeek V4) reason by default and need an explicit
         // `disabled` signal when the user toggles thinking off.
-        injectThinkingParams(body, thinkingLevel, maxTokens)
+        //
+        // [T-android-mistral-reasoning-422] …EXCEPT on Mistral, which rejects
+        // the thinking request parameters outright with
+        // `422 extra_forbidden body.reasoning`. Mirrors iOS
+        // OpenAIAgentProvider.swift's `if !provider.isMistral` gate around this
+        // same call (4592ca9b). Until now [isMistral] only suppressed the
+        // message-level echo ([forbidReasoningField], 0839f019 / GH
+        // OpenMinis#87) — the request-parameter half of that fix was never
+        // ported, so an enabled thinking level still put `reasoning_effort` on
+        // the wire to api.mistral.ai.
+        if (!isMistral) {
+            injectThinkingParams(body, thinkingLevel, maxTokens)
+        }
+
+        // [OpenMinis#191] Opt this request into Anthropic prompt caching.
+        // OpenRouter passes the field through to Anthropic but never injects it
+        // for us, so without it Claude requests cache nothing at all.
+        //
+        // Top-level "automatic" form: the breakpoint advances to the last
+        // cacheable block on its own as the conversation grows, which is what an
+        // agent loop wants — the per-block form would need us to hand-manage a
+        // 4-breakpoint budget across a mutating history.
+        //
+        // Gated on host + `anthropic/` prefix, so no other model's body changes.
+        if (needsOpenRouterAnthropicCacheControl) {
+            body.put("cache_control", JSONObject().put("type", "ephemeral"))
+        }
 
         // Tools
         if (tools.isNotEmpty()) {
@@ -1490,7 +1877,17 @@ class OpenAIProvider private constructor(
         // multi-turn history missing reasoning_content once thinking is on.
         val modelAlwaysReasons = model.supportsReasoning == true
         val modelMayReason = model.supportsReasoning ?: true
-        val includeReasoning = (thinkingLevel.isEnabled || modelAlwaysReasons) && modelMayReason
+        // [T-android-mistral-reasoning-422] Mistral forbids reasoning_content on
+        // assistant messages entirely (closed schema → HTTP 422
+        // extra_forbidden), so suppress BOTH the captured echo and the ""
+        // placeholder for that endpoint. This cannot be driven by capability
+        // metadata: MiMo/DeepSeek require the field's PRESENCE on multi-turn
+        // history while Mistral forbids it, and neither advertises
+        // supportsReasoning via /v1/models — opposite requirements on the same
+        // generic openAI provider path. Hence a spec-driven vendor flag.
+        val forbidReasoningField = isMistral
+        val includeReasoning =
+            (thinkingLevel.isEnabled || modelAlwaysReasons) && modelMayReason && !forbidReasoningField
         val echoReasoning = includeReasoning
         // T-mimo-reasoning-echo-34671: Mimo V2.5 returns 400 Param Incorrect on
         // multi-turn tool-call history when any prior assistant turn (especially
@@ -1607,11 +2004,15 @@ class OpenAIProvider private constructor(
                                                     })
                                                 })
                                             } else {
-                                                // T264: target model has no vision modality
-                                                // — emit text placeholder (iOS-parity literal).
+                                                // T264: target model has no vision modality —
+                                                // emit a text placeholder in place of the pixels.
+                                                // [T-android-vision-group / GH#182] Vision-Group
+                                                // read_image hint when seeded (carries the path);
+                                                // else the historical literal.
                                                 contentArray.put(JSONObject().apply {
                                                     put("type", "text")
-                                                    put("text", "[Image attached but this model does not support vision input]")
+                                                    put("text", part.noVisionPlaceholder
+                                                        ?: "[Image attached but this model does not support vision input]")
                                                 })
                                             }
                                         }
@@ -1668,11 +2069,19 @@ class OpenAIProvider private constructor(
                                     put("image_url", imageUrl)
                                 })
                             } else {
-                                // T264: target model has no vision modality —
-                                // emit text placeholder (iOS-parity literal).
+                                // T264: target model has no vision modality — emit
+                                // a text placeholder in place of the pixels.
+                                // [T-android-vision-group / GH#182] When a Vision
+                                // Group is configured, ChatViewModel seeds
+                                // part.noVisionPlaceholder with a read_image call
+                                // hint (carrying the image path) so the model
+                                // routes the image through the group instead of
+                                // being told it can't see it. Null → the historical
+                                // iOS-parity literal (no Vision Group configured).
                                 contentArray.put(JSONObject().apply {
                                     put("type", "text")
-                                    put("text", "[Image attached but this model does not support vision input]")
+                                    put("text", part.noVisionPlaceholder
+                                        ?: "[Image attached but this model does not support vision input]")
                                 })
                             }
                         }
@@ -1943,220 +2352,79 @@ class OpenAIProvider private constructor(
         return if (effort == "xhigh" && (lid.contains("mimo") || lid.contains("agnes"))) "high" else effort
     }
 
+    /**
+     * Inject the provider-specific thinking parameters for one request.
+     *
+     * [T-thinking-rules-phase1] The body of this function used to be an if-return chain
+     * keyed on model-id substrings. That logic now lives in [ThinkingRuleResolver] as a
+     * data-driven rule registry (design §4/§5); this remains as the call-site-compatible
+     * entry point so every caller — and the golden snapshot that pins this exact
+     * behaviour — is unchanged.
+     *
+     * Behaviour is byte-for-byte identical to the pre-refactor chain, enforced by
+     * ThinkingWireGoldenSnapshotTest (119 rows generated against the old code and
+     * committed before the refactor, fdc28e2b).
+     *
+     * PHASE 1 SCOPE: OpenAI-compatible endpoints only. Gemini and Anthropic keep their
+     * own emitters and are not routed through the resolver yet.
+     */
     private fun injectThinkingParams(body: JSONObject, level: ThinkingLevel, maxTokens: Int) {
-        // [T-android-thinking-level-arch] `level` is already clamped to the model
-        // ceiling by LLMProvider.streamMessage/sendMessage — do NOT re-clamp.
-        val lid = model.id.lowercase()
-
-        if (isOpenRouter) {
-            if (!level.isEnabled) return
-            val effort = clampEffortForModel(when (level) {
-                ThinkingLevel.LOW -> "low"
-                ThinkingLevel.MEDIUM -> "medium"
-                ThinkingLevel.HIGH -> "high"
-                ThinkingLevel.XHIGH -> "xhigh"
-                // [T-android-thinking-level-arch] MAX → "max". ULTRA is a
-                // client-side "Max + orchestration" concept, never a valid
-                // server effort — clamp it to "max" on the wire (mirrors iOS
-                // reasoningEffort case .max, .ultra: "max").
-                ThinkingLevel.MAX, ThinkingLevel.ULTRA -> "max"
-                ThinkingLevel.OFF -> return
-            })
-            body.put("reasoning", JSONObject().put("effort", effort))
-            return
-        }
-
-        // DeepSeek V4 — explicit thinking toggle required (mirrors iOS
-        // OpenAIAgentProvider.injectThinkingParams). High/xhigh map to
-        // "max", everything else lands on "high".
-        // [T-unified-reasoning-effort] On Volcengine Ark / Azure, deepseek-v4
-        // is controlled by the platform's uniform `reasoning_effort` field, NOT
-        // the vendor-native `thinking:{}` object — sending the latter leaves
-        // thinking uncontrolled. Skip this branch there and fall through to the
-        // generic reasoning_effort path below (mirrors iOS ba055121).
-        if (lid.contains("deepseek-v4") && !usesUnifiedReasoningEffort) {
-            if (level.isEnabled) {
-                val effort = when (level) {
-                    // [T-android-thinking-level-arch] DeepSeek V4 tops out at
-                    // "max"; every high-and-above tier collapses onto it.
-                    ThinkingLevel.HIGH, ThinkingLevel.XHIGH,
-                    ThinkingLevel.MAX, ThinkingLevel.ULTRA -> "max"
-                    else -> "high"
-                }
-                body.put("thinking", JSONObject().apply {
-                    put("type", "enabled")
-                    put("reasoning_effort", effort)
-                })
-                com.openminis.app.logging.AppLogger.info(
-                    "OpenAIProvider",
-                    "DeepSeek V4 thinking enabled (level=${level.name} → effort=$effort) on $lid"
-                )
-            } else {
-                body.put("thinking", JSONObject().put("type", "disabled"))
-                com.openminis.app.logging.AppLogger.info(
-                    "OpenAIProvider",
-                    "DeepSeek V4 thinking disabled on $lid"
-                )
-            }
-            return
-        }
-
-        // [T-thinking-off-explicit] Thinking OFF on a reasoning-capable model:
-        // send the ALLOWLISTED explicit off tier instead of omitting the field —
-        // omission lets the vendor default kick in (Ark defaults to thinking ON).
-        // Vendors outside the allowlist keep the historical omission. MiMo/Agnes
-        // are exempt as defense in depth: their backends validate
-        // reasoning_effort against a STRICT low/medium/high enum and reject the
-        // whole request on "none"/"minimal" (mirrors iOS ff60c818 + c5efeb1e).
-        if (!level.isEnabled) {
-            val offEffort = explicitOffEffort() ?: return
-            if (lid.contains("mimo") || lid.contains("agnes")) return
-            when {
-                lid.startsWith("o") || lid.startsWith("gpt-5") ->
-                    body.put("reasoning_effort", offEffort)
-                // Qwen/DashScope keep their native enable_thinking mechanism —
-                // never route them through reasoning_effort.
-                lid.contains("qwen") || isDashScope -> return
-                lid.contains("deepseek") || lid.contains("glm") ||
-                    lid.contains("kimi") || lid.contains("minimax") -> {
-                    // Native self-reasoning families: only the unified-effort
-                    // gateways (Ark/Azure) understand an off tier for them.
-                    if (usesUnifiedReasoningEffort) body.put("reasoning_effort", offEffort)
-                }
-                model.supportsReasoning != false ->
-                    body.put("reasoning_effort", offEffort)
-            }
-            return
-        }
-
-        // [T-android-xhigh-effort-clamp] Clamp once here so BOTH the o-series/
-        // gpt-5 branch and the generic reasoning_effort fallback below emit a
-        // backend-accepted value for MiMo/Agnes (xhigh → high).
-        val effortStr = clampEffortForModel(when (level) {
-            ThinkingLevel.LOW -> "low"
-            ThinkingLevel.MEDIUM -> "medium"
-            ThinkingLevel.HIGH -> "high"
-            ThinkingLevel.XHIGH -> "xhigh"
-            // [T-android-thinking-level-arch] MAX → "max"; ULTRA also → "max"
-            // (ultra is client-side only, never a valid server effort).
-            ThinkingLevel.MAX, ThinkingLevel.ULTRA -> "max"
-            ThinkingLevel.OFF -> return
-        })
-
-        when {
-            lid.startsWith("o") || lid.startsWith("gpt-5") -> {
-                body.put("reasoning_effort", effortStr)
-            }
-            lid.contains("qwen") || isDashScope -> {
-                var budget = when (level) {
-                    ThinkingLevel.LOW -> 4096
-                    ThinkingLevel.MEDIUM -> 16384
-                    ThinkingLevel.HIGH -> 32768
-                    ThinkingLevel.XHIGH -> 65536
-                    // [T-android-thinking-level-arch] Budget mode is "higher is
-                    // better, capped to maxTokens" — MAX/ULTRA reuse the ceiling.
-                    ThinkingLevel.MAX -> 65536
-                    ThinkingLevel.ULTRA -> 65536
-                    ThinkingLevel.OFF -> 0
-                }
-                // [T-android-qwen3-thinking-budget-max-tokens-constraint] (issue #35, #641)
-                // DashScope/Bailian enforces a STRICT `thinking_budget <
-                // max_completion_tokens` and 400s otherwise — equal values are
-                // rejected too ("[16384] must be greater than [16384]"). Our
-                // budget ladder is independent of maxTokens, so xhigh=65536 vs a
-                // 64000 max, or medium=16384 vs a 16384 max, both violate it.
-                // Clamp strictly below max_completion_tokens (== maxTokens) with a
-                // margin for the answer after thinking. The margin and ceiling are
-                // computed relative to maxTokens (which varies per qwen model —
-                // 64000, 16384, …), never a hardcoded threshold, and the ceiling
-                // is forced to at least maxTokens-1 so a tiny maxTokens can't leave
-                // the budget >= max. maxTokens<=0 means "not provided" (e.g. the
-                // title-gen reference) — skip the clamp then. Mirrors iOS #640.
-                if (budget > 0 && maxTokens > 0) {
-                    val margin = maxOf(2048, maxTokens / 8)
-                    // Stay strictly below max; never let the ceiling collapse to
-                    // <=0 when maxTokens is small — fall back to maxTokens-1.
-                    val ceiling = maxOf(1, minOf(maxTokens - margin, maxTokens - 1))
-                    if (budget >= ceiling) {
-                        budget = ceiling
-                    }
-                }
-                body.put("enable_thinking", true)
-                if (budget > 0) body.put("thinking_budget", budget)
-                body.put("extra_body", JSONObject().apply {
-                    put("enable_thinking", true)
-                    if (budget > 0) put("thinking_budget", budget)
-                })
-            }
-            // DeepSeek, GLM, Kimi, MiniMax — no params needed, model always reasons.
-            // [T-unified-reasoning-effort] EXCEPTION: on Volcengine Ark / Azure
-            // these families are re-hosted behind a uniform OpenAI surface that
-            // controls thinking ONLY via `reasoning_effort` — omitting it there
-            // means the gateway applies its own default and the user's level is
-            // ignored. Fall through to the generic reasoning_effort branch below
-            // in that case; keep the native skip for direct vendor endpoints.
-            (lid.contains("deepseek") || lid.contains("glm") ||
-                lid.contains("kimi") || lid.contains("minimax")) &&
-                !usesUnifiedReasoningEffort -> {}
-            // [T-reasoning-effort-fallback] Generic fallback for OpenAI-compatible
-            // third-party reasoning models whose IDs match none of the branches
-            // above (e.g. Volcano/Ark "seed" models): inject the standard Chat
-            // Completions `reasoning_effort` field (mirrors iOS
-            // OpenAIAgentProvider.injectThinkingParams). Tri-state
-            // supportsReasoning: only a hard `false` blocks injection — null
-            // (unknown) lets the user enable thinking in the UI, so the request
-            // must honor that here too. OFF already returned via effortStr above.
-            model.supportsReasoning != false -> {
-                body.put("reasoning_effort", effortStr)
-            }
-        }
+        // [T-android-thinking-level-arch] `level` is already clamped to the model ceiling
+        // by LLMProvider.streamMessage/sendMessage — do NOT re-clamp here.
+        val ctx = ThinkingResolveContext(
+            modelId = model.id,
+            instanceId = thinkingRuleInstanceId,
+            supportsReasoning = model.supportsReasoning,
+            declaredEffortValues = model.reasoningEffortValues,
+            // [OpenMinis#163] null (catalog silent) must read as false here —
+            // only an affirmative declaration may suppress the field.
+            declaresNoEffortTiers = model.declaresNoEffortTiers == true,
+            level = level,
+            maxTokens = maxTokens,
+            isOpenRouter = isOpenRouter,
+            usesUnifiedReasoningEffort = usesUnifiedReasoningEffort,
+            isMistral = isMistral,
+            isDashScope = isDashScope,
+            isXAI = isXAI,
+            offEffort = explicitOffEffort(),
+        )
+        val trace = ThinkingRuleResolver.apply(body, ctx)
+        // [T-thinking-rules-observability] Design §8 / GH OpenMinis#100: which rule
+        // actually won must be inspectable, or a rule layer just replaces one hidden
+        // variable with a more complicated one. minis-config exposure is Phase 2.
+        com.openminis.app.logging.AppLogger.info(
+            "Thinking",
+            "[resolve] model=${model.id} level=${level.name} ${trace.logLine}",
+        )
     }
 
     /**
-     * Extract `<think>...</think>` tags from content text (used by Qwen, DeepSeek, etc.).
-     * Returns thinking content and visible text separately.
+     * [T-reasoning-effort-data-driven] Snap an effort string onto the tiers the
+     * model actually declares. Mirrors iOS
+     * `OpenAIAgentProvider.clampEffort(_:to:)` — keep both in sync.
+     *
+     * Necessary because the catalog's effort sets are far from uniform
+     * (["low","medium","high"], ["high","max"], ["high","xhigh"], …). Sending an
+     * undeclared tier is the same class of failure the MiMo/Agnes xhigh clamp
+     * already guards against ("Invalid reasoning_effort: xhigh" 400s).
+     *
+     * Nearest-tier semantics: step down to the closest declared tier at or below
+     * the request; only if none exists step up to the lowest declared one.
+     * Downgrading is preferred because overshooting costs money and latency the
+     * user did not ask for. Null/empty values pass the string through unchanged.
      */
-    private data class ThinkExtractResult(val visible: String, val thinking: String)
-
-    private var thinkTagBuffer = StringBuilder()
-    private var insideThinkTag = false
-
-    private fun extractThinkTags(text: String): ThinkExtractResult {
-        val visibleBuilder = StringBuilder()
-        val thinkingBuilder = StringBuilder()
-        thinkTagBuffer.append(text)
-
-        val buf = thinkTagBuffer.toString()
-        var i = 0
-        while (i < buf.length) {
-            if (!insideThinkTag) {
-                val openIdx = buf.indexOf("<think>", i)
-                if (openIdx == -1) {
-                    // Keep last 7 chars buffered for potential tag boundary
-                    val safe = if (buf.length - i > 7) buf.length - 7 else i
-                    visibleBuilder.append(buf, i, safe)
-                    thinkTagBuffer = StringBuilder(buf.substring(safe))
-                    return ThinkExtractResult(visibleBuilder.toString(), thinkingBuilder.toString())
-                } else {
-                    visibleBuilder.append(buf, i, openIdx)
-                    insideThinkTag = true
-                    i = openIdx + 7 // skip "<think>"
-                }
-            } else {
-                val closeIdx = buf.indexOf("</think>", i)
-                if (closeIdx == -1) {
-                    thinkingBuilder.append(buf, i, buf.length)
-                    thinkTagBuffer = StringBuilder()
-                    return ThinkExtractResult(visibleBuilder.toString(), thinkingBuilder.toString())
-                } else {
-                    thinkingBuilder.append(buf, i, closeIdx)
-                    insideThinkTag = false
-                    i = closeIdx + 8 // skip "</think>"
-                }
-            }
-        }
-        thinkTagBuffer = StringBuilder()
-        return ThinkExtractResult(visibleBuilder.toString(), thinkingBuilder.toString())
+    internal fun clampEffort(effort: String, values: List<String>?): String {
+        if (values.isNullOrEmpty()) return effort
+        if (values.contains(effort)) return effort
+        val ladder = listOf("none", "minimal", "low", "medium", "high", "xhigh", "max")
+        val want = ladder.indexOf(effort)
+        if (want < 0) return effort
+        val declared = values.mapNotNull { v ->
+            val i = ladder.indexOf(v)
+            if (i >= 0) i to v else null
+        }.sortedBy { it.first }
+        if (declared.isEmpty()) return effort
+        return declared.lastOrNull { it.first <= want }?.second ?: declared.first().second
     }
 
     // MARK: - Codex image generation (gpt-image-2)
@@ -2359,11 +2627,62 @@ class OpenAIProvider private constructor(
      * Build request body for the Responses API format (used by Codex OAuth).
      * Uses `input` instead of `messages`, `instructions` instead of system prompt.
      */
+    /**
+     * [T-android-responses-toplevel-images] Encode one image as a Responses-API
+     * content block, or as the no-vision text placeholder when the target model
+     * cannot see pixels.
+     *
+     * Extracted so the two Responses call sites (structured `contentParts`
+     * messages and legacy top-level `imageParts` messages) cannot drift apart —
+     * the drift is exactly what produced the silent drop this fixes. Note the
+     * Responses shape differs from Chat Completions: `image_url` is a bare
+     * STRING here, not a `{"url": …}` object.
+     */
+    private fun responsesImageBlock(
+        data: ByteArray,
+        mimeType: String,
+        supportsImages: Boolean,
+        noVisionPlaceholder: String?,
+    ): JSONObject = if (supportsImages) {
+        // T-imgsize: provider-boundary backstop.
+        val safeBytes = com.openminis.app.provider.ImageBudget.compressUnderBudget(data)
+        val safeMime = if (safeBytes === data) mimeType else "image/jpeg"
+        val b64 = Base64.encodeToString(safeBytes, Base64.NO_WRAP)
+        JSONObject().apply {
+            put("type", "input_image")
+            put("image_url", "data:$safeMime;base64,$b64")
+        }
+    } else {
+        JSONObject().apply {
+            put("type", "input_text")
+            put(
+                "text",
+                noVisionPlaceholder
+                    ?: "[Image attached but this model does not support vision input]",
+            )
+        }
+    }
+
     private fun buildResponsesAPIBody(
         messages: List<LLMMessage>,
         systemPrompt: String?,
         maxTokens: Int,
         stream: Boolean,
+        /**
+         * [T-android-responses-toplevel-images] Images passed as the top-level
+         * argument rather than on `msg.contentParts`, attached to the LAST user
+         * message — the same contract [buildRequestBody] implements.
+         *
+         * This parameter did not exist, and that was a silent data loss: every
+         * caller that supplies images this way (minis-model-use's `image_url`
+         * blocks, VisionGroupResolver.describeOnce, any direct
+         * sendMessage(imageParts=…)) had its pixels dropped on the floor the
+         * moment the provider was on the Responses path, with no error. The
+         * user-visible symptom was a vision model replying "no image was
+         * provided" — reported against a Vision Group whose describing model
+         * ran on Responses.
+         */
+        imageParts: List<LLMMessage.ImagePart> = emptyList(),
         tools: List<AgentToolDefinition> = emptyList(),
         thinkingLevel: ThinkingLevel = ThinkingLevel.OFF,
     ): JSONObject {
@@ -2432,6 +2751,16 @@ class OpenAIProvider private constructor(
             mapThinkingLevelToResponsesEffort(thinkingLevel)?.let { clampEffortForModel(it) }
         } else null
         when {
+            // [T-android-mistral-reasoning-422] Mistral rejects the reasoning
+            // request parameter outright (`422 extra_forbidden body.reasoning`,
+            // GH OpenMinis#87). The gate added alongside injectThinkingParams
+            // covers only the Chat Completions path; this builder is a SECOND,
+            // independent injection site that a Mistral instance with
+            // useResponsesAPI enabled reaches ungated. For Mistral the answer to
+            // "should any thinking field be sent" is NEVER, on every request
+            // path — so suppress the whole block. Must stay FIRST so it wins over
+            // the isOAuth fallback below.
+            isMistral -> {}
             effort != null -> body.put(
                 "reasoning",
                 JSONObject().put("effort", effort).put("summary", "auto"),
@@ -2502,7 +2831,12 @@ class OpenAIProvider private constructor(
         // structured content parts become typed input items — function_call /
         // function_call_output — instead of free-text role/content pairs.
         val input = JSONArray()
-        for (msg in messages) {
+        // [T-android-responses-toplevel-images] Same contract as
+        // buildRequestBody: top-level images ride on the LAST user message.
+        val lastUserIdx = messages.indexOfLast { it.role == LLMMessage.Role.USER }
+        for ((msgIndex, msg) in messages.withIndex()) {
+            val attachTopLevelImages =
+                msgIndex == lastUserIdx && msg.role == LLMMessage.Role.USER && imageParts.isNotEmpty()
             if (msg.contentParts.isNotEmpty()) {
                 when (msg.role) {
                     LLMMessage.Role.ASSISTANT -> {
@@ -2582,18 +2916,68 @@ class OpenAIProvider private constructor(
                                             })
                                         } else {
                                             // T264: target model has no vision modality —
-                                            // emit text placeholder (iOS-parity literal).
-                                            // Note: Responses API uses "input_text" type
-                                            // (vs "text" on Chat Completions, see Text
-                                            // branch above at line 1038).
+                                            // emit a text placeholder. [T-android-vision-group
+                                            // / GH#182] Vision-Group read_image hint when
+                                            // seeded (carries the path); else the historical
+                                            // literal. Note: Responses API uses "input_text"
+                                            // type (vs "text" on Chat Completions).
                                             contentArray.put(JSONObject().apply {
                                                 put("type", "input_text")
-                                                put("text", "[Image attached but this model does not support vision input]")
+                                                put("text", part.noVisionPlaceholder
+                                                    ?: "[Image attached but this model does not support vision input]")
                                             })
                                         }
                                     }
-                                    else -> Unit
+                                    // [T-android-responses-toplevel-images]
+                                    // ToolUse/ToolResult are handled above for
+                                    // this role and legitimately don't belong
+                                    // in the content array. Anything else is a
+                                    // part type this converter has never been
+                                    // taught to encode — the failure mode being
+                                    // fixed here (content dropped with no error
+                                    // and no log) is exactly what that produces,
+                                    // so make it visible rather than silent.
+                                    is AgentContentPart.ToolUse,
+                                    is AgentContentPart.ToolResult -> Unit
+                                    else -> com.openminis.app.logging.AppLogger.error(
+                                        "OpenAIProvider",
+                                        "[responses] DROPPED unconvertible content part " +
+                                            "${part.javaClass.simpleName} on role=user — it will NOT " +
+                                            "reach the model. Add an encoding branch for it.",
+                                    )
                                 }
+                            }
+                            // [T-android-responses-toplevel-images] Top-level
+                            // images belong on this same turn.
+                            if (attachTopLevelImages) {
+                                for (p in imageParts) {
+                                    contentArray.put(
+                                        responsesImageBlock(p.data, p.mimeType, supportsImages, p.noVisionPlaceholder),
+                                    )
+                                }
+                            }
+                            input.put(JSONObject().apply {
+                                put("role", "user")
+                                put("content", contentArray)
+                            })
+                        } else if (attachTopLevelImages) {
+                            // [T-android-responses-toplevel-images] Structured
+                            // message with no ImageData parts, but images were
+                            // supplied top-level (minis-model-use / Vision
+                            // Group). Previously this fell into the text-only
+                            // branch below and the pixels vanished.
+                            val contentArray = JSONArray()
+                            val text = textParts.joinToString("") { it.text }
+                            if (text.isNotEmpty()) {
+                                contentArray.put(JSONObject().apply {
+                                    put("type", "input_text")
+                                    put("text", text)
+                                })
+                            }
+                            for (p in imageParts) {
+                                contentArray.put(
+                                    responsesImageBlock(p.data, p.mimeType, supportsImages, p.noVisionPlaceholder),
+                                )
                             }
                             input.put(JSONObject().apply {
                                 put("role", "user")
@@ -2634,6 +3018,40 @@ class OpenAIProvider private constructor(
                         put("type", "input_text")
                         put("text", msg.content)
                     })
+                }
+                // [T-android-responses-toplevel-images] An audio-carrying turn
+                // can also carry images.
+                if (attachTopLevelImages) {
+                    for (p in imageParts) {
+                        contentArray.put(
+                            responsesImageBlock(p.data, p.mimeType, supportsImages, p.noVisionPlaceholder),
+                        )
+                    }
+                }
+                input.put(JSONObject().apply {
+                    put("role", msg.role.value)
+                    put("content", contentArray)
+                })
+            } else if (attachTopLevelImages) {
+                // [T-android-responses-toplevel-images] THE reported bug's path.
+                // A plain (contentParts-free) user message plus top-level
+                // images — what VisionGroupResolver.describeOnce and
+                // minis-model-use's image_url blocks produce. This builder had
+                // no imageParts parameter at all, so the message was emitted as
+                // a bare text string and the pixels never reached the wire. The
+                // vision model then answered "no image was provided", with no
+                // error anywhere to explain it.
+                val contentArray = JSONArray()
+                if (msg.content.isNotEmpty()) {
+                    contentArray.put(JSONObject().apply {
+                        put("type", "input_text")
+                        put("text", msg.content)
+                    })
+                }
+                for (p in imageParts) {
+                    contentArray.put(
+                        responsesImageBlock(p.data, p.mimeType, supportsImages, p.noVisionPlaceholder),
+                    )
                 }
                 input.put(JSONObject().apply {
                     put("role", msg.role.value)
@@ -2820,6 +3238,29 @@ class OpenAIProvider private constructor(
 }
 
 /**
+ * [T-android-ttfb-upload-split / #188] Per-call state the streaming TTFB
+ * watchdog shares with [OkHttpNetTraceListener]. Attached to the streaming
+ * request as an OkHttp request tag; the listener fills it in from its
+ * event callbacks (which run on OkHttp's I/O thread during `execute()`),
+ * and the watchdog coroutine reads it.
+ *
+ * Why: the watchdog must NOT count request-body UPLOAD time against the
+ * 30s time-to-first-byte budget (a 1.3MB body over a slow proxy took 24-27s,
+ * leaving almost nothing for the server, so a healthy server looked like a
+ * dead connection — #188). The listener signals [uploadDoneAtNanos] on
+ * `requestBodyEnd`; only then does the real TTFB clock start. [connection]
+ * is captured so the watchdog can evict THIS ONE physical connection on
+ * timeout (never the whole pool — a sibling session's healthy connection
+ * must survive).
+ */
+private class CallWatchState {
+    /** Set by requestBodyEnd — the moment upload finished (monotonic nanos). */
+    val uploadDoneAtNanos = java.util.concurrent.atomic.AtomicLong(0L)
+    /** Physical connection serving this call, captured at connectionAcquired. */
+    val connection = java.util.concurrent.atomic.AtomicReference<okhttp3.Connection?>(null)
+}
+
+/**
  * [T-android-openai-codex-timeout]
  * Network-leg trace listener for OpenAIProvider's OkHttpClient. Logs every
  * OkHttp call lifecycle event with timestamps so a future SocketTimeout
@@ -2940,6 +3381,9 @@ private class OkHttpNetTraceListener : EventListener() {
 
     override fun connectionAcquired(call: Call, connection: Connection) {
         val conn = System.identityHashCode(connection).toString(16)
+        // [T-android-ttfb-upload-split / #188] Capture the physical connection so
+        // the TTFB watchdog can evict THIS ONE on timeout (targeted, never the pool).
+        call.request().tag(CallWatchState::class.java)?.connection?.set(connection)
         com.openminis.app.logging.AppLogger.info(
             tag,
             "[${callTag(call)}] +${ms()}ms connectionAcquired conn#$conn route=${connection.route()} proto=${connection.protocol()}"
@@ -2976,6 +3420,9 @@ private class OkHttpNetTraceListener : EventListener() {
     }
 
     override fun requestBodyEnd(call: Call, byteCount: Long) {
+        // [T-android-ttfb-upload-split / #188] Upload finished — from here the
+        // real time-to-first-byte clock starts (the watchdog polls this).
+        call.request().tag(CallWatchState::class.java)?.uploadDoneAtNanos?.set(System.nanoTime())
         com.openminis.app.logging.AppLogger.info(
             tag,
             "[${callTag(call)}] +${ms()}ms requestBodyEnd bytes=$byteCount"

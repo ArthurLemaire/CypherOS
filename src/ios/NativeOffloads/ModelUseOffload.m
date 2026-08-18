@@ -46,8 +46,10 @@ static NSString *const HELP_TEXT =
      "  --prompt-file <path>           Read user-message text from file (plain text, not JSON).\n"
      "  --output <path>                Path to write output (default: stdout)\n"
      "  --system <text>                Custom system prompt. When omitted a short default is used\n"
-     "                                 that identifies the caller as Minis and states the task is a\n"
-     "                                 sub-call from the in-app agent loop.\n"
+     "                                 describing the calling environment (a sub-call from the\n"
+     "                                 in-app agent loop). It explicitly does NOT assign the model\n"
+     "                                 an identity, and is echoed back as `injected_system_prompt`\n"
+     "                                 in the result. Pass --system '' to send none.\n"
      "  --system-file <path>           Read system prompt from file\n"
      "  --max-tokens <n>               Max output tokens (default: 4096)\n"
      "  --temperature <n>              Temperature 0.0-2.0\n"
@@ -165,6 +167,31 @@ static NSString *const HELP_TEXT =
      "  echo 'What is 2+2?' | minis-model-use run --model gpt-4o\n"
      "  minis-model-use run --model gemini-2.5-flash --system 'You are a poet' --input msgs.json --output /var/minis/workspace/out.json\n";
 
+// ── Path helpers ──
+
+// Resolve a caller-supplied *input* file path to a readable host path.
+//
+// minis-model-use runs on the host, not inside the iSH guest, so guest-absolute
+// paths have to be mapped into the fakefs data root. Guest paths under the
+// bind-mounted prefixes (/var/minis/, /home/, /tmp/) are tried there first;
+// every path is then also tried literally, so real host paths (and guest paths
+// whose bind mount is backed outside the data root) still resolve.
+//
+// Returns nil when neither candidate exists — callers report "not found"
+// against the *original* argument so the message shows the full path the user
+// typed rather than a Cocoa error naming only the last path component.
+static NSString *_Nullable noff_resolve_existing_input_path(NSString *path) {
+    if (path.length == 0) return nil;
+    NSFileManager *fm = [NSFileManager defaultManager];
+
+    if ([path hasPrefix:@"/var/minis/"] || [path hasPrefix:@"/home/"] || [path hasPrefix:@"/tmp/"]) {
+        NSString *mapped = noff_resolve_host_path(path);
+        if (mapped && [fm fileExistsAtPath:mapped]) return mapped;
+    }
+    if ([fm fileExistsAtPath:path]) return path;
+    return nil;
+}
+
 // ── Subcommands ──
 
 static int cmd_list(int argc, char **argv, int stdout_fd, BOOL compact, BOOL quiet) {
@@ -245,21 +272,34 @@ static int cmd_run(int argc, char **argv, int stdin_fd, int stdout_fd, int stder
         temperature = [temperatureStr doubleValue];
     }
 
-    // System prompt from file
+    // System prompt from file.
+    // [GH#108] This branch used to map the path through noff_resolve_host_path()
+    // unconditionally and read it without an existence check, so a path that
+    // lives outside the fakefs data root (or any host path) always missed, and
+    // the failure surfaced as Cocoa's "couldn't be opened because it doesn't
+    // exist" naming only the last path component ("s.txt") — which read like the
+    // directory had been stripped. Use the same resolve-then-verify contract as
+    // --prompt-file / --input, and report the full path the caller passed.
     if (systemFile && !systemPrompt) {
-        NSString *hostPath = noff_resolve_host_path(systemFile);
-        if (hostPath) {
-            NSError *readErr = nil;
-            systemPrompt = [NSString stringWithContentsOfFile:hostPath
-                                                    encoding:NSUTF8StringEncoding
-                                                       error:&readErr];
-            if (readErr) {
-                NSDictionary *err = noff_json_error(TOOL_NAME, @"run",
-                                                     NOFF_ERR_INVALID_ARGS,
-                                                     [NSString stringWithFormat:@"Failed to read system file: %@", readErr.localizedDescription]);
-                noff_emit_json(stdout_fd, err, compact, quiet);
-                return NOFF_EXIT_ERROR;
-            }
+        NSString *hostPath = noff_resolve_existing_input_path(systemFile);
+        if (!hostPath) {
+            NSDictionary *err = noff_json_error(TOOL_NAME, @"run",
+                                                 NOFF_ERR_INVALID_ARGS,
+                                                 [NSString stringWithFormat:@"System file not found: %@", systemFile]);
+            noff_emit_json(stdout_fd, err, compact, quiet);
+            return NOFF_EXIT_ERROR;
+        }
+        NSError *readErr = nil;
+        systemPrompt = [NSString stringWithContentsOfFile:hostPath
+                                                encoding:NSUTF8StringEncoding
+                                                   error:&readErr];
+        if (readErr || !systemPrompt) {
+            NSDictionary *err = noff_json_error(TOOL_NAME, @"run",
+                                                 NOFF_ERR_INVALID_ARGS,
+                                                 [NSString stringWithFormat:@"Failed to read system file %@: %@",
+                                                     systemFile, readErr.localizedDescription ?: @"unknown"]);
+            noff_emit_json(stdout_fd, err, compact, quiet);
+            return NOFF_EXIT_ERROR;
         }
     }
 
@@ -268,13 +308,8 @@ static int cmd_run(int argc, char **argv, int stdin_fd, int stdout_fd, int stder
     // mutually exclusive with --input; if both are supplied, --input wins.
     NSString *resolvedPromptText = promptText;
     if (!resolvedPromptText && promptFile) {
-        NSString *hostPath = nil;
-        if ([promptFile hasPrefix:@"/var/minis/"] || [promptFile hasPrefix:@"/home/"] || [promptFile hasPrefix:@"/tmp/"]) {
-            hostPath = noff_resolve_host_path(promptFile);
-        } else {
-            hostPath = promptFile;
-        }
-        if (!hostPath || ![[NSFileManager defaultManager] fileExistsAtPath:hostPath]) {
+        NSString *hostPath = noff_resolve_existing_input_path(promptFile);
+        if (!hostPath) {
             NSDictionary *err = noff_json_error(TOOL_NAME, @"run",
                                                  NOFF_ERR_INVALID_ARGS,
                                                  [NSString stringWithFormat:@"Prompt file not found: %@", promptFile]);
@@ -295,13 +330,8 @@ static int cmd_run(int argc, char **argv, int stdin_fd, int stdout_fd, int stder
     // Read input messages
     NSString *inputJSON = nil;
     if (inputPath) {
-        NSString *hostPath = nil;
-        if ([inputPath hasPrefix:@"/var/minis/"] || [inputPath hasPrefix:@"/home/"] || [inputPath hasPrefix:@"/tmp/"]) {
-            hostPath = noff_resolve_host_path(inputPath);
-        } else {
-            hostPath = inputPath;
-        }
-        if (!hostPath || ![[NSFileManager defaultManager] fileExistsAtPath:hostPath]) {
+        NSString *hostPath = noff_resolve_existing_input_path(inputPath);
+        if (!hostPath) {
             NSDictionary *err = noff_json_error(TOOL_NAME, @"run",
                                                  NOFF_ERR_INVALID_ARGS,
                                                  [NSString stringWithFormat:@"Input file not found: %@", inputPath]);
@@ -350,17 +380,32 @@ static int cmd_run(int argc, char **argv, int stdin_fd, int stdout_fd, int stder
     }
 
     // If caller didn't pass --system / --system-file, inject a short default
-    // identifying the caller as Minis. Some Responses-API providers (Codex
-    // proxies, etc.) reject requests without an instructions block, and even
-    // when accepted a generic identity helps the sub-model orient itself when
-    // invoked from the parent agent loop. Plain explicit empty `--system ""`
-    // is preserved (no default).
+    // describing the CALLING CONTEXT. Some Responses-API providers (Codex
+    // proxies, etc.) reject requests without an instructions block, so the
+    // block cannot simply be dropped. Plain explicit empty `--system ""` is
+    // preserved (no default).
+    //
+    // [T-modeluse-identity-pollution] This text used to open with
+    // "You are Minis, an on-device AI assistant running on iOS." — a bare
+    // identity assertion. Sub-models took it literally: they answered "who are
+    // you" as Minis and invented a matching vendor (reproduced across three
+    // providers, OpenMinis#103). The damage is not limited to identity
+    // questions — anything downstream of the model's self-knowledge
+    // (capability boundaries, refusal style, knowledge-cutoff claims) was
+    // silently biased, and it made model identity useless as a routing sanity
+    // check when debugging provider config.
+    //
+    // The fix is the reporter's option 2: describe the environment and state
+    // explicitly that it is NOT the model's identity. Option 1 (send nothing)
+    // would regress the providers that demand a non-empty instructions block.
+    BOOL systemPromptWasInjected = NO;
     if (!systemPrompt) {
-        systemPrompt = @"You are Minis, an on-device AI assistant running on iOS. "
-                       @"You are being invoked as a sub-call from the parent agent loop "
-                       @"to handle a focused task — answer the user's request directly and "
-                       @"concisely, without restating the request or wrapping your answer in "
-                       @"extra meta-commentary.";
+        systemPrompt = @"You are being invoked as a sub-agent inside an app called Minis. "
+                       @"This is the calling environment, not your identity — keep your own "
+                       @"model identity unchanged. You are handling a focused task delegated "
+                       @"by the parent agent loop: answer the request directly and concisely, "
+                       @"without restating it or adding extra meta-commentary.";
+        systemPromptWasInjected = YES;
     }
 
     // If --endpoint was passed, merge it into the input JSON's top-level so the
@@ -444,7 +489,29 @@ static int cmd_run(int argc, char **argv, int stdin_fd, int stdout_fd, int stder
     }
 
     // Wait with 5 minute timeout for model response
-    dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_SEC));
+    long waitErr = dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_SEC));
+
+    // [T-ish-offload-hang-audit] A timeout must be reported as a failure.
+    //
+    // The wait result used to be discarded, and the only error path keyed on
+    // `errorMsg` — which the completion block sets. On a timeout that block has
+    // not run, so `errorMsg` AND `result` are both nil, and control fell through
+    // to the success path below, where `result ?: @{}` emitted an empty object
+    // and the handler returned NOFF_EXIT_SUCCESS. A caller waiting five minutes
+    // got `$? == 0` and `{}` — a failure wearing a success costume, the same
+    // shape as the Vision "Image loaded successfully" bug.
+    //
+    // Checking the wait result is what distinguishes "the model returned
+    // nothing" from "the model never answered"; `result == nil` alone cannot,
+    // because a bridge that completes with no data looks identical. Mirrors
+    // BrowserUseOffload.m's `waitErr != 0 || resultDict == nil` check.
+    if (waitErr != 0) {
+        NSDictionary *err = noff_json_error(TOOL_NAME, @"run",
+                                             NOFF_ERR_INTERNAL_ERROR,
+                                             @"model request timed out after 300s");
+        noff_emit_json(stdout_fd, err, compact, quiet);
+        return NOFF_EXIT_ERROR;
+    }
 
     if (errorMsg) {
         NSDictionary *err = noff_json_error(TOOL_NAME, @"run",
@@ -454,7 +521,19 @@ static int cmd_run(int argc, char **argv, int stdin_fd, int stdout_fd, int stder
     }
 
     if (!stream) {
-        noff_emit_json(stdout_fd, noff_json_envelope(TOOL_NAME, @"run", result ?: @{}), compact, quiet);
+        // [T-modeluse-identity-pollution] Echo the injected default so the
+        // caller can SEE what was prepended (OpenMinis#103 option 3). The
+        // injection was previously invisible: a caller comparing this model's
+        // behaviour against a direct API call had no way to know an extra
+        // instructions block was in play. Only echoed when we supplied it —
+        // a caller-provided --system is already known to the caller.
+        NSDictionary *payload = result ?: @{};
+        if (systemPromptWasInjected) {
+            NSMutableDictionary *withEcho = [payload mutableCopy];
+            withEcho[@"injected_system_prompt"] = systemPrompt;
+            payload = withEcho;
+        }
+        noff_emit_json(stdout_fd, noff_json_envelope(TOOL_NAME, @"run", payload), compact, quiet);
     }
     // [T-model-use-passthrough-warnings] Passthrough calls carry the provider's
     // HTTP status in the result. A non-2xx status exits non-zero (raw body is

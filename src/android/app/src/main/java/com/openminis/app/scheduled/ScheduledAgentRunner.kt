@@ -43,13 +43,22 @@ object ScheduledAgentRunner {
     /**
      * Fire a scheduled task.
      *
-     * @param waitForCompletion when true (the alarm-fired path), suspend until
-     *   the agent loop finishes, then mark-fired + post the completion
-     *   notification before returning. When false (the editor's "Run now"
-     *   button), return as soon as the session is resolved and the prompt is
-     *   dispatched — the agent keeps running in the background and the
-     *   completion (mark-fired + notification) is finished off an app-scoped
-     *   coroutine. Mirrors iOS SendPromptIntent's waitForResult flag.
+     * @param waitForCompletion when true, suspend until the agent loop
+     *   finishes, then mark-fired + post the completion notification before
+     *   returning. When false, return as soon as the session is resolved and
+     *   the prompt is dispatched — the agent keeps running in the background
+     *   and the completion (mark-fired + notification) is finished off an
+     *   app-scoped coroutine. Mirrors iOS SendPromptIntent's waitForResult
+     *   flag.
+     *
+     *   [GH#197] NEVER pass true from a BroadcastReceiver. Waiting here can
+     *   take up to [RUN_TIMEOUT_MS] (10 min) and the wait lands on the main
+     *   thread (HeadlessChatRunner.prompt/retry are
+     *   `withContext(Dispatchers.Main)`), so a receiver that waits blows its
+     *   ~10s broadcast budget and gets the whole process ANR-killed, along
+     *   with every PRoot sandbox child. The alarm path passing the default
+     *   `true` was exactly that bug. Waiting is only safe off a broadcast —
+     *   e.g. the minis-scheduled CLI, which runs in its own offload thread.
      * @return the session id once the action has been DISPATCHED (resolved +
      *   prompt sent), or null when the runner couldn't even start (no provider,
      *   target chat gone, MinisApp not initialized).
@@ -59,8 +68,32 @@ object ScheduledAgentRunner {
         task: ScheduledTask,
         waitForCompletion: Boolean = true,
     ): String? {
+        // [T-android-scheduled-lateinit-crash-156] `as? MinisApp` only rules out
+        // a null / wrong-type Application — it does NOT mean the Application is
+        // INITIALIZED, which is what the old comment here claimed. Every
+        // `app.chatRepository` read below goes through a lateinit getter that
+        // throws UninitializedPropertyAccessException when onCreate
+        // early-returned (safe-mode) or aborted partway.
+        //
+        // GH#156: an alarm fires while the process is in that state and the app
+        // crashes. A scheduled task is the worst case for this because the alarm
+        // can START the process — Android creates the Application, onCreate
+        // early-returns under safe-mode, and the receiver runs against a
+        // permanently half-built app with no Activity anywhere in the picture
+        // (so MainActivity's guard never gets a say).
+        //
+        // Skipping the run is the right degradation: the task stays scheduled
+        // and its next occurrence was already armed by the receiver before this
+        // call, so a skipped fire self-heals on the following launch.
         val app = context.applicationContext as? MinisApp ?: run {
-            AppLogger.error(TAG, "MinisApp not initialized — skipping task ${task.id}")
+            AppLogger.error(TAG, "Application is not MinisApp — skipping task ${task.id}")
+            return null
+        }
+        if (!app.subsystemsReady()) {
+            AppLogger.error(
+                TAG,
+                "MinisApp subsystems not initialized (safe-mode or failed init) — skipping task ${task.id}",
+            )
             return null
         }
 

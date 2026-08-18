@@ -583,12 +583,47 @@ private struct CodeBlockCopyButton: View {
     }
 }
 
+/// [T-ios-user-attach-estimate-mismatch] Single source of truth for the user
+/// bubble's attachment-tile geometry.
+///
+/// These used to live only inside `UserAttachmentList` while
+/// `measureUserBubbleHeight` / `estimateItemHeight` carried their own
+/// hard-coded `70`, so the height estimate for every image-attachment bubble
+/// was ~6pt per row too tall and the cell visibly shrank when the real measure
+/// landed. Both sides now read the same numbers; changing a tile's size here
+/// updates the estimator by construction.
+enum UserAttachmentTileMetrics {
+    /// Rendered tile edge length (square).
+    static let tile: CGFloat = 64
+    /// FlowLayout hSpacing / vSpacing between tiles.
+    static let gap: CGFloat = 6
+    /// Spacing between the tile block and the text bubble in `userRow`'s VStack.
+    static let vStackSpacing: CGFloat = 6
+
+    /// How many tiles fit per row for a given collection-view width.
+    /// Mirrors FlowLayout packing: N tiles need N*tile + (N-1)*gap, i.e. the
+    /// LAST tile carries no trailing gap — which is why this is
+    /// `(avail + gap) / (tile + gap)` and not `avail / (tile + gap)`.
+    static func tilesPerRow(availableWidth: CGFloat) -> Int {
+        max(1, Int((availableWidth + gap) / (tile + gap)))
+    }
+
+    /// Total height of the tile block (excluding the text bubble), including
+    /// the VStack spacing that separates it from the bubble.
+    static func blockHeight(count: Int, availableWidth: CGFloat) -> CGFloat {
+        guard count > 0 else { return 0 }
+        let perRow = tilesPerRow(availableWidth: availableWidth)
+        let rows = ceil(CGFloat(count) / CGFloat(perRow))
+        return rows * tile + (rows - 1) * gap + vStackSpacing
+    }
+}
+
 struct UserAttachmentList: View {
     let attachments: [AttachmentMeta]
     @Environment(\.openURL) private var openURL
     @Environment(\.openImageGallery) private var openImageGallery
 
-    private let tileSize: CGFloat = 64
+    private let tileSize: CGFloat = UserAttachmentTileMetrics.tile
 
     /// All image attachments in this message, in original order. Used to
     /// populate the paged gallery when the user taps any single image tile.
@@ -597,7 +632,7 @@ struct UserAttachmentList: View {
     }
 
     var body: some View {
-        FlowLayout(hSpacing: 6, vSpacing: 6, alignment: .trailing) {
+        FlowLayout(hSpacing: UserAttachmentTileMetrics.gap, vSpacing: UserAttachmentTileMetrics.gap, alignment: .trailing) {
             ForEach(attachments) { meta in
                 if meta.isImage {
                     AsyncImageTile(meta: meta, tileSize: tileSize) {
@@ -737,10 +772,10 @@ private struct WebAppAddToHomeMenuModifier: ViewModifier {
 struct QueuedAttachmentPreview: View {
     let attachments: [InputAttachment]
 
-    private let tileSize: CGFloat = 64
+    private let tileSize: CGFloat = UserAttachmentTileMetrics.tile
 
     var body: some View {
-        FlowLayout(hSpacing: 6, vSpacing: 6, alignment: .trailing) {
+        FlowLayout(hSpacing: UserAttachmentTileMetrics.gap, vSpacing: UserAttachmentTileMetrics.gap, alignment: .trailing) {
             ForEach(attachments) { attachment in
                 switch attachment.kind {
                 case .image:
@@ -787,7 +822,20 @@ class PastableUITextView: UITextView, UIDropInteractionDelegate {
     var onArrowDown: (() -> Bool)?
     /// Returns true if Tab was consumed (slash menu autocomplete).
     var onTab: (() -> Bool)?
-    var maxHeight: CGFloat = 120
+    /// [T-ipad-composer-resize] The composer's natural growth cap. Single
+    /// source of truth so the SwiftUI side and the text view can't drift.
+    static let defaultMaxHeight: CGFloat = 120
+    /// The height at which typing stops growing the composer and starts
+    /// scrolling inside it. Raised while the user drags the composer taller.
+    var maxHeight: CGFloat = PastableUITextView.defaultMaxHeight
+
+    /// [T-ipad-composer-resize] A FIXED height the user dragged the composer to.
+    ///
+    /// Distinct from `maxHeight`, which is only a cap: with a cap, short text
+    /// still reports its own (short) intrinsic height, so the box would collapse
+    /// back around one line and the drag would appear to snap back. When pinned,
+    /// the intrinsic height IS this value regardless of content.
+    var pinnedHeight: CGFloat?
 
     // [T-voice-text-switch-autofocus-race] Gate against UIKit promoting this
     // freshly-mounted text view to first responder unsolicited. When the user
@@ -814,6 +862,62 @@ class PastableUITextView: UITextView, UIDropInteractionDelegate {
         // UIKit's tap-to-focus runs, then let super drive the tap handling.
         allowsFirstResponder = true
         super.touchesBegan(touches, with: event)
+    }
+
+    // [T-ios-composer-tap-focus-scroll-delay GH#143] Backstop for a tap whose
+    // focus attempt was already refused before the gate opened.
+    //
+    // The hitTest override below should make that unreachable, but a refusal is
+    // silent and the user's only recourse is to tap again — so if the touch ends
+    // as a tap (no scrolling happened, we are still not first responder, and the
+    // gate is now open), claim focus explicitly rather than leaving the tap to do
+    // nothing. `isDragging`/`isDecelerating` distinguish a tap from a scroll
+    // gesture, so this never steals focus from a flick that merely started on the
+    // text.
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesEnded(touches, with: event)
+        guard allowsFirstResponder, !isFirstResponder, !isDragging, !isDecelerating,
+              window != nil, isEditable else { return }
+        // Place the caret where the user actually tapped. Without this the
+        // recovered focus would restore the previous selection, which for a long
+        // pre-existing draft usually means the caret lands somewhere the user did
+        // not point at — the issue explicitly expects "光标应出现在用户点击的位置".
+        if let touch = touches.first, let pos = closestPosition(to: touch.location(in: self)) {
+            selectedTextRange = textRange(from: pos, to: pos)
+        }
+        becomeFirstResponder()
+    }
+
+    // [T-ios-composer-tap-focus-scroll-delay GH#143] Open the gate at hit-test
+    // time, not only in touchesBegan.
+    //
+    // UITextView IS a UIScrollView, and it flips `isScrollEnabled = true` as soon
+    // as the text exceeds maxHeight — i.e. exactly the "lots of text" case users
+    // reported. A scrollable UIScrollView has `delaysContentTouches = true` by
+    // default, so it withholds `touchesBegan` from the content while its pan
+    // recognizer decides whether the touch is a scroll. UIKit's own tap-to-focus
+    // recognizer is not subject to that delay, so it can reach
+    // `canBecomeFirstResponder` while `allowsFirstResponder` is STILL false —
+    // the gate refuses focus, and because a refusal is silent the tap simply
+    // does nothing. Short text never scrolls, so the delay never engages and the
+    // bug never appears; that asymmetry is the reported "more text = more likely".
+    //
+    // It also explains the workarounds in the report: a long press outlives the
+    // delay window (touchesBegan is eventually delivered, opening the gate), and
+    // repeated tapping wins whenever one tap happens to be delivered undelayed.
+    //
+    // hitTest runs during delivery, before any gesture arbitration or delay, so
+    // opening the gate here makes a tap on the composer always eligible for
+    // focus. This does NOT reopen the hole the gate was built for
+    // (T-voice-text-switch-autofocus-race): an unsolicited responder-chain
+    // hand-off involves no touch, so it never hit-tests this view and the gate
+    // stays shut.
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        let hit = super.hitTest(point, with: event)
+        if hit === self || (hit.map { $0.isDescendant(of: self) } ?? false) {
+            allowsFirstResponder = true
+        }
+        return hit
     }
 
     private var dropInteractionInstalled = false
@@ -988,9 +1092,113 @@ class PastableUITextView: UITextView, UIDropInteractionDelegate {
             return CGSize(width: UIView.noIntrinsicMetric, height: font?.lineHeight ?? 20)
         }
         let size = sizeThatFits(CGSize(width: bounds.width, height: .greatestFiniteMagnitude))
-        let clamped = min(size.height, maxHeight)
         isScrollEnabled = size.height > maxHeight
-        return CGSize(width: UIView.noIntrinsicMetric, height: clamped)
+        // [T-ipad-composer-resize] A dragged composer keeps its height even when
+        // the text is short; otherwise the box would shrink back around one line.
+        if let pinnedHeight {
+            return CGSize(width: UIView.noIntrinsicMetric, height: pinnedHeight)
+        }
+        return CGSize(width: UIView.noIntrinsicMetric, height: min(size.height, maxHeight))
+    }
+
+    /// [T-ios-composer-paste-scroll-stale] Whether the CURRENT text overflows
+    /// `maxHeight`, measured on demand instead of read back off
+    /// `isScrollEnabled`.
+    ///
+    /// `isScrollEnabled` is only refreshed as a side effect of
+    /// `intrinsicContentSize` / `sizeThatFits`, both of which UIKit runs on a
+    /// LATER layout pass. When text arrives in one shot (paste, share-sheet,
+    /// programmatic set) `updateUIView` assigns it and then reads
+    /// `isScrollEnabled` in the same turn — still the pre-paste value. The
+    /// incremental typing/ASR path never showed this because
+    /// `textViewDidChange` drives the re-measure before the read.
+    ///
+    /// Callers that need the value NOW (to publish into SwiftUI state) must use
+    /// this rather than the flag.
+    var overflowsMaxHeight: Bool {
+        let width = bounds.width > 0 ? bounds.width : textContainer.size.width
+        guard width > 0 else { return false }
+        let fit = sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        return fit.height > maxHeight
+    }
+
+    /// [T-ios-composer-swipe-send-at-bottom] Whether the text is scrolled to
+    /// (or past) the end of its content — the point where there is nothing left
+    /// to reveal by dragging up, so a further upward drag can be handed to
+    /// swipe-to-send instead of being swallowed by a scroll that cannot move.
+    ///
+    /// `bottomSlack` absorbs sub-pixel content-height rounding AND rubber-band
+    /// overscroll: `contentOffset.y` exceeds `maxOffsetY` while the user is
+    /// stretching past the end, which must still count as "at bottom" or the
+    /// hand-off would flicker off exactly when the user pulls further.
+    /// Non-scrollable text is trivially at bottom (there is no scrolling to
+    /// finish first), which keeps the short-text case behaving as it always did.
+    var isScrolledToBottom: Bool {
+        guard isScrollEnabled else { return true }
+        let maxOffsetY = contentSize.height - bounds.height
+        // Content shorter than the viewport: nothing to scroll through.
+        guard maxOffsetY > 0.5 else { return true }
+        let bottomSlack: CGFloat = 2
+        return contentOffset.y >= maxOffsetY - bottomSlack
+    }
+
+    /// [T-ios-composer-paste-truncation] Settle scrollability + content layout
+    /// whenever the view's real geometry is known.
+    ///
+    /// The round-1 fix (0024cbd3) did this inside `updateUIView`, which only
+    /// covers text arriving through the SwiftUI binding. An IN-APP paste never
+    /// goes that way: `PastableUITextView.paste(_:)` falls through to
+    /// `super.paste(_:)`, so UIKit mutates the text directly and the only
+    /// follow-up is `textViewDidChange` → `invalidateIntrinsicContentSize()`,
+    /// which merely SCHEDULES a re-measure. Nothing enabled scrolling or grew
+    /// `contentSize`, so a long pasted reply rendered clipped with no way to
+    /// reach the rest.
+    ///
+    /// Even in `updateUIView` the round-1 sequence was order-dependent: it ran
+    /// `ensureLayout` while the view still had its OLD (short) frame, so
+    /// `contentSize` was computed against the wrong viewport and stayed stale.
+    ///
+    /// `layoutSubviews` is the one place where the frame is authoritative, and
+    /// UIKit calls it after every text mutation on every path — so doing the
+    /// work here fixes all writers at once and is inherently order-safe.
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard bounds.width > 0 else { return }
+        let shouldScroll = overflowsMaxHeight
+        if isScrollEnabled != shouldScroll {
+            isScrollEnabled = shouldScroll
+            // Toggling this changes how the view derives its own height; ask for
+            // a fresh intrinsic measurement rather than waiting for the next
+            // unrelated invalidation.
+            invalidateIntrinsicContentSize()
+        }
+        // [T-ipad-composer-resize] Pin short text to the TOP of a taller frame.
+        //
+        // UITextView IS a UIScrollView, and when its content is shorter than its
+        // bounds UIKit vertically CENTERS the text. That never showed before
+        // this feature because the frame always hugged the content (fixedSize),
+        // so the two heights matched. Once the user drags the composer to a
+        // fixed height, a one-line message renders floating in the middle of a
+        // tall empty box. Nudging contentOffset back to the top has no effect —
+        // the centering is applied on every layout pass — so the fix is to
+        // absorb the surplus as BOTTOM inset, which leaves the first line at the
+        // top edge where the caret belongs.
+        let surplus = bounds.height - ceil(layoutManager.usedRect(for: textContainer).height)
+        let desiredBottomInset = shouldScroll ? 0 : max(0, surplus)
+        if abs(textContainerInset.bottom - desiredBottomInset) > 0.5 {
+            textContainerInset = UIEdgeInsets(
+                top: 0, left: 0, bottom: desiredBottomInset, right: 0)
+        }
+        guard shouldScroll else { return }
+        // Enabling scrolling does not itself recompute contentSize — the text
+        // needs laying out against the CURRENT viewport. Without this the scroll
+        // view reports contentSize == bounds and refuses to scroll at all.
+        layoutManager.ensureLayout(for: textContainer)
+        let used = layoutManager.usedRect(for: textContainer)
+        let needed = ceil(used.height) + textContainerInset.top + textContainerInset.bottom
+        if abs(contentSize.height - needed) > 0.5 {
+            contentSize = CGSize(width: bounds.width, height: needed)
+        }
     }
 
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
@@ -1135,6 +1343,12 @@ struct PastableTextView: UIViewRepresentable {
     @Binding var isFocused: Bool
     @Binding var hasSelection: Bool
     @Binding var isScrollable: Bool
+    /// [T-ios-composer-swipe-send-at-bottom] True when the composer's text is
+    /// scrolled to the end (or is too short to scroll at all). Lets the
+    /// swipe-to-send gesture engage only after the user has read to the bottom
+    /// of a long value, instead of being disabled outright whenever the text
+    /// happens to overflow.
+    @Binding var isAtScrollBottom: Bool
     var placeholder: String
     var onPasteImage: (UIImage) -> Void
     var onPasteFile: (URL) -> Void
@@ -1156,6 +1370,16 @@ struct PastableTextView: UIViewRepresentable {
     /// to this offset (used after inserting a mention). Nil = no pending move.
     var desiredCaret: Int?
 
+    /// [T-ipad-composer-resize] Overrides `PastableUITextView.maxHeight` — the
+    /// point at which typing stops growing the composer and starts scrolling
+    /// inside it. nil keeps the built-in default (120pt).
+    ///
+    /// Load-bearing for the drag-to-resize feature: enlarging only the SwiftUI
+    /// frame would leave the text view still capped at 120, so text would
+    /// scroll internally while the extra space rendered as dead padding. The
+    /// growth cap has to move with the frame.
+    var maxHeightOverride: CGFloat?
+
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
@@ -1165,6 +1389,7 @@ struct PastableTextView: UIViewRepresentable {
         tv.delegate = context.coordinator
         tv.font = UIFont.systemFont(ofSize: FontSettings.shared.scaledChatInput(16.5))
         tv.backgroundColor = .clear
+        if let maxHeightOverride { tv.maxHeight = maxHeightOverride }
         tv.isScrollEnabled = false
         tv.textContainerInset = .zero
         tv.textContainer.lineFragmentPadding = 0
@@ -1251,12 +1476,37 @@ struct PastableTextView: UIViewRepresentable {
         let lineH = tv.font?.lineHeight ?? 20
         let effective = tv.text.isEmpty ? lineH : fitSize.height
         let maxH = tv.maxHeight
-        let clamped = min(effective, maxH)
         tv.isScrollEnabled = fitSize.height > maxH
-        return CGSize(width: width, height: clamped)
+        // [T-ipad-composer-resize] When the user has dragged the composer to an
+        // explicit height, that height IS the answer — report it verbatim.
+        //
+        // A UIViewRepresentable's `sizeThatFits` outranks an outer
+        // `.frame(height:)`: SwiftUI asks the representable how big it wants to
+        // be and lays it out at that size. So returning the CONTENT height here
+        // (one line ≈ 20pt) pulled the composer back down mid-drag — the frame
+        // said 400pt, this said 20pt, and this won. Returning the override makes
+        // the two agree, which is what stops the snap-back.
+        if let maxHeightOverride {
+            return CGSize(width: width, height: maxHeightOverride)
+        }
+        return CGSize(width: width, height: min(effective, maxH))
     }
 
     func updateUIView(_ tv: PastableUITextView, context: Context) {
+        // [T-ipad-composer-resize] Track the growth cap as the user drags. The
+        // invalidate is required: `maxHeight` feeds `intrinsicContentSize` and
+        // `isScrollEnabled`, neither of which UIKit re-derives on its own, so
+        // without this the composer would keep scrolling at the OLD cap inside
+        // its newly enlarged frame.
+        let resolvedMaxHeight = maxHeightOverride ?? PastableUITextView.defaultMaxHeight
+        if abs(tv.maxHeight - resolvedMaxHeight) > 0.5 || tv.pinnedHeight != maxHeightOverride {
+            tv.maxHeight = resolvedMaxHeight
+            tv.pinnedHeight = maxHeightOverride
+            tv.invalidateIntrinsicContentSize()
+            // The bottom inset that top-aligns short text is derived from the
+            // frame, so it must be recomputed for the new height.
+            tv.setNeedsLayout()
+        }
         if tv.text != text, tv.markedTextRange == nil || text.isEmpty {
             // [T-ios-composer-residual-text-33549] Clearing the composer
             // post-send is the race-prone path: an in-flight IME
@@ -1299,6 +1549,30 @@ struct PastableTextView: UIViewRepresentable {
                 }
             }
             tv.invalidateIntrinsicContentSize()
+            // [T-ios-composer-paste-scroll-stale] Settle scrollability NOW.
+            // invalidateIntrinsicContentSize only SCHEDULES the re-measure that
+            // would flip `isScrollEnabled`, so on this one-shot write path the
+            // text view stays non-scrollable for the rest of the turn — long
+            // pasted text renders clipped with no way to reach the remainder
+            // until some later pass happens to re-measure. Assigning it here
+            // makes the paste immediately scrollable, and matches what the
+            // next intrinsicContentSize would compute anyway.
+            let shouldScroll = tv.overflowsMaxHeight
+            if tv.isScrollEnabled != shouldScroll {
+                tv.isScrollEnabled = shouldScroll
+            }
+            if shouldScroll {
+                // Enabling scrolling does NOT by itself recompute contentSize:
+                // the text view needs a layout pass to pick up the new used
+                // rect. Pasting a long block into a composer that had not yet
+                // scrolled left contentSize pinned at the visible height (120),
+                // so the content past the first ~6 lines was unreachable — the
+                // "text is statically truncated, not just un-scrollable"
+                // symptom. Force the typesetter + layout to catch up in this
+                // same turn so the full range is scrollable immediately.
+                tv.layoutManager.ensureLayout(for: tv.textContainer)
+                tv.layoutIfNeeded()
+            }
         }
         tv.onPasteImage = onPasteImage
         tv.onPasteFile = onPasteFile
@@ -1399,12 +1673,33 @@ struct PastableTextView: UIViewRepresentable {
         }
 
         // Sync scroll state back to SwiftUI.
-        // isScrollEnabled is toggled in intrinsicContentSize, so just read it here.
-        let scrollable = tv.isScrollEnabled
+        // [T-ios-composer-paste-scroll-stale] Measure it, don't read the flag.
+        // `isScrollEnabled` is refreshed only as a side effect of
+        // intrinsicContentSize/sizeThatFits, which UIKit runs on a LATER layout
+        // pass — so on the one-shot paste/share/programmatic path this read
+        // returned the PRE-paste value (false) and left `inputIsScrollable`
+        // stuck false. AIChatView's swipe-to-send DragGesture gates on
+        // `!inputIsScrollable`, so it kept claiming vertical drags and the user
+        // could never scroll to the rest of the pasted text. The incremental
+        // typing/ASR path hid the bug: textViewDidChange re-measures first.
+        let scrollable = tv.overflowsMaxHeight
         if isScrollable != scrollable {
             let binding = _isScrollable
             DispatchQueue.main.async {
                 binding.wrappedValue = scrollable
+            }
+        }
+        // [T-ios-composer-swipe-send-at-bottom] Publish the at-bottom state on
+        // the same pass. A text change re-lays-out the content, which moves
+        // where "bottom" is: growing the text usually leaves the view no longer
+        // at the end, and shrinking/clearing it makes the value trivially true
+        // again. Without this the flag would only refresh on user scrolling and
+        // could authorise a send right after a paste pushed new content in.
+        let atBottom = tv.isScrolledToBottom
+        if isAtScrollBottom != atBottom {
+            let binding = _isAtScrollBottom
+            DispatchQueue.main.async {
+                binding.wrappedValue = atBottom
             }
         }
     }
@@ -1417,6 +1712,42 @@ struct PastableTextView: UIViewRepresentable {
 
         init(_ parent: PastableTextView) {
             self.parent = parent
+        }
+
+        /// [T-ios-composer-swipe-send-at-bottom] Track the at-bottom state while
+        /// the user scrolls the composer, so swipe-to-send becomes available the
+        /// moment they reach the end of a long value.
+        ///
+        /// `UITextViewDelegate` refines `UIScrollViewDelegate`, so the text
+        /// view's existing delegate already receives this — no separate delegate
+        /// or KVO observer is needed.
+        func scrollViewDidScroll(_ scrollView: UIScrollView) {
+            guard let tv = scrollView as? PastableUITextView else { return }
+            publishAtBottom(tv)
+        }
+
+        /// Also refresh once deceleration/rubber-band settles. `scrollViewDidScroll`
+        /// fires throughout the animation, but the final resting offset after an
+        /// overscroll bounce-back arrives with these callbacks — without them a
+        /// fling that bounces off the end could leave the flag reading `true`
+        /// while the content has actually settled short of the bottom.
+        func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+            guard let tv = scrollView as? PastableUITextView else { return }
+            publishAtBottom(tv)
+        }
+
+        func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate: Bool) {
+            guard !willDecelerate, let tv = scrollView as? PastableUITextView else { return }
+            publishAtBottom(tv)
+        }
+
+        /// Push the measured at-bottom state into SwiftUI, skipping no-op writes.
+        /// Called from the scroll callbacks, which fire many times per gesture —
+        /// the equality check keeps that from spamming view updates.
+        private func publishAtBottom(_ tv: PastableUITextView) {
+            let atBottom = tv.isScrolledToBottom
+            guard parent.isAtScrollBottom != atBottom else { return }
+            parent.isAtScrollBottom = atBottom
         }
 
         func textViewDidChange(_ textView: UITextView) {
@@ -1432,6 +1763,21 @@ struct PastableTextView: UIViewRepresentable {
             // writes "" back into the binding, not stale text.
             parent.text = textView.text
             textView.invalidateIntrinsicContentSize()
+            // [T-ios-composer-paste-truncation] Republish the scroll-state
+            // bindings here too. An in-app paste mutates the text through UIKit
+            // (`super.paste`) and lands in this callback WITHOUT going through
+            // `updateUIView`, so this is the only point where the SwiftUI side
+            // learns that a long paste just made the composer scrollable. Left
+            // stale, `inputIsScrollable` stayed false and the swipe-to-send
+            // gesture kept claiming the vertical drags the user needed for
+            // scrolling.
+            if let tv = textView as? PastableUITextView {
+                tv.layoutIfNeeded()   // settle via layoutSubviews before reading
+                let scrollable = tv.overflowsMaxHeight
+                if parent.isScrollable != scrollable { parent.isScrollable = scrollable }
+                let atBottom = tv.isScrolledToBottom
+                if parent.isAtScrollBottom != atBottom { parent.isAtScrollBottom = atBottom }
+            }
             if let label = textView.viewWithTag(999) as? UILabel {
                 label.isHidden = !textView.text.isEmpty
             }

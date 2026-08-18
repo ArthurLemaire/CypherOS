@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -36,6 +37,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import com.openminis.app.R
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.annotation.StringRes
 import com.openminis.app.data.model.LLMModel
 import com.openminis.app.data.model.ModelEntry
@@ -44,6 +46,7 @@ import com.openminis.app.data.model.ProviderType
 import com.openminis.app.data.model.SystemVoiceEntries
 import com.openminis.app.data.model.hasAudioInput
 import com.openminis.app.data.model.hasAudioOutput
+import com.openminis.app.data.model.hasImageInput
 import com.openminis.app.data.model.normalizeModalities
 
 /**
@@ -66,17 +69,22 @@ import com.openminis.app.data.model.normalizeModalities
  */
 enum class PickerModalityFilter {
     AUDIO_INPUT,
-    AUDIO_OUTPUT;
+    AUDIO_OUTPUT,
+    // [T-android-vision-group] Vision scenario: only image-consuming entries
+    // qualify. No System virtual entry — there is no on-device vision engine.
+    IMAGE_INPUT;
 
     fun matches(model: LLMModel): Boolean = when (this) {
         AUDIO_INPUT -> model.hasAudioInput
         AUDIO_OUTPUT -> model.hasAudioOutput
+        IMAGE_INPUT -> model.hasImageInput
     }
 
     /** System virtual entries that serve this direction, in display order. */
     fun systemEntries(): List<ModelEntry> = when (this) {
         AUDIO_INPUT -> listOf(SystemVoiceEntries.asrOnline, SystemVoiceEntries.asrOffline)
         AUDIO_OUTPUT -> listOf(SystemVoiceEntries.tts)
+        IMAGE_INPUT -> emptyList()
     }
 }
 
@@ -202,14 +210,25 @@ fun LazyListScope.modelEntryPickerItems(
             ) {
                 Text(
                     instance.label.ifEmpty { instance.providerType.displayName },
-                    style = MaterialTheme.typography.titleSmall,
+                    // [T-android-model-picker-polish] Section headers outrank
+                    // their rows. titleSmall is 14sp Medium while model names
+                    // are bodyMedium SemiBold — same size, heavier weight — so
+                    // the header read as the weaker of the two. Matches the
+                    // chat model picker.
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
                 )
                 Box(
                     modifier = Modifier
-                        .size(28.dp)
-                        .background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape)
+                        // Neutral disclosure control, 24dp — a tinted or
+                        // oversized circle competes with the provider name.
+                        .size(24.dp)
+                        .background(
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f),
+                            CircleShape,
+                        )
                         .clip(CircleShape)
                         .clickable {
                             collapsedInstanceIds.value = if (isCollapsed) {
@@ -228,6 +247,15 @@ fun LazyListScope.modelEntryPickerItems(
                     )
                 }
             }
+            // [T-android-model-picker-polish] Hairline under the provider name.
+            // The rows below are models, not more provider chrome; without a
+            // rule the header read as the first list item. Matches the chat
+            // model picker.
+            HorizontalDivider(
+                modifier = Modifier.padding(start = 20.dp, end = 16.dp),
+                thickness = 0.5.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+            )
         }
 
         if (isCollapsed) {
@@ -259,7 +287,14 @@ fun LazyListScope.modelEntryPickerItems(
                         modifier = Modifier.weight(1f),
                     )
                     Text(
-                        "${entries.size} models",
+                        // Was the hardcoded English "N models" — the one raw
+                        // string in a picker whose every other label is a
+                        // resource, so Chinese users saw "413 models".
+                        androidx.compose.ui.res.pluralStringResource(
+                            R.plurals.model_picker_models_count,
+                            entries.size,
+                            entries.size,
+                        ),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                     )
@@ -393,6 +428,37 @@ fun modalityBadges(model: LLMModel): List<String> {
     if ("audio" in outs) badges.add("audio-out")
     if ("video" in outs) badges.add("video-out")
     return badges
+}
+
+/**
+ * [T-android-modality-chip] One modality chip, iOS entryRow badge recipe
+ * (UnifiedModelPicker.swift:1109): 9pt medium, tertiarySystemFill rounded-3
+ * background. Two Android-specific constraints baked in:
+ *  - fill is onSurface@8% rather than surfaceContainerHighest — the chips sit
+ *    ON surfaceContainerHigh cards, where the container tone is the same
+ *    color and the "gray capsule" disappeared entirely;
+ *  - maxLines=1 + softWrap=false so a chip can NEVER break internally.
+ *    Compose Text in an overflowing Row wraps character-by-character
+ *    ("audio-out" rendered as a vertical letter column); hosts must place
+ *    chips in a FlowRow so overflow wraps whole chips to the next line.
+ */
+@Composable
+fun ModalityBadge(badge: String) {
+    Text(
+        badge,
+        fontSize = 9.sp,
+        lineHeight = 11.sp,
+        fontWeight = FontWeight.Medium,
+        maxLines = 1,
+        softWrap = false,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .background(
+                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+                RoundedCornerShape(3.dp),
+            )
+            .padding(horizontal = 4.dp, vertical = 1.dp),
+    )
 }
 
 /** Provider color dot — same RGB across ChatScreen, AddModelsToGroup, and

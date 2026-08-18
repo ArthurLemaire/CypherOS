@@ -93,6 +93,22 @@ class TerminalSession(private val context: Context) {
     private var masterFd: Int = -1
     private var childPid: Int = 0
     private var readerJob: Job? = null
+
+    /**
+     * [T-android-seccomp-selfheal / GH#186] Set once the interactive shell has
+     * been restarted with PROOT_NO_SECCOMP=1; also the one-shot guard that
+     * stops a crash-restart loop if the retry dies the same way.
+     */
+    @Volatile
+    private var useNoSeccomp = false
+
+    /**
+     * Whether this PTY ever emitted output. A terminal that printed something
+     * has begun a real session, so a later crash is the guest program's, not
+     * the loader's — and restarting would wipe visible scrollback.
+     */
+    @Volatile
+    private var sawOutput = false
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     @Volatile private var cols: Int = DEFAULT_COLS
@@ -109,6 +125,9 @@ class TerminalSession(private val context: Context) {
         _state.value = State.BOOTING
         cols = initialCols
         rows = initialRows
+        // Fresh per PTY incarnation, so a retry is judged on its own output
+        // rather than inheriting the dead attempt's.
+        sawOutput = false
 
         scope.launch {
             try {
@@ -143,6 +162,12 @@ class TerminalSession(private val context: Context) {
                 for ((k, v) in PRootKernel.customEnvironment) envMap[k] = v
                 ExecutionCoordinator.envVarRepository?.allAsDict()?.forEach { (k, v) -> envMap[k] = v }
 
+                // [T-android-seccomp-selfheal / GH#186] Applied last so nothing
+                // above can clobber it once this device is known to need it.
+                if (useNoSeccomp) {
+                    envMap[SeccompFallbackPolicy.NO_SECCOMP_ENV] = SeccompFallbackPolicy.NO_SECCOMP_VALUE
+                }
+
                 val envp = envMap.map { (k, v) -> "$k=$v" }.toTypedArray()
                 val cwd = File(cmd).parentFile?.absolutePath
 
@@ -168,9 +193,38 @@ class TerminalSession(private val context: Context) {
                 readerJob = scope.launch { readLoop() }
 
                 // Wait for child exit in a sibling coroutine.
+                val spawnedAt = System.currentTimeMillis()
                 scope.launch {
                     val status = PtyBridge.waitFor(childPid)
                     Log.i(TAG, "Child exited: status=$status")
+
+                    // [T-android-seccomp-selfheal / GH#186] PtyBridge reports a
+                    // signal death as -(128+signal) (pty_bridge.c:234), so
+                    // negate before consulting the policy. If the interactive
+                    // shell died on an early fatal signal, restart it once with
+                    // PROOT_NO_SECCOMP=1 rather than leaving the user staring
+                    // at a dead terminal they cannot fix from the UI.
+                    val aliveMs = System.currentTimeMillis() - spawnedAt
+                    if (SeccompFallbackPolicy.shouldRetryWithoutSeccomp(
+                            exitCode = if (status < 0) -status else null,
+                            durationMs = aliveMs,
+                            producedOutput = sawOutput,
+                            alreadyRetried = useNoSeccomp,
+                        )
+                    ) {
+                        com.openminis.app.logging.AppLogger.warning(
+                            TAG,
+                            SeccompFallbackPolicy.retryLogLine(-status, aliveMs, "interactive terminal"),
+                        )
+                        useNoSeccomp = true
+                        masterFd = -1
+                        childPid = 0
+                        readerJob?.cancel()
+                        readerJob = null
+                        start(sessionId, cols, rows)
+                        return@launch
+                    }
+
                     _outputBytes.emit("\r\n[Process exited: $status]\r\n".toByteArray())
                     _state.value = State.STOPPED
                 }
@@ -192,6 +246,7 @@ class TerminalSession(private val context: Context) {
                 if (n < 0) Log.d(TAG, "readBytes returned errno=${-n}")
                 break
             }
+            sawOutput = true
             _outputBytes.emit(buf.copyOf(n))
         }
     }

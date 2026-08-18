@@ -98,6 +98,11 @@ fun MountedFoldersScreen(
     var pendingDefaultName by remember { mutableStateOf("") }
     var addError by remember { mutableStateOf<String?>(null) }
 
+    // [T-android-mount-picker-landing] Shown once before handing off to the
+    // system picker, explaining that Android forbids mounting the storage root.
+    // See showPicker() below for why this is needed.
+    var showPickerIntro by remember { mutableStateOf(false) }
+
     // T219 follow-up: re-read all-files-access state on every ON_RESUME so
     // returning from the system Settings page (where the user toggles the
     // permission) clears the banner without an app restart.
@@ -180,7 +185,7 @@ fun MountedFoldersScreen(
                                     ),
                                 )
                             } else {
-                                pickerLauncher.launch(null)
+                                showPickerIntro = true
                             }
                         },
                         enabled = !isAtCapacity,
@@ -323,7 +328,66 @@ fun MountedFoldersScreen(
             text = { Text(msg) },
         )
     }
+
+    // [T-android-mount-picker-landing] GH#93: the system picker used to open at
+    // whatever location it liked — on the reporter's Xiaomi that was the shared
+    // storage ROOT, where Android shows "无法使用此文件夹 / can't use this folder",
+    // greys out "Use this folder", and (being already the top level) offers no
+    // way back. The user reads that as being trapped.
+    //
+    // Two halves to the fix; this is the half we control from our side of the
+    // hand-off. The picker's own chrome belongs to the system + OEM, so we
+    // cannot add a back button to it — what we CAN do is (a) explain the
+    // restriction in our own words before the user leaves our UI, and
+    // (b) land them somewhere selectable (see initialPickerUri()).
+    if (showPickerIntro) {
+        AlertDialog(
+            onDismissRequest = { showPickerIntro = false },
+            title = { Text(stringResource(R.string.mount_picker_intro_title)) },
+            text = { Text(stringResource(R.string.mount_picker_intro_message)) },
+            confirmButton = {
+                MinisTextButton(onClick = {
+                    showPickerIntro = false
+                    pickerLauncher.launch(initialPickerUri())
+                }) {
+                    Text(stringResource(R.string.mount_picker_intro_continue))
+                }
+            },
+            dismissButton = {
+                MinisTextButton(onClick = { showPickerIntro = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
 }
+
+/**
+ * [T-android-mount-picker-landing] Where the system folder picker should open.
+ *
+ * Returning null (the old behaviour) lets the picker choose, and on some ROMs
+ * that is the shared-storage ROOT — the one place Android refuses to grant
+ * (blocked since Android 11, alongside Android/data and Android/obb). The user
+ * lands on a greyed-out "Use this folder" with no parent left to go back to,
+ * which is exactly what GH#93 reported.
+ *
+ * `Documents` is chosen because it satisfies all three constraints at once:
+ *  • NOT on Android's blocked list, so it is actually selectable;
+ *  • always present on a real device (a non-existent initial URI is silently
+ *    ignored, which would drop the user back at the broken default);
+ *  • one level below the root, so the breadcrumb still lets them navigate
+ *    anywhere else — this positions the user without deciding for them.
+ *
+ * Media dirs (DCIM/Pictures/Music/Movies) were rejected as too narrow in
+ * meaning, and Download as more "transient scratch" than the long-lived folder
+ * a mount implies.
+ */
+private fun initialPickerUri(): Uri? = runCatching {
+    DocumentsContract.buildDocumentUri(
+        "com.android.externalstorage.documents",
+        "primary:Documents",
+    )
+}.getOrNull()
 
 @Composable
 private fun InfoBanner() {

@@ -31,6 +31,7 @@ import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.util.concurrent.TimeUnit
 import com.openminis.app.provider.failOnSilentEmptyCompletion
+import com.openminis.app.provider.thinking.ThinkingRuleResolver
 
 class AnthropicProvider(
     private val apiKey: String,
@@ -348,6 +349,20 @@ class AnthropicProvider(
         //     Anthropic also requires temperature=1 on the request.
         // Claude 4.6+ rejects temperature outright (handled by the temperature guard
         // above; we don't re-inject it here).
+        // [T-thinking-rules-phase2] WHICH shape applies is decided by
+        // ThinkingRuleResolver.anthropicThinkingShape — one place owns every vendor's
+        // thinking contract. Emission stays here because Android's Anthropic body also
+        // carries `display`/`output_config`/`temperature` companions that the abstract
+        // shape deliberately does not model. Behaviour is byte-for-byte unchanged, pinned
+        // by ThinkingWireGeminiAnthropicSnapshotTest.
+        val thinkShape = ThinkingRuleResolver.anthropicThinkingShape(
+            model.id, model.supportsReasoning, thinkingLevel, maxTokens,
+        )
+        com.openminis.app.logging.AppLogger.info(
+            "Thinking",
+            "[resolve] provider=anthropic model=${model.id} level=${thinkingLevel.name} " +
+                "shape=[${thinkShape.keys.sorted().joinToString(",")}]",
+        )
         if (thinkingLevel.isEnabled) {
             if (modelUsesAdaptiveThinking(model.id)) {
                 // [T-anthropic-thinking-display] Explicitly request summarized
@@ -959,6 +974,12 @@ class AnthropicProvider(
 
         if (isOAuth) {
             builder.header("Authorization", "Bearer $apiKey")
+        } else if (apiKey.isEmpty()) {
+            // [T-empty-key-compat-endpoints] Keyless third-party
+            // Anthropic-compatible endpoint: send NO auth header rather than
+            // a malformed `Bearer ` / empty x-api-key that strict relays
+            // reject. Only reachable for custom-endpoint instances — routing
+            // never builds a keyless provider for the official API.
         } else if (isCustomEndpoint) {
             builder.header("Authorization", "Bearer $apiKey")
         } else {

@@ -48,6 +48,55 @@ object ShellExecutor {
     ): ShellResult = withContext(Dispatchers.IO) {
         check(PRootKernel.isBooted) { "PRootKernel must be booted before executing commands" }
 
+        val first = runOnce(context, command, timeout, environment, lineCallback, noSeccomp = false)
+
+        // [T-android-seccomp-selfheal / GH#186] If the child died on an early
+        // fatal signal with no output at all, the host kernel's seccomp fast
+        // path is the prime suspect — retry once without it. Gated hard so a
+        // normal failing command is never re-run; see SeccompFallbackPolicy.
+        if (!SeccompFallbackPolicy.shouldRetryWithoutSeccomp(
+                exitCode = first.exitCode,
+                durationMs = first.durationMs,
+                producedOutput = first.output.isNotEmpty(),
+                alreadyRetried = false,
+            )
+        ) {
+            return@withContext first
+        }
+
+        com.openminis.app.logging.AppLogger.warning(
+            TAG,
+            SeccompFallbackPolicy.retryLogLine(first.exitCode, first.durationMs, "shell command"),
+        )
+        // The retry deliberately reuses the caller's lineCallback: the first
+        // attempt produced no output (that is a precondition of retrying), so
+        // there is nothing to duplicate.
+        val retried = runOnce(context, command, timeout, environment, lineCallback, noSeccomp = true)
+        if (retried.exitCode == 0) {
+            com.openminis.app.logging.AppLogger.warning(
+                TAG,
+                "[proot-retry] succeeded with ${SeccompFallbackPolicy.NO_SECCOMP_ENV}=1 — " +
+                    "this device needs the seccomp workaround (GH#186)",
+            )
+        }
+        // Whatever the retry returned is what the caller sees: if it failed
+        // too, the error surfaces normally rather than being swallowed.
+        retried
+    }
+
+    /**
+     * One proot invocation. Split out of [execute] so the GH#186 seccomp
+     * fallback can re-run the identical command instead of duplicating the
+     * spawn/plumbing logic.
+     */
+    private suspend fun runOnce(
+        context: Context,
+        command: String,
+        timeout: Long,
+        environment: Map<String, String>,
+        lineCallback: ((String) -> Unit)?,
+        noSeccomp: Boolean,
+    ): ShellResult = withContext(Dispatchers.IO) {
         val prootCommand = PRootKernel.buildProotCommand(command)
 
         Log.d(TAG, "Executing: $command")
@@ -78,6 +127,12 @@ object ShellExecutor {
         // Apply per-call environment overrides
         for ((key, value) in environment) {
             env[key] = value
+        }
+
+        // [T-android-seccomp-selfheal / GH#186] Applied last so nothing above
+        // can clobber it on the retry attempt.
+        if (noSeccomp) {
+            env[SeccompFallbackPolicy.NO_SECCOMP_ENV] = SeccompFallbackPolicy.NO_SECCOMP_VALUE
         }
 
         val output = StringBuilder()

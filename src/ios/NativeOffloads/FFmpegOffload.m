@@ -16,6 +16,8 @@
 #include <signal.h>
 #include <pthread.h>
 #include <math.h>
+#include <stdatomic.h>
+#include <stdbool.h>
 #include "kernel/native_offload.h"
 #include <FFmpeg/FFmpeg.h>
 
@@ -219,15 +221,55 @@ static int rewrite_argv_for_videotoolbox(int argc, char **argv) {
 // Concurrent calls corrupt the heap and cause NULL-pointer crashes.
 static pthread_mutex_t ffmpeg_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-// ── Run ffmpeg_main on a thread with a full-size stack ──
+// [T-ish-offload-signal-forward] Abandoned-transcode state.
+//
+// When a guest `kill` aborts a wedged ffmpeg we stop waiting for it, but the
+// host thread keeps running: FFmpeg.framework exports only ffmpeg_main() and
+// ffmpeg_reset_statics(), with no interrupt hook (the analysis doc calls the
+// framework-side fix "plan B"; it is not done here). So the thread cannot be
+// stopped, only orphaned.
+//
+// That has a consequence the mutex must respect: an orphaned thread still owns
+// ffmpeg's global state, so a LATER ffmpeg call can never be allowed to run —
+// it would race the orphan through the same non-thread-safe globals and corrupt
+// the heap. Once poisoned, every later invocation fails fast with a clear
+// message. That is strictly better than the current behaviour, where the second
+// call blocks on the mutex forever and wedges another guest process too (this
+// is exactly why the field report had TWO stuck PIDs, not one).
+static atomic_bool g_ffmpeg_poisoned = ATOMIC_VAR_INIT(false);
 
+// Set when a guest signal asks the in-flight transcode to stop. The waiting
+// side polls it; the ffmpeg thread itself never reads it (it cannot be
+// interrupted), so this is purely the handler's own unblock signal.
+static atomic_bool g_ffmpeg_abort_requested = ATOMIC_VAR_INIT(false);
+
+// ── Run ffmpeg_main on a thread with a full-size stack ──
+//
+// [T-ish-offload-signal-forward] Heap-allocated and reference-counted, NOT a
+// stack local. When the wait is abandoned, `ffmpeg_handler` returns and its
+// frame dies while the orphaned thread is still writing `ret` and reading
+// `argv` — with the original stack-allocated ctx that is a use-after-free on
+// both. Whoever finishes last frees.
 struct ffmpeg_thread_ctx {
     int argc;
     char **argv;
     int out_fd;
     int err_fd;
     int ret;
+    atomic_int refcount;   // 2 while both sides hold it
+    bool argv_owned;       // true once the ctx owns the argv copy
 };
+
+static void ffmpeg_ctx_release(struct ffmpeg_thread_ctx *ctx) {
+    if (atomic_fetch_sub_explicit(&ctx->refcount, 1, memory_order_acq_rel) != 1)
+        return;
+    if (ctx->argv_owned && ctx->argv) {
+        for (int i = 0; i < ctx->argc; i++)
+            free(ctx->argv[i]);
+        free(ctx->argv);
+    }
+    free(ctx);
+}
 
 static void *ffmpeg_thread_func(void *arg) {
     struct ffmpeg_thread_ctx *ctx = (struct ffmpeg_thread_ctx *)arg;
@@ -237,13 +279,49 @@ static void *ffmpeg_thread_func(void *arg) {
     ctx->ret = ffmpeg_main(ctx->argc, ctx->argv);
     noff_stdout_fd = -1;
     noff_stderr_fd = -1;
+    ffmpeg_ctx_release(ctx);
     return NULL;
+}
+
+/// [T-ish-offload-signal-forward] Abort callback registered with the offload
+/// layer. Called from the SIGNALLING thread while ffmpeg is still running, so
+/// it must not touch anything the ffmpeg thread owns — it only sets a flag the
+/// waiting side polls.
+static bool ffmpeg_abort_requested(int sig) {
+    atomic_store_explicit(&g_ffmpeg_abort_requested, true, memory_order_release);
+    NSLog(@"[FFmpegOffload] abort requested by signal %d — will stop waiting for ffmpeg_main()", sig);
+    return true;
 }
 
 static int ffmpeg_handler(int argc, char **argv,
                           int stdin_fd, int stdout_fd, int stderr_fd) {
+    // [T-ish-offload-signal-forward] Refuse immediately if a previous transcode
+    // was abandoned. Its orphaned thread still owns ffmpeg's non-thread-safe
+    // globals, so running now would corrupt the heap — and blocking on the mutex
+    // (the old behaviour) would just wedge this guest process too.
+    if (atomic_load_explicit(&g_ffmpeg_poisoned, memory_order_acquire)) {
+        const char *msg =
+            "ffmpeg: a previous ffmpeg operation was aborted and its worker "
+            "could not be stopped; ffmpeg is unavailable until the app is "
+            "restarted\n";
+        if (stderr_fd >= 0) (void) write(stderr_fd, msg, strlen(msg));
+        NSLog(@"[FFmpegOffload] refusing invocation — poisoned by an earlier abandoned transcode");
+        return 1;
+    }
+
     // ── Serialize: only one ffmpeg_main() at a time ──
     pthread_mutex_lock(&ffmpeg_mutex);
+
+    // Re-check under the lock: a concurrent caller may have poisoned it while
+    // we waited.
+    if (atomic_load_explicit(&g_ffmpeg_poisoned, memory_order_acquire)) {
+        pthread_mutex_unlock(&ffmpeg_mutex);
+        NSLog(@"[FFmpegOffload] refusing invocation — poisoned while waiting for the lock");
+        return 1;
+    }
+
+    // Fresh run: clear any stale abort request from a previous invocation.
+    atomic_store_explicit(&g_ffmpeg_abort_requested, false, memory_order_release);
 
     // ── Reset all global state from previous invocation ──
     ffmpeg_reset_globals();
@@ -295,29 +373,107 @@ static int ffmpeg_handler(int argc, char **argv,
     NSLog(@"[FFmpegOffload] %@", cmdLog);
 
     // ── Run ffmpeg on a dedicated thread with 8 MB stack ──
-    struct ffmpeg_thread_ctx ctx = {
-        .argc = argc, .argv = argv,
-        .out_fd = stdout_fd, .err_fd = stderr_fd,
-        .ret = 1
-    };
+    // [T-ish-offload-signal-forward] ctx is heap-allocated and refcounted so it
+    // outlives this frame if the wait is abandoned (see struct comment).
+    struct ffmpeg_thread_ctx *ctx = calloc(1, sizeof(*ctx));
+    if (ctx == NULL) {
+        pthread_mutex_unlock(&ffmpeg_mutex);
+        return 1;
+    }
+    ctx->argc = argc; ctx->argv = argv;
+    ctx->out_fd = stdout_fd; ctx->err_fd = stderr_fd;
+    ctx->ret = 1;
+    ctx->argv_owned = false;   // exec_handler owns argv unless we abandon
+    atomic_init(&ctx->refcount, 2);   // this frame + the worker thread
 
     pthread_t thr;
     pthread_attr_t attr;
     pthread_attr_init(&attr);
     pthread_attr_setstacksize(&attr, 8 * 1024 * 1024);
 
-    int err = pthread_create(&thr, &attr, ffmpeg_thread_func, &ctx);
+    int err = pthread_create(&thr, &attr, ffmpeg_thread_func, ctx);
     pthread_attr_destroy(&attr);
 
+    bool abandoned = false;
     if (err == 0) {
-        pthread_join(thr, NULL);
+        // [T-ish-offload-signal-forward] Interruptible wait, replacing a bare
+        // pthread_join. The join itself is not interruptible, so instead of
+        // blocking in it we poll the thread's completion and the abort flag
+        // together. 20ms keeps teardown responsive at negligible cost — this
+        // loop only runs while a transcode is in flight.
+        //
+        // pthread_tryjoin_np does not exist on Darwin, so completion is
+        // signalled by the worker itself dropping the last ctx reference.
+        while (true) {
+            if (atomic_load_explicit(&ctx->refcount, memory_order_acquire) == 1) {
+                // Worker released its reference: ffmpeg_main returned.
+                pthread_join(thr, NULL);   // reap; already finished, cannot block
+                break;
+            }
+            if (atomic_load_explicit(&g_ffmpeg_abort_requested, memory_order_acquire)) {
+                abandoned = true;
+                break;
+            }
+            usleep(20 * 1000);
+        }
     } else {
-        // Fallback: run on current thread — set thread-local fds here
+        // Fallback: run on current thread — set thread-local fds here.
+        // Not abortable (no separate thread to abandon), same as before.
         noff_stdout_fd = stdout_fd;
         noff_stderr_fd = stderr_fd;
-        ctx.ret = ffmpeg_main(argc, argv);
+        ctx->ret = ffmpeg_main(argc, argv);
         noff_stdout_fd = -1;
         noff_stderr_fd = -1;
+        ffmpeg_ctx_release(ctx);   // drop the worker's unused reference
+    }
+
+    if (abandoned) {
+        // Give the orphan ownership of argv: exec_handler frees its copy as
+        // soon as we return, but the still-running ffmpeg_main() reads it.
+        ctx->argv_owned = true;
+        ctx->argv = calloc(argc + 1, sizeof(char *));
+        if (ctx->argv) {
+            for (int i = 0; i < argc; i++)
+                ctx->argv[i] = argv[i] ? strdup(argv[i]) : NULL;
+        }
+        // NOTE: the orphan is mid-flight reading the ORIGINAL argv. Swapping the
+        // pointer now is safe only because ffmpeg_main has already parsed argv
+        // into its own option structures by the time a transcode can wedge; a
+        // hang during argument parsing is not a shape we have observed. This is
+        // a best-effort mitigation of an inherently unsafe situation, and the
+        // real fix is plan B (a framework-level interrupt so nothing is ever
+        // orphaned).
+        pthread_detach(thr);
+
+        // Poison BEFORE unlocking so no later caller can acquire the mutex and
+        // race the orphan through ffmpeg's globals.
+        atomic_store_explicit(&g_ffmpeg_poisoned, true, memory_order_release);
+
+        NSLog(@"[FFmpegOffload] ⚠️ ABANDONED a wedged ffmpeg_main() after abort request. "
+              @"The guest process will now exit, but the host worker thread keeps running and "
+              @"its memory (decoder/encoder contexts, frame buffers — typically hundreds of MB) "
+              @"is NOT reclaimed. ffmpeg is disabled until the app restarts. "
+              @"A full fix needs an interrupt hook in FFmpeg.framework.");
+
+        const char *msg = "\nffmpeg: aborted (worker could not be stopped; "
+                          "ffmpeg unavailable until app restart)\n";
+        if (stderr_fd >= 0) (void) write(stderr_fd, msg, strlen(msg));
+    }
+
+    // [T-ish-offload-signal-forward] On the abandoned path, deliberately skip
+    // every teardown step below and do NOT unlock the mutex:
+    //   - the orphan is still using the av_log redirect and the stdio fds, so
+    //     tearing them down would make it write through freed/reused state;
+    //   - the mutex must stay held forever, because it is what guarantees no
+    //     later caller can enter ffmpeg's globals while the orphan owns them.
+    //     g_ffmpeg_poisoned makes later callers fail fast rather than block on
+    //     it, so holding it costs nothing and closes the race.
+    // The ctx reference held by this frame is released; the orphan holds the
+    // other one and frees the ctx when (if) ffmpeg_main ever returns.
+    if (abandoned) {
+        int ret = ctx->ret;
+        ffmpeg_ctx_release(ctx);
+        return ret;
     }
 
     // ── Restore av_log callback ──
@@ -336,13 +492,22 @@ static int ffmpeg_handler(int argc, char **argv,
 
     pthread_mutex_unlock(&ffmpeg_mutex);
 
-    return ctx.ret;
+    int ret = ctx->ret;
+    ffmpeg_ctx_release(ctx);
+    return ret;
 }
 
 void ffmpeg_offload_register(void) {
     int err = native_offload_add_handler("ffmpeg", ffmpeg_handler);
     if (err == 0) {
         NSLog(@"NativeOffloads: ffmpeg handler registered");
+        // [T-ish-offload-signal-forward] Opt in to guest signal delivery, so a
+        // `kill` on a wedged transcode reaches us instead of being queued for a
+        // thread that will never look at it.
+        if (native_offload_set_abort_handler("ffmpeg", ffmpeg_abort_requested) == 0)
+            NSLog(@"NativeOffloads: ffmpeg abort handler registered");
+        else
+            NSLog(@"NativeOffloads: failed to register ffmpeg abort handler");
     } else {
         NSLog(@"NativeOffloads: failed to register ffmpeg handler (err=%d)", err);
     }

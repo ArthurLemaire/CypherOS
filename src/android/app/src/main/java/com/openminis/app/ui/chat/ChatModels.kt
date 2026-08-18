@@ -264,6 +264,13 @@ data class AssistantBlock(
     val browserURL: String? = null,
     /** Local file path to screenshot JPEG (mirrors iOS AssistantBlock.imageFilePath). */
     val imageFilePath: String? = null,
+    /**
+     * [T-android-gemini3-thoughtsig / #179] Gemini 3.x thought signature for a
+     * tool_use block. Carried here so [buildTurnParts] (the persistence path,
+     * which rebuilds ToolUse parts from blocks) can round-trip it to the DB.
+     * Null for non-Gemini providers and thinking-off Gemini calls.
+     */
+    val thoughtSignature: String? = null,
 ) {
     val isText: Boolean get() = kind == "text"
 }

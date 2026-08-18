@@ -81,8 +81,24 @@
     <string name="bg_section_footer">오래 실행되는 에이전트 작업은 화면이 꺼진 동안 CPU를 깨운 상태로 유지하기 위한 권한이 필요합니다. 이 설정이 없으면 시스템은 몇 분 후 백그라운드 추론을 중지할 수 있습니다.</string>
     <string name="bg_service_channel_name">에이전트 상태</string>
     <string name="bg_service_channel_description">실행 중인 에이전트 세션의 상태를 표시합니다.</string>
+    <string name="a11y_repair_dialog_title">접근성이 해제되었습니다</string>
+    <string name="a11y_repair_dialog_message_shizuku">Minis의 접근성 권한이 사라졌습니다. 앱을 강제 중지하면 발생합니다. Shizuku를 사용할 수 있으므로 설정을 열지 않고 바로 복구할 수 있습니다.</string>
+    <string name="a11y_repair_dialog_message_manual">Minis의 접근성 권한이 사라졌습니다. 앱을 강제 중지하면 발생합니다. 계속하려면 설정 → 접근성에서 Minis를 다시 켜세요.</string>
+    <string name="a11y_repair_action_repair">지금 복구</string>
+    <string name="a11y_repair_action_open_settings">설정 열기</string>
+    <string name="a11y_repair_cancel">나중에</string>
+    <string name="a11y_repair_section_header">조치 필요</string>
+    <string name="a11y_repair_row_shizuku">접근성 권한 복구</string>
+    <string name="a11y_repair_row_manual">접근성 다시 켜기</string>
+    <string name="a11y_repair_row_sub">강제 중지로 권한이 취소된 것 같습니다</string>
+    <string name="a11y_repair_in_progress">복구 중…</string>
+    <string name="a11y_repair_failed">복구 실패 — 설정에서 켜 주세요</string>
+    <string name="a11y_repair_footer_shizuku">Android는 앱이 강제 중지될 때마다 접근성 권한을 제거하고 자동으로 복원하지 않습니다. Shizuku는 이를 직접 다시 기록할 수 있습니다.</string>
+    <string name="a11y_repair_footer_manual">Android는 앱이 강제 중지될 때마다 접근성 권한을 제거하고 자동으로 복원하지 않습니다. Shizuku를 설치·승인하면 앞으로 한 번에 복구할 수 있습니다.</string>
     <string name="bg_service_notification_title">Minis 에이전트 실행 중</string>
     <string name="bg_service_notification_text">%1$s | %2$s | %3$s</string>
+    <string name="bg_service_notification_title_completed">작업 완료</string>
+    <string name="bg_service_notification_text_completed">%1$s | %2$s 만에 완료</string>
     <string name="bg_service_stop_action">중지</string>
     <plurals name="bg_service_sessions">
         <item quantity="one">%d개의 세션</item>
@@ -554,6 +570,12 @@
     <string name="browser_reload">새로 고침</string>
     <string name="browser_minis_browsing">Minis가 브라우징 중</string>
     <string name="chat_typing_indicator">%1$s가 생각하는 중</string>
+    <string name="read_aloud_unavailable">읽어주기 실패: 사용 가능한 음성 엔진이 없습니다. 음성 출력 설정을 확인하거나 시스템 음성 엔진을 설치하세요.</string>
+    <string name="voice_panel_no_engine_title">사용 가능한 음성 인식이 없습니다</string>
+    <string name="voice_panel_no_engine_body">음성 입력에는 인식 엔진이 필요합니다. 기기의 음성 서비스를 켜거나 Minis에서 전사 제공자를 설정하세요.</string>
+    <string name="voice_panel_no_engine_open_system">기기 설정</string>
+    <string name="voice_panel_no_engine_open_providers">Minis 제공자</string>
+    <string name="chat_error_stream_dropped_partial">연결이 끊겼습니다. 이 답변은 불완전할 수 있습니다. 다시 시도해 주세요.</string>
     <string name="chat_input_placeholder">%1$s에게 메시지 (@로 파일 참조)</string>
     <string name="browser_takeover">제어 인계</string>
     <string name="browser_settings_done">완료</string>
@@ -597,11 +619,13 @@
     <string name="provider_list_add_a_provider_to_get_started">시작하려면 AI 공급자를 추가하세요.</string>
     <string name="provider_list_import_provider">Import Provider</string>
     <string name="share_provider_json_title">제공자 구성을 감지했습니다</string>
+    <string name="share_expired_toast">공유한 콘텐츠가 만료되었습니다. 다시 공유해 주세요.</string>
     <string name="share_provider_json_message">이 JSON 파일은 내보낸 제공자 구성으로 보입니다. 어떻게 할까요?</string>
     <string name="share_provider_json_import">제공자 가져오기</string>
     <string name="share_provider_json_attach">채팅 첨부 파일로 추가</string>
     <string name="share_provider_json_imported">제공자 \"%1$s\"을(를) 가져왔습니다</string>
     <string name="share_provider_json_import_failed">잘못된 제공자 구성 파일입니다</string>
+    <string name="share_open_app_failed">콘텐츠가 저장되었습니다. Minis를 자동으로 열지 못했습니다. 앱을 열어 계속하세요.</string>
     <string name="provider_list_api_key">API Key</string>
     <string name="provider_list_disabled">비활성화됨</string>
     <string name="provider_detail_export">내보내기</string>
@@ -816,6 +840,9 @@
     <string name="settings_mount_external_folders_subtitle">선택한 폴더를 /var/minis/mounts/ 에 바인드</string>
     <string name="mount_folders_title">마운트된 폴더</string>
     <string name="mount_folders_info_banner">선택한 폴더는 /var/minis/mounts/&lt;name&gt; 에 바인드 마운트됩니다. 한 번에 최대 10개까지 마운트할 수 있습니다.</string>
+    <string name="mount_picker_intro_title">마운트할 폴더 선택</string>
+    <string name="mount_picker_intro_message">Android는 내부 저장소 전체를 마운트할 수 없습니다. 문서나 다운로드처럼 그 안의 구체적인 폴더를 선택하세요.\n\n다음에 열리는 것은 시스템 파일 선택기입니다. 어떤 폴더에 \u201c이 폴더를 사용할 수 없습니다\u201d라고 표시되면 하위 폴더로 들어가거나 시스템 뒤로 제스처로 여기로 돌아오세요.</string>
+    <string name="mount_picker_intro_continue">선택하기</string>
     <string name="mount_folders_empty_title">마운트된 폴더 없음</string>
     <string name="mount_folders_empty_subtitle">+ 를 눌러 폴더를 선택하세요</string>
     <string name="mount_folders_limit_reached">마운트 한도(10) 도달</string>
@@ -934,6 +961,7 @@
     <string name="crash_freq_dialog_message">Minis가 지난 1시간 동안 여러 번 충돌했습니다. 문제 해결을 위해 충돌 로그를 공유하시겠습니까?</string>
     <string name="crash_freq_dialog_share">로그 공유</string>
     <string name="crash_freq_dialog_dismiss">나중에</string>
+    <string name="crash_safe_mode_restart_needed">복구를 완료하려면 Minis를 다시 시작해야 합니다. 앱 아이콘을 다시 탭해 주세요.</string>
     <string name="crash_freq_email_subject">Minis 충돌 보고서 %1$s</string>
     <string name="crash_freq_share_chooser">충돌 로그 보내기</string>
     <string name="overlay_completion_completed">완료됨</string>
@@ -1058,4 +1086,10 @@
     <string name="browser_downloads_cancel">다운로드 취소</string>
     <string name="browser_downloads_failed">실패</string>
     <string name="browser_downloads_open">열기</string>
+    <string name="shizuku_install_btn_sui">Sui 설치</string>
+    <string name="shizuku_install_btn_sui_subtitle">RikkaApps · 루팅된 기기 (Magisk/KernelSU) 용 · 앱 불필요, 재부팅 후에도 유지</string>
+    <string name="shizuku_ready_subtitle_sui">Sui (root) · version=%1$d, uid=%2$d</string>
+    <string name="shizuku_grant_footer_sui">Sui가 실행 중입니다. "Minis 승인"을 눌러 접근을 허용하세요 — 확인 대화상자는 Sui가 직접 표시합니다. 따로 열어야 할 관리자 앱은 없습니다.</string>
+    <string name="shizuku_install_footer">Shizuku (RikkaApps), AXManager (Axeron), Sui (RikkaApps) 중 하나를 설치하세요 — 세 가지 모두 동일한 프로토콜을 사용하며 서로 교체 가능합니다. Shizuku와 AXManager는 무선 ADB로 활성화하는 일반 앱입니다. Sui는 이미 루팅된 기기용으로, Magisk/KernelSU 모듈로 설치되며 앱이 필요 없고 재부팅 후에도 활성 상태를 유지합니다. KernelSU 또는 APatch에서는 Sui에 추가로 Zygisk 구현(Zygisk Next / ReZygisk / NeoZygisk)이 필요합니다 — 없으면 Sui가 로드되지 않습니다. 하나를 설치한 뒤 여기로 돌아오세요.</string>
+    <string name="shizuku_state_not_installed_subtitle">Shizuku, AXManager 또는 Sui 중 하나를 설치하세요.</string>
 </resources>

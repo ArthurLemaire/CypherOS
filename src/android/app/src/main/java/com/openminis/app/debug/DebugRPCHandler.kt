@@ -35,6 +35,9 @@ class DebugRPCHandler(private val context: Context) {
     companion object {
         /** Set this from MainActivity to enable screenshot capture. */
         var currentActivity: WeakReference<Activity>? = null
+
+        /** Both crash writers' filenames: ACRA's and NativeCrashHandler's. */
+        private val CRASH_NAME = Regex("""^(native-)?crash-.*\.log$""")
     }
 
     suspend fun handle(json: String): String {
@@ -78,6 +81,8 @@ class DebugRPCHandler(private val context: Context) {
             "debug.logs.list" -> handleLogsList()
             "debug.logs.read" -> handleLogsRead(params)
             "debug.logs.setEnabled" -> handleLogsSetEnabled(params)
+            "debug.crash.list" -> handleCrashList(params)
+            "debug.crash.read" -> handleCrashRead(params)
             "debug.tap" -> handleTap(params)
             "debug.scroll" -> handleScroll(params)
             "debug.inputText" -> handleInputText(params)
@@ -116,6 +121,7 @@ class DebugRPCHandler(private val context: Context) {
             "provider.instances.list" -> ProviderDebugMethods.instancesList(context, params)
             "provider.models.list" -> ProviderDebugMethods.modelsList(context, params)
             "provider.groups.list" -> ProviderDebugMethods.groupsList(context, params)
+            "provider.quickTest" -> ProviderDebugMethods.quickTest(context, params)
             "provider.export" -> ProviderDebugMethods.export(context, params)
             "provider.import" -> ProviderDebugMethods.import(context, params)
 
@@ -446,6 +452,100 @@ class DebugRPCHandler(private val context: Context) {
             put("content", sliced)
             put("bytesRead", sliced.length)
             if (sliced.length < content.length - offset) put("truncated", true)
+        }
+    }
+
+    // ── Crash reports ───────────────────────────────────────────────────────
+    //
+    // [T-android-debug-crashes] Crash triage over the debug server. Both crash
+    // writers already drop files into filesDir/logs — ACRA's CrashFileSender
+    // writes "crash-<stamp>.log" (Java/Kotlin) and NativeCrashHandler writes
+    // "native-crash-<stamp>.log" — but reaching them previously meant knowing
+    // that convention and shelling out through `adb run-as`, which is
+    // unavailable to any client that isn't on a USB cable. A crashed app also
+    // stops answering RPC, so the crash is exactly when the debug server is
+    // least able to explain itself; these methods make the post-restart
+    // "what just died?" question answerable in one call.
+
+    private fun crashFiles(): List<File> {
+        val dir = File(context.filesDir, "logs")
+        if (!dir.isDirectory) return emptyList()
+        return (dir.listFiles() ?: emptyArray())
+            .filter { it.isFile && CRASH_NAME.matches(it.name) }
+            .sortedByDescending { it.lastModified() }
+    }
+
+    private fun handleCrashList(params: JSONObject): JSONObject {
+        val limit = params.optInt("limit", 20).coerceIn(1, 200)
+        val files = crashFiles()
+        val array = JSONArray()
+        for (f in files.take(limit)) {
+            array.put(JSONObject().apply {
+                put("name", f.name)
+                put("size", f.length())
+                put("modified", f.lastModified())
+                put("native", f.name.startsWith("native-crash-"))
+                // First stack line is what triage keys on, so surface it here
+                // and save a read call when scanning a list of crashes.
+                put("summary", crashSummary(f))
+            })
+        }
+        return JSONObject().apply {
+            put("count", files.size)
+            put("returned", array.length())
+            put("crashes", array)
+        }
+    }
+
+    /** Exception type + first app frame — enough to tell crashes apart. */
+    private fun crashSummary(f: File): String = try {
+        val lines = f.bufferedReader().useLines { seq -> seq.take(400).toList() }
+        val i = lines.indexOfFirst { it.startsWith("--- Stack Trace ---") }
+        val body = if (i >= 0) lines.drop(i + 1) else lines
+        val head = body.firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+        val frame = body.firstOrNull { it.trimStart().startsWith("at com.openminis") }
+            ?.trim()?.removePrefix("at ").orEmpty()
+        listOf(head, frame).filter { it.isNotEmpty() }.joinToString("  |  ")
+    } catch (e: Exception) {
+        "(unreadable: ${e.message})"
+    }
+
+    private fun handleCrashRead(params: JSONObject): JSONObject {
+        val files = crashFiles()
+        if (files.isEmpty()) throw RPCException(-32000, "No crash reports on device")
+        // No name → newest, which is what "why did it just die?" wants.
+        val name = params.optString("name").takeIf { it.isNotEmpty() }
+        if (name != null && (name.contains("/") || name.contains(".."))) {
+            throw RPCException(-32602, "Invalid params: 'name' must be a filename")
+        }
+        val file = if (name == null) files.first()
+        else files.firstOrNull { it.name == name }
+            ?: throw RPCException(-32602, "Crash report not found: $name")
+
+        val full = file.readText()
+        // Default to the stack only: the ACRA reports embed 200 logcat lines
+        // plus a Build dump, so a whole file is ~27KB of which the useful part
+        // is the first ~40 lines.
+        val stackOnly = params.optBoolean("stackOnly", true)
+        val content = if (!stackOnly) full else {
+            val start = full.indexOf("--- Stack Trace ---")
+            val end = full.indexOf("--- Logcat")
+            when {
+                start < 0 -> full
+                end > start -> full.substring(0, end).trimEnd()
+                else -> full.substring(0, minOf(full.length, start + 4000))
+            }
+        }
+        val limit = params.optInt("limit", 262_144)
+        val sliced = content.take(limit)
+        return JSONObject().apply {
+            put("name", file.name)
+            put("modified", file.lastModified())
+            put("native", file.name.startsWith("native-crash-"))
+            put("fileSize", file.length())
+            put("stackOnly", stackOnly)
+            put("content", sliced)
+            if (sliced.length < content.length) put("truncated", true)
         }
     }
 
@@ -1141,19 +1241,58 @@ class DebugRPCHandler(private val context: Context) {
      */
     private fun handleMinisConfigExec(params: JSONObject): JSONObject {
         val sub = params.optString("subcommand", "").takeIf { it.isNotEmpty() }
-            ?: throw RPCException(-32602, "Missing 'subcommand' — one of: set, get, audit-list")
+            ?: throw RPCException(
+                -32602,
+                "Missing 'subcommand' — one of: set, get, topics, topic-help, audit-list",
+            )
 
         return when (sub) {
             "set" -> {
-                val path = params.optString("path", "").takeIf { it.isNotEmpty() }
-                    ?: throw RPCException(-32602, "Missing 'path' for subcommand=set")
-                val valueJson = params.optString("value_json", "").takeIf { it.isNotEmpty() }
-                    ?: throw RPCException(-32602, "Missing 'value_json' for subcommand=set")
-                val items = JSONArray().put(JSONObject().apply {
-                    put("path", path)
-                    put("value_json", valueJson)
-                })
-                AppLogger.info("DebugRPC", "debug.minisConfig.exec set path=$path")
+                // Accepts EITHER a single `path` + `value_json`, or `items:
+                // [{path, value_json}, …]` for a multi-path batch. The batch form
+                // matters because performWriteBatch applies its items as ONE unit
+                // — writing two paths as two calls cannot exercise that.
+                val items = params.optJSONArray("items")?.also { arr ->
+                    if (arr.length() == 0) {
+                        throw RPCException(-32602, "'items' must not be empty for subcommand=set")
+                    }
+                    for (i in 0 until arr.length()) {
+                        val it = arr.optJSONObject(i)
+                            ?: throw RPCException(-32602, "items[$i] must be an object")
+                        if (it.optString("path", "").isEmpty()) {
+                            throw RPCException(-32602, "Missing 'path' in items[$i]")
+                        }
+                        if (it.optString("value_json", "").isEmpty()) {
+                            throw RPCException(-32602, "Missing 'value_json' in items[$i]")
+                        }
+                    }
+                } ?: run {
+                    val path = params.optString("path", "").takeIf { it.isNotEmpty() }
+                        ?: throw RPCException(
+                            -32602,
+                            "Missing 'path' (or 'items') for subcommand=set",
+                        )
+                    val valueJson = params.optString("value_json", "").takeIf { it.isNotEmpty() }
+                        ?: throw RPCException(-32602, "Missing 'value_json' for subcommand=set")
+                    JSONArray().put(
+                        JSONObject().apply {
+                            put("path", path)
+                            put("value_json", valueJson)
+                        },
+                    )
+                }
+                // Default stays TRUE for backward compatibility: existing
+                // harnesses call this unattended and would hang on a sheet that
+                // nobody can tap. Passing `skipConfirmation:false` is what lets a
+                // test drive the REAL confirmation gate — without it that path is
+                // permanently unreachable from automation, which is precisely
+                // what iOS DebugRPCConfig calls out (it defaults the other way,
+                // preferring fidelity over convenience).
+                val skip = params.optBoolean("skipConfirmation", true)
+                AppLogger.info(
+                    "DebugRPC",
+                    "debug.minisConfig.exec set items=${items.length()} skipConfirmation=$skip",
+                )
                 // Hop to the main thread because performWriteBatch is a
                 // suspend fun that uses Dispatchers.Main internally.
                 kotlinx.coroutines.runBlocking {
@@ -1162,26 +1301,73 @@ class DebugRPCHandler(private val context: Context) {
                         caption = "debug.minisConfig.exec",
                         actorRaw = "debug-rpc",
                         sessionId = null,
-                        skipConfirmation = true,
+                        skipConfirmation = skip,
                     )
                 }
             }
             "get" -> {
                 val path = params.optString("path", "").takeIf { it.isNotEmpty() }
                     ?: throw RPCException(-32602, "Missing 'path' for subcommand=get")
+                // filter/page/pageSize were hardcoded to null/0/0, which made
+                // large collections (models, sessions) unreadable from
+                // automation — readField supports all three, so forward them.
+                // 0/0 preserves the previous "no pagination" behaviour.
+                // NOTE: readField's page is 1-BASED (it maps page<=0 to page 1),
+                // so page=0 and page=1 both return the first page.
+                val filter = params.optString("filter", "").takeIf { it.isNotEmpty() }
+                val page = params.optInt("page", 0)
+                val pageSize = params.optInt("pageSize", 0)
                 AppLogger.info("DebugRPC", "debug.minisConfig.exec get path=$path")
                 com.openminis.app.config.ConfigBridge.readField(
                     path = path,
-                    filter = null,
-                    page = 0,
-                    pageSize = 0,
+                    filter = filter,
+                    page = page,
+                    pageSize = pageSize,
                 )
+            }
+            // Discovery. Without these a caller has to know a collection's
+            // writable paths in advance; `topics` is `minis-config --help`'s
+            // index and `topic-help` is `minis-config <topic> --help`.
+            "topics" -> JSONObject().apply {
+                put("ok", true)
+                put("topics", com.openminis.app.config.ConfigBridge.allTopics())
+            }
+            "topic-help" -> {
+                val topic = params.optString("topic", "").takeIf { it.isNotEmpty() }
+                    ?: throw RPCException(-32602, "Missing 'topic' for subcommand=topic-help")
+                // "No fields" has TWO causes that must not be conflated: an
+                // unregistered topic (caller typo — an error), and a registered
+                // COLLECTION that currently has no children, e.g. `thinkingrules`
+                // before the user authors a rule. The latter is a legitimate
+                // empty result; reporting it as "unknown topic" sends the caller
+                // hunting for a name that is in fact correct.
+                //
+                // allTopics() is the authority because it includes every
+                // registered collection basePath regardless of child count.
+                val known = com.openminis.app.config.ConfigBridge.allTopics()
+                    .let { arr -> (0 until arr.length()).any { arr.optString(it) == topic } }
+                if (!known) {
+                    throw RPCException(-32602, "Unknown topic '$topic' — call subcommand=topics")
+                }
+                val fields = com.openminis.app.config.ConfigBridge.fieldsForTopic(topic)
+                JSONObject().apply {
+                    put("ok", true)
+                    put("topic", topic)
+                    // Explicit, so an empty list is unambiguously "registered but
+                    // has no children right now" rather than a silent oddity.
+                    put("empty", fields.length() == 0)
+                    put("fields", fields)
+                }
             }
             "audit-list" -> {
                 val limit = params.optInt("limit", 100).coerceIn(1, 1000)
-                com.openminis.app.config.ConfigBridge.auditList(limit, null)
+                val scope = params.optString("scope", "").takeIf { it.isNotEmpty() }
+                com.openminis.app.config.ConfigBridge.auditList(limit, scope)
             }
-            else -> throw RPCException(-32602, "Unknown subcommand '$sub'")
+            else -> throw RPCException(
+                -32602,
+                "Unknown subcommand '$sub' — one of: set, get, topics, topic-help, audit-list",
+            )
         }
     }
 }

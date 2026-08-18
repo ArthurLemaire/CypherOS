@@ -13,6 +13,11 @@ struct GroupSlotPicker: View {
     let label: LocalizedStringKey
     @Binding var selection: String?
     var voiceDirection: VoiceDirection? = nil
+    /// [T-ios-vision-group #182] Vision slot: filter the create-group picker to
+    /// image-capable models. Orthogonal to `voiceDirection` (never both set) —
+    /// kept as a separate flag rather than a third VoiceDirection case so the
+    /// voice resolver's exhaustive switches stay untouched.
+    var isVision: Bool = false
 
     @State private var showCreate = false
 
@@ -62,12 +67,16 @@ struct GroupSlotPicker: View {
         return ModelPickerConfig(
             title: "Create Group",
             mode: .multi,
-            explicitPreferModality: dir.map { $0 == .input ? [.audioInput] : [.audioOutput] },
+            explicitPreferModality: isVision
+                ? [.imageInput]
+                : dir.map { $0 == .input ? [.audioInput] : [.audioOutput] },
             groupScope: .none,
-            headerNote: dir?.filterNote,
+            headerNote: isVision
+                ? String(localized: "Showing models that can read images.", comment: "Vision group picker filter note")
+                : dir?.filterNote,
             onAddMulti: { ids in
                 guard !ids.isEmpty else { return }
-                let name = Self.suggestedName(for: dir, store: ProviderConfigStore.shared)
+                let name = Self.suggestedName(for: dir, isVision: isVision, store: ProviderConfigStore.shared)
                 let group = ModelGroup(name: name, memberEntryIds: ids.sorted())
                 ProviderConfigStore.shared.addGroup(group)
                 assign(group.id)
@@ -75,12 +84,16 @@ struct GroupSlotPicker: View {
         )
     }
 
-    private static func suggestedName(for dir: VoiceDirection?, store: ProviderConfigStore) -> String {
+    private static func suggestedName(for dir: VoiceDirection?, isVision: Bool = false, store: ProviderConfigStore) -> String {
         let base: String
-        switch dir {
-        case .input:  base = String(localized: "Voice Input", comment: "Default voice input group name")
-        case .output: base = String(localized: "Voice Output", comment: "Default voice output group name")
-        case nil:     base = String(localized: "New Group", comment: "Default group name")
+        if isVision {
+            base = String(localized: "Vision Input", comment: "Default vision group name")
+        } else {
+            switch dir {
+            case .input:  base = String(localized: "Voice Input", comment: "Default voice input group name")
+            case .output: base = String(localized: "Voice Output", comment: "Default voice output group name")
+            case nil:     base = String(localized: "New Group", comment: "Default group name")
+            }
         }
         let existing = Set(store.modelGroups.map(\.name))
         if !existing.contains(base) { return base }

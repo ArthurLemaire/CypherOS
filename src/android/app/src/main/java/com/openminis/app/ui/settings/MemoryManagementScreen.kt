@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -140,7 +141,7 @@ fun MemoryManagementScreen(
     if (deleteFileName != null) {
         AlertDialog(
             onDismissRequest = { deleteFileName = null },
-            title = { Text("Delete ${deleteFileName}?") },
+            title = { Text(stringResource(R.string.memory_delete_confirm_title, deleteFileName ?: "")) },
             text = { Text(stringResource(R.string.memory_delete_confirm_text)) },
             confirmButton = {
                 MinisTextButton(onClick = {
@@ -211,6 +212,23 @@ private fun MemoryFileRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+        }
+        // [T-memory-file-delete-entrypoint] Daily logs are deletable per the
+        // repository contract, but the row previously accepted onDelete and
+        // never rendered it — the confirm dialog was unreachable, so users
+        // could not delete memory files at all (iOS exposes this via
+        // List .onDelete swipe). An always-visible trash button is the
+        // Android-convention equivalent; GLOBAL.md passes onDelete = null
+        // and keeps its chevron-only layout.
+        if (onDelete != null) {
+            IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    Icons.Outlined.Delete,
+                    contentDescription = stringResource(R.string.common_delete),
+                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
+                    modifier = Modifier.size(20.dp),
                 )
             }
         }

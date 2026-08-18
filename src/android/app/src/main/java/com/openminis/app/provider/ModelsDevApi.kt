@@ -118,10 +118,21 @@ object ModelsDevApi {
                 val devModel = prov.models[model.id] ?: continue
                 return@map applyDevData(model, devModel)
             }
-            for ((_, prov) in registry) {
-                val devModel = prov.models[model.id] ?: continue
-                return@map applyDevData(model, devModel)
-            }
+            // Fallback scan: the same model id is published by many providers
+            // (e.g. `glm-5.2` appears under 19), and a custom relay's provider
+            // name matches none of them, so this scan is what third-party
+            // gateways actually hit.
+            //
+            // [T-reasoning-effort-data-driven] Map iteration order is not a
+            // stable contract, and these entries disagree on capabilities: 17 of
+            // the 19 `glm-5.2` entries declare effort tiers, 2 declare none.
+            // Sort by key for a stable pick and prefer an entry that carries
+            // reasoning metadata, so the richer declaration wins over a sparser
+            // duplicate. Mirrors iOS ModelsDevAPI.enrichModels.
+            val candidates = registry.keys.sorted().mapNotNull { registry[it]?.models?.get(model.id) }
+            val best = candidates.firstOrNull { !it.reasoningEffortValues.isNullOrEmpty() }
+                ?: candidates.firstOrNull()
+            if (best != null) return@map applyDevData(model, best)
             model
         }
     }
@@ -136,6 +147,11 @@ object ModelsDevApi {
             interleavedReasoningField = devModel.interleavedField ?: model.interleavedReasoningField,
             inputModalities = devModel.inputModalities ?: model.inputModalities,
             outputModalities = devModel.outputModalities ?: model.outputModalities,
+            reasoningEffortValues = devModel.reasoningEffortValues ?: model.reasoningEffortValues,
+            // [OpenMinis#163] Only carry the AFFIRMATIVE answer forward, so
+            // enriching against an entry the catalog is silent about cannot
+            // overwrite a prior real answer with a meaningless `false`.
+            declaresNoEffortTiers = if (devModel.declaresNoEffortTiers) true else model.declaresNoEffortTiers,
         )
     }
 
@@ -155,6 +171,10 @@ object ModelsDevApi {
                 interleavedReasoningField = model.interleavedField,
                 inputModalities = model.inputModalities,
                 outputModalities = model.outputModalities,
+                reasoningEffortValues = model.reasoningEffortValues,
+                // [OpenMinis#163] null (not false) when the catalog is silent,
+                // so "unknown" stays distinguishable from "declared none".
+                declaresNoEffortTiers = if (model.declaresNoEffortTiers) true else null,
             )
         }
     }
@@ -187,6 +207,15 @@ object ModelsDevApi {
     }
 
     // MARK: - Registry Cache (3-tier)
+
+    /**
+     * [T-model-release-ranking] Read-only view of the loaded catalog, for
+     * [ModelReleaseIndex] to build its ranking tables from. Returns an empty map
+     * rather than null so callers can't accidentally treat "catalog unavailable"
+     * as an error state — an absent catalog just means nothing gets a rank and
+     * every model keeps its fallback ordering.
+     */
+    fun registrySnapshot(): Map<String, ProviderEntry> = loadRegistry() ?: emptyMap()
 
     @Synchronized
     private fun loadRegistry(): Map<String, ProviderEntry>? {
@@ -338,6 +367,39 @@ object ModelsDevApi {
         val inputModalities = parseArray("input")
         val outputModalities = parseArray("output")
 
+        // [T-reasoning-effort-data-driven] reasoning_options is an array of
+        // {type, values?, min?, max?}; pick the `effort` entry's values.
+        var reasoningEffortValues: List<String>? = null
+        val reasoningOptions = obj.optJSONArray("reasoning_options")
+        reasoningOptions?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val opt = arr.optJSONObject(i) ?: continue
+                if (opt.optString("type") != "effort") continue
+                val vals = opt.optJSONArray("values") ?: continue
+                val out = mutableListOf<String>()
+                for (j in 0 until vals.length()) {
+                    vals.optString(j, "").takeIf { it.isNotEmpty() }?.let { out.add(it.lowercase()) }
+                }
+                reasoningEffortValues = out.takeIf { it.isNotEmpty() }
+                break
+            }
+        }
+        // [OpenMinis#163] The catalog AFFIRMATIVELY says this model has no
+        // effort tiers, as opposed to saying nothing at all. reasoningEffortValues
+        // collapses both to null, losing the difference that matters on the wire:
+        //   • reasoning_options absent → no opinion. Stay permissive and keep
+        //     sending reasoning_effort; relays serve models the catalog has
+        //     never heard of.
+        //   • reasoning_options PRESENT but with no usable `effort` entry ([],
+        //     or an effort entry whose values are empty) → the model reasons
+        //     WITHOUT an effort parameter. Sending it is a hard 400: xAI
+        //     grok-build-0.1 and grok-4.20-0309-reasoning both ship
+        //     "reasoning": true with "reasoning_options": [].
+        // Deliberately keyed on "no usable effort entry" rather than
+        // "reasoning_options is empty", so a model declaring only toggle /
+        // budget_tokens — also affirmatively not effort-controlled — counts.
+        val declaresNoEffortTiers = reasoningOptions != null && reasoningEffortValues == null
+
         return ModelDevEntry(
             id = id,
             name = name,
@@ -348,6 +410,12 @@ object ModelsDevApi {
             interleavedField = interleavedField,
             inputModalities = inputModalities,
             outputModalities = outputModalities,
+            reasoningEffortValues = reasoningEffortValues,
+            declaresNoEffortTiers = declaresNoEffortTiers,
+            releaseDate = obj.optString("release_date", "").ifEmpty { null },
+            outputCost = obj.optJSONObject("cost")
+                ?.optDouble("output", Double.NaN)
+                ?.takeIf { !it.isNaN() },
         )
     }
 
@@ -416,5 +484,23 @@ object ModelsDevApi {
         // modalities.input / modalities.output from models.dev (e.g. ["text","image"]).
         val inputModalities: List<String>?,
         val outputModalities: List<String>?,
+        // [T-reasoning-effort-data-driven] `values` of the reasoning_options
+        // entry whose type == "effort"; null when the model declares only
+        // toggle / budget_tokens (different mechanisms, not effort control).
+        val reasoningEffortValues: List<String>?,
+        // [OpenMinis#163] True when reasoning_options was PRESENT but declared
+        // no usable effort tier — "reasons, but takes no reasoning_effort".
+        // Distinct from reasoningEffortValues == null, which also covers "the
+        // catalog has never heard of this model"; only this affirmative case
+        // may suppress the field.
+        val declaresNoEffortTiers: Boolean = false,
+        // [T-model-release-ranking] Raw `release_date`. models.dev fills this
+        // for every entry, but 181 of them carry `YYYY-MM` with no day — the
+        // parser must tolerate that or those models sink in every sorted list.
+        val releaseDate: String?,
+        // [T-model-release-ranking] USD per million output tokens. Tie-breaker
+        // for same-day releases: sol/terra/luna all shipped 2026-07-09 and only
+        // price (30 / 12 / 1.2) separates their tiers.
+        val outputCost: Double?,
     )
 }

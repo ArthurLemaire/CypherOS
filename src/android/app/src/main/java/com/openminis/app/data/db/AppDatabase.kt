@@ -13,8 +13,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MessageEntity::class,
         CompactMarkerEntity::class,
         WebAppShortcutEntity::class,
+        FolderEntity::class,
     ],
-    version = 10,
+    version = 11,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -163,6 +164,42 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * [T-android-session-grouping] Session groups. Adds the `folders` table
+         * and `sessions.folder_id`.
+         *
+         * Purely additive: existing sessions read back `folder_id = NULL`
+         * (= ungrouped), which is exactly the pre-migration behaviour, so no
+         * data is rewritten and a downgrade loses only the grouping.
+         *
+         * `folder_id` carries NO foreign key on purpose — an id pointing at a
+         * group that is not present locally must render as ungrouped rather
+         * than fail a constraint (see ChatSessionEntity.folderId). The index is
+         * plain and non-unique: many sessions share one group.
+         */
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS folders (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        icon TEXT,
+                        color TEXT,
+                        origin TEXT NOT NULL DEFAULT 'manual',
+                        sort_index INTEGER NOT NULL DEFAULT 0,
+                        pinned_at INTEGER,
+                        description TEXT,
+                        created_at INTEGER NOT NULL,
+                        updated_at INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL("ALTER TABLE sessions ADD COLUMN folder_id TEXT")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_sessions_folder_id ON sessions(folder_id)")
+            }
+        }
+
         val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // sessions: add iOS-parity columns
@@ -200,7 +237,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "minis.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
                     .build()
                     .also { INSTANCE = it }
             }

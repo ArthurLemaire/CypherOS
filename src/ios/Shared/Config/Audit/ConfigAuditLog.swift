@@ -29,6 +29,9 @@ final class ConfigAuditLog: ObservableObject {
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         self.dbURL = base.appendingPathComponent("minis-config-audit.db")
         openAndMigrate()
+        // [T-config-audit-wal-loss] See checkpoint(): a disappeared log and a
+        // never-used one look identical without this line.
+        logRowCountForDiagnostics()
     }
 
     // MARK: Schema
@@ -157,6 +160,44 @@ final class ConfigAuditLog: ObservableObject {
         guard db != nil else { return }
         exec("DELETE FROM config_audit")
         revision &+= 1
+    }
+
+    /// [T-config-audit-wal-loss] Fold the WAL back into the main DB file.
+    ///
+    /// This database is deliberately separate from `minis.db` so the audit table
+    /// never lands in a sync-dirty query — but that also leaves it out of the
+    /// checkpointing that covers minis.db and skills.db. It runs in WAL mode with
+    /// nothing else ever checkpointing it, so a jetsam or crash can drop history
+    /// that was only in the `-wal` sidecar.
+    ///
+    /// This is the defensive half of OpenMinis#98 defect 3. The report's "audit
+    /// log was erased" could NOT be reproduced from code — no path in this tree
+    /// deletes the DB or bulk-deletes rows outside the 1000-row cap — so the two
+    /// surviving explanations are an uncheckpointed WAL (fixed here) or a
+    /// freshly-created DB after a container change (which this cannot address).
+    /// Called on background/terminate.
+    func checkpoint() {
+        guard let db else { return }
+        var errMsg: UnsafeMutablePointer<CChar>?
+        if sqlite3_exec(db, "PRAGMA wal_checkpoint(TRUNCATE)", nil, nil, &errMsg) != SQLITE_OK {
+            let msg = errMsg.map { String(cString: $0) } ?? "?"
+            sqlite3_free(errMsg)
+            auditLogger.warning("[Audit] wal_checkpoint failed: \(msg)")
+            return
+        }
+        auditLogger.info("[Audit] wal_checkpoint(TRUNCATE) ok")
+    }
+
+    /// [T-config-audit-wal-loss] Row count at open, so a log that vanishes
+    /// between launches is visible in the logs instead of being silently
+    /// indistinguishable from "never used".
+    func logRowCountForDiagnostics() {
+        guard let db else { return }
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM config_audit", -1, &stmt, nil) == SQLITE_OK,
+              sqlite3_step(stmt) == SQLITE_ROW else { return }
+        auditLogger.info("[Audit] opened with \(sqlite3_column_int(stmt, 0)) rows at \(dbURL.lastPathComponent)")
     }
 
     // MARK: Reads

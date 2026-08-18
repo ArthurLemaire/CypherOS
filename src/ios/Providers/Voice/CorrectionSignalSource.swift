@@ -54,7 +54,11 @@ struct ConfusionDictionarySource: CorrectionSignalSource {
                 term: row.correctedTerm,
                 confidence: row.confidence,
                 sourceIdentifier: sourceIdentifier,
-                evidence: "\(row.variants.first ?? row.phoneticKey)→\(row.correctedTerm)（出现\(row.frequency)次）")
+                // [T-correction-low-freq-evidence] "出现N次" read as a frequency
+                // statistic, which let the model discount a freq=1 record when the
+                // transcript looked grammatically valid. Naming it as an explicit
+                // manual correction is what distinguishes this from a guess.
+                evidence: "\(row.variants.first ?? row.phoneticKey)→\(row.correctedTerm)（用户已手动纠正\(row.frequency)次）")
         }
     }
 }

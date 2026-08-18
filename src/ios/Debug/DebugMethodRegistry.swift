@@ -81,6 +81,25 @@ enum DebugMethodRegistry {
             example: ["last": true]
         ),
         MethodSpec(
+            name: "debug.agentTrace.clear",
+            description: "Drop all recorded agent traces AND captured LLM request/response bodies, freeing their memory. Clears the in-flight trace too.",
+            params: [
+                ParamSpec(name: "llmRequests", type: "bool", required: false, default: true, description: "Also clear debug.llmRequests captures (where the request/response BODIES live — usually the bulk of the memory). false = clear step traces only."),
+            ],
+            returns: "{clearedTraces: int, clearedLLMRequests: bool, clearedLLMRequestCount?: int}",
+            example: [:]
+        ),
+        MethodSpec(
+            name: "debug.agentTrace.pause",
+            description: "Pause/resume in-memory recording of agent traces and LLM requests, so a captured state can be pulled without later requests growing or overwriting it. Omit `paused` to just read the current state.",
+            params: [
+                ParamSpec(name: "paused", type: "bool", required: false, default: nil, description: "true = stop recording, false = resume. Omit to query only."),
+                ParamSpec(name: "llmRequests", type: "bool", required: false, default: true, description: "Also pause debug.llmRequests capture."),
+            ],
+            returns: "{paused: bool, llmRequestsPaused: bool}",
+            example: ["paused": true]
+        ),
+        MethodSpec(
             name: "debug.ls",
             description: "List directory contents under the app sandbox.",
             params: [
@@ -307,12 +326,12 @@ enum DebugMethodRegistry {
         ),
         MethodSpec(
             name: "debug.voiceInputs",
-            description: "Return the last ≤5 audio payloads actually sent to the ASR/transcription model (captured just before the request), for diagnosing whether VAD trimmed or dropped speech. In-memory only, DEBUG only.",
+            description: "Return the last ≤5 audio payloads actually sent to the ASR/transcription model (captured just before the request), for diagnosing whether VAD trimmed or dropped speech. Entries recorded during one mic session (VAD start→stop) share a 'sessionId' and carry that session's UN-CUT full recording under 'fullSession' — decode both WAVs and compare to see exactly where VAD cut. In-memory only, DEBUG only.",
             params: [
                 ParamSpec(name: "last", type: "int", required: false, default: nil, description: "Limit to the N most recent entries."),
                 ParamSpec(name: "includeAudio", type: "bool", required: false, default: true, description: "Include base64-encoded WAV per entry (set false for metadata only)."),
             ],
-            returns: "{count, voiceInputs:[{id, capturedAt, byteCount, durationSeconds, audioFormat:{container,sampleRate,channels,bitsPerSample}, vad:{segmentCount,endReason,runningDurationSeconds}, model?, language?, onDeviceRecognition?, audioBase64?}]}",
+            returns: "{count, voiceInputs:[{id, capturedAt, byteCount, durationSeconds, audioFormat:{container,sampleRate,channels,bitsPerSample}, vad:{segmentCount,endReason,runningDurationSeconds}, model?, language?, onDeviceRecognition?, audioBase64?, sessionId?, fullSession?:{byteCount,durationSeconds,truncated,audioBase64?}}]}. sessionId groups entries from one mic session; fullSession is that session's untrimmed start→stop recording (same for every entry of the session, absent while the session is still recording, truncated=true if it hit the 10-minute cap).",
             example: ["last": 5, "includeAudio": false]
         ),
         MethodSpec(
@@ -323,6 +342,107 @@ enum DebugMethodRegistry {
             ],
             returns: "{action, voiceActive}",
             example: ["action": "mic"]
+        ),
+        MethodSpec(
+            name: "debug.folders.list",
+            description: "List session folders with member counts and last member activity. Test/automation API for the home-list grouping feature.",
+            params: [],
+            returns: "{count, folders:[{id, name, origin, memberCount, lastActivity}]}",
+            example: [:]
+        ),
+        MethodSpec(
+            name: "debug.folders.create",
+            description: "Create a session folder (same ChatStore path as the UI picker's New Folder). Posts the session-list refresh notification.",
+            params: [
+                ParamSpec(name: "name", type: "string", required: true, default: nil, description: "Folder display name (duplicates allowed by design)"),
+            ],
+            returns: "{id, name}",
+            example: ["name": "Work"]
+        ),
+        MethodSpec(
+            name: "debug.folders.move",
+            description: "Move sessions into a folder, or out of any folder when folderId is omitted. Mirrors the UI picker's apply path.",
+            params: [
+                ParamSpec(name: "sessionIds", type: "[string]", required: true, default: nil, description: "Session ids to move"),
+                ParamSpec(name: "folderId", type: "string", required: false, default: nil, description: "Target folder id; omit to ungroup"),
+            ],
+            returns: "{moved, folderId}",
+            example: ["sessionIds": ["<sid>"], "folderId": "<fid>"]
+        ),
+        MethodSpec(
+            name: "debug.folders.dissolve",
+            description: "Dissolve a folder: members' folder_id cleared, folder deleted, NO session deleted.",
+            params: [
+                ParamSpec(name: "folderId", type: "string", required: true, default: nil, description: "Folder id"),
+            ],
+            returns: "{folderId, freedSessions}",
+            example: ["folderId": "<fid>"]
+        ),
+        MethodSpec(
+            name: "debug.folders.get",
+            description: "One folder in full: metadata (name/origin/pinned/timestamps) plus member sessions (id/title/category/updatedAt), newest first.",
+            params: [
+                ParamSpec(name: "folderId", type: "string", required: true, default: nil, description: "Folder id (from debug.folders.list)"),
+            ],
+            returns: "{id, name, icon, color, origin, pinned, createdAt, updatedAt, memberCount, members:[{id,title,category,updatedAt}]}",
+            example: ["folderId": "<fid>"]
+        ),
+        MethodSpec(
+            name: "debug.folders.rename",
+            description: "Rename a folder (same ChatStore path as the header menu's Rename; rides FolderV2 LWW, members untouched).",
+            params: [
+                ParamSpec(name: "folderId", type: "string", required: true, default: nil, description: "Folder id"),
+                ParamSpec(name: "name", type: "string", required: true, default: nil, description: "New display name"),
+            ],
+            returns: "{folderId, name}",
+            example: ["folderId": "<fid>", "name": "Work"]
+        ),
+        MethodSpec(
+            name: "debug.sessions.badge",
+            description: "Inject a session badge (paused/…) with a back-dated entry stamp — exercises the group-card 24h freshness filter.",
+            params: [
+                ParamSpec(name: "sessionId", type: "string", required: true, default: nil, description: "Session id"),
+                ParamSpec(name: "state", type: "string", required: true, default: nil, description: "paused | iCloudSyncing | unread"),
+                ParamSpec(name: "ageHours", type: "number", required: false, default: "0", description: "How long ago the state was entered"),
+            ],
+            returns: "{sessionId, state, ageHours}",
+            example: ["sessionId": "<sid>", "state": "paused", "ageHours": 25]
+        ),
+        MethodSpec(
+            name: "debug.appearance.set",
+            description: "Set the app Theme override (0 system / 1 light / 2 dark) — drives appearance-dependent rendering for tests.",
+            params: [
+                ParamSpec(name: "mode", type: "int", required: true, default: nil, description: "0 system, 1 light, 2 dark"),
+            ],
+            returns: "{mode}",
+            example: ["mode": 2]
+        ),
+        MethodSpec(
+            name: "debug.sessions.pin",
+            description: "Toggle a session's pin (same ChatStore path as the row menu's Pin).",
+            params: [
+                ParamSpec(name: "sessionId", type: "string", required: true, default: nil, description: "Session id"),
+            ],
+            returns: "{sessionId, pinned}",
+            example: ["sessionId": "<sid>"]
+        ),
+        MethodSpec(
+            name: "debug.folders.pin",
+            description: "Toggle a folder's pin (pinned folders float above unpinned ones).",
+            params: [
+                ParamSpec(name: "folderId", type: "string", required: true, default: nil, description: "Folder id"),
+            ],
+            returns: "{folderId, pinned}",
+            example: ["folderId": "<fid>"]
+        ),
+        MethodSpec(
+            name: "debug.folders.setAutoGrouping",
+            description: "Toggle the auto-grouping setting (title generation files new chats into matching existing folders). Test hook — the real toggle is in Settings → Appearance.",
+            params: [
+                ParamSpec(name: "enabled", type: "bool", required: true, default: nil, description: "true to enable"),
+            ],
+            returns: "{enabled}",
+            example: ["enabled": true]
         ),
         MethodSpec(
             name: "debug.rootfs.reset",
@@ -366,6 +486,22 @@ enum DebugMethodRegistry {
             ],
             returns: "{enabled: bool}",
             example: ["enabled": true]
+        ),
+        MethodSpec(
+            name: "debug.toolExec.setEnabled",
+            description: "Enable or disable the durable [ToolExec] breadcrumb that records each shell_execute immediately BEFORE it launches (O_SYNC, so it survives a SIGKILL/Jetsam mid-command). Default ON; the setting persists across launches. DEBUG builds only.",
+            params: [
+                ParamSpec(name: "enabled", type: "bool", required: true, default: nil, description: "New enabled state."),
+            ],
+            returns: "{enabled, path, exists, size, maxBytes, modified}",
+            example: ["enabled": true]
+        ),
+        MethodSpec(
+            name: "debug.toolExec.getStatus",
+            description: "Current [ToolExec] breadcrumb state: whether it is on, plus the file's path/size/mtime. Read the contents with debug.readFile using the returned `path` — a STARTING line with no matching FINISHED is the command the process died inside.",
+            params: [],
+            returns: "{enabled, path, exists, size, maxBytes, modified}",
+            example: [:]
         ),
         MethodSpec(
             name: "debug.screenshot",
@@ -659,6 +795,52 @@ enum DebugMethodRegistry {
             example: ["instanceId": "pi_xyz"]
         ),
         MethodSpec(
+            name: "provider.thinkingRules.list",
+            description: "List a provider's thinking rules — user-authored (custom) and built-in.",
+            params: [
+                ParamSpec(name: "instanceId", type: "string", required: true, default: nil, description: "Target instance UUID."),
+            ],
+            returns: "{instanceId, custom:[rule], builtIn:[rule]}",
+            example: ["instanceId": "pi_xyz"]
+        ),
+        MethodSpec(
+            name: "provider.thinkingRules.add",
+            description: "Create or update ONE user thinking rule via the same store API the UI uses.",
+            params: [
+                ParamSpec(name: "instanceId", type: "string", required: true, default: nil, description: "Target instance UUID."),
+                ParamSpec(name: "label", type: "string", required: true, default: nil, description: "Rule name."),
+                ParamSpec(name: "wireFormat", type: "object", required: true, default: nil, description: "Encoded ThinkingWireFormat, e.g. {\"kind\":\"omitEverything\"}."),
+                ParamSpec(name: "pattern", type: "string", required: false, default: nil, description: "Model glob. Omit for all models."),
+                ParamSpec(name: "sortOrder", type: "int", required: false, default: "0", description: "Position; lower evaluates first."),
+                ParamSpec(name: "id", type: "string", required: false, default: nil, description: "Pass an existing id to update in place."),
+            ],
+            returns: "{ok, id, instanceId}",
+            example: ["instanceId": "pi_xyz", "label": "test", "pattern": "*deepseek-v4*", "wireFormat": ["kind": "omitEverything"]]
+        ),
+        MethodSpec(
+            name: "provider.thinkingRules.delete",
+            description: "Delete one user thinking rule by id.",
+            params: [
+                ParamSpec(name: "instanceId", type: "string", required: true, default: nil, description: "Target instance UUID."),
+                ParamSpec(name: "id", type: "string", required: true, default: nil, description: "Rule id from thinkingRules.list."),
+            ],
+            returns: "{ok, id}",
+            example: ["instanceId": "pi_xyz", "id": "..."]
+        ),
+        MethodSpec(
+            name: "provider.thinkingRules.resolve",
+            description: "Resolve (model, level) through the real resolver and return the emitted body + trace.",
+            params: [
+                ParamSpec(name: "instanceId", type: "string", required: true, default: nil, description: "Target instance UUID."),
+                ParamSpec(name: "modelId", type: "string", required: true, default: nil, description: "Model id to resolve for."),
+                ParamSpec(name: "level", type: "string", required: false, default: "high", description: "off|low|medium|high|xhigh|max|ultra."),
+                ParamSpec(name: "maxTokens", type: "int", required: false, default: "8192", description: "For budget-shaped formats."),
+                ParamSpec(name: "offEffort", type: "string", required: false, default: nil, description: "Vendor off tier, when simulating one."),
+            ],
+            returns: "{modelId, level, body, trace:{rule, kind, source, emittedKeys}}",
+            example: ["instanceId": "pi_xyz", "modelId": "deepseek-v4-flash", "level": "high"]
+        ),
+        MethodSpec(
             name: "provider.models.add",
             description: "Add a custom model entry to an instance.",
             params: [
@@ -750,6 +932,60 @@ enum DebugMethodRegistry {
             ],
             returns: "{instanceId, instanceLabel, modelEntryCount, success}",
             example: ["configJson": "{\"version\":1,\"config\":{...}}"]
+        ),
+
+        // MARK: minis-config (remote CLI driver)
+        MethodSpec(
+            name: "config.get",
+            description: "Read one minis-config path through the real ConfigOffloadBridge — identical to `minis-config get <path>` in the iSH guest. Works for flat fields, collection children (`<base>.<id>.<leaf>`) and read-only aggregates.",
+            params: [
+                ParamSpec(name: "path", type: "string", required: true, default: nil, description: "Registered path, e.g. `thinkingrules` or `thinkingrules.<instanceId>:<ruleId>.scope`."),
+                ParamSpec(name: "filter", type: "string", required: false, default: nil, description: "Whitespace-split AND terms, matched case-insensitively against each array element's JSON."),
+                ParamSpec(name: "page", type: "int", required: false, default: "0", description: "1-based page for array values."),
+                ParamSpec(name: "pageSize", type: "int", required: false, default: "20", description: "Max 100."),
+            ],
+            returns: "The bridge envelope verbatim: {ok, value, …} or {ok:false, error, reason}",
+            example: ["path": "thinkingrules"]
+        ),
+        MethodSpec(
+            name: "config.set",
+            description: "Write minis-config path(s) through the real write batch — the same code path as `minis-config set`, including collection add/remove (`<base>.add` / `<base>.remove`) and array append. By DEFAULT this triggers the on-device confirmation sheet and blocks until it is answered (120s gate timeout); pass skipConfirmation to bypass it for unattended runs.",
+            params: [
+                ParamSpec(name: "path", type: "string", required: false, default: nil, description: "Single-write path. Use `items` for a batch."),
+                ParamSpec(name: "value_json", type: "string", required: false, default: "null", description: "Value as a JSON STRING, matching the CLI's argv contract (a string value is \"\\\"abc\\\"\")."),
+                ParamSpec(name: "items", type: "array", required: false, default: nil, description: "Batch form: [{path, value_json}, …]."),
+                ParamSpec(name: "caption", type: "string", required: false, default: "debug rpc config.set", description: "Shown on the confirmation sheet and stored in the audit row."),
+                ParamSpec(name: "actor", type: "string", required: false, default: "agent", description: "Audit actor."),
+                ParamSpec(name: "skipConfirmation", type: "bool", required: false, default: "false", description: "Bypass the confirmation sheet. DEBUG-only."),
+            ],
+            returns: "{ok, applied:[{path,display_name,old,new}], audit_ids, user_message} or an error envelope",
+            example: ["path": "thinkingrules.add", "value_json": "{\"provider\":\"<uuid>\",\"label\":\"my rule\",\"wire_format\":{\"kind\":\"reasoningEffort\"}}"]
+        ),
+        MethodSpec(
+            name: "config.topics",
+            description: "Every registered minis-config topic — the index `minis-config --help` prints. Use it to confirm a collection is actually registered.",
+            params: [],
+            returns: "{topics:[string]}",
+            example: [:]
+        ),
+        MethodSpec(
+            name: "config.topicHelp",
+            description: "Field schema for one topic, as `minis-config <topic> --help` prints it. This is how the writable paths of a collection are discovered.",
+            params: [
+                ParamSpec(name: "topic", type: "string", required: true, default: nil, description: "Topic name, e.g. `thinkingrules`."),
+            ],
+            returns: "{topic, fields:[{path, display_name, description, type, access, risk}]}",
+            example: ["topic": "thinkingrules"]
+        ),
+        MethodSpec(
+            name: "config.audit",
+            description: "Recent minis-config audit rows, to prove a write was recorded with the expected actor/status rather than merely returning ok.",
+            params: [
+                ParamSpec(name: "limit", type: "int", required: false, default: "20", description: "Max rows."),
+                ParamSpec(name: "scope", type: "string", required: false, default: nil, description: "Optional scope filter."),
+            ],
+            returns: "{ok, entries:[…]}",
+            example: ["limit": 5]
         ),
 
         // MARK: Group management
@@ -957,6 +1193,7 @@ enum DebugMethodRegistry {
                 ParamSpec(name: "charCount", type: "int", required: false, default: 200_000, description: "Target total characters in the generated markdown."),
                 ParamSpec(name: "blockChars", type: "int", required: false, default: 800, description: "Approximate per-paragraph length. Number of paragraphs ≈ charCount/blockChars."),
                 ParamSpec(name: "role", type: "string", required: false, default: "assistant", description: "'assistant' or 'user'."),
+                ParamSpec(name: "text", type: "string", required: false, default: nil, description: "Verbatim markdown to inject. When present, charCount/blockChars are ignored and this exact text is stored — use it to replay a captured real conversation (CJK, LaTeX, tables) that generated lorem ipsum cannot reproduce."),
             ],
             returns: "{messageId, sortOrder, totalChars, blockCount, role}",
             example: ["sessionId": "6D0F…", "charCount": 200000, "blockChars": 800]

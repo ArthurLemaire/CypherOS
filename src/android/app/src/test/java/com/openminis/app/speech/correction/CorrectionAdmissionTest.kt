@@ -155,14 +155,23 @@ class CorrectionAdmissionTest {
         assertFalse(CorrectionAdmission.isDigitTermNormalization("17", "18"))    // both digits
     }
 
-    // ── RTU→Retry stays deliberately UNCOLLECTED (per iOS design decision) ──
+    // ── RTU→Retry: decision REVISITED, now collected via Signal 4 ──
 
     @Test
-    fun `RTU to Retry is deliberately not forced through`() {
-        // sim 0.40, not an ordered subsequence, no digits. iOS chose NOT to
-        // special-case it (risks false positives). Asserted so a future change
-        // that tries to force it also revisits this decision.
-        assertFalse(judge("RTU", "Retry").isAdmitted)
+    fun `RTU to Retry is now collected by the latin-phonetic signal`() {
+        // This test previously asserted the opposite, with the note "asserted so
+        // a future change that tries to force it also revisits this decision".
+        // This IS that revisit: iOS 4f061b70 added Signal 4 and flipped the call.
+        //
+        // Rationale for the flip: RTU/Retry is a plausible ASR near-sound
+        // (skeletons rt/rtry, similarity 0.50, 'r' anchored at index 0).
+        // Admission here only means "worth learning as a possible confusion";
+        // whether the correction actually APPLIES is decided downstream by
+        // vocabulary evidence. Signals 1-3 still miss it (sim 0.40, no ordered
+        // subsequence, no digits), which is precisely the gap Signal 4 fills.
+        val v = judge("RTU", "Retry")
+        assertTrue("RTU->Retry should now be collected, got $v", v.isAdmitted)
+        assertEquals(CorrectionAdmission.Verdict.LatinPhonetic, v)
     }
 
     // ── Aggregate: the real-data matrix ──
@@ -204,5 +213,80 @@ class CorrectionAdmissionTest {
             assertFalse("old rule should have DROPPED $a->$b", oldRuleAdmits(a, b))
             assertTrue("new rule must COLLECT $a->$b", judge(a, b, sentence = 40).isAdmitted)
         }
+    }
+
+    // ── Signal 4: Latin near-sound ────────────────────────────────────────────
+    // [T-android-correction-latin-phonetic] iOS 4f061b70. Signals 1-3 all miss
+    // linux→minis: phonetic Levenshtein on the full key is 0.40 (consonants
+    // differ outright), neither side is an ordered subsequence of the other, and
+    // there are no digits. It fell through to RejectedReword, so the confusion
+    // dictionary never accumulated evidence and correction never fired.
+
+    @Test
+    fun `signal 4 admits linux to minis`() {
+        val v = judge("linux", "minis", sentence = 40)
+        assertTrue("linux->minis must be collected, got $v", v.isAdmitted)
+        assertEquals(CorrectionAdmission.Verdict.LatinPhonetic, v)
+    }
+
+    @Test
+    fun `signal 4 rejects unrelated words with no shared consonant slot`() {
+        // cat/dog: same syllable count but skeletons ct/dg share no consonant at
+        // any index, so the anchor requirement rejects it.
+        assertFalse(judge("cat", "dog", sentence = 40).isAdmitted)
+        assertFalse(CorrectionAdmission.isLatinPhoneticSimilar("cat", "dog"))
+    }
+
+    @Test
+    fun `signal 4 requires equal syllable counts`() {
+        // Differing vowel-group counts ⇒ different rhythm ⇒ not an ASR confusion.
+        assertFalse(CorrectionAdmission.isLatinPhoneticSimilar("minis", "mn"))
+    }
+
+    @Test
+    fun `signal 4 cannot fire on Chinese input`() {
+        // THE load-bearing guard. PinyinNormalizer renders 挂载/规则 as
+        // guazai/guize — same syllable count, skeletons gz/gz (similarity 1.00),
+        // 'g' anchored at 0 — so the raw signal WOULD admit them. Only the
+        // isLatinOrigin check on the ORIGINAL text keeps this rejected, which is
+        // why the guard must not be applied to the normalized key.
+        assertTrue(
+            "raw signal admits the pinyin keys — the guard is what saves us",
+            CorrectionAdmission.isLatinPhoneticSimilar("guazai", "guize"),
+        )
+        assertFalse(CorrectionAdmission.isLatinOrigin("挂载"))
+        assertFalse("挂载->规则 must stay rejected", judge("挂载", "规则").isAdmitted)
+    }
+
+    @Test
+    fun `isLatinOrigin accepts latin words with separators and digits`() {
+        assertTrue(CorrectionAdmission.isLatinOrigin("linux"))
+        assertTrue(CorrectionAdmission.isLatinOrigin("work on"))
+        assertTrue(CorrectionAdmission.isLatinOrigin("gpl-v3"))
+        assertTrue(CorrectionAdmission.isLatinOrigin("read_image.file"))
+        // No letter at all ⇒ not a Latin word.
+        assertFalse(CorrectionAdmission.isLatinOrigin("123"))
+        assertFalse(CorrectionAdmission.isLatinOrigin(""))
+        // Mixed script is not Latin-origin.
+        assertFalse(CorrectionAdmission.isLatinOrigin("linux挂载"))
+        // Non-ASCII latin-ish letters are excluded too.
+        assertFalse(CorrectionAdmission.isLatinOrigin("café"))
+    }
+
+    @Test
+    fun `signal 4 does not loosen the acknowledged near-threshold pair`() {
+        // cursor/claude: skeletons crsr/cld, similarity 0.25 — below the 0.30
+        // floor, so Signal 4 does not fire. (It already passes Signal 1, so the
+        // pair is still collected; this pins the SIGNAL boundary, not the verdict.)
+        assertFalse(CorrectionAdmission.isLatinPhoneticSimilar("cursor", "claude"))
+    }
+
+    @Test
+    fun `signal 4 runs after the earlier signals`() {
+        // A pair that Signal 1 already catches must be reported as Homophone, not
+        // LatinPhonetic — the signal ORDER is part of the contract (the reason tag
+        // feeds logs and downstream weighting).
+        val v = judge("cloud", "claude", sentence = 40)
+        assertTrue(v is CorrectionAdmission.Verdict.Homophone)
     }
 }

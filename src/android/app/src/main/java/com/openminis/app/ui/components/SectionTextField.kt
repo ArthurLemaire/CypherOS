@@ -61,6 +61,15 @@ fun SectionTextField(
     trailingIcon: @Composable (() -> Unit)? = null,
     textStyle: TextStyle = MaterialTheme.typography.bodyLarge,
     fieldModifier: Modifier = Modifier,
+    /**
+     * Fill behind the field. The default matches settings cards — but inside
+     * a ModalBottomSheet that default is INVISIBLE: M3 sheets use the same
+     * surfaceContainerLow as their container, so the field renders as bare
+     * borderless text. Sheet callers pass a contrasting fill (typically
+     * [SectionDesign.screenBackgroundColor]) to restore the filled-card
+     * look the settings screens have.
+     */
+    containerColor: Color? = null,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val colors = OutlinedTextFieldDefaults.colors(
@@ -109,7 +118,7 @@ fun SectionTextField(
         fieldValue = TextFieldValue(value, TextRange(value.length))
     }
     Surface(
-        color = SectionDesign.cardColor(),
+        color = containerColor ?: SectionDesign.cardColor(),
         shape = SectionDesign.CardShape,
         modifier = modifier.fillMaxWidth(),
     ) {
