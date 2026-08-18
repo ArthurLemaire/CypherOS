@@ -87,6 +87,14 @@ class MiniMaxVoiceProvider(providerId: String, baseURL: String, apiKey: String?)
         val url = composedUrlString(voiceOutputEndpointPath())
         // MiniMax-specific shape: speed becomes an integer 0~200.
         val speedInt = ((request.speed ?: 1.0f) * 100).toInt()
+        // [T-voice-minimax-quicktest-2054] The picker (where model entries
+        // double as voices) passes the MODEL id in `voice`. MiniMax voice ids
+        // are a SEPARATE namespace, so sending the model id as voice_id fails
+        // with 2054 "voice id not exist" — which is exactly what Quick Test hit
+        // on speech-2.8-hd / -turbo while iOS passed. Treat voice == model as
+        // "no voice selected" and fall back to the default. Port of the iOS
+        // guard in VoiceProvider+Vendors.swift.
+        val requestedVoice = if (request.voice == request.model) null else request.voice
         val body = JSONObject().apply {
             put("model", request.model ?: defaultVoiceOutputModel())
             put("text", request.input)
@@ -94,7 +102,7 @@ class MiniMaxVoiceProvider(providerId: String, baseURL: String, apiKey: String?)
             put(
                 "voice_setting",
                 JSONObject()
-                    .put("voice_id", request.voice ?: defaultVoiceOutputVoice())
+                    .put("voice_id", requestedVoice ?: defaultVoiceOutputVoice())
                     .put("speed", speedInt)
                     .put("vol", 100)
                     .put("pitch", 0),
@@ -127,11 +135,34 @@ class MiniMaxVoiceProvider(providerId: String, baseURL: String, apiKey: String?)
                 throw VoiceProviderException.Parse("MiniMax TTS error [$code]: $msg")
             }
         }
+        // [T-voice-minimax-quicktest-2054] Current t2a_v2 (api.minimaxi.com,
+        // verified on iOS 2026-07-24) nests HEX-encoded audio at `data.audio`;
+        // older deployments returned base64 at `audio.audio`. Android only knew
+        // the legacy shape, so even a request that succeeded upstream would
+        // have failed to parse. Try hex first, then base64, matching iOS.
+        json?.optJSONObject("data")?.optString("audio")?.takeIf { it.isNotEmpty() }?.let { enc ->
+            decodeHex(enc)?.let { return it }
+            runCatching { Base64.decode(enc, Base64.DEFAULT) }.getOrNull()?.let { return it }
+            throw VoiceProviderException.Parse("MiniMax TTS: data.audio is neither hex nor base64")
+        }
         val b64 = json?.optJSONObject("audio")?.optString("audio")
             ?.takeIf { it.isNotEmpty() }
             ?: throw VoiceProviderException.Parse("Unexpected MiniMax TTS response format")
         return runCatching { Base64.decode(b64, Base64.DEFAULT) }.getOrNull()
             ?: throw VoiceProviderException.Parse("Unexpected MiniMax TTS response format")
+    }
+
+    /** Hex string → bytes, or null when the string isn't valid hex. */
+    private fun decodeHex(s: String): ByteArray? {
+        if (s.length % 2 != 0 || s.isEmpty()) return null
+        val out = ByteArray(s.length / 2)
+        for (i in out.indices) {
+            val hi = Character.digit(s[i * 2], 16)
+            val lo = Character.digit(s[i * 2 + 1], 16)
+            if (hi < 0 || lo < 0) return null
+            out[i] = ((hi shl 4) or lo).toByte()
+        }
+        return out
     }
 }
 

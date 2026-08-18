@@ -974,6 +974,12 @@ class AnthropicProvider(
 
         if (isOAuth) {
             builder.header("Authorization", "Bearer $apiKey")
+        } else if (apiKey.isEmpty()) {
+            // [T-empty-key-compat-endpoints] Keyless third-party
+            // Anthropic-compatible endpoint: send NO auth header rather than
+            // a malformed `Bearer ` / empty x-api-key that strict relays
+            // reject. Only reachable for custom-endpoint instances — routing
+            // never builds a keyless provider for the official API.
         } else if (isCustomEndpoint) {
             builder.header("Authorization", "Bearer $apiKey")
         } else {

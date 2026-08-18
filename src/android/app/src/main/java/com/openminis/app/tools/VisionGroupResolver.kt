@@ -223,7 +223,9 @@ object VisionGroupResolver {
         mimeType: String,
         instruction: String,
     ): String {
-        val apiKey = repo.loadApiKey(instance.id) ?: throw IllegalStateException("no credential")
+        // [T-empty-key-compat-endpoints] usableApiKey returns "" for keyless
+        // third-party compatible endpoints, so they stay routable for vision.
+        val apiKey = repo.usableApiKey(instance) ?: throw IllegalStateException("no credential")
         // Guard: only route to a model that actually declares image input.
         if (!entry.model.hasImageInput) throw IllegalStateException("model is not vision-capable")
         val provider = ProviderFactory.create(instance, apiKey, entry.model, context)

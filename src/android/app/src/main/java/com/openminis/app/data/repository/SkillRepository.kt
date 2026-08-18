@@ -775,7 +775,19 @@ class SkillRepository(private val context: Context) {
     fun rescanFromDisk(skillId: String): Skill? {
         val current = _skills.value.find { it.id == skillId } ?: return null
         val file = File(File(skillsDir, skillId), "SKILL.md")
-        if (!file.exists()) return null
+        if (!file.exists()) {
+            // [T-android-skill-orphan-db-row] A rescan that finds nothing on
+            // disk used to only paint "SKILL.md missing or invalid" and leave
+            // the record in place, so the one action explicitly meant to
+            // reconcile with disk detected the orphan and still refused to act
+            // on it. Drop it here too — same BUNDLED exemption as loadAll(),
+            // since a bundled skill's file is restored by installBundledSkills.
+            if (current.importSource != ImportSource.BUNDLED) {
+                delete(skillId)
+                Log.i(TAG, "Rescan found no SKILL.md — removed orphan skill: $skillId")
+            }
+            return null
+        }
         val parsed = parseSkillMd(file.readText()) ?: return null
         val refreshed = current.copy(
             name = parsed.name,
@@ -1195,6 +1207,36 @@ class SkillRepository(private val context: Context) {
             // the rest.
             try {
             val id = cursor.getString(cursor.getColumnIndexOrThrow("id"))
+            val importSource = ImportSource.from(cursor.getString(cursor.getColumnIndexOrThrow("import_source")))
+            // [T-android-skill-orphan-db-row] Prune rows whose skill directory
+            // is gone. The agent deletes skills with `rm -rf` from the shell,
+            // which never reaches delete() — so the DB row survived and this
+            // merge, which only ever ADDED disk-only skills (the auto-discover
+            // pass below), read the orphan straight back into _skills on every
+            // load. The entry stayed in the settings list through screen
+            // re-entry AND cold start, was still navigable, and — worse than
+            // cosmetic — skillPromptFragment() kept advertising it to the model
+            // with a dead /var/minis/skills/<id>/SKILL.md path. Mirrors iOS
+            // SkillStore.loadSkills(), which does dbDeleteSkill(id:)+continue
+            // when SKILL.md is missing.
+            //
+            // BUNDLED is exempt on purpose: init{} runs loadAll() BEFORE
+            // installBundledSkills(), so on the first load after a fresh
+            // install the skill-creator row legitimately exists with nothing on
+            // disk yet. Pruning it here would discard its use_count moments
+            // before the installer re-materializes the file.
+            //
+            // Only one location to check, unlike iOS's Library+rootfs pair:
+            // PRootKernel.registerGlobalBindMounts binds /var/minis/skills
+            // straight to this same filesDir/minis-global/skills.
+            if (importSource != ImportSource.BUNDLED &&
+                !File(skillsDir, "$id/SKILL.md").exists()
+            ) {
+                db.execSQL("DELETE FROM skills WHERE id=?", arrayOf(id))
+                db.execSQL("DELETE FROM session_skill_overrides WHERE skill_id=?", arrayOf(id))
+                Log.i(TAG, "Pruned orphan skill row (no SKILL.md on disk): $id")
+                continue
+            }
             val body = readSkillMdBody(id)
             val sourceUrlIdx = cursor.getColumnIndex("source_url")
             val useCountIdx = cursor.getColumnIndex("use_count")
@@ -1204,13 +1246,36 @@ class SkillRepository(private val context: Context) {
             // Self-heal rows persisted by an earlier parser that treated YAML
             // block scalars (`|` and `>`) as literal one-character description
             // values. Re-parse the on-disk SKILL.md whenever the stored
-            // description is just `|` or `>` and update the row in place so
-            // the skills list shows the real frontmatter description.
-            if (description == ">" || description == "|") {
+            // description is stale and update the row in place so the skills
+            // list shows the real frontmatter description.
+            //
+            // [T-android-skill-empty-description-never-refreshes] GH#215
+            // (iOS 7d0cc49a7): an EMPTY description is stale too, not just the
+            // literal "|" / ">" leftovers the original check knew about.
+            //
+            // How a skill gets stuck: the agent writes SKILL.md from the shell,
+            // and the skill can be registered while that file is still being
+            // written and has no `description:` line yet. "" is persisted, and
+            // because the stale test only matched "|" / ">", every later load
+            // trusted that "" forever. Since the DB row is keyed by directory
+            // name it survives delete-and-recreate, so touching the file,
+            // rewriting the frontmatter and even `rm -rf` + recreate all fail
+            // to heal it — only renaming the skill works, because that mints a
+            // new row id.
+            if (description == ">" || description == "|" || description.isBlank()) {
                 val skillMd = File(skillsDir, "$id/SKILL.md")
                 if (skillMd.exists()) {
                     val reparsed = parseSkillMd(runCatching { skillMd.readText() }.getOrNull() ?: "")
-                    if (reparsed != null) {
+                    // Only ever REPLACE an empty/placeholder value with a real
+                    // one, never the reverse. A mid-edit or malformed SKILL.md
+                    // parses to null or yields an empty description, and
+                    // writing that back would wipe good metadata — the exact
+                    // hazard that kept this check narrow in the first place.
+                    // Combined with the guard above (the stored value must be
+                    // blank or a block-scalar leftover to get here), a
+                    // description the user deliberately set can never be
+                    // overwritten.
+                    if (reparsed != null && reparsed.description.isNotBlank()) {
                         description = reparsed.description
                         if (name.isBlank()) name = reparsed.name
                         if (version.isBlank()) version = reparsed.version
@@ -1227,7 +1292,7 @@ class SkillRepository(private val context: Context) {
                 name = name,
                 description = description,
                 version = version,
-                importSource = ImportSource.from(cursor.getString(cursor.getColumnIndexOrThrow("import_source"))),
+                importSource = importSource,
                 isEnabled = cursor.getInt(cursor.getColumnIndexOrThrow("is_enabled")) == 1,
                 installedAt = cursor.getLong(cursor.getColumnIndexOrThrow("installed_at")),
                 updatedAt = cursor.getLong(cursor.getColumnIndexOrThrow("updated_at")),

@@ -775,6 +775,7 @@ class AgentForegroundService : Service() {
                 shortCritical = shortCritical,
                 smallIcon = smallIconRes(toolName, isCompleted),
                 isToolRunning = isToolRunning,
+                isCompleted = isCompleted,
                 contentIntent = pendingIntent,
                 stopIntent = stopPendingIntent,
             )
@@ -789,13 +790,18 @@ class AgentForegroundService : Service() {
             .setShowWhen(false)
             .setOnlyAlertOnce(true)
             .setContentIntent(pendingIntent)
-            .addAction(
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+
+        // [T-android-live-update-completed] Same rule as the promoted branch:
+        // no Stop once there is nothing left to stop.
+        if (!isCompleted) {
+            builder.addAction(
                 android.R.drawable.ic_menu_close_clear_cancel,
                 getString(R.string.bg_service_stop_action),
                 stopPendingIntent,
             )
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+        }
 
         if (isToolRunning) {
             // Tools rarely report determinate progress (shell/browser/a11y
@@ -825,6 +831,7 @@ class AgentForegroundService : Service() {
         shortCritical: String,
         smallIcon: Int,
         isToolRunning: Boolean,
+        isCompleted: Boolean,
         contentIntent: PendingIntent,
         stopIntent: PendingIntent,
     ): Notification {
@@ -834,18 +841,26 @@ class AgentForegroundService : Service() {
         // fails Notification.hasPromotableCharacteristics() and the notification
         // silently drops to a plain ongoing row (confirmed on-device: every
         // other precondition passed, only the ProgressStyle validity failed).
-        // So we ALWAYS seed one full-length segment, and additionally set the
-        // indeterminate flag while a tool is running so the bar animates rather
-        // than showing a static filled track.
+        // So the segment is NOT optional: it is what keeps the chip promoted,
+        // and it is why this style survives even though we show no percentage.
+        //
+        // [T-android-live-update-progressbar] An agent run has exactly two
+        // states the user cares about — running and done — and no meaningful
+        // fraction in between (tools are open-ended; there is no Nth-of-M to
+        // report). Rendered as a tracker, that produced a bar parked at 0 %
+        // with a paper-plane sitting on the left for the entire run: it looked
+        // like a stalled download rather than "working".
+        //
+        // setStyledByProgress(false) keeps the style (so promotion holds) but
+        // stops it drawing as a position tracker, and clearing the tracker icon
+        // removes the plane. The two states are carried by the title, the icon
+        // and the elapsed timer, which is where a user actually reads them.
         val progressStyle = Notification.ProgressStyle()
             .addProgressSegment(Notification.ProgressStyle.Segment(100))
-            .setProgressIndeterminate(isToolRunning)
-
-        val stopAction = Notification.Action.Builder(
-            Icon.createWithResource(this, android.R.drawable.ic_menu_close_clear_cancel),
-            getString(R.string.bg_service_stop_action),
-            stopIntent,
-        ).build()
+            .setStyledByProgress(false)
+            .setProgressTrackerIcon(null)
+            .setProgressIndeterminate(isToolRunning && !isCompleted)
+            .setProgress(if (isCompleted) 100 else 0)
 
         val builder = Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(smallIcon)
@@ -856,11 +871,24 @@ class AgentForegroundService : Service() {
             .setShowWhen(false)
             .setOnlyAlertOnce(true)
             .setContentIntent(contentIntent)
-            .addAction(stopAction)
             // Explicitly NOT colorized and NOT a group summary — both would
             // disqualify the notification from promotion.
             .setColorized(false)
             .setShortCriticalText(shortCritical)
+
+        // [T-android-live-update-completed] "Stop" is meaningless once the task
+        // has finished — there is nothing left to stop, and offering it invites
+        // a tap that does nothing visible. Reported from a device screenshot
+        // showing "任务已完成 ✓" above a live Stop button.
+        if (!isCompleted) {
+            builder.addAction(
+                Notification.Action.Builder(
+                    Icon.createWithResource(this, android.R.drawable.ic_menu_close_clear_cancel),
+                    getString(R.string.bg_service_stop_action),
+                    stopIntent,
+                ).build(),
+            )
+        }
 
         // [T-android-dynamic-island] Request the always-visible "dynamic island"
         // promotion. The public builder method `setRequestPromotedOngoing(true)`

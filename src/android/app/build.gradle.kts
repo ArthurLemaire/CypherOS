@@ -185,6 +185,20 @@ dependencies {
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
     // OkHttp
+    // [T-android-vad] Silero v5 VAD (ONNX Runtime + WebRTC APM). The Android
+    // build of the exact library iOS uses via SPM, from the same author, so
+    // both platforms share one model and one set of thresholds. Carries
+    // native .so payloads for ONNX Runtime and the APM — see the abiFilters
+    // note in `ndk`; we ship arm64-v8a only.
+    implementation("com.github.helloooideeeeea:RealTimeCutVADLibraryForAndroid:1.0.5@aar")
+
+    // rclone, via its official gomobile binding, for backup destinations
+    // (SMB / WebDAV / SFTP / S3 / FTP). Build it with
+    // `deps/build_rclone_android.sh` — the .aar is a build artifact under
+    // app/libs/, not a checked-in binary. Backends are decided by
+    // deps/rclone-mobile/backends/backends.go, shared with the iOS build.
+    implementation(group = "", name = "rclone", ext = "aar")
+
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:okhttp-sse:4.12.0")
 

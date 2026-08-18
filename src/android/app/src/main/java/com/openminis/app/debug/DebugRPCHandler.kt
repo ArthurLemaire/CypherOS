@@ -35,6 +35,9 @@ class DebugRPCHandler(private val context: Context) {
     companion object {
         /** Set this from MainActivity to enable screenshot capture. */
         var currentActivity: WeakReference<Activity>? = null
+
+        /** Both crash writers' filenames: ACRA's and NativeCrashHandler's. */
+        private val CRASH_NAME = Regex("""^(native-)?crash-.*\.log$""")
     }
 
     suspend fun handle(json: String): String {
@@ -78,6 +81,8 @@ class DebugRPCHandler(private val context: Context) {
             "debug.logs.list" -> handleLogsList()
             "debug.logs.read" -> handleLogsRead(params)
             "debug.logs.setEnabled" -> handleLogsSetEnabled(params)
+            "debug.crash.list" -> handleCrashList(params)
+            "debug.crash.read" -> handleCrashRead(params)
             "debug.tap" -> handleTap(params)
             "debug.scroll" -> handleScroll(params)
             "debug.inputText" -> handleInputText(params)
@@ -116,6 +121,7 @@ class DebugRPCHandler(private val context: Context) {
             "provider.instances.list" -> ProviderDebugMethods.instancesList(context, params)
             "provider.models.list" -> ProviderDebugMethods.modelsList(context, params)
             "provider.groups.list" -> ProviderDebugMethods.groupsList(context, params)
+            "provider.quickTest" -> ProviderDebugMethods.quickTest(context, params)
             "provider.export" -> ProviderDebugMethods.export(context, params)
             "provider.import" -> ProviderDebugMethods.import(context, params)
 
@@ -446,6 +452,100 @@ class DebugRPCHandler(private val context: Context) {
             put("content", sliced)
             put("bytesRead", sliced.length)
             if (sliced.length < content.length - offset) put("truncated", true)
+        }
+    }
+
+    // ── Crash reports ───────────────────────────────────────────────────────
+    //
+    // [T-android-debug-crashes] Crash triage over the debug server. Both crash
+    // writers already drop files into filesDir/logs — ACRA's CrashFileSender
+    // writes "crash-<stamp>.log" (Java/Kotlin) and NativeCrashHandler writes
+    // "native-crash-<stamp>.log" — but reaching them previously meant knowing
+    // that convention and shelling out through `adb run-as`, which is
+    // unavailable to any client that isn't on a USB cable. A crashed app also
+    // stops answering RPC, so the crash is exactly when the debug server is
+    // least able to explain itself; these methods make the post-restart
+    // "what just died?" question answerable in one call.
+
+    private fun crashFiles(): List<File> {
+        val dir = File(context.filesDir, "logs")
+        if (!dir.isDirectory) return emptyList()
+        return (dir.listFiles() ?: emptyArray())
+            .filter { it.isFile && CRASH_NAME.matches(it.name) }
+            .sortedByDescending { it.lastModified() }
+    }
+
+    private fun handleCrashList(params: JSONObject): JSONObject {
+        val limit = params.optInt("limit", 20).coerceIn(1, 200)
+        val files = crashFiles()
+        val array = JSONArray()
+        for (f in files.take(limit)) {
+            array.put(JSONObject().apply {
+                put("name", f.name)
+                put("size", f.length())
+                put("modified", f.lastModified())
+                put("native", f.name.startsWith("native-crash-"))
+                // First stack line is what triage keys on, so surface it here
+                // and save a read call when scanning a list of crashes.
+                put("summary", crashSummary(f))
+            })
+        }
+        return JSONObject().apply {
+            put("count", files.size)
+            put("returned", array.length())
+            put("crashes", array)
+        }
+    }
+
+    /** Exception type + first app frame — enough to tell crashes apart. */
+    private fun crashSummary(f: File): String = try {
+        val lines = f.bufferedReader().useLines { seq -> seq.take(400).toList() }
+        val i = lines.indexOfFirst { it.startsWith("--- Stack Trace ---") }
+        val body = if (i >= 0) lines.drop(i + 1) else lines
+        val head = body.firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+        val frame = body.firstOrNull { it.trimStart().startsWith("at com.openminis") }
+            ?.trim()?.removePrefix("at ").orEmpty()
+        listOf(head, frame).filter { it.isNotEmpty() }.joinToString("  |  ")
+    } catch (e: Exception) {
+        "(unreadable: ${e.message})"
+    }
+
+    private fun handleCrashRead(params: JSONObject): JSONObject {
+        val files = crashFiles()
+        if (files.isEmpty()) throw RPCException(-32000, "No crash reports on device")
+        // No name → newest, which is what "why did it just die?" wants.
+        val name = params.optString("name").takeIf { it.isNotEmpty() }
+        if (name != null && (name.contains("/") || name.contains(".."))) {
+            throw RPCException(-32602, "Invalid params: 'name' must be a filename")
+        }
+        val file = if (name == null) files.first()
+        else files.firstOrNull { it.name == name }
+            ?: throw RPCException(-32602, "Crash report not found: $name")
+
+        val full = file.readText()
+        // Default to the stack only: the ACRA reports embed 200 logcat lines
+        // plus a Build dump, so a whole file is ~27KB of which the useful part
+        // is the first ~40 lines.
+        val stackOnly = params.optBoolean("stackOnly", true)
+        val content = if (!stackOnly) full else {
+            val start = full.indexOf("--- Stack Trace ---")
+            val end = full.indexOf("--- Logcat")
+            when {
+                start < 0 -> full
+                end > start -> full.substring(0, end).trimEnd()
+                else -> full.substring(0, minOf(full.length, start + 4000))
+            }
+        }
+        val limit = params.optInt("limit", 262_144)
+        val sliced = content.take(limit)
+        return JSONObject().apply {
+            put("name", file.name)
+            put("modified", file.lastModified())
+            put("native", file.name.startsWith("native-crash-"))
+            put("fileSize", file.length())
+            put("stackOnly", stackOnly)
+            put("content", sliced)
+            if (sliced.length < content.length) put("truncated", true)
         }
     }
 

@@ -309,7 +309,13 @@ class GeminiProvider(
         }
         body.put("contents", contents)
 
-        if (systemPrompt != null) {
+        // [OpenMinis#226] Audio-output models reject systemInstruction with 400
+        // "Developer instruction is not enabled for this model", the same way they reject
+        // a thinking config. Keyed off the declared output modality (the property actually
+        // responsible) rather than the model id. Dropping it costs nothing: the preamble
+        // is guidance for a text responder, and a TTS model speaks `contents` verbatim.
+        val rejectsSystemInstruction = "audio" in model.outputModalities.orEmpty()
+        if (systemPrompt != null && !rejectsSystemInstruction) {
             body.put("systemInstruction", JSONObject().put(
                 "parts", JSONArray().put(JSONObject().put("text", systemPrompt))
             ))

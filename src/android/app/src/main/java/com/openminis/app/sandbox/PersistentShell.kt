@@ -125,6 +125,21 @@ class PersistentShell(
                     }
                 }
             }
+        } catch (t: Throwable) {
+            // [T-android-shell-spawn-outcome] Previously swallowed: the only
+            // handler here was `finally { isStarting.set(false) }`, so a throw
+            // out of startProcess() (ProcessBuilder.start() IOException —
+            // ENOENT on the proot binary, EACCES, EAGAIN under memory
+            // pressure) unwound with NOTHING written anywhere. The caller then
+            // saw isAlive == false and reported the generic "[Shell not
+            // running]", which is exactly the dead end the field reports keep
+            // hitting. Record it and rethrow — swallowing the cause is what
+            // made this class of failure undiagnosable.
+            com.openminis.app.logging.AppLogger.error(
+                TAG,
+                "spawn threw: ${t.javaClass.simpleName}: ${t.message}",
+            )
+            throw t
         } finally {
             isStarting.set(false)
         }
@@ -268,6 +283,24 @@ class PersistentShell(
             Thread.sleep(200)
         } catch (_: InterruptedException) {}
 
+        // [T-android-shell-spawn-outcome] Record the OUTCOME of the spawn, not
+        // just that one was attempted. "Starting persistent shell process"
+        // followed by silence is the signature every field report has, and it
+        // cannot distinguish "proot is running fine" from "proot exited during
+        // the 200ms window" — the two cases that lead to completely different
+        // investigations. Logged to the FILE log (AppLogger, not Log.i) because
+        // that is what a user can actually send us; logcat is gone by then.
+        val alive = isAlive
+        val exit = runCatching { process?.exitValue() }.getOrNull()
+        val early = synchronized(outputTail) { outputHead.toString().take(300) }
+        com.openminis.app.logging.AppLogger.info(
+            TAG,
+            "spawn outcome: alive=$alive" +
+                (if (exit != null) " exit=$exit" else "") +
+                " loader=${PRootKernel.prootLoaderPath.isNotEmpty()}" +
+                " noSeccomp=$useNoSeccomp" +
+                (if (early.isNotEmpty()) " early=${early.replace('\n', '|')}" else ""),
+        )
         Log.i(TAG, "Persistent shell started")
     }
 

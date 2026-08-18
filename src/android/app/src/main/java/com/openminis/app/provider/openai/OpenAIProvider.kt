@@ -33,6 +33,7 @@ import okhttp3.Handshake
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
@@ -292,7 +293,14 @@ class OpenAIProvider private constructor(
      * one. Mirrors iOS OpenAIProvider.applyKeyAuth.
      */
     private fun Request.Builder.applyKeyAuth(token: String): Request.Builder =
-        if (isAzure) header("api-key", token) else header("Authorization", "Bearer $token")
+        // [T-empty-key-compat-endpoints] A keyless third-party endpoint
+        // (ollama, LM Studio, LiteLLM, private relays) is a supported
+        // configuration. Send NO auth header rather than a malformed
+        // `Authorization: Bearer ` / empty `api-key:` — strict gateways
+        // reject the empty form, an absent header is universally fine.
+        if (token.isEmpty()) this
+        else if (isAzure) header("api-key", token)
+        else header("Authorization", "Bearer $token")
 
     /**
      * Build the request URL for Azure OpenAI, mirroring the official AzureOpenAI
@@ -626,7 +634,30 @@ class OpenAIProvider private constructor(
         // build + non-OAuth RequestBody), each materialising a fresh 30+ MB
         // string for long agent loops with heavy tool outputs. Stacked, that
         // pushed memory-tight devices (HONOR PTP-AN00) past the OOM line.
-        val bodyStr = body.toString()
+        // [T-android-mem-probe-trust] Bracket the serialisation itself. The
+        // 2026-08-15 field log recorded `bodyLen=2342987` on the request before
+        // a process death but nothing about its memory cost, so "did building
+        // this body kill us?" could not be answered from the log. We measure
+        // around the call and report the realised length, so an OOM thrown here
+        // now arrives with an attributed stack instead of anonymously.
+        val memBefore = com.openminis.app.diagnostics.MemorySnapshot.capture()
+        val serStartNs = System.nanoTime()
+        val bodyStr = try {
+            body.toString()
+        } catch (t: Throwable) {
+            com.openminis.app.diagnostics.LargeAllocProbe.report(
+                "openai.body.toString", -1, "model=${model.id} messages=${messages.size}",
+                memBefore, serStartNs, failure = t,
+            )
+            throw t
+        }
+        if (bodyStr.length >= com.openminis.app.diagnostics.LargeAllocProbe.NOTABLE_BYTES) {
+            com.openminis.app.diagnostics.LargeAllocProbe.report(
+                "openai.body.toString", bodyStr.length.toLong(),
+                "model=${model.id} messages=${messages.size}",
+                memBefore, serStartNs, failure = null,
+            )
+        }
         val request = buildRequest(bodyStr)
         val headerMap = mutableMapOf<String, String>()
         for (name in request.headers.names()) {
@@ -1560,6 +1591,130 @@ class OpenAIProvider private constructor(
         }
         @Suppress("UNREACHABLE_CODE")
         throw LLMError.ProviderError("images/generations: unreachable")
+    }
+
+    /**
+     * [T-android-image-edit-endpoint] Call `/images/edits` for image-to-image
+     * (reference-image) generation. Android previously had no such endpoint, so
+     * minis-model-use returned `image_edit_not_supported` for every
+     * input-image + pure-image-generator call — the gap this closes. Mirrors
+     * iOS `OpenAIProvider.editImage`.
+     *
+     * Request: multipart/form-data with `image` (file), `prompt`, `model`, `n`,
+     * plus optional `size` / `quality`.
+     * Response: identical shape to `/images/generations`
+     * (`{ data: [{ b64_json?, url? }] }`), so [parseImageGenerationsResult] is
+     * reused verbatim.
+     *
+     * Multi-image: the first attachment goes in as `image`, any extras as
+     * `image[]` — same field naming as iOS. Providers that only accept a single
+     * reference image reject the extras themselves; nothing is silently dropped
+     * on our side.
+     */
+    suspend fun editImage(
+        prompt: String,
+        images: List<LLMMessage.ImagePart>,
+        n: Int = 1,
+        size: String? = null,
+        quality: String? = null,
+    ): LLMResponse = withContext(Dispatchers.IO) {
+        if (images.isEmpty()) {
+            throw LLMError.ProviderError("images/edits requires at least one input image")
+        }
+        val token = getToken()
+        // Same override precedence as generateImage: explicit path override →
+        // Azure deployments path → basePath. Only the default differs.
+        val imagePath = imagePathOverride?.takeIf { it.isNotBlank() } ?: "/images/edits"
+        val abs = absoluteEndpointOverride
+        val url = when {
+            abs != null && abs.startsWith("/") -> hostRootURL(abs) ?: "$basePath$imagePath"
+            isAzure -> azureUrl(imagePath) ?: "$basePath$imagePath"
+            else -> "$basePath$imagePath"
+        }
+
+        // b64_json auto-probe, mirroring generateImage: some providers reject
+        // response_format on the edits route, so retry once without it.
+        val userSetResponseFormat = imageExtraBody.containsKey("response_format")
+        var triedWithoutFormat = userSetResponseFormat
+        while (true) {
+            val multipart = MultipartBody.Builder().setType(MultipartBody.FORM)
+            multipart.addFormDataPart("model", model.id)
+            multipart.addFormDataPart("prompt", prompt)
+            multipart.addFormDataPart("n", n.toString())
+            if (size != null) multipart.addFormDataPart("size", size)
+            if (quality != null) multipart.addFormDataPart("quality", quality)
+            if (!triedWithoutFormat) multipart.addFormDataPart("response_format", "b64_json")
+            // Passthrough body fields arrive as JSON scalars; multipart carries
+            // text only, so stringify. `model` is re-pinned below so a stray
+            // override can't misroute the request (same rule as generateImage).
+            for ((k, v) in imageExtraBody) {
+                if (k == "model") continue
+                multipart.addFormDataPart(k, v?.toString() ?: "")
+            }
+
+            for ((idx, img) in images.withIndex()) {
+                val ext = img.mimeType.substringAfterLast('/', "").ifEmpty { "png" }
+                val fieldName = if (idx == 0) "image" else "image[]"
+                multipart.addFormDataPart(
+                    fieldName,
+                    "image$idx.$ext",
+                    img.data.toRequestBody(img.mimeType.toMediaType()),
+                )
+            }
+
+            val builder = Request.Builder()
+                .url(url)
+                .post(multipart.build())
+                .applyKeyAuth(token)
+            for ((key, value) in extraHeaders) {
+                builder.header(key, value)
+            }
+            for ((key, value) in imageExtraHeaders) {
+                builder.header(key, value)
+            }
+            builder.applyUserAgentOverride(customUserAgent)
+            val request = builder.build()
+
+            com.openminis.app.logging.AppLogger.info(
+                "OpenAIProvider",
+                "[ModelUseRoute] → images/edits url=$url model=${model.id} n=$n " +
+                    "size=$size quality=$quality images=${images.size} " +
+                    "respFormat=${if (triedWithoutFormat) "<none>" else "b64_json"}",
+            )
+
+            val response = client.newCall(request).execute()
+            val statusCode = response.code
+            val responseBody = response.body?.string() ?: ""
+            response.close()
+
+            if (!triedWithoutFormat && statusCode == 400 &&
+                (responseBody.lowercase().contains("response_format") || responseBody.contains("b64_json"))
+            ) {
+                com.openminis.app.logging.AppLogger.info(
+                    "OpenAIProvider",
+                    "[ModelUseRoute] images/edits rejected b64_json — retrying without response_format",
+                )
+                triedWithoutFormat = true
+                continue
+            }
+
+            if (statusCode !in 200..299) {
+                com.openminis.app.logging.AppLogger.warning(
+                    "OpenAIProvider",
+                    "[ModelUseRoute] images/edits HTTP $statusCode body=${responseBody.take(300)}",
+                )
+                throw mapHttpError(statusCode, responseBody)
+            }
+
+            val json = try {
+                JSONObject(responseBody)
+            } catch (e: Exception) {
+                throw LLMError.ProviderError("images/edits returned non-JSON body: ${e.message}")
+            }
+            return@withContext parseImageGenerationsResult(json)
+        }
+        @Suppress("UNREACHABLE_CODE")
+        throw LLMError.ProviderError("images/edits: unreachable")
     }
 
     /**

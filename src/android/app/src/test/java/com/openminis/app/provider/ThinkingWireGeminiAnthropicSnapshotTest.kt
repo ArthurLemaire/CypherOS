@@ -40,6 +40,13 @@ class ThinkingWireGeminiAnthropicSnapshotTest {
         "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite",
         "gemini-3-pro-preview", "gemini-3-flash-preview", "gemini-flash-latest",
         "gemini-2.5-pro-exp-0827", "gemini-2.0-tts", "gemini-2.5-embedding",
+        // [OpenMinis#226] Specialized ids that ALSO match a family pattern. Android had
+        // no specialized-modality test at all, so these were answered by the family
+        // branch and shipped a thinking parameter Gemini rejects with 400. The plain
+        // `gemini-2.0-tts` above never caught it: matching no family, it already fell
+        // through to null.
+        "gemini-3.1-flash-tts-preview", "gemini-2.5-flash-preview-tts",
+        "gemini-2.5-pro-preview-tts", "gemini-3-pro-image-preview",
         "unknown-gemini-model",
     )
 
@@ -152,6 +159,34 @@ gemini/gemini-2.5-embedding/HIGH -> null
 gemini/gemini-2.5-embedding/XHIGH -> null
 gemini/gemini-2.5-embedding/MAX -> null
 gemini/gemini-2.5-embedding/ULTRA -> null
+gemini/gemini-3.1-flash-tts-preview/OFF -> null
+gemini/gemini-3.1-flash-tts-preview/LOW -> null
+gemini/gemini-3.1-flash-tts-preview/MEDIUM -> null
+gemini/gemini-3.1-flash-tts-preview/HIGH -> null
+gemini/gemini-3.1-flash-tts-preview/XHIGH -> null
+gemini/gemini-3.1-flash-tts-preview/MAX -> null
+gemini/gemini-3.1-flash-tts-preview/ULTRA -> null
+gemini/gemini-2.5-flash-preview-tts/OFF -> null
+gemini/gemini-2.5-flash-preview-tts/LOW -> null
+gemini/gemini-2.5-flash-preview-tts/MEDIUM -> null
+gemini/gemini-2.5-flash-preview-tts/HIGH -> null
+gemini/gemini-2.5-flash-preview-tts/XHIGH -> null
+gemini/gemini-2.5-flash-preview-tts/MAX -> null
+gemini/gemini-2.5-flash-preview-tts/ULTRA -> null
+gemini/gemini-2.5-pro-preview-tts/OFF -> null
+gemini/gemini-2.5-pro-preview-tts/LOW -> null
+gemini/gemini-2.5-pro-preview-tts/MEDIUM -> null
+gemini/gemini-2.5-pro-preview-tts/HIGH -> null
+gemini/gemini-2.5-pro-preview-tts/XHIGH -> null
+gemini/gemini-2.5-pro-preview-tts/MAX -> null
+gemini/gemini-2.5-pro-preview-tts/ULTRA -> null
+gemini/gemini-3-pro-image-preview/OFF -> null
+gemini/gemini-3-pro-image-preview/LOW -> null
+gemini/gemini-3-pro-image-preview/MEDIUM -> null
+gemini/gemini-3-pro-image-preview/HIGH -> null
+gemini/gemini-3-pro-image-preview/XHIGH -> null
+gemini/gemini-3-pro-image-preview/MAX -> null
+gemini/gemini-3-pro-image-preview/ULTRA -> null
 gemini/unknown-gemini-model/OFF -> null
 gemini/unknown-gemini-model/LOW -> null
 gemini/unknown-gemini-model/MEDIUM -> null
