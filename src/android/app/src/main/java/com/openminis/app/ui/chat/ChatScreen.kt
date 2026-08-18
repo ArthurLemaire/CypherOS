@@ -304,6 +304,14 @@ private const val ATTACHMENT_PICK_LIMIT = 50
  */
 private const val SEND_FOLLOW_GRACE_MS = 2_000L
 
+// [T-android-stream-end-arm-race] How long after streaming→idle the
+// position-driven userScrolledAway net stays suppressed, so the final
+// markdown reflow (which lands ~100-150 ms after _isStreaming clears and
+// changes row heights just like streaming growth did) cannot arm the flag
+// and neuter the stream-end re-pin. Comfortably covers the settle LE's own
+// 220 ms delay plus its 900 ms verification pass.
+private const val STREAM_END_ARM_GRACE_MS = 1_500L
+
 
 /**
  * [T-slash-picker-fixed-height port from iOS 73f1b94a] Locked popup
@@ -645,6 +653,10 @@ fun ChatScreen(
     // separate from lastSendTimeMs above — that one also drives the 300ms
     // IME-residue suppression in the composer and must stay UI-send-only.
     var lastUserAppendMs by remember { mutableStateOf(0L) }
+    // [T-android-stream-end-arm-race] Timestamp of the last streaming→idle
+    // edge. Guards the position-driven userScrolledAway net against the final
+    // markdown reflow that lands just after _isStreaming clears.
+    var lastStreamEndMs by remember { mutableStateOf(0L) }
     androidx.compose.runtime.LaunchedEffect(inputText) {
         if (inputFieldValue.text != inputText) {
             // [T-android-slash-menu-align-ios-prepend] Honor a one-shot caret
@@ -1766,6 +1778,11 @@ fun ChatScreen(
     val streamingNowFlag = isStreaming
     LaunchedEffect(streamingNowFlag) {
         if (streamingNowFlag) return@LaunchedEffect  // edge fires only on streaming→idle
+        // [T-android-stream-end-arm-race] Stamp the edge BEFORE the 220 ms
+        // delay below: the final reflow that would otherwise arm
+        // userScrolledAway (and turn this very LE into a no-op) fires inside
+        // that window, so the grace has to already be open when it lands.
+        lastStreamEndMs = System.currentTimeMillis()
         // [T-android-stream-end-reflow-flicker-v18] The user-was-reading
         // branch is a HARD NO-OP. After the v18 ChatFlatItems fix (keep
         // rawFragments on the last assistant turn regardless of
@@ -1874,6 +1891,111 @@ fun ChatScreen(
                 // checkpoint and re-arm userScrolledAway.
                 if (!inProgress && !isNearBottom.value && !userScrolledAway) {
                     userScrolledAway = true
+                }
+            }
+    }
+
+    // [T-android-updown-fab-asymmetry] Position-driven safety net for the
+    // down-button's gate.
+    //
+    // The re-arm above keys on the `isScrollInProgress` FALLING EDGE, so it only
+    // covers viewport movement that Compose reports as a scroll — drags and
+    // flings. `listState.scrollToItem` (used by every programmatic jump here,
+    // including the up-button's turn-walk) moves the viewport WITHOUT ever
+    // setting that flag, so no edge arrives and `userScrolledAway` stays false
+    // while the user is nowhere near the bottom. The down-button is then hidden
+    // and the only way back is a manual drag — the reported bug.
+    //
+    // Keying on the position itself closes that hole for ALL movers, present and
+    // future, instead of patching each call site. Deliberately one-directional:
+    // this only ARMS the flag. Clearing stays with the existing handlers (drag
+    // stop, jump-to-bottom, send, session switch), because "we drifted near the
+    // bottom" must not be mistaken for "the user chose to follow again" — that
+    // conflation is what T138/T170 were fixed for.
+    //
+    // [T-android-stream-follow-dies-after-first-paragraph] The arm must NOT
+    // fire on content growth. `isNearBottom` goes false for two very different
+    // reasons: (a) the user moved the viewport away, and (b) the streaming
+    // message grew taller than the viewport while the viewport stood still.
+    // Case (b) happens on essentially every multi-paragraph reply — the row at
+    // index 0 gets taller under reverseLayout, so the bottom edge slides out
+    // from under us before the next follow-scroll runs. Arming on (b) was
+    // self-defeating: the flag killed the streaming auto-follow that would
+    // have restored the bottom, so the reply scrolled through its first
+    // paragraph and then froze with the rest hidden behind the tool bar and
+    // composer, with no drag anywhere in the trace (observed 20:35:56.145 —
+    // `scrolledAway=true` 1.4s after send, zero DragInteraction).
+    //
+    // Suppress the arm outright while a turn is streaming. A first attempt
+    // tried to keep the net alive during streaming by demanding a "viewport
+    // moved" signal (isScrollInProgress, or firstVisibleItemIndex changing).
+    // That is not a valid discriminator and the on-device trace disproved it:
+    //
+    //   [20:40:45.050] ScrollFollow userScrolledAway ARMED
+    //                  inProgress=false firstIdx=1 streaming=true
+    //
+    // A growing row at index 0 pushes the previous row across the viewport
+    // boundary, so firstVisibleItemIndex advances 0→1 with the user's finger
+    // nowhere near the screen — indistinguishable, by position alone, from a
+    // real scroll. There is no purely positional test that separates the two.
+    //
+    // So gate on the turn instead: while isStreaming is true, the streaming
+    // auto-follow owns the viewport and an off-bottom reading is expected
+    // drift, not intent. Real user gestures during a stream are still honoured
+    // — the DragInteraction.Stop handler above sets userScrolledAway directly
+    // and does not route through this net. Outside a stream the net keeps its
+    // original T-android-updown-fab-asymmetry behaviour untouched, which is
+    // the case it was actually built for (programmatic turn-walk jumps).
+    //
+    // [T-android-stream-end-arm-race] The window must extend PAST the
+    // streaming→idle edge. The final markdown re-render (code blocks, tables
+    // and lists finishing their real layout) lands AFTER _isStreaming flips
+    // false, and it changes row heights exactly like streaming growth did:
+    //
+    //   21:20:52.959  _isStreaming=false
+    //   21:20:53.066  coldPrewarm.done + firstItem re-compose  (final reflow)
+    //   21:20:53.076  ARMED  inProgress=false firstIdx=1 streaming=false
+    //
+    // 117 ms after the flag cleared, so the isStreaming gate no longer
+    // covered it and the reflow armed userScrolledAway with the user's finger
+    // nowhere near the screen. That in turn made the stream-end settle LE
+    // (which sleeps 220 ms then bails on `if (userScrolledAway)`) a no-op, so
+    // the transcript was left parked mid-reply with the down-FAB showing —
+    // reported as "output stopped but the view isn't at the bottom".
+    //
+    // STREAM_END_ARM_GRACE_MS keeps the suppression alive across that reflow.
+    // It is deliberately longer than the settle LE's own 220 ms delay so the
+    // re-pin gets to run first and legitimately restore the bottom; a real
+    // drag inside the window still arms the flag directly via the
+    // DragInteraction.Stop handler, which never routes through this net.
+    LaunchedEffect(listState) {
+        snapshotFlow { isNearBottom.value }
+            .distinctUntilChanged()
+            .collect { nearBottom ->
+                val firstIdx = listState.firstVisibleItemIndex
+                // Content-growth drift during a live turn is not a user intent.
+                val sinceStreamEnd = System.currentTimeMillis() - lastStreamEndMs
+                val streamingDrift = viewModel.isStreaming.value ||
+                    (lastStreamEndMs > 0L && sinceStreamEnd <= STREAM_END_ARM_GRACE_MS)
+                if (!nearBottom && !userScrolledAway && !streamingDrift) {
+                    userScrolledAway = true
+                    // [T-android-stream-follow-dies-after-first-paragraph]
+                    // Arming kills streaming auto-follow, so record WHY. If a
+                    // "reply stopped scrolling" report ever recurs, this line
+                    // is the first thing to grep: streaming=true here means
+                    // the drift heuristic let a non-gesture through.
+                    AppLogger.debug(
+                        "ScrollFollow",
+                        "userScrolledAway ARMED inProgress=${listState.isScrollInProgress} " +
+                            "firstIdx=$firstIdx streaming=${viewModel.isStreaming.value}",
+                    )
+                } else if (!nearBottom && streamingDrift) {
+                    val why = if (viewModel.isStreaming.value) "streaming content growth"
+                              else "stream-end reflow (+${sinceStreamEnd}ms)"
+                    AppLogger.debug(
+                        "ScrollFollow",
+                        "arm SUPPRESSED ($why) firstIdx=$firstIdx",
+                    )
                 }
             }
     }
@@ -2384,22 +2506,23 @@ fun ChatScreen(
                                             // badge to the right stays intrinsic.
                                             modifier = Modifier.weight(1f, fill = false),
                                         )
-                                        // Show the badge ONLY when the model can
-                                        // think AND thinking is currently on:
-                                        //   - availableThinkingLevels non-empty →
-                                        //     the bound model actually supports
-                                        //     thinking (no badge for models that
-                                        //     can't reason);
-                                        //   - level.isEnabled (≠ Off) → thinking is
-                                        //     switched on right now.
-                                        // When Off we render NOTHING (no greyed
-                                        // placeholder): iOS found a grey "Off" pill
-                                        // read as ambiguous ("is thinking on or
-                                        // off?"), so the badge simply disappears.
-                                        // The sheet still lists Off, so users can
-                                        // turn thinking back off from there.
+                                        // Show the badge whenever thinking is on,
+                                        // and ALSO when it's Off but the active
+                                        // model supports deep thinking (iOS
+                                        // parity, e6bd75efc): the icon + "Off"
+                                        // pill is then a discoverable tap target
+                                        // for enabling thinking via the level
+                                        // sheet. The Off pill is gated on
+                                        // currentModelSupportsReasoning so
+                                        // non-reasoning models don't grow a dead
+                                        // toggle; an enabled level still shows
+                                        // unconditionally (user may have opted in
+                                        // on an unknown-capability model).
                                         if (viewModel.availableThinkingLevels.isNotEmpty() &&
-                                            thinkingLevelBadgeState.isEnabled
+                                            (
+                                                thinkingLevelBadgeState.isEnabled ||
+                                                    viewModel.currentModelSupportsReasoning
+                                            )
                                         ) {
                                             ThinkingLevelBadge(
                                                 level = thinkingLevelBadgeState,
@@ -3101,8 +3224,36 @@ fun ChatScreen(
                     // (rendered via asReversed()), so the newest row is at
                     // the end.
                     val newest = flatItems.lastOrNull() ?: return@LaunchedEffect
+                    // [T-android-queued-bubble-behind-toolbar] UserBubble is in
+                    // the accept-list too, for the queued ("candidate") message
+                    // the user sends WHILE a turn is streaming.
+                    //
+                    // enqueuePrompt() appends the bubble to `_messages` without
+                    // going through the normal send path, so the only scrolls it
+                    // gets are the two position-0 pins (SEND-PATH/* and
+                    // LE(messages.size)USER-SEND-SNAP). Those fire — the logs
+                    // show all three landing `idx=0 off=0` — but position 0
+                    // under reverseLayout is the LazyColumn's own bottom edge,
+                    // which the floating tool bar (65dp thumbnail + overhang)
+                    // covers. contentPadding.bottom already reserves that space
+                    // via bottomReserve, yet the reserve does NOT change here:
+                    // a tool bar was already on screen before the enqueue, so
+                    // hasFloatingTools stays true and LE(bottomReserve) never
+                    // re-fires (verified: zero `reserve-change` events at the
+                    // enqueue moment). The bubble is laid out inside the
+                    // reserved band and stays half-occluded.
+                    //
+                    // This effect re-pins AFTER flatItems republishes with the
+                    // new row measured, which is exactly the missing step: the
+                    // earlier pins ran against a flatItems that did not yet
+                    // contain the bubble. Restricting it to isQueued keeps
+                    // ordinary user sends (already handled by the send path,
+                    // and never appended mid-stream) off this path.
+                    val isQueuedBubble =
+                        newest is FlatChatItem.UserBubble && newest.message.isQueued
                     if (newest !is FlatChatItem.AssistantToolUse &&
-                        newest !is FlatChatItem.AssistantTyping
+                        newest !is FlatChatItem.AssistantTyping &&
+                        !isQueuedBubble
                     ) return@LaunchedEffect
                     if (newest.key == lastTrailingPinKey) return@LaunchedEffect
                     if (userScrolledAway) return@LaunchedEffect
@@ -3868,6 +4019,39 @@ fun ChatScreen(
                     SideEffect { toolBarHeightPx = 0 }
                 }
 
+                // [T-android-tts-capsule] Floating speech-player control for
+                // "Read replies" TTS — expand/compact capsule with mute, model
+                // switch and speed cycling. Mounted LAST in this Box so it
+                // draws above the list, the FABs and the floating tool bar
+                // (iOS mounts its SpeechPlayerControl at app root; chat-screen
+                // scope is the Android first pass).
+                // [T-android-tts-capsule-avoid] toolBarHeightPx is the same
+                // measurement bottomReserve uses — the capsule lifts above the
+                // floating tool bar instead of covering its trailing edge.
+                // [T-android-tts-capsule-avoid-fabs] The scroll FABs share the
+                // capsule's bottom-end corner and OVERLAPPED it (user report:
+                // capsule stacked on the jump-to-user-message / scroll-to-
+                // bottom buttons). Mirror their exact placement math — same
+                // visibility predicates, same base offsets as the FAB blocks
+                // below — so the capsule clears the TOP of whatever part of
+                // the FAB stack is currently visible, and drops back when the
+                // FABs hide. This is the Android stand-in for iOS's
+                // protectedRects: derived from the same layout constants
+                // instead of measured rects, which keeps it deterministic.
+                val upFabVisible = messages.isNotEmpty() && !isNearBottom.value
+                val downFabVisible =
+                    userScrolledAway && contentOverflows.value && messages.isNotEmpty()
+                val fabBaseDp = if (lastToolBlocks.isNotEmpty()) 80.dp else 8.dp
+                val fabStackTopDp = when {
+                    upFabVisible -> fabBaseDp + 46.dp + 36.dp
+                    downFabVisible -> fabBaseDp + 36.dp
+                    else -> 0.dp
+                }
+                com.openminis.app.ui.chat.voice.SpeechPlayerCapsule(
+                    bottomObstructionPx = toolBarHeightPx,
+                    additionalObstructionDp = fabStackTopDp,
+                )
+
                 // T261: tool-detail sheet hoisted out of LazyColumn item
                 // scope. Visibility driven by ViewModel state so streaming /
                 // pill-disposal / new-tool emissions can't snap it shut.
@@ -3923,6 +4107,20 @@ fun ChatScreen(
                     val upBaseBottom = if (lastToolBlocks.isNotEmpty()) 80.dp else 8.dp
                     androidx.compose.material3.FilledIconButton(
                         onClick = {
+                            // [T-android-updown-fab-asymmetry] Arm the same flag a
+                            // finger-drag would. The down-button is gated on
+                            // `userScrolledAway`, which ONLY the drag handlers set
+                            // — and `scrollToPreviousUserTurn` moves the viewport
+                            // with `listState.scrollToItem` (instant, not
+                            // animated), so `isScrollInProgress` never toggles and
+                            // the fling-settle re-arm below never runs either.
+                            // Result: walking up with this button left the user
+                            // far from the bottom with NO way back except a manual
+                            // drag. Measured (ScrollFAB2 trace):
+                            //   up=true down=false | nearBottom=false scrolledAway=false
+                            // The down-button already does the symmetric reset
+                            // (`userScrolledAway = false`); this is its mirror.
+                            userScrolledAway = true
                             coroutineScope.launch { scrollToPreviousUserTurn() }
                         },
                         modifier = Modifier
@@ -5359,12 +5557,21 @@ fun ChatScreen(
                         // overflow the constrained width and render overlapped
                         // (iOS af9f3d3e parity).
                         if (com.openminis.app.ui.chat.voice.VoiceModePrefs.isVoiceActive && editingId == null) {
-                            var readReplies by remember {
-                                mutableStateOf(
-                                    context.getSharedPreferences("voice_prefs", android.content.Context.MODE_PRIVATE)
-                                        .getBoolean("readReplies", false),
-                                )
+                            // [T-android-tts-capsule] Source of truth is the
+                            // GLOBAL VoiceOutputState (same "readReplies" pref
+                            // key as before), shared with the floating
+                            // speech-player capsule — so the pill reflects the
+                            // capsule's mute/close actions too. Mirrors iOS
+                            // readAloudToolbarToggle's three states:
+                            //   active → muted → off → active …
+                            LaunchedEffect(Unit) {
+                                com.openminis.app.speech.VoiceOutputState.init(context)
                             }
+                            val ttsEnabled by com.openminis.app.speech.VoiceOutputState
+                                .isEnabled.collectAsState()
+                            val ttsMuted by com.openminis.app.speech.VoiceOutputState
+                                .isMuted.collectAsState()
+                            val readReplies = ttsEnabled && !ttsMuted
                             // [T-android-provider-tts-readaloud] Routes each
                             // utterance through the resolved Voice Output
                             // selection (provider TTS, system engine as
@@ -5403,15 +5610,19 @@ fun ChatScreen(
                                     .wrapContentWidth()
                                     .clip(RoundedCornerShape(50))
                                     .background(
-                                        if (readReplies) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                        if (ttsEnabled) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
                                         else ChatColors.secondaryText.copy(alpha = 0.10f),
                                     )
                                     .clickable {
-                                        readReplies = !readReplies
-                                        context.getSharedPreferences("voice_prefs", android.content.Context.MODE_PRIVATE)
-                                            .edit().putBoolean("readReplies", readReplies).apply()
-                                        if (!readReplies) {
-                                            replyTts.stop()
+                                        // iOS tap-cycle (readAloudToolbarToggle):
+                                        // active → mute (capsule stays visible);
+                                        // muted → fully off (capsule hides);
+                                        // off → on, un-muted.
+                                        val s = com.openminis.app.speech.VoiceOutputState
+                                        when {
+                                            ttsEnabled && !ttsMuted -> s.setMuted(true)
+                                            ttsEnabled && ttsMuted -> s.setEnabled(false)
+                                            else -> { s.setMuted(false); s.setEnabled(true) }
                                         }
                                     }
                                     .padding(horizontal = 10.dp, vertical = 6.dp),
@@ -5420,7 +5631,7 @@ fun ChatScreen(
                                     if (readReplies) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
                                     contentDescription = null,
                                     modifier = Modifier.size(14.dp),
-                                    tint = if (readReplies) MaterialTheme.colorScheme.primary else ChatColors.secondaryText,
+                                    tint = if (ttsEnabled) MaterialTheme.colorScheme.primary else ChatColors.secondaryText,
                                 )
                                 Spacer(modifier = Modifier.width(5.dp))
                                 Text(
@@ -5448,7 +5659,7 @@ fun ChatScreen(
                                             trim = LineHeightStyle.Trim.None,
                                         ),
                                     ),
-                                    color = if (readReplies) MaterialTheme.colorScheme.primary else ChatColors.secondaryText,
+                                    color = if (ttsEnabled) MaterialTheme.colorScheme.primary else ChatColors.secondaryText,
                                 )
                             }
                             // [T-android-streaming-readaloud] Speak the reply AS
@@ -5470,33 +5681,138 @@ fun ChatScreen(
                             val lastAssistant = messages.lastOrNull { it.role == "assistant" }
                             val lastAssistantId = lastAssistant?.id
                             var spokenUpTo by remember(lastAssistantId) { mutableStateOf(0) }
-                            LaunchedEffect(lastAssistantId, lastAssistant?.content, isStreaming, readReplies) {
-                                if (!readReplies) return@LaunchedEffect
-                                val text = lastAssistant?.content ?: return@LaunchedEffect
+                            // [T-android-readreplies-sidechannel] Feed the TTS
+                            // from the STREAMING SIDE-CHANNEL, not the messages
+                            // list. The previous effect keyed on
+                            // `lastAssistant?.content` — but under
+                            // T-streaming-side-channel the canonical list stays
+                            // STATIC during a turn (per-token text rides
+                            // streamingById; messages is only rewritten at turn
+                            // end). So the effect fired exactly twice per turn:
+                            //  1. Turn start (empty placeholder): fell through
+                            //     the guard, marked lastSpokenAssistantKey, had
+                            //     no text to feed — spokenUpTo stayed 0.
+                            //  2. Turn end (final content lands): spokenUpTo was
+                            //     still 0, and the key it now compared against
+                            //     was the one IT marked in step 1 —
+                            //     alreadySeen=true, whole message suppressed.
+                            // Net effect: TTS engines bound and initialized on
+                            // every panel entry and speak() was never called
+                            // once — minis-2026-08-16.log has 5 "suppressed"
+                            // lines, 0 "feeding" lines, which is exactly the
+                            // reported "朗读回复开了但没有任何声音". The
+                            // self-poisoning also explains the paradoxical
+                            // `alreadySeen=true streaming=true` entries.
+                            //
+                            // Keys are (id, toggle) ONLY — the effect survives
+                            // the whole turn and collects live deltas inside,
+                            // so the history guard runs once per message
+                            // identity and can no longer poison itself.
+                            LaunchedEffect(lastAssistantId, readReplies) {
+                                if (!readReplies || lastAssistantId == null) return@LaunchedEffect
+                                val key = lastAssistantId.hashCode()
+                                val alreadySeen = com.openminis.app.ui.chat.voice.VoiceModePrefs
+                                    .lastSpokenAssistantKey == key
+                                val liveAtEntry =
+                                    viewModel.streamingById.value.containsKey(lastAssistantId)
                                 // History on entry must not be read aloud: only
-                                // speak a message we've been following since it
-                                // started streaming, or one still in flight.
-                                val key = lastAssistantId?.hashCode() ?: text.hashCode()
-                                if (spokenUpTo == 0) {
-                                    val alreadySeen = com.openminis.app.ui.chat.voice.VoiceModePrefs
-                                        .lastSpokenAssistantKey == key
-                                    if (alreadySeen || !isStreaming) {
-                                        // Pre-existing message — mark it seen and stay silent.
-                                        com.openminis.app.ui.chat.voice.VoiceModePrefs
-                                            .lastSpokenAssistantKey = key
-                                        spokenUpTo = text.length
-                                        return@LaunchedEffect
-                                    }
+                                // a message that is live right now (or mid-turn
+                                // awaiting its first token) is followed.
+                                if (alreadySeen || (!viewModel.isStreaming.value && !liveAtEntry)) {
+                                    android.util.Log.i(
+                                        "ReadReplies",
+                                        "suppressed: alreadySeen=$alreadySeen " +
+                                            "streamingNow=${viewModel.isStreaming.value} " +
+                                            "(history is never spoken)",
+                                    )
                                     com.openminis.app.ui.chat.voice.VoiceModePrefs
                                         .lastSpokenAssistantKey = key
+                                    return@LaunchedEffect
                                 }
-                                if (text.length > spokenUpTo) {
-                                    replyTts.appendText(text.substring(spokenUpTo))
-                                    spokenUpTo = text.length
+                                com.openminis.app.ui.chat.voice.VoiceModePrefs
+                                    .lastSpokenAssistantKey = key
+                                // [T-android-tts-scope-align] New reply → stop
+                                // the PREVIOUS reply's still-playing speech and
+                                // drop its queue, exactly once per followed
+                                // message. iOS does this on the first text delta
+                                // of a turn (hasClearedTTSForCurrentTurn +
+                                // stopSpeechForThisSession); without it the old
+                                // reply keeps talking and the new one queues
+                                // BEHIND it, minutes late on long replies.
+                                replyTts.stop()
+                                // [T-android-tts-scope-align] Tool-boundary
+                                // flush, from iOS's toolCallStart handler: text
+                                // that streamed just before a tool call and
+                                // never met a terminator must speak BEFORE the
+                                // tool runs, not sit buffered until stream end.
+                                var lastToolCount = 0
+                                kotlinx.coroutines.flow.combine(
+                                    viewModel.streamingById,
+                                    viewModel.isStreaming,
+                                ) { stream, streamingNow ->
+                                    Triple(
+                                        stream[lastAssistantId]?.content,
+                                        streamingNow,
+                                        stream[lastAssistantId]?.toolBlocks ?: emptyList(),
+                                    )
+                                }.collect { (live, streamingNow, toolBlocks) ->
+                                    val toolCount = toolBlocks.size
+                                    if (toolCount > lastToolCount) {
+                                        // Flush first so the half-sentence that
+                                        // preceded the tool call is spoken
+                                        // BEFORE the announcement, not after it.
+                                        replyTts.flush()
+                                        // [T-android-tts-tool-announce] Announce
+                                        // each newly-started tool, mirroring iOS
+                                        // (makeToolSpeech + speakQueued). Without
+                                        // this a listener hears the narration stop
+                                        // dead for however long the tool runs,
+                                        // with no cue as to why — the screen shows
+                                        // a pill, but the whole point of read-aloud
+                                        // is not having to look.
+                                        //
+                                        // Queued, never speak(): that would stop
+                                        // playback and cut off the sentence just
+                                        // flushed above.
+                                        for (i in lastToolCount until toolCount) {
+                                            val b = toolBlocks.getOrNull(i) ?: continue
+                                            replyTts.speakQueued(
+                                                com.openminis.app.speech.ToolSpeech.announcement(
+                                                    name = b.toolName,
+                                                    argsJson = b.toolArgs,
+                                                    title = b.toolTitle.takeIf { it.isNotBlank() },
+                                                )
+                                            )
+                                        }
+                                        lastToolCount = toolCount
+                                    }
+                                    // Turn end drains the side-channel AFTER
+                                    // publishing the final list — fall back to
+                                    // the canonical message so the tail past the
+                                    // last delta still gets spoken.
+                                    val text = live
+                                        ?: viewModel.messages.value
+                                            .lastOrNull { it.id == lastAssistantId }?.content
+                                        ?: return@collect
+                                    if (text.length > spokenUpTo) {
+                                        // [T-android-tts-diag] Kept: a field log
+                                        // must show WHY nothing spoke (or that
+                                        // feeding did happen and the fault is
+                                        // further down, in the player/engine).
+                                        android.util.Log.i(
+                                            "ReadReplies",
+                                            "feeding tts +${text.length - spokenUpTo} chars " +
+                                                "(total=${text.length}) live=${live != null} " +
+                                                "streaming=$streamingNow",
+                                        )
+                                        replyTts.appendText(text.substring(spokenUpTo))
+                                        spokenUpTo = text.length
+                                    }
+                                    // Stream over and side-channel drained —
+                                    // flush the trailing fragment that never got
+                                    // a sentence terminator.
+                                    if (!streamingNow && live == null) replyTts.flush()
                                 }
-                                // Stream ended — speak the trailing fragment
-                                // that never got a sentence terminator.
-                                if (!isStreaming) replyTts.flush()
                             }
                             // [T-android-read-replies-pill-metrics] Balancing
                             // spacer. There is a weight(1f) spacer BEFORE the
@@ -6069,8 +6385,10 @@ fun ChatScreen(
  * and clash with the grey "provider · model" text it sits beside. Both colors
  * are theme tokens, so the badge adapts to light/dark automatically.
  *
- * The caller only mounts this when thinking is enabled, so the label is always
- * a real level (never "Off").
+ * Also mounted when thinking is Off on a reasoning-capable model (iOS parity,
+ * e6bd75efc): the pill then reads icon + "Off" as a tap target for enabling
+ * deep thinking. The icon is dimmed to 0.4 alpha in that state, matching the
+ * Off-row convention in [ThinkingLevelSheet].
  *
  * It carries its OWN clickable (which consumes the tap) so a tap on the badge
  * opens the thinking-level sheet instead of the model picker owned by the
@@ -6099,7 +6417,9 @@ private fun ThinkingLevelBadge(
         Icon(
             imageVector = Icons.Default.Lightbulb,
             contentDescription = null,
-            tint = badgeColor,
+            // Dimmed in the Off state (sheet Off-row convention) so "Off" reads
+            // as "thinking disabled" at a glance.
+            tint = if (level.isEnabled) badgeColor else badgeColor.copy(alpha = 0.4f),
             modifier = Modifier.size(9.dp),
         )
         Text(

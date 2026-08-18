@@ -97,6 +97,48 @@ class ChatViewModel(
 
     companion object {
         internal const val TAG = "ChatViewModel"
+
+        /**
+         * [T-android-auto-grouping-injection] Strip the characters that would let
+         * user-authored text escape its slot in the prompt's group list, then
+         * bound the length.
+         *
+         * The list is rendered as `"name" — desc; "name2" — desc2`, so a quote,
+         * bracket or semicolon inside a value can terminate the list early and the
+         * remainder reads as instruction. Newlines do the same at the line level.
+         * Collapses whitespace so a name padded with tabs/newlines can't blow the
+         * budget either.
+         *
+         * Deliberately NOT escaping instead of stripping: the sanitized name has to
+         * survive a round trip (the model echoes it back and we match it against
+         * the real folder name), and an escape sequence would come back escaped.
+         * Stripping keeps the value matchable — findFolderByName's trim +
+         * case-fold absorbs the difference for every realistic group name.
+         */
+        internal fun promptSafe(raw: String, max: Int): String =
+            raw.replace(Regex("[\"'\\[\\]{};\\\\]"), " ")
+                // Unicode quote lookalikes: a model reads curly and CJK
+                // brackets as quoting just as readily as ASCII, so leaving
+                // them in re-opens the break-out the ASCII strip closes.
+                .replace(Regex("[\\u2018\\u2019\\u201C\\u201D\\u300C\\u300D\\u300E\\u300F]"), " ")
+                // Format/bidi controls (RLO, LRO, ZWJ...) — invisible in code
+                // review, and they can reorder how the rendered line reads.
+                .replace(Regex("\\p{Cf}"), "")
+                // WHITESPACE: Kotlin Regex is java.util.regex WITHOUT
+                // UNICODE_CHARACTER_CLASS, so plain \\s is only
+                // [ \\t\\n\\x0B\\f\\r] — U+2028 LINE SEPARATOR, U+2029
+                // PARAGRAPH SEPARATOR and U+0085 NEL slip through as REAL line
+                // breaks, which is exactly the multi-line break-out this
+                // sanitizer exists to stop. \\p{Z} additionally covers NBSP
+                // (U+00A0) and the ideographic space, neither of which
+                // Kotlin's trim() removes either.
+                .replace(Regex("[\\s\\p{Z}\\u0085\\u2028\\u2029]+"), " ")
+                .trim()
+                .take(max)
+                // Trim AGAIN after the cut: take() can leave a trailing space,
+                // and the round-trip matcher compares trimmed values.
+                .trim()
+
         // [T-preflight-tool-title-nonblocking] Fields kept in each tool's
         // `required` list (so the schema keeps nudging the model to emit them —
         // tool_title drives the live pill header) but which must NOT block the
@@ -380,7 +422,44 @@ class ChatViewModel(
             // is actually present, keeping the identity-equal fast path intact.
             val full = if (raw.any { it.isInternalBridge }) raw.filterNot { it.isInternalBridge } else raw
             if (full.size <= LONG_SESSION_THRESHOLD || full.size <= cap) full
-            else full.subList(full.size - cap, full.size)
+            // [T-android-uimessages-sublist-cme] `.toList()` is defensive
+            // hardening, NOT a proven fix for the reported crash. Read the
+            // measured facts before changing it back.
+            //
+            // `subList` returns a live VIEW sharing the parent's modCount, and
+            // emitting it puts that view in Compose state (ChatScreen collects
+            // `uiMessages`). That is a latent hazard worth closing on its own.
+            //
+            // MEASURED, so nobody re-derives it: a SubList only throws
+            // ConcurrentModificationException when its PARENT is structurally
+            // mutated IN PLACE (add/removeAt/clear). Every write here is
+            // `_messages.value = <new list>` via `+` / filterNot / map, and all
+            // of those ALLOCATE A FRESH ArrayList rather than mutating — so the
+            // old view's parent is never touched and no CME results. Verified on
+            // a JVM probe (`base + x`, `filterNot`, `map` all return a new
+            // java.util.ArrayList; comparing a stale window after such a write
+            // returned OK, not CME).
+            //
+            // Also verified end-to-end on device (Pixel 4a, build with this
+            // `.toList()` deliberately REVERTED): create a multi-turn session,
+            // long-press a middle user message → 编辑 → send. `truncateBeforeEdit`
+            // provably ran (8 messages → 4), storing a live SubList as
+            // `_messages.value`, and a further message was sent — NO crash. The
+            // next `+` copies the SubList back into a plain ArrayList, so the
+            // view stops being the state before anything can invalidate it.
+            //
+            // The user's crash (ArrayList$SubList.equals, main thread, realme
+            // RMX5010 / Android 16, 2026-08-10/11/12) therefore still has an
+            // UNIDENTIFIED trigger: something must mutate a subList's parent in
+            // place. That site was not found in ChatViewModel; look next at
+            // ChatFlatItems / ChatScreen and at any long-lived mutableListOf
+            // whose contents reach Compose.
+            //
+            // Keep the copy regardless: the window is a snapshot by definition,
+            // so copying is also the correct semantics. Only long sessions past
+            // the cap allocate; the common path above still returns `raw`
+            // unchanged and stays identity-equal.
+            else full.subList(full.size - cap, full.size).toList()
         }.stateIn(
             viewModelScope,
             kotlinx.coroutines.flow.SharingStarted.Eagerly,
@@ -2121,7 +2200,16 @@ class ChatViewModel(
         return mutated
     }
 
-    private fun effectiveAgentHistory(): List<LLMMessage> {
+    /**
+     * [T-android-compact-orphan-toolcall] The outgoing history, with tool
+     * call/result pairing repaired. Every request goes through here — see
+     * [dropOrphanedToolParts] for why the sweep exists and what it can and
+     * cannot fix.
+     */
+    private fun effectiveAgentHistory(): List<LLMMessage> =
+        dropOrphanedToolParts(effectiveAgentHistoryUncounted())
+
+    private fun effectiveAgentHistoryUncounted(): List<LLMMessage> {
         val summary = _compactSummary.value
         val marker = _cachedLatestMarker
         // No compact in play → return full history untouched.
@@ -2315,6 +2403,109 @@ class ChatViewModel(
         return agentHistory.toList()
     }
 
+    /**
+     * [T-android-compact-orphan-toolcall] Last line of defence before a history
+     * slice becomes a provider request: every ToolResult (function_call_output)
+     * must have a matching ToolUse (function_call) in the same slice, and vice
+     * versa.
+     *
+     * An unmatched pair is a hard 400 on OpenAI-compatible APIs —
+     *     No tool call found for function call output with call_id …
+     * — and because the slice is recomputed deterministically, it repeats on
+     * every retry AND every fallback model, wedging the conversation until the
+     * user clears the session. Port of iOS `dropOrphanedToolParts`
+     * (AIChatViewModel+Persistence.swift, c7f6a299e).
+     *
+     * Any orphan reaching here is an upstream bug (the walk-back boundary is
+     * supposed to preserve pairing), so this logs loudly rather than silently
+     * papering over it:
+     *   - orphaned result → drop it; its call is gone from the slice and
+     *     nothing can reconstruct it.
+     *   - orphaned call → synthesise an error result rather than deleting the
+     *     call, because deleting would silently discard the assistant's own
+     *     reasoning. The placeholder keeps the turn intact and tells the model
+     *     that round failed.
+     * Messages emptied by the drop are removed — a parts-less message is itself
+     * invalid on several providers.
+     */
+    private fun dropOrphanedToolParts(history: List<LLMMessage>): List<LLMMessage> {
+        val toolUseIds = HashSet<String>()
+        val toolResultIds = HashSet<String>()
+        for (msg in history) {
+            for (part in msg.contentParts) {
+                when (part) {
+                    is AgentContentPart.ToolUse -> toolUseIds.add(part.id)
+                    is AgentContentPart.ToolResult -> toolResultIds.add(part.id)
+                    else -> {}
+                }
+            }
+        }
+        val orphanedResults = toolResultIds - toolUseIds
+        val orphanedUses = HashSet(toolUseIds - toolResultIds)
+
+        // [T-android-compact-orphan-toolcall] IN-FLIGHT EXEMPTION (iOS
+        // 5d346dc2e). The tool_uses in the FINAL assistant message are not
+        // orphans while the loop sits between "model asked for tools" and
+        // "results appended" — agentHistory legitimately looks unpaired for
+        // that whole window (the assistant turn is appended at ~7500 and its
+        // tool results only at ~7517). Any snapshot taken inside that gap would
+        // otherwise carry fabricated "interrupted" results for tools that were
+        // about to run normally, telling the model its tools had failed.
+        // Trailing unanswered calls need no repair anyway: a request ending on
+        // an assistant tool_use is exactly what the API expects mid-round.
+        val last = history.lastOrNull()
+        if (last != null && last.role == LLMMessage.Role.ASSISTANT) {
+            for (part in last.contentParts) {
+                if (part is AgentContentPart.ToolUse) orphanedUses.remove(part.id)
+            }
+        }
+
+        if (orphanedResults.isEmpty() && orphanedUses.isEmpty()) return history
+
+        AppLogger.warning(
+            TAG,
+            "[CompactDiag] orphan tool parts in OUTGOING history — repairing. " +
+                "orphanedOutputs=${orphanedResults.size} [${orphanedResults.sorted().take(3).joinToString(",")}] " +
+                "orphanedCalls=${orphanedUses.size} [${orphanedUses.sorted().take(3).joinToString(",")}] " +
+                "historyCount=${history.size}",
+        )
+
+        val cleaned = ArrayList<LLMMessage>(history.size)
+        for (msg in history) {
+            val kept = msg.contentParts.filter { part ->
+                if (part is AgentContentPart.ToolResult) !orphanedResults.contains(part.id) else true
+            }
+            // Only drop the message when it HAD parts and lost them all. A
+            // plain text message legitimately carries no contentParts and must
+            // survive untouched.
+            if (kept.isEmpty() && msg.contentParts.isNotEmpty()) continue
+            cleaned.add(if (kept.size == msg.contentParts.size) msg else msg.copy(contentParts = kept))
+
+            // Follow an assistant turn holding orphaned calls with the
+            // placeholder results it never got, so the pair is complete.
+            if (msg.role != LLMMessage.Role.ASSISTANT) continue
+            val unanswered = kept.filterIsInstance<AgentContentPart.ToolUse>()
+                .filter { orphanedUses.contains(it.id) }
+            if (unanswered.isNotEmpty()) {
+                cleaned.add(
+                    LLMMessage(
+                        role = LLMMessage.Role.USER,
+                        content = "",
+                        contentParts = unanswered.map {
+                            AgentContentPart.ToolResult(
+                                id = it.id,
+                                name = it.name,
+                                content = "Tool execution was interrupted by an unexpected error.",
+                                isError = true,
+                            )
+                        },
+                    ),
+                )
+            }
+        }
+        return cleaned
+    }
+
     /** Latest in-memory compact marker, used by [effectiveAgentHistory] to
      * resolve boundaries the same way iOS `cachedLatestMarker` does. Refreshed
      * on every compactAll write and on session reload. */
@@ -2365,6 +2556,22 @@ class ChatViewModel(
         while (i >= 0) {
             val msg = agentHistory[i]
             if (msg.role != LLMMessage.Role.USER) {
+                i -= 1
+                continue
+            }
+            // [T-android-compact-orphan-toolcall] A user message CARRYING a
+            // tool result is the second half of a round, not the start of one.
+            // This walk-back's whole premise is that `role == USER` marks a
+            // round boundary — but tool results are themselves persisted as
+            // USER messages (see the agentHistory.add at the end of the tool
+            // dispatch loop), so stopping on one cuts between an assistant's
+            // tool_use and its own tool_result. The call is then discarded with
+            // pre-history while the result survives in preAnchor and goes out
+            // alone, which every OpenAI-compatible provider answers with
+            //     400 No tool call found for function call output with call_id …
+            // and, since the slice is recomputed identically on every retry and
+            // fallback, the session wedges permanently. Port of iOS c7f6a299e.
+            if (msg.contentParts.any { it is AgentContentPart.ToolResult }) {
                 i -= 1
                 continue
             }
@@ -2873,8 +3080,19 @@ class ChatViewModel(
     /** Whether this is a draft session (not yet persisted to DB). */
     private val isDraft: Boolean = sessionId.startsWith("__new__")
 
-    /** Model group ID from long-press FAB, encoded in the draft session ID. */
-    private val initialGroupId: String? = sessionId.substringAfter("__grp__", "").takeIf { it.isNotEmpty() }
+    /** Model group ID from long-press FAB, encoded in the draft session ID.
+     *  substringBefore strips the folder marker in case both are present. */
+    private val initialGroupId: String? =
+        sessionId.substringAfter("__grp__", "").substringBefore("__fld__")
+            .takeIf { it.isNotEmpty() }
+
+    /** Session-group (folder) id from the folder card's "New Chat in Group"
+     *  menu item, encoded in the draft id. Filed at draft promotion — the
+     *  folder_id row can only exist once the session does (iOS defers the
+     *  same way via pendingFolderDraft). */
+    private val initialFolderId: String? =
+        sessionId.substringAfter("__fld__", "").substringBefore("__grp__")
+            .takeIf { it.isNotEmpty() }
 
     /** The real session ID (same as sessionId for existing sessions, generated on first message for drafts). */
     internal var realSessionId: String = if (isDraft) "" else sessionId
@@ -3086,6 +3304,10 @@ class ChatViewModel(
             memoryEnabled = _memoryEnabled.value,
         )
         realSessionId = session.id
+        // "New Chat in Group": file the just-promoted draft into its folder.
+        // Unconditional (vs iOS setFolderIfUnfiled) — the session is seconds
+        // old and nothing else can have filed it yet.
+        initialFolderId?.let { chatRepository.setFolderForSessions(it, listOf(session.id)) }
         // Move our cached VM from the draft key ("__new__...") to the real
         // sessionId so re-entering the session reuses the same instance.
         if (isDraft) {
@@ -3287,7 +3509,7 @@ class ChatViewModel(
                     _activeEntryId.value = entry.id
                     val instance = providerRepository.instance(entry.providerInstanceId)
                     if (instance != null) {
-                        val apiKey = providerRepository.loadApiKey(instance.id)
+                        val apiKey = providerRepository.usableApiKey(instance)
                         if (apiKey != null) {
                             currentProvider = ProviderFactory.create(instance, apiKey, entry.model, context)
                             _providerName.value = instance.label.ifEmpty { entry.model.provider }
@@ -3407,10 +3629,20 @@ class ChatViewModel(
                     val len = m.partsJson.length
                     totalChars += len
                     if (len > maxChars) maxChars = len
-                    if (m.partsJson.contains("\"tool_use\"") || m.partsJson.contains("\"tool_result\"")) {
+                    // ContentPart serialises its discriminator in camelCase
+                    // ("toolUse" / "toolResult" — see ContentPart.PartType), so
+                    // the snake_case probe this used to run matched NOTHING and
+                    // reported toolMessages=0 on every session, including ones
+                    // whose history is almost entirely tool traffic. That is
+                    // the opposite of the signal this diagnostic exists to give
+                    // — it is here to finger oversized tool_result inlines as
+                    // the GC-storm culprit, and it was reporting them absent.
+                    if (m.partsJson.contains("\"toolUse\"") || m.partsJson.contains("\"toolResult\"")) {
                         withTools++
                     }
-                    if (m.partsJson.contains("\"image\"") || m.partsJson.contains("\"attachment\"")) {
+                    // Same casing trap: attachments serialise as "mediaRef",
+                    // never as "image"/"attachment".
+                    if (m.partsJson.contains("\"mediaRef\"")) {
                         withAttachments++
                     }
                 }
@@ -3826,7 +4058,7 @@ class ChatViewModel(
                     val entryId = obj.optString("entryId").takeIf { it.isNotEmpty() } ?: return false
                     val entry = providerRepository.config.value.modelEntries.find { it.id == entryId } ?: return false
                     val instance = providerRepository.instance(entry.providerInstanceId) ?: return false
-                    val apiKey = providerRepository.loadApiKey(instance.id) ?: return false
+                    val apiKey = providerRepository.usableApiKey(instance) ?: return false
                     currentModel = entry.model
                     _modelName.value = entry.model.displayName
                     _providerName.value = instance.label.ifEmpty { entry.model.provider }
@@ -3864,7 +4096,7 @@ class ChatViewModel(
             enabledMembers.first()
         }
         val instance = providerRepository.instance(targetEntry.providerInstanceId) ?: return false
-        val apiKey = providerRepository.loadApiKey(instance.id) ?: return false
+        val apiKey = providerRepository.usableApiKey(instance) ?: return false
 
         currentModel = targetEntry.model
         _modelName.value = targetEntry.model.displayName
@@ -3950,7 +4182,7 @@ class ChatViewModel(
         _modelName.value = entry.model.displayName
         _activeEntryId.value = entry.id
         _providerName.value = instance.label.ifEmpty { entry.model.provider }
-        val apiKey = providerRepository.loadApiKey(instance.id)
+        val apiKey = providerRepository.usableApiKey(instance)
         if (apiKey != null) {
             currentProvider = ProviderFactory.create(instance, apiKey, entry.model, context)
         }
@@ -3962,7 +4194,7 @@ class ChatViewModel(
         val config = providerRepository.config.value
         val entry = config.modelEntries.find { it.id == entryId } ?: return
         val instance = providerRepository.instance(entry.providerInstanceId) ?: return
-        val apiKey = providerRepository.loadApiKey(instance.id) ?: return
+        val apiKey = providerRepository.usableApiKey(instance) ?: return
 
         currentModel = entry.model
         _modelName.value = entry.model.displayName
@@ -3996,16 +4228,38 @@ class ChatViewModel(
      * This ensures that models already tried (before the primary) are at the end,
      * not the beginning — so retry doesn't re-trigger the same fallback chain.
      */
-    private fun buildFallbackProviders(primaryProvider: LLMProvider): List<LLMProvider> {
+    /**
+     * [T-android-fallback-entry-identity] A fallback candidate, carrying the
+     * ENTRY it was built from.
+     *
+     * The entry id is the only unambiguous identity: two different provider
+     * instances can expose the SAME `model.id` (observed in the field:
+     * `deepseek-v4-flash` exists under both "DeekSeak" — api.deepseek.com — and
+     * "Bailian OpenAI" — dashscope.aliyuncs.com). Recovering the entry after the
+     * fact by matching `model.id` therefore picks whichever entry happens to
+     * come first in `modelEntries`, which is not necessarily the one that served
+     * the request.
+     */
+    private data class FallbackCandidate(
+        val provider: LLMProvider,
+        val entryId: String,
+    )
+
+    private fun buildFallbackProviders(primaryProvider: LLMProvider): List<FallbackCandidate> {
         val groupId = _selectedGroupId.value ?: return emptyList()
         val config = providerRepository.config.value
         val group = config.modelGroups.find { it.id == groupId } ?: return emptyList()
         val members = group.memberEntryIds
-        // Find current provider's position in the group
-        val currentIdx = members.indexOfFirst { entryId ->
-            config.modelEntries.find { it.id == entryId }?.model?.id == primaryProvider.model.id
-        }
-        val result = mutableListOf<LLMProvider>()
+        // Find current provider's position in the group.
+        // [T-android-fallback-entry-identity] Prefer the ACTIVE ENTRY id — the
+        // model-id match below is ambiguous when two instances share a model id
+        // and would anchor the cycle at the wrong member.
+        val activeEntry = _activeEntryId.value
+        val currentIdx = members.indexOfFirst { it == activeEntry }.takeIf { it >= 0 }
+            ?: members.indexOfFirst { entryId ->
+                config.modelEntries.find { it.id == entryId }?.model?.id == primaryProvider.model.id
+            }
+        val result = mutableListOf<FallbackCandidate>()
         // Iterate starting from the entry AFTER the primary, cycling around
         for (offset in 1 until members.size) {
             val idx = if (currentIdx >= 0) (currentIdx + offset) % members.size else offset
@@ -4013,11 +4267,11 @@ class ChatViewModel(
             val entry = config.modelEntries.find { it.id == entryId } ?: continue
             val instance = config.instances.find { it.id == entry.providerInstanceId } ?: continue
             if (!instance.isEnabled) continue
-            val apiKey = providerRepository.loadApiKey(instance.id) ?: continue
+            val apiKey = providerRepository.usableApiKey(instance) ?: continue
             val p = try {
                 ProviderFactory.create(instance, apiKey, entry.model, context)
             } catch (_: Exception) { continue }
-            result.add(p)
+            result.add(FallbackCandidate(provider = p, entryId = entry.id))
         }
         return result
     }
@@ -4042,7 +4296,7 @@ class ChatViewModel(
             val reason = when {
                 entry.isHidden -> "Hidden"
                 !instance.isEnabled -> "Disabled"
-                providerRepository.loadApiKey(instance.id) == null -> "Not logged in"
+                providerRepository.usableApiKey(instance) == null -> "Not logged in"
                 else -> continue
             }
             result.add("⚠️ ${entry.model.displayName} ($label): $reason")
@@ -4070,7 +4324,7 @@ class ChatViewModel(
             // get picked up. buildFallbackProviders already does this; the
             // single-step variant here had the same bug.
             if (!instance.isEnabled) continue
-            val apiKey = providerRepository.loadApiKey(instance.id) ?: continue
+            val apiKey = providerRepository.usableApiKey(instance) ?: continue
 
             currentModel = entry.model
             _modelName.value = entry.model.displayName
@@ -4737,7 +4991,16 @@ class ChatViewModel(
         if (index < 0) return
 
         val deletedMessages = messages.subList(index, messages.size).toList()
-        val kept = messages.subList(0, index)
+        // [T-android-uimessages-sublist-cme] Defensive: without `.toList()` this
+        // stores a live subList VIEW as `_messages.value`.
+        //
+        // Reproduced on device with this `.toList()` reverted (Pixel 4a): the
+        // truncation ran (8 messages → 4) and a further message was sent, and it
+        // did NOT crash — the next `+` copies the view into a plain ArrayList
+        // before anything can invalidate it. So this line is hardening, not the
+        // proven cause of the reported CME. See the long note on `uiMessages`.
+        // (`deletedMessages` above already copies; this line did not.)
+        val kept = messages.subList(0, index).toList()
         _messages.value = kept
         if (_streamingById.value.isNotEmpty()) {
             val keptIds = kept.mapTo(mutableSetOf()) { it.id }
@@ -5027,7 +5290,7 @@ class ChatViewModel(
     private suspend fun drainQueuedPrompts(
         provider: LLMProvider,
         systemPrompt: String?,
-        fallbackProviders: List<LLMProvider>,
+        fallbackProviders: List<FallbackCandidate>,
         fallbackStrategy: com.openminis.app.data.model.FallbackStrategy,
     ) {
         while (_promptQueue.value.isNotEmpty()) {
@@ -6121,10 +6384,57 @@ class ChatViewModel(
     private suspend fun runAgentLoop(
         provider: LLMProvider,
         systemPrompt: String?,
-        fallbackProviders: List<LLMProvider> = emptyList(),
+        fallbackProviders: List<FallbackCandidate> = emptyList(),
         fallbackStrategy: com.openminis.app.data.model.FallbackStrategy = com.openminis.app.data.model.FallbackStrategy.default,
     ) {
         AppLogger.info(TAG_STREAM, "runAgentLoop ENTER provider=${provider.javaClass.simpleName} historySize=${agentHistory.size}")
+        // [T-android-mem-probe-trust] Send-path context shape. The existing
+        // `messages-shape` probe only runs on session LOAD, so the 2026-08-15
+        // log described the session as it was opened, never as it was sent —
+        // and the send is where the memory goes. `historySize` alone says
+        // nothing about payload: 17 messages carrying a 100 KB tool_result each
+        // is a very different request from 1500 short ones. Logged once per
+        // agent loop (not per turn) to stay cheap; the walk is O(parts) over
+        // already-resident strings.
+        runCatching {
+            var chars = 0L
+            var maxOne = 0
+            var toolResults = 0
+            var images = 0
+            var imageBytes = 0L
+            var audioChars = 0L
+            var biggestRole = ""
+            for (m in agentHistory) {
+                var perMsg = m.content.length
+                for (p in m.contentParts) {
+                    when (p) {
+                        is AgentContentPart.ToolResult -> {
+                            perMsg += p.content.length
+                            toolResults++
+                            // Inline image bytes never reach the char count, so
+                            // track them separately — an image-heavy request is
+                            // a different failure shape from a text-heavy one.
+                            p.imageData?.let { images++; imageBytes += it.size }
+                        }
+                        is AgentContentPart.Text -> perMsg += p.text.length
+                        is AgentContentPart.ImageData -> { images++; imageBytes += p.data.size }
+                        else -> {}
+                    }
+                }
+                for (a in m.audioParts) audioChars += a.base64Data.length
+                images += m.imageParts.size
+                chars += perMsg
+                if (perMsg > maxOne) { maxOne = perMsg; biggestRole = m.role.name }
+            }
+            AppLogger.info(
+                TAG_STREAM,
+                "[CtxShape] historySize=${agentHistory.size} totalChars=$chars " +
+                    "maxMsgChars=$maxOne maxMsgRole=$biggestRole toolResultParts=$toolResults " +
+                    "imageParts=$images imageBytes=$imageBytes audioB64Chars=$audioChars " +
+                    "approxTokens=${chars / 4} " +
+                    "${com.openminis.app.diagnostics.MemorySnapshot.capture().toLogString()}",
+            )
+        }
         // [T-android-queued-message-interrupt-on-toolclose] `assistantId` is
         // normally a single message id for the whole agent loop (iOS-parity:
         // multiple tool/text turns folded into one bubble). It is reassigned
@@ -6910,8 +7220,9 @@ class ChatViewModel(
                     withContext(Dispatchers.Main) { clearInlineError() }
                     val shouldFallback = isRateLimit || is5xx ||
                         fallbackStrategy == com.openminis.app.data.model.FallbackStrategy.always
-                    val next = if (shouldFallback) remainingFallbacks.removeFirstOrNull() else null
-                    if (next != null) {
+                    val nextCandidate = if (shouldFallback) remainingFallbacks.removeFirstOrNull() else null
+                    val next = nextCandidate?.provider
+                    if (next != null && nextCandidate != null) {
                         val reason = when {
                             isRateLimit -> "Rate limited"
                             actual is com.openminis.app.data.model.LLMError.ProviderError -> actual.detail
@@ -6939,9 +7250,21 @@ class ChatViewModel(
                         // model name, but still keep activeEntryId / provider name
                         // in sync with the instance we actually used.)
                         _modelName.value = currentProvider.model.displayName
-                        // Update activeEntryId so model picker reflects the switch
+                        // Update activeEntryId so model picker reflects the switch.
+                        // [T-android-fallback-entry-identity] Look the entry up by
+                        // its OWN id, carried on the candidate. The previous
+                        // `find { it.model.id == currentProvider.model.id }` was
+                        // ambiguous: two instances can expose the same model id, so
+                        // it returned whichever entry sits earlier in modelEntries.
+                        // Observed in the field — falling back onto
+                        // `deepseek-v4-flash` served by "DeekSeak" showed the
+                        // provider as "Bailian OpenAI", because Bailian also has a
+                        // `deepseek-v4-flash` entry and happened to be found first.
+                        // That also poisoned activeEntryId and the persisted
+                        // binding, so re-entering the session resumed on the WRONG
+                        // instance.
                         val newEntry = providerRepository.config.value.modelEntries.find {
-                            it.model.id == currentProvider.model.id
+                            it.id == nextCandidate.entryId
                         }
                         if (newEntry != null) {
                             _activeEntryId.value = newEntry.id
@@ -9236,6 +9559,15 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
     private var titleGenerationInFlight = false
     private val TITLE_MAX_ATTEMPTS = 3
 
+    // [T-android-auto-grouping-injection] Bounds on the group list folded into
+    // the title-generation prompt. 30 groups × ~140 chars keeps the segment
+    // well under a KB even in the worst case; the description cap matches
+    // FolderEntity.DESC_MAX_CHARS, which is enforced at creation time but not
+    // on rows written by older builds or by the AI-Suggest path.
+    private val GROUP_CONTEXT_MAX = 30
+    private val GROUP_NAME_MAX = 40
+    private val GROUP_DESC_MAX = 100
+
     private fun generateSessionTitleIfNeeded() {
         // [T-android-titlegen-diag-logging] Unified "TitleGen" trail across
         // every path of this function — XIN 40454 reported sessions silently
@@ -9309,11 +9641,76 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
                 // Mirror iOS callSubModelForTitle prompt shape: short cacheable system
                 // prompt + user-message payload. Using the exact iOS strings keeps the
                 // Anthropic prompt cache warm across title-gen calls.
+                // [T-android-auto-grouping] Fold the group question into THIS
+                // call — no second round-trip. With the toggle off, or with no
+                // groups to offer, the prompt is byte-identical to the
+                // title-only form (so the Anthropic prompt cache stays warm).
+                // Port of iOS callSubModelForTitle's folderSegment.
+                val autoGroupOn = com.openminis.app.ui.settings
+                    .autoGroupingEnabled(context)
+                val groupContext: List<String> = if (!autoGroupOn) emptyList() else {
+                    // [T-android-auto-grouping-injection] Bound the group list.
+                    // Group names are free-form user input with no length or
+                    // content limit (only the description is capped, and only
+                    // at creation time), and they are interpolated into an
+                    // instruction — a name containing `" ].` can close the
+                    // bracket and inject directives. Unbounded COUNT is the
+                    // other half: 200 groups would add multiple KB to EVERY
+                    // title generation. Newest-first (listFolders is ORDER BY
+                    // updated_at DESC), so the cut drops the stalest groups.
+                    //
+                    // Dedup on the RENDERED name, not the raw one: sanitizing
+                    // and truncating to GROUP_NAME_MAX can map two distinct
+                    // folders onto the same string ("…Machine Learning Reading"
+                    // and "…Machine Learning Writing" share a 40-char prefix).
+                    // Offering that string twice would make the model's answer
+                    // unresolvable, so drop every name that is ambiguous after
+                    // rendering rather than filing the chat into a coin-flip
+                    // winner. Same reason the apply side refuses ambiguous
+                    // matches.
+                    val rendered = chatRepository.listFolders()
+                        .map { f -> f to promptSafe(f.name, GROUP_NAME_MAX) }
+                        .filter { (_, n) -> n.isNotEmpty() }
+                    val ambiguous = rendered
+                        .groupingBy { (_, n) -> n.lowercase() }
+                        .eachCount()
+                        .filterValues { it > 1 }
+                        .keys
+                    rendered
+                        .filterNot { (_, n) -> n.lowercase() in ambiguous }
+                        .take(GROUP_CONTEXT_MAX)
+                        .map { (f, n) ->
+                            // "name — one-sentence description" when the group
+                            // has one; the description exists precisely to
+                            // sharpen this membership judgment.
+                            val d = f.description?.takeIf { it.isNotBlank() }
+                                ?.let { promptSafe(it, GROUP_DESC_MAX) }
+                                ?.takeIf { it.isNotEmpty() }
+                            if (d != null) "\"$n\" — $d" else "\"$n\""
+                        }
+                }
                 val prompt = buildString {
                     append("Based on the following conversation, generate a short title (max 6 words) that captures the topic. ")
                     append("Also pick a task category from: code, writing, research, analysis, creative, chat, math, translation, health, finance, travel, education, design, productivity, support, other.\n\n")
+                    if (groupContext.isNotEmpty()) {
+                        // The null path is spelled out and given its own
+                        // example: a closed option list pushes sub-models
+                        // toward always picking something, and a wrongly-filed
+                        // session costs far more than a wrong category (which
+                        // only drives a row icon).
+                        append("The user organizes chats into groups. Existing groups: [")
+                        append(groupContext.joinToString("; "))
+                        append("]. If this conversation clearly belongs to one of these groups, ")
+                        append("set \"folder\" to that exact group name. ")
+                        append("If it does not clearly match any group, or you are unsure, set \"folder\" to null. ")
+                        append("Never invent a new group name.\n\n")
+                    }
                     append("You MUST respond with valid JSON only. Example:\n")
-                    append("{\"title\": \"Debug Login Page Issue\", \"category\": \"code\"}\n\n")
+                    if (groupContext.isEmpty()) {
+                        append("{\"title\": \"Debug Login Page Issue\", \"category\": \"code\"}\n\n")
+                    } else {
+                        append("{\"title\": \"Debug Login Page Issue\", \"category\": \"code\", \"folder\": null}\n\n")
+                    }
                     append("Conversation:\n")
                     append("User: $userText\n")
                     if (firstAssistantText.isNotEmpty()) append("Assistant: $firstAssistantText\n")
@@ -9363,7 +9760,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
                     "response stopReason=${response.stopReason} textLen=${response.text.length} " +
                         "raw='${response.text.take(200).replace("\n", "\\n")}'",
                 )
-                val (title, category) = parseTitleResponse(response.text)
+                val (title, category, folderName) = parseTitleResponse(response.text)
                 if (title.isNotEmpty()) {
                     val sid = realSessionId.ifEmpty { sessionId }
                     chatRepository.updateSessionTitleAndCategory(sid, title, category)
@@ -9372,6 +9769,52 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
                         _sessionCategory.value = category
                     }
                     AppLogger.info("TitleGen", "outcome=set title='$title' category='$category'")
+                    // [T-android-auto-grouping] Group assignment is best-effort
+                    // and strictly SUBORDINATE to the title: a name that
+                    // resolves to nothing is silently dropped (never create a
+                    // group from a model's answer), and setFolderIfUnfiled
+                    // means a hand-filed session is never overridden by the
+                    // model's guess. Mirrors iOS.
+                    if (!folderName.isNullOrEmpty()) {
+                        // findFolderByName rather than a local equals: it trims
+                        // BOTH sides (models routinely echo "Work " with a
+                        // trailing space, which an exact equals silently
+                        // rejects — the feature then looks intermittently
+                        // broken), and because listFolders is ORDER BY
+                        // updated_at DESC its first hit is the most recently
+                        // updated duplicate. That matters when two devices
+                        // created a same-named group offline: an arbitrary pick
+                        // files the chat into the group the user isn't looking
+                        // at. Same resolver the AI-Suggest flow uses.
+                        val match = chatRepository.findFolderByName(folderName)
+                            // The prompt shows SANITIZED names, so a group whose
+                            // real name contains stripped characters comes back
+                            // in its sanitized form and won't match directly.
+                            // Fall back to comparing sanitized-to-sanitized —
+                            // but REFUSE an ambiguous hit rather than taking the
+                            // first. Two folders can render to the same string
+                            // (truncation at GROUP_NAME_MAX, or names differing
+                            // only in stripped characters); filing into an
+                            // arbitrary one is a silent wrong-group move the
+                            // user gets no signal about. Leaving it ungrouped is
+                            // the recoverable outcome.
+                            ?: chatRepository.listFolders().filter {
+                                promptSafe(it.name, GROUP_NAME_MAX)
+                                    .equals(folderName.trim(), ignoreCase = true)
+                            }.singleOrNull()
+                        if (match != null) {
+                            val applied = chatRepository.setFolderIfUnfiled(match.id, sid)
+                            AppLogger.info(
+                                "TitleGen",
+                                "auto-group '$folderName' -> ${match.id.take(8)} applied=$applied",
+                            )
+                        } else {
+                            AppLogger.info(
+                                "TitleGen",
+                                "auto-group: model offered '$folderName' but no group matches — leaving ungrouped",
+                            )
+                        }
+                    }
                 } else {
                     // [T-title-gen-fallback-first-message-android] The request
                     // succeeded but yielded no usable title — empty body or a
@@ -9545,7 +9988,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
     }
 
     /** Parse LLM response for title/category JSON. Multiple fallback strategies. */
-    private fun parseTitleResponse(text: String): Pair<String, String?> {
+    private fun parseTitleResponse(text: String): TitleGenResult {
         val cleaned = text.trim()
             .removePrefix("```json").removePrefix("```")
             .removeSuffix("```").trim()
@@ -9554,18 +9997,37 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
             val json = JSONObject(cleaned)
             val title = json.optString("title", "").trim()
             val category = json.optString("category", "").trim().ifEmpty { null }
-            if (title.isNotEmpty()) return title to category
+            // [T-android-auto-grouping] `folder` is absent whenever
+            // auto-grouping is off, and JSON null when the model declined to
+            // file the chat — optString maps both to "" → null here.
+            val folder = json.optString("folder", "").trim()
+                .takeIf { it.isNotEmpty() && !it.equals("null", ignoreCase = true) }
+            if (title.isNotEmpty()) return TitleGenResult(title, category, folder)
         } catch (_: Exception) {}
         // Regex fallback: extract "title" value
         val titleMatch = Regex("\"title\"\\s*:\\s*\"([^\"]+)\"").find(cleaned)
         val catMatch = Regex("\"category\"\\s*:\\s*\"([^\"]+)\"").find(cleaned)
+        val folderMatch = Regex("\"folder\"\\s*:\\s*\"([^\"]+)\"").find(cleaned)
         if (titleMatch != null) {
-            return titleMatch.groupValues[1].trim() to catMatch?.groupValues?.getOrNull(1)?.trim()
+            return TitleGenResult(
+                titleMatch.groupValues[1].trim(),
+                catMatch?.groupValues?.getOrNull(1)?.trim(),
+                folderMatch?.groupValues?.getOrNull(1)?.trim()
+                    ?.takeIf { !it.equals("null", ignoreCase = true) },
+            )
         }
         // Plain text fallback: use first line
         val firstLine = cleaned.lines().firstOrNull()?.trim() ?: ""
-        return firstLine.take(50) to null
+        return TitleGenResult(firstLine.take(50), null, null)
     }
+
+    /** Parsed title-generation payload. [folder] is non-null only when
+     *  auto-grouping asked for it AND the model named an existing group. */
+    private data class TitleGenResult(
+        val title: String,
+        val category: String?,
+        val folder: String?,
+    )
 
     /**
      * [T-android-overlay-reply-status-34599] Pull the most recent

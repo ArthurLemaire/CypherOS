@@ -14,8 +14,24 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// Teal accent matching iOS visual appearance
-private val TealPrimary = Color(0xFF2E8B8B)
+// Accent: iOS blue, desaturated. [T-android-accent-blue-parity]
+//
+// Was a teal (#2E8B8B / #4DD9D9) that predated iOS settling on blue. The hue
+// now comes from iOS Assets.xcassets/AccentColor.colorset (sRGB components
+// r0.212 g0.525 b0.933 -> #3686EE light, r0.329 g0.565 b0.894 -> #5490E4 dark),
+// but iOS's saturation (84% / 73%) read as glaring on Android's darker
+// surfaces, so SATURATION is dialled back ~30% with hue and lightness kept:
+//   light  #3686EE  S84% L57%  ->  #528AD2  S59% L57%
+//   dark   #5490E4  S73% L61%  ->  #6A94CE  S51% L61%
+//
+// Lightness is deliberately NOT raised, which is the other way to "lighten".
+// It would have softened dark mode further but pushed light-mode contrast on
+// white from 3.62 to 2.62 — below WCAG AA's 4.5 for text. Desaturating keeps
+// dark mode at 5.93 (passing) and leaves light mode where it was.
+//
+// Names keep the `Teal` prefix only to avoid churning 90+ call sites; the
+// value is the contract, not the name.
+private val TealPrimary = Color(0xFF528AD2)
 private val TealOnPrimary = Color(0xFFFFFFFF)
 private val TealPrimaryContainer = Color(0xFFB2DFDB)
 private val TealOnPrimaryContainer = Color(0xFF00332F)
@@ -35,7 +51,7 @@ private val TealSurfaceVariant = Color(0xFFDAE5E2)
 private val TealOnSurfaceVariant = Color(0xFF3F4947)
 private val TealOutline = Color(0xFF6F7977)
 
-private val TealDarkPrimary = Color(0xFF4DD9D9)
+private val TealDarkPrimary = Color(0xFF6A94CE)
 private val TealDarkOnPrimary = Color(0xFF003737)
 private val TealDarkPrimaryContainer = Color(0xFF1A6B6B)
 private val TealDarkOnPrimaryContainer = Color(0xFFB2DFDB)

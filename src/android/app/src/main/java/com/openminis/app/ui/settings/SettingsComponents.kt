@@ -173,17 +173,23 @@ fun SettingsSection(
                 modifier = Modifier.padding(start = 32.dp, end = 32.dp, bottom = 8.dp),
             )
         }
+        // [T-android-settings-section-symmetry] The card carries NO vertical
+        // padding of its own: rows already supply 12dp top AND bottom, so any
+        // tail here makes the gap below the content read larger than the gap
+        // above it. An unconditional 8dp bottom pad used to live on this
+        // Column to stop a trailing divider sitting flush against the rounded
+        // edge — but every section either suppresses its last divider
+        // (showDivider = false, or an `index < size - 1` guard) or follows it
+        // with more content, so nothing actually needed the clearance. The
+        // asymmetry it cost was invisible in a tall multi-row card and glaring
+        // in a single-row one ("Status / Enabled", "Voice Services", the
+        // thinking-rules note).
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
                 .clip(RoundedCornerShape(14.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                // [T-android-settings-ui-md3] #2 give the card a bottom breathing
-                // space so the LAST row isn't flush against the rounded edge.
-                // Rows carry their own vertical padding; this adds the missing
-                // tail. Top stays 0 — the first row's own top padding handles it.
-                .padding(bottom = 8.dp),
+                .background(MaterialTheme.colorScheme.surfaceContainerLow),
             content = content,
         )
         if (footer != null) {

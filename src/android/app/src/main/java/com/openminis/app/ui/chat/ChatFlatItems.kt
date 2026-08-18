@@ -738,8 +738,27 @@ internal fun buildFlatChatItems(
         // content has arrived yet, or (b) we're in the network gap waiting
         // on the model's next response (e.g. after tool results were sent
         // back). Mirrors iOS: `isActiveMessage && (!hasVisibleContent || isAwaitingModelResponse)`.
-        val hasRealBlocks = blocks.any { it.kind != "info" }
-        val hasVisibleContent = hasRealBlocks || message.content.isNotEmpty()
+        //
+        // [T-android-typing-hidden-thinking] "Visible" must mean WILL RENDER,
+        // not merely "exists". Two blocks used to count as content while
+        // drawing nothing, killing the indicator into a blank gap ("thinking
+        // 还没等到内容出现就消失了"):
+        //  - a "thinking" block when the message's thinking level is OFF —
+        //    forced-reasoning models (MiniMax M2, Grok…) still stream
+        //    reasoning_content, but ChatScreen suppresses the row when the
+        //    snapshot level is disabled (T300), so the user saw nothing;
+        //  - a freshly-created "text" block whose content is still empty.
+        // A null thinkingLevel snapshot falls back to the chat's CURRENT
+        // level in the renderer, which this pure builder can't read — treat
+        // it as visible (legacy messages; conservative, old behavior).
+        val hasVisibleContent = message.content.isNotEmpty() || blocks.any {
+            when (it.kind) {
+                "info" -> false
+                "thinking" -> message.thinkingLevel?.isEnabled ?: true
+                "text" -> it.content.isNotEmpty()
+                else -> true // tool_use pills render immediately
+            }
+        }
         if (message.isStreaming && (!hasVisibleContent || message.isAwaitingModelResponse)) {
             out.add(dedupe(FlatChatItem.AssistantTyping(message.id)))
         }
