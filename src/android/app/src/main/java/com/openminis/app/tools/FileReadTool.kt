@@ -16,7 +16,7 @@ object FileReadTool {
         parameters = mapOf(
             "tool_title" to AgentToolParam("string", "A concise 5-10 word summary of what this tool call does, shown to the user (e.g. 'Read Python script contents', 'Check system configuration file'). Use the same language as the user."),
             "path" to AgentToolParam("string", "Absolute Linux path to read (e.g. /var/minis/workspace/data.csv)"),
-            "offset" to AgentToolParam("integer", "1-based line number to start reading from (default: 1). Ignored when direction is 'tail'."),
+            "offset" to AgentToolParam("integer", "1-based line number to start reading from (default: 1). Ignored when direction is 'tail'. If a previous read was truncated, its header ends with next_offset=N — pass that as offset to continue from where it stopped."),
             "lines" to AgentToolParam("integer", "Maximum number of lines to return (default: all lines up to max_length)"),
             "max_length" to AgentToolParam("integer", "Maximum character length of returned content (default: 15000)"),
             "direction" to AgentToolParam("string", "Read direction: 'head' (from start, default) or 'tail' (from end of file)"),
@@ -105,11 +105,56 @@ object FileReadTool {
             val showEnd = showStart + selectedLines.size - 1
 
             var content = selectedLines.joinToString("\n")
+
+            // [T-fileread-truncation-header] The header used to report the line
+            // range chosen BEFORE truncation, and said nothing about having
+            // truncated at all — only the body gained a trailing
+            // "... (truncated)". So a cut-off read still announced
+            // "showing 1-1324 of 1324", which the agent took as the whole file
+            // and never paged on.
+            //
+            // Recompute the range that actually survived and hand back the
+            // offset to resume from. Confined to the truncating branch; a read
+            // that fits is byte-identical to before.
+            var effectiveStart = showStart
+            var effectiveEnd = showEnd
+            var nextOffset: Int? = null
+            var wasTruncated = false
             if (content.length > maxLength) {
-                content = content.take(maxLength) + "\n... (truncated)"
+                wasTruncated = true
+                if (direction == "tail") {
+                    // tail asks for the END of the file; take() returned the
+                    // start of the tail window instead — the opposite.
+                    content = content.takeLast(maxLength)
+                    // Drop a leading partial line so the first line is whole.
+                    val firstNewline = content.indexOf('\n')
+                    if (firstNewline in 0 until content.length - 1) {
+                        content = content.substring(firstNewline + 1)
+                    }
+                    effectiveStart = effectiveEnd - content.count { it == '\n' }
+                    // No next_offset for tail: paging forward from the end of
+                    // the file is meaningless.
+                } else {
+                    content = content.take(maxLength)
+                    // Back off to the last complete line, so the next page does
+                    // not re-read or split a line.
+                    val lastNewline = content.lastIndexOf('\n')
+                    if (lastNewline > 0) content = content.substring(0, lastNewline)
+                    effectiveEnd = showStart + content.count { it == '\n' }
+                    if (effectiveEnd < totalLines) nextOffset = effectiveEnd + 1
+                }
             }
 
-            val header = "[$path | $size bytes | $totalLines lines | showing $showStart-$showEnd of $totalLines]"
+            var header = "[$path | $size bytes | $totalLines lines | " +
+                "showing $effectiveStart-$effectiveEnd of $totalLines"
+            if (wasTruncated) {
+                header += " | truncated at $maxLength chars"
+                // Named to match the tool's own `offset` parameter so the model
+                // can copy it straight into the next call.
+                header += if (nextOffset != null) ", next_offset=$nextOffset"
+                          else ", retry with a smaller lines value"
+            }
+            header += "]"
             ToolExecutionResult("$header\n$content", true, toolTitle = toolTitle)
         } catch (e: Exception) {
             ToolExecutionResult("Error reading file: ${e.message}", false)
