@@ -43,6 +43,13 @@ action = "deny"
     assert s.llm.model == "other-model"
     assert s.sentinel.mode == "auto"
 
+    # container-style overrides win over values set in the file
+    monkeypatch.setenv("OPENMUSE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("OPENMUSE_WORKSPACE", str(tmp_path / "ws"))
+    s = load_settings(cfg)
+    assert s.data_dir == tmp_path / "data"
+    assert s.agent.workspace == tmp_path / "ws"
+
 
 def test_missing_explicit_config_raises(tmp_path: Path):
     with pytest.raises(FileNotFoundError):
