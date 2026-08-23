@@ -17,6 +17,37 @@ def test_think_filter_handles_split_tags():
     assert f.reasoning == "secret reasoning"
 
 
+def test_think_filter_text_in_same_chunk_as_close_tag():
+    # DeepSeek-style streams often deliver "</think>" glued to the first visible tokens.
+    f = ThinkStreamFilter()
+    out = (
+        f.feed("<think>The")
+        + f.feed(" user")
+        + f.feed("</think>你好！我能")
+        + f.feed("帮你写作")
+        + f.flush()
+    )
+    assert out == "你好！我能帮你写作"
+    assert f.reasoning == "The user"
+
+
+def test_think_filter_random_splits_never_lose_text():
+    import random
+
+    full = "<think>plan things</think>你好！我能帮你写作、翻译。"
+    rng = random.Random(7)
+    for _ in range(300):
+        f = ThinkStreamFilter()
+        out, i = "", 0
+        while i < len(full):
+            n = rng.randint(1, 9)
+            out += f.feed(full[i : i + n])
+            i += n
+        out += f.flush()
+        assert out == "你好！我能帮你写作、翻译。"
+        assert f.reasoning == "plan things"
+
+
 def test_think_filter_unterminated_goes_to_reasoning():
     f = ThinkStreamFilter()
     out = f.feed("<think>still thinking")

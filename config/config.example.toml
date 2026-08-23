@@ -46,6 +46,9 @@ max_tokens = 4096
 temperature = 0.3
 timeout = 180
 max_retries = 5
+# Streaming shows text as it is generated. Some proxies/gateways that inline
+# "<think>…</think>" drop the first tokens after </think> when streaming — if the
+# beginning of replies goes missing, set stream = false (responses stay complete).
 stream = true
 # "native" uses the provider's function-calling API. "prompt" describes tools in
 # the prompt and parses <tool_call> blocks – for endpoints that ignore `tools`.
