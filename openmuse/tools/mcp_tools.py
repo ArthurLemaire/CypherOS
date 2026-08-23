@@ -30,6 +30,15 @@ from openmuse.tools.base import BaseTool, CallAssessment
 _NAME_RE = re.compile(r"[^a-zA-Z0-9_-]")
 
 
+def _attr(obj: Any, *names: str, default: Any = None) -> Any:
+    """Read the first present attribute – mcp 2.x uses snake_case, 1.x camelCase."""
+    for name in names:
+        value = getattr(obj, name, None)
+        if value is not None:
+            return value
+    return default
+
+
 def _safe_name(server: str, tool: str) -> str:
     name = _NAME_RE.sub("_", f"{server}__{tool}")
     return name[:64]
@@ -55,17 +64,17 @@ class MCPTool(BaseTool):
             if itype == "text":
                 parts.append(getattr(item, "text", ""))
             elif itype == "image":
-                parts.append(f"[image {getattr(item, 'mimeType', '')}]")
+                parts.append(f"[image {_attr(item, 'mime_type', 'mimeType', default='')}]")
             elif itype == "resource":
                 res = getattr(item, "resource", None)
                 parts.append(getattr(res, "text", None) or f"[resource {getattr(res, 'uri', '')}]")
             else:
                 parts.append(str(item))
-        structured = getattr(result, "structuredContent", None)
+        structured = _attr(result, "structured_content", "structuredContent")
         if structured and not parts:
             parts.append(json.dumps(structured, ensure_ascii=False, indent=2, default=str))
         text = "\n".join(p for p in parts if p) or "(no output)"
-        if getattr(result, "isError", False):
+        if _attr(result, "is_error", "isError", default=False):
             return ToolResult.fail(text)
         return ToolResult(output=text)
 
@@ -91,7 +100,10 @@ class MCPManager:
                 logger.warning("MCP server '{}' unavailable: {}", cfg.name, exc)
                 continue
             for t in listed.tools:
-                schema = t.inputSchema or {"type": "object", "properties": {}}
+                schema = _attr(t, "input_schema", "inputSchema") or {
+                    "type": "object",
+                    "properties": {},
+                }
                 tool = MCPTool(
                     name=_safe_name(cfg.name, t.name),
                     description=(t.description or f"{t.name} (from MCP server {cfg.name})")[:1000],
