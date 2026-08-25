@@ -1,0 +1,142 @@
+# OpenMuse configuration
+# Copy to config/config.toml (or ~/.openmuse/config.toml) and edit.
+# String values may reference environment variables: "${VAR}" or "${VAR:-default}".
+
+# Where memory, goals, vault, audit log and sessions are stored.
+data_dir = "~/.openmuse"
+log_level = "INFO"
+
+# ------------------------------------------------------------------------------
+# LLM — any OpenAI-compatible endpoint works. Pick ONE of the presets below.
+# ------------------------------------------------------------------------------
+[llm]
+# --- DeepSeek (default; V4.1 Flash) ---------------------------------------------
+provider = "openai"                 # "openai" = Chat Completions API; "openai_responses" = Responses API
+model = "deepseek-flash"
+base_url = "https://api.deepseek.com"
+api_key = "${DEEPSEEK_API_KEY}"
+
+# --- OpenAI --------------------------------------------------------------------
+# model = "gpt-5.6-sol"
+# base_url = "https://api.openai.com/v1"
+# api_key = "${OPENAI_API_KEY}"
+
+# --- Anthropic (OpenAI-compatible endpoint) ------------------------------------
+# model = "claude-fable-5-1"
+# base_url = "https://api.anthropic.com/v1"
+# api_key = "${ANTHROPIC_API_KEY}"
+
+# --- Ollama / vLLM / LM Studio (local, private) --------------------------------
+# model = "qwen3:32b"
+# base_url = "http://localhost:11434/v1"
+# api_key = "ollama"
+
+# --- OpenRouter ----------------------------------------------------------------
+# model = "deepseek/deepseek-flash"
+# base_url = "https://openrouter.ai/api/v1"
+# api_key = "${OPENROUTER_API_KEY}"
+
+# --- Any internal gateway that needs extra headers -----------------------------
+# model = "my-app-id"
+# base_url = "https://gateway.example.com/v1"
+# api_key = "${GATEWAY_API_KEY}"
+# extra_headers = { "X-End-User-Id" = "openmuse" }
+
+max_tokens = 4096
+temperature = 0.3
+timeout = 180
+max_retries = 5
+stream = true
+# "native" uses the provider's function-calling API. "prompt" describes tools in
+# the prompt and parses <tool_call> blocks – for endpoints that ignore `tools`.
+tool_mode = "native"
+# Some DeepSeek thinking endpoints want reasoning_content echoed back with tool calls.
+pass_reasoning = false
+# extra_body = { "thinking" = { "type" = "enabled" } }
+
+# ------------------------------------------------------------------------------
+[agent]
+name = "Muse"
+max_steps = 30
+workspace = "./workspace"       # the agent's files live here
+language = "auto"               # "auto" | "zh" | "en" | ...
+max_context_messages = 80
+show_thinking = false
+# Free text about you, injected into the system prompt.
+user_profile = ""
+# Extra standing instructions.
+instructions = ""
+
+# ------------------------------------------------------------------------------
+# Sentinel — the gatekeeper between the agent and the world.
+# ------------------------------------------------------------------------------
+[sentinel]
+# ask    : safe/moderate actions run freely, sensitive ones need your approval (default)
+# strict : moderate AND sensitive actions need approval
+# auto   : approve everything except explicit deny rules (unattended runs)
+mode = "ask"
+always_ask_tools = ["send_email", "shell"]
+always_allow_tools = []
+deny_tools = []
+# Once the agent has read private data (email, memories, files outside the
+# workspace) it may only reach these hosts without asking.
+egress_allowlist = [
+  "duckduckgo.com", "*.duckduckgo.com",
+  "wikipedia.org", "*.wikipedia.org",
+  "github.com", "*.github.com", "*.githubusercontent.com",
+  "pypi.org", "*.pypi.org",
+]
+taint_tracking = true
+
+# Fine-grained rules (first match wins). `match` values are glob patterns on arguments.
+[[sentinel.rules]]
+tool = "shell"
+match = { command = "*rm -rf*" }
+action = "deny"
+reason = "recursive deletes are not allowed"
+
+[[sentinel.rules]]
+tool = "files"
+match = { action = "write", path = "*.env" }
+action = "ask"
+reason = "writing dotenv files"
+
+# ------------------------------------------------------------------------------
+[memory]
+enabled = true
+max_inject = 20          # memories injected into the system prompt
+
+# ------------------------------------------------------------------------------
+# Connectors
+# ------------------------------------------------------------------------------
+[connectors.email]
+enabled = false
+imap_host = "imap.gmail.com"
+imap_port = 993
+smtp_host = "smtp.gmail.com"
+smtp_port = 587
+smtp_starttls = true
+# Store with: openmuse vault set EMAIL_ADDRESS ; openmuse vault set EMAIL_PASSWORD
+address = "{{vault:EMAIL_ADDRESS}}"
+password = "{{vault:EMAIL_PASSWORD}}"
+scrub_secrets = true     # strip one-time codes / reset links before the model reads mail
+
+[browser]
+enabled = false          # pip install "openmuse[browser]" && playwright install chromium
+headless = true
+timeout_ms = 30000
+
+# ------------------------------------------------------------------------------
+# MCP servers — reuse the ecosystem instead of writing connectors.
+# ------------------------------------------------------------------------------
+# [[mcp.servers]]
+# name = "filesystem"
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-filesystem", "./workspace"]
+# risk = "moderate"                # safe | moderate | sensitive
+#
+# [[mcp.servers]]
+# name = "calendar"
+# url = "http://localhost:8000/mcp"
+# risk = "sensitive"
+# reads_private_data = true

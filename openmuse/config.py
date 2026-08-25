@@ -1,0 +1,283 @@
+"""Configuration loading.
+
+Search order for the TOML config file:
+
+1. explicit path (``--config`` / :func:`load_settings(path)`)
+2. ``$OPENMUSE_CONFIG``
+3. ``./config/config.toml``
+4. ``~/.openmuse/config.toml``
+
+String values may reference environment variables with ``${VAR}`` or
+``${VAR:-default}`` so that secrets never have to live in the file itself.
+A handful of ``OPENMUSE_*`` environment variables override the most common
+settings (see :func:`_apply_env_overrides`).
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import tomllib
+from pathlib import Path
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field, field_validator
+
+from openmuse.schema import RiskLevel
+
+DEFAULT_DATA_DIR = Path.home() / ".openmuse"
+_ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
+
+
+# ----------------------------------------------------------------------------- models
+class LLMSettings(BaseModel):
+    provider: Literal["openai", "openai_responses"] = "openai"
+    model: str = "deepseek-flash"
+    base_url: str | None = "https://api.deepseek.com"
+    api_key: str = ""
+    max_tokens: int = 4096
+    temperature: float = 0.3
+    timeout: float = 180.0
+    max_retries: int = 5
+    stream: bool = True
+    # "native": use the provider's function-calling API.
+    # "prompt": describe tools in the prompt and parse <tool_call> blocks — works with
+    #           any chat model, including endpoints that ignore the `tools` field.
+    tool_mode: Literal["native", "prompt"] = "native"
+    # Send `reasoning_content` back with assistant messages (DeepSeek thinking-mode
+    # tool calling wants this on some endpoints).
+    pass_reasoning: bool = False
+    extra_headers: dict[str, str] = Field(default_factory=dict)
+    extra_body: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("base_url")
+    @classmethod
+    def _strip_slash(cls, v: str | None) -> str | None:
+        return v.rstrip("/") if v else v
+
+
+class AgentSettings(BaseModel):
+    name: str = "Muse"
+    max_steps: int = 30
+    workspace: Path = Path("./workspace")
+    # "auto" → answer in the user's language; or force e.g. "zh" / "en".
+    language: str = "auto"
+    max_context_messages: int = 80
+    show_thinking: bool = False
+    # Optional free-text profile injected into the system prompt.
+    user_profile: str = ""
+    # Extra instructions appended to the system prompt.
+    instructions: str = ""
+
+
+class SentinelRule(BaseModel):
+    tool: str = "*"
+    # argument name -> glob pattern matched against str(value)
+    match: dict[str, str] = Field(default_factory=dict)
+    action: Literal["allow", "ask", "deny"] = "ask"
+    reason: str = ""
+
+
+class SentinelSettings(BaseModel):
+    # ask    : safe/moderate run freely, sensitive actions need approval (default)
+    # strict : moderate *and* sensitive actions need approval
+    # auto   : approve everything except explicit deny rules (unattended runs / CI)
+    mode: Literal["ask", "strict", "auto"] = "ask"
+    always_ask_tools: list[str] = Field(default_factory=lambda: ["send_email", "shell"])
+    always_allow_tools: list[str] = Field(default_factory=list)
+    deny_tools: list[str] = Field(default_factory=list)
+    # Domains the agent may reach *without* approval even after it has read private
+    # data (mirrors Muse's "short list of pre-approved destinations").
+    egress_allowlist: list[str] = Field(
+        default_factory=lambda: [
+            "duckduckgo.com",
+            "*.duckduckgo.com",
+            "wikipedia.org",
+            "*.wikipedia.org",
+            "github.com",
+            "*.github.com",
+            "*.githubusercontent.com",
+            "pypi.org",
+            "*.pypi.org",
+        ]
+    )
+    rules: list[SentinelRule] = Field(default_factory=list)
+    audit_file: Path | None = None
+    # Enable taint tracking: once the agent has read private data, network egress to
+    # non-allowlisted destinations requires approval.
+    taint_tracking: bool = True
+
+
+class MemorySettings(BaseModel):
+    enabled: bool = True
+    max_inject: int = 20
+
+
+class EmailSettings(BaseModel):
+    enabled: bool = False
+    imap_host: str = ""
+    imap_port: int = 993
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_starttls: bool = True
+    # Values may be vault placeholders such as "{{vault:EMAIL_PASSWORD}}" — the model
+    # never sees them; the Sentinel resolves them right before the connector runs.
+    address: str = "{{vault:EMAIL_ADDRESS}}"
+    password: str = "{{vault:EMAIL_PASSWORD}}"
+    # Strip one-time passcodes / password-reset links before the model reads a mail.
+    scrub_secrets: bool = True
+
+
+class ConnectorSettings(BaseModel):
+    email: EmailSettings = Field(default_factory=EmailSettings)
+
+
+class BrowserSettings(BaseModel):
+    enabled: bool = False
+    headless: bool = True
+    timeout_ms: int = 30_000
+
+
+class MCPServerSettings(BaseModel):
+    name: str
+    command: str | None = None
+    args: list[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
+    url: str | None = None  # Streamable-HTTP / SSE endpoint
+    risk: RiskLevel = RiskLevel.MODERATE
+    egress: bool = False
+    reads_private_data: bool = False
+
+
+class MCPSettings(BaseModel):
+    servers: list[MCPServerSettings] = Field(default_factory=list)
+
+
+class Settings(BaseModel):
+    data_dir: Path = DEFAULT_DATA_DIR
+    log_level: str = "INFO"
+    llm: LLMSettings = Field(default_factory=LLMSettings)
+    agent: AgentSettings = Field(default_factory=AgentSettings)
+    sentinel: SentinelSettings = Field(default_factory=SentinelSettings)
+    memory: MemorySettings = Field(default_factory=MemorySettings)
+    connectors: ConnectorSettings = Field(default_factory=ConnectorSettings)
+    browser: BrowserSettings = Field(default_factory=BrowserSettings)
+    mcp: MCPSettings = Field(default_factory=MCPSettings)
+    # Where the settings came from (informational).
+    source: str | None = None
+
+    @property
+    def audit_file(self) -> Path:
+        return self.sentinel.audit_file or (self.data_dir / "audit.jsonl")
+
+    @property
+    def memory_db(self) -> Path:
+        return self.data_dir / "memory.db"
+
+    @property
+    def goals_db(self) -> Path:
+        return self.data_dir / "goals.db"
+
+    @property
+    def vault_file(self) -> Path:
+        return self.data_dir / "vault.enc"
+
+    @property
+    def vault_key_file(self) -> Path:
+        return self.data_dir / "vault.key"
+
+    def ensure_dirs(self) -> None:
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.agent.workspace.mkdir(parents=True, exist_ok=True)
+
+
+# ----------------------------------------------------------------------------- loading
+def _expand_env(value: Any) -> Any:
+    if isinstance(value, str):
+
+        def repl(m: re.Match[str]) -> str:
+            var, default = m.group(1), m.group(2)
+            return os.environ.get(var, default if default is not None else "")
+
+        return _ENV_PATTERN.sub(repl, value)
+    if isinstance(value, dict):
+        return {k: _expand_env(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_expand_env(v) for v in value]
+    return value
+
+
+def find_config_file(explicit: str | Path | None = None) -> Path | None:
+    candidates: list[Path] = []
+    if explicit:
+        path = Path(explicit).expanduser()
+        if not path.is_file():
+            raise FileNotFoundError(f"config file not found: {explicit}")
+        return path
+    if env_path := os.environ.get("OPENMUSE_CONFIG"):
+        candidates.append(Path(env_path).expanduser())
+    candidates.append(Path("config/config.toml"))
+    candidates.append(DEFAULT_DATA_DIR / "config.toml")
+    for path in candidates:
+        if path.is_file():
+            return path
+    return None
+
+
+def _apply_env_overrides(raw: dict[str, Any]) -> None:
+    llm = raw.setdefault("llm", {})
+    mapping = {
+        "OPENMUSE_LLM_PROVIDER": "provider",
+        "OPENMUSE_LLM_MODEL": "model",
+        "OPENMUSE_LLM_BASE_URL": "base_url",
+        "OPENMUSE_LLM_API_KEY": "api_key",
+        "OPENMUSE_LLM_TOOL_MODE": "tool_mode",
+    }
+    for env, key in mapping.items():
+        if (val := os.environ.get(env)) not in (None, ""):
+            llm[key] = val
+    if not llm.get("api_key"):
+        for env in ("DEEPSEEK_API_KEY", "OPENAI_API_KEY"):
+            if val := os.environ.get(env):
+                llm["api_key"] = val
+                break
+    if (val := os.environ.get("OPENMUSE_DATA_DIR")) and not raw.get("data_dir"):
+        raw["data_dir"] = val
+    if val := os.environ.get("OPENMUSE_SENTINEL_MODE"):
+        raw.setdefault("sentinel", {})["mode"] = val
+    if val := os.environ.get("OPENMUSE_LOG_LEVEL"):
+        raw["log_level"] = val
+
+
+def load_settings(path: str | Path | None = None) -> Settings:
+    """Load settings from TOML (if found) + environment."""
+    config_file = find_config_file(path)
+    raw: dict[str, Any] = {}
+    if config_file is not None:
+        with config_file.open("rb") as fh:
+            raw = tomllib.load(fh)
+    raw = _expand_env(raw)
+    _apply_env_overrides(raw)
+    settings = Settings.model_validate(raw)
+    settings.source = str(config_file) if config_file else "defaults+env"
+    settings.data_dir = settings.data_dir.expanduser()
+    settings.agent.workspace = settings.agent.workspace.expanduser()
+    return settings
+
+
+__all__ = [
+    "AgentSettings",
+    "BrowserSettings",
+    "ConnectorSettings",
+    "DEFAULT_DATA_DIR",
+    "EmailSettings",
+    "LLMSettings",
+    "MCPServerSettings",
+    "MCPSettings",
+    "MemorySettings",
+    "SentinelRule",
+    "SentinelSettings",
+    "Settings",
+    "find_config_file",
+    "load_settings",
+]

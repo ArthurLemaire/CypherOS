@@ -1,0 +1,69 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "openmuse"
+version = "0.1.0"
+description = "OpenMuse — an open-source personal AI agent with a Sentinel gatekeeper, credential vault, approvals, audit trail, memory and goals. Bring your own model."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+authors = [{ name = "OpenMuse Contributors" }]
+keywords = ["agent", "ai", "llm", "personal-assistant", "muse", "openmanus", "deepseek", "mcp"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+  "openai>=1.60",
+  "pydantic>=2.7",
+  "httpx>=0.27",
+  "typer>=0.12",
+  "rich>=13.7",
+  "loguru>=0.7",
+  "cryptography>=42",
+  "tenacity>=8.3",
+  "ddgs>=9.0",
+  "beautifulsoup4>=4.12",
+  "html2text>=2024.2.26",
+  "mcp>=1.2",
+]
+
+[project.optional-dependencies]
+browser = ["playwright>=1.45"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.5"]
+all = ["openmuse[browser,dev]"]
+
+[project.scripts]
+openmuse = "openmuse.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/OpenMuseAgent/OpenMuse"
+Repository = "https://github.com/OpenMuseAgent/OpenMuse"
+Issues = "https://github.com/OpenMuseAgent/OpenMuse/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["openmuse"]
+
+[tool.hatch.build.targets.sdist]
+include = ["openmuse", "config/config.example.toml", "README.md", "README_zh.md", "LICENSE"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501", "B008", "UP042"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = ["live: tests that call a real LLM endpoint (set OPENMUSE_LIVE=1)"]
