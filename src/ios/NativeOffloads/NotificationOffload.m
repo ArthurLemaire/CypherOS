@@ -37,12 +37,24 @@ static NSString *const HELP_TEXT =
      "  --at <time>         Schedule at ISO time (for schedule)\n"
      "  --id <identifier>   Notification identifier (for cancel)\n"
      "  --all               Cancel all pending notifications\n"
+     "  --repeat            Repeat the notification (for schedule).\n"
+     "                      With --at: fires daily at that time-of-day.\n"
+     "                      With --after: repeats every N seconds (min 60).\n"
+     "  --action <spec>     Interactive buttons, \"Label:id\" pairs separated by\n"
+     "                      commas, e.g. --action \"Continue:continue,Stop:stop\".\n"
+     "                      Tapping one launches the app with that action id.\n"
      "\n"
      "EXAMPLES:\n"
      "  apple-notification settings\n"
      "  apple-notification pending\n"
      "  apple-notification schedule --title \"Reminder\" --body \"Check task\" --after 300\n"
      "  apple-notification schedule --title \"Meeting\" --body \"Standup\" --at 2024-01-15T09:00:00\n"
+     "  # Every day at 09:00:\n"
+     "  apple-notification schedule --title \"Standup\" --body \"Daily sync\" \\\n"
+     "      --at 2026-08-03T09:00:00 --repeat\n"
+     "  # With interactive buttons:\n"
+     "  apple-notification schedule --title \"Task done\" --body \"Continue?\" --after 60 \\\n"
+     "      --action \"Continue:continue,Stop:stop\"\n"
      "  apple-notification cancel --id my-reminder\n"
      "  apple-notification cancel --all\n";
 
@@ -65,6 +77,12 @@ static NSDictionary *request_to_dict(UNNotificationRequest *req) {
     d[@"subtitle"] = req.content.subtitle ?: @"";
     if (req.content.userInfo.count > 0) {
         d[@"user_info"] = req.content.userInfo;
+    }
+    // [T-notification-repeat-actions] Report the interactive category so a
+    // scheduled action set is verifiable from `pending`. Only present when the
+    // notification actually has one.
+    if (req.content.categoryIdentifier.length > 0) {
+        d[@"category"] = req.content.categoryIdentifier;
     }
 
     if ([req.trigger isKindOfClass:[UNTimeIntervalNotificationTrigger class]]) {
@@ -207,14 +225,34 @@ static int cmd_schedule(int argc, char **argv, int stdout_fd, int stderr_fd, BOO
     content.body = body;
     content.sound = [UNNotificationSound defaultSound];
 
+    // [T-notification-repeat-actions] --repeat makes the trigger recur. This was
+    // hardcoded `repeats:NO` while the READ side (pending/delivered) already
+    // reported `trigger_repeats` — a "readable but not settable" gap.
+    //
+    // UNUserNotificationCenter enforces a 60s floor on repeating time-interval
+    // triggers and throws an NSInternalInconsistencyException below that, so a
+    // shorter --after is rejected up front with an explanatory message rather
+    // than crashing the app.
+    BOOL repeats = noff_has_flag(argc, argv, "--repeat");
+
     UNNotificationTrigger *trigger = nil;
     NSString *scheduleDesc = nil;
 
     if (afterStr) {
         NSTimeInterval interval = [afterStr doubleValue];
         if (interval <= 0) interval = 1;
-        trigger = [UNTimeIntervalNotificationTrigger triggerWithTimeInterval:interval repeats:NO];
-        scheduleDesc = [NSString stringWithFormat:@"in %.0f seconds", interval];
+        if (repeats && interval < 60) {
+            NSDictionary *err = noff_json_error(TOOL_NAME, @"schedule",
+                                                 NOFF_ERR_INVALID_ARGS,
+                                                 @"--repeat with --after requires at least 60 seconds "
+                                                  "(iOS rejects shorter repeating intervals). "
+                                                  "Use --at with --repeat for daily-style repeats.");
+            noff_emit_json(stdout_fd, err, compact, quiet);
+            return NOFF_EXIT_INVALID_ARGS;
+        }
+        trigger = [UNTimeIntervalNotificationTrigger triggerWithTimeInterval:interval repeats:repeats];
+        scheduleDesc = [NSString stringWithFormat:@"in %.0f seconds%@", interval,
+                        repeats ? @", repeating" : @""];
     } else {
         NSDate *date = noff_parse_date(atStr);
         if (!date) {
@@ -225,12 +263,96 @@ static int cmd_schedule(int argc, char **argv, int stdout_fd, int stderr_fd, BOO
             noff_emit_json(stdout_fd, err, compact, quiet);
             return NOFF_EXIT_INVALID_ARGS;
         }
-        NSDateComponents *comps = [[NSCalendar currentCalendar]
-            components:(NSCalendarUnitYear | NSCalendarUnitMonth | NSCalendarUnitDay |
-                        NSCalendarUnitHour | NSCalendarUnitMinute | NSCalendarUnitSecond)
-              fromDate:date];
-        trigger = [UNCalendarNotificationTrigger triggerWithDateMatchingComponents:comps repeats:NO];
-        scheduleDesc = [NSString stringWithFormat:@"at %@", noff_format_date(date)];
+        // A repeating calendar trigger repeats over whichever components are
+        // supplied, so keeping year/month/day would pin it to one exact date
+        // and it would fire only once. Match on time-of-day only, which is what
+        // "--at 09:00 --repeat" means to a user: every day at 09:00.
+        NSCalendarUnit units = repeats
+            ? (NSCalendarUnitHour | NSCalendarUnitMinute | NSCalendarUnitSecond)
+            : (NSCalendarUnitYear | NSCalendarUnitMonth | NSCalendarUnitDay |
+               NSCalendarUnitHour | NSCalendarUnitMinute | NSCalendarUnitSecond);
+        NSDateComponents *comps = [[NSCalendar currentCalendar] components:units fromDate:date];
+        trigger = [UNCalendarNotificationTrigger triggerWithDateMatchingComponents:comps repeats:repeats];
+        scheduleDesc = repeats
+            ? [NSString stringWithFormat:@"daily at %02ld:%02ld", (long)comps.hour, (long)comps.minute]
+            : [NSString stringWithFormat:@"at %@", noff_format_date(date)];
+    }
+
+    // [T-notification-repeat-actions] --action "Label:id,Label2:id2" attaches
+    // interactive buttons. UNNotificationAction lives on a UNNotificationCategory
+    // registered with the center, and the content references it by
+    // categoryIdentifier — so we synthesize a category per scheduled
+    // notification (id derived from the action spec so identical specs reuse
+    // one category rather than accumulating).
+    //
+    // Tapping a button wakes the app's UNUserNotificationCenterDelegate with the
+    // chosen action id; this tool only schedules, it does not deliver responses
+    // back to the agent — that would need a delegate hook outside this CLI.
+    NSString *actionSpec = noff_find_arg(argc, argv, "--action");
+    NSMutableArray<NSDictionary *> *actionInfo = [NSMutableArray array];
+    if (actionSpec.length) {
+        NSMutableArray<UNNotificationAction *> *actions = [NSMutableArray array];
+        for (NSString *rawTok in [actionSpec componentsSeparatedByString:@","]) {
+            NSString *tok = [rawTok stringByTrimmingCharactersInSet:
+                             [NSCharacterSet whitespaceCharacterSet]];
+            if (!tok.length) continue;
+            // Split on the LAST colon so a label may itself contain one.
+            NSRange sep = [tok rangeOfString:@":" options:NSBackwardsSearch];
+            NSString *label = sep.location == NSNotFound ? tok : [tok substringToIndex:sep.location];
+            NSString *actId = sep.location == NSNotFound ? tok : [tok substringFromIndex:sep.location + 1];
+            label = [label stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            actId = [actId stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            if (!label.length || !actId.length) {
+                NSDictionary *err = noff_json_error(TOOL_NAME, @"schedule",
+                    NOFF_ERR_INVALID_ARGS,
+                    [NSString stringWithFormat:
+                        @"Invalid --action entry '%@'. Expected \"Label:id\" pairs, "
+                         "comma-separated (e.g. \"Continue:continue,Stop:stop\").", tok]);
+                noff_emit_json(stdout_fd, err, compact, quiet);
+                return NOFF_EXIT_INVALID_ARGS;
+            }
+            [actions addObject:[UNNotificationAction actionWithIdentifier:actId
+                                                                    title:label
+                                                                  options:UNNotificationActionOptionForeground]];
+            [actionInfo addObject:@{@"id": actId, @"label": label}];
+        }
+        if (actions.count == 0) {
+            NSDictionary *err = noff_json_error(TOOL_NAME, @"schedule",
+                NOFF_ERR_INVALID_ARGS,
+                @"--action was given but no valid entries were parsed. "
+                 "Expected \"Label:id\" pairs, comma-separated.");
+            noff_emit_json(stdout_fd, err, compact, quiet);
+            return NOFF_EXIT_INVALID_ARGS;
+        }
+
+        NSMutableArray *idParts = [NSMutableArray array];
+        for (NSDictionary *a in actionInfo) [idParts addObject:a[@"id"]];
+        NSString *categoryId = [@"minis.cli." stringByAppendingString:
+                                [idParts componentsJoinedByString:@"."]];
+        UNNotificationCategory *category =
+            [UNNotificationCategory categoryWithIdentifier:categoryId
+                                                   actions:actions
+                                         intentIdentifiers:@[]
+                                                   options:UNNotificationCategoryOptionNone];
+
+        // Merge into the existing set — replacing it wholesale would drop
+        // categories registered elsewhere in the app.
+        UNUserNotificationCenter *catCenter = [UNUserNotificationCenter currentNotificationCenter];
+        dispatch_semaphore_t catSem = dispatch_semaphore_create(0);
+        __block NSSet<UNNotificationCategory *> *existing = nil;
+        [catCenter getNotificationCategoriesWithCompletionHandler:^(NSSet<UNNotificationCategory *> *cats) {
+            existing = cats;
+            dispatch_semaphore_signal(catSem);
+        }];
+        dispatch_semaphore_wait(catSem, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC));
+
+        NSMutableSet *merged = [NSMutableSet setWithSet:existing ?: [NSSet set]];
+        for (UNNotificationCategory *c in [merged copy]) {
+            if ([c.identifier isEqualToString:categoryId]) [merged removeObject:c];
+        }
+        [merged addObject:category];
+        [catCenter setNotificationCategories:merged];
+        content.categoryIdentifier = categoryId;
     }
 
     NSString *identifier = [[NSUUID UUID] UUIDString];
@@ -284,12 +406,16 @@ static int cmd_schedule(int argc, char **argv, int stdout_fd, int stderr_fd, BOO
         return NOFF_EXIT_ERROR;
     }
 
-    NSDictionary *data = @{
+    NSMutableDictionary *data = [@{
         @"id": identifier,
         @"title": title,
         @"body": body,
         @"scheduled": scheduleDesc,
-    };
+    } mutableCopy];
+    // [T-notification-repeat-actions] Only present when the new flags were
+    // used, so existing output is unchanged.
+    if (repeats) data[@"repeats"] = @YES;
+    if (actionInfo.count > 0) data[@"actions"] = actionInfo;
     noff_emit_json(stdout_fd, noff_json_envelope(TOOL_NAME, @"schedule", data), compact, quiet);
     return NOFF_EXIT_SUCCESS;
 }

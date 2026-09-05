@@ -126,7 +126,7 @@ private class QuickTestRun(val kind: QuickTestKind) {
  * Text is always included as a baseline if the model has text output;
  * if nothing matches we fall back to text so there is always one test.
  */
-private fun applicableKinds(entry: ModelEntry): List<QuickTestKind> {
+internal fun applicableKinds(entry: ModelEntry): List<QuickTestKind> {
     val model = entry.model
     val outputs = (model.outputModalities ?: emptyList()).map { it.normalizeModalityName() }
     val inputs = (model.inputModalities ?: emptyList()).map { it.normalizeModalityName() }
@@ -435,7 +435,7 @@ private fun runAll(
 }
 
 /** Run one smoke test against a real provider (no mocks). */
-private suspend fun performTest(
+internal suspend fun performTest(
     kind: QuickTestKind,
     entry: ModelEntry,
     providerRepository: ProviderRepository,

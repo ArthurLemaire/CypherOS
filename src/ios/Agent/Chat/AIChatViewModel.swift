@@ -76,6 +76,13 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// compacting endlessly (which would defeat the maxAgentTurns backstop).
     static let maxInLoopCompactions = 3
 
+    /// [StreamDiag] (#181) Monotonic counter tagging each outbound streaming
+    /// request so the stall watchdog's log line can be correlated with the
+    /// request it belongs to. Main-actor isolated (the whole class is), so the
+    /// `&+=` bump needs no additional synchronization. Diagnostics only —
+    /// nothing reads this for control flow.
+    static var diagRequestSeq: UInt64 = 0
+
     /// If non-nil, this VM is in read-only mode viewing a remote device's session.
     var remoteDeviceId: String?
 
@@ -930,13 +937,17 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     }
 
     var availableThinkingLevels: [ThinkingLevel] {
-        let maxLevel: ThinkingLevel
-        if let entry = resolveCurrentEntry() {
-            maxLevel = entry.effectiveMaxThinkingLevel
-        } else {
-            maxLevel = .xhigh
+        // [T-thinking-levels-data-driven] Offer one option per DISTINCT wire
+        // tier the model declares, instead of every level below a ceiling.
+        // The old ladder let four options collapse onto a single
+        // `reasoning_effort` — verified on-device 2026-08-01: glm-5.2
+        // (declares ["high","max"]) sent "high" for Low/Med/High/XHigh alike,
+        // while "max" was declared yet unreachable. See
+        // `ModelEntry.selectableThinkingLevels` for the fallback rules.
+        guard let entry = resolveCurrentEntry() else {
+            return ThinkingLevel.allCases.filter { $0 != .off && $0 <= .xhigh }
         }
-        return ThinkingLevel.allCases.filter { $0 != .off && $0 <= maxLevel }
+        return entry.selectableThinkingLevels
     }
 
     /// Whether a model entry should expose the thinking toggle.
@@ -1187,6 +1198,31 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// Public read so the manual `objectWillChange.send()` call sites can gate.
     var isTransitionSuspended: Bool { transitionSuspended }
 
+    /// [T-ios-stream-publish-transition-gap] Publish unless this vm is the
+    /// outgoing side of a navigation transition.
+    ///
+    /// Every manual `objectWillChange.send()` on a STREAMING path must go
+    /// through this. The audit that added it found the mitigation only half
+    /// wired: `setSuspendedForTransition` was being set correctly by both
+    /// ContentView observers (4300d0a29 iPad, db9fc144f iPhone), and the four
+    /// low-frequency publishers (retry / edit / cache-invalidate /
+    /// thinking-level) consulted `transitionSuspended` — but the four
+    /// HIGHEST-frequency ones, all in `+SSEStream.swift`, published
+    /// unconditionally. Those are precisely the mutations the 2026-08-10 crash
+    /// log shows still running during (and after) the hosting-view teardown:
+    /// `[TOOL:STREAMING]` at 19:23:26.735 / 27.138 / 27.349 is the `:718` site,
+    /// firing across a transition that completed at 27.213.
+    ///
+    /// Eliding is safe because a suspended vm is off-screen by construction:
+    /// SwiftUI re-reads the whole model when the view is next displayed, the
+    /// resume path (`setSuspendedForTransition(false)`) publishes explicitly,
+    /// and the underlying `messages` mutation has already happened — only the
+    /// notification is dropped, never data.
+    func publishUnlessTransitioning() {
+        guard !transitionSuspended else { return }
+        objectWillChange.send()
+    }
+
     /// True for the synchronous window of `retryFromMessage` /
     /// `retryFromToolBlock`: from the moment we start clearing `canResume` /
     /// truncating `messages` until the DB truncation (`deleteMessagesAfter`)
@@ -1294,12 +1330,40 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             speakEnabled = true
             VoiceOutputPreferences.isEnabled = true
         }
+        // [T-readaloud-menu-force-unmute] Explicit user intent beats the mute
+        // switch. Enabling `speakEnabled` alone was not enough: `canSpeakNow`
+        // resolves to `VoiceOutputState.canPlay` == `isEnabled && !isMuted`, so
+        // while muted every `speakQueued` below returned early and the tap did
+        // nothing at all — silently, with no feedback.
+        unmuteForExplicitReadAloud()
         isReadingAloud = true
         // Split into sentences and queue each — reuses the streaming segmenter so
         // sizing / dynamic window behave the same as live playback.
         let (sentences, _) = extractNewSentences(from: fullText, spokenOffset: 0)
         let units = sentences.isEmpty ? [fullText] : sentences
         for s in units { speakQueued(s) }
+    }
+
+    /// [T-readaloud-menu-force-unmute] Lift a TEMPORARY mute because the user
+    /// explicitly asked for read-aloud from a long-press menu.
+    ///
+    /// The mute switch (capsule speaker) is meant to silence *automatic* reply
+    /// TTS, not to veto a deliberate "read this" tap. Since `canSpeakNow` folds
+    /// `isMuted` into its gate, leaving it set made those menu actions no-ops
+    /// with no user-visible feedback.
+    ///
+    /// Only `isMuted` is touched — deliberately NOT `isEnabled`, so this cannot
+    /// resurrect read-replies for someone who switched the feature fully off;
+    /// callers that want it on (e.g. `readReplyFromStart`) enable it themselves.
+    /// `isMuted`'s `didSet` persists the change, matching what a manual un-mute
+    /// tap on the capsule does. Mirrors `SelectableMarkdownView`'s
+    /// `activateReadAloudState()`, which already did this for the menus that
+    /// bypass this view model.
+    private func unmuteForExplicitReadAloud() {
+        let state = VoiceOutputState.shared
+        guard state.isMuted else { return }
+        VoiceLog.log("[ReadAloud] explicit menu action — clearing temporary mute")
+        state.isMuted = false
     }
 
     /// Turn read-replies off entirely, stopping playback.
@@ -1362,6 +1426,12 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     func speakText(_ rawText: String) {
         // Strip emoji / non-speakable glyphs before TTS.
         let text = VoiceTextSanitizer.sanitize(rawText)
+        // [T-readaloud-menu-force-unmute] Sole caller is the "Read Selection"
+        // long-press menu action, i.e. an explicit request to hear THIS text —
+        // so lift a temporary mute rather than dropping the request on the
+        // floor. Ordered before the `canSpeakNow` guard, which folds in
+        // `isMuted` and would otherwise return early.
+        unmuteForExplicitReadAloud()
         guard canSpeakNow, !text.isEmpty else { return }
         isReadingAloud = true
         syncSpeechStateToGlobal(registerActive: true)
@@ -1907,6 +1977,28 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     /// Source tag written to the session record on creation (e.g. "shortcut").
     var sessionSource: String?
 
+    /// [T-shortcut-duplicate-completion-notification] Suppresses the *generic*
+    /// background-completion notification for this run, because a Shortcuts
+    /// intent already posts its own via `ShortcutNotification`. Without this the
+    /// user gets two overlapping notifications for one task: "Minis Task
+    /// Completed" from the intent and "✅ {sessionTitle}" from
+    /// `endBackgroundProcessing`.
+    ///
+    /// Deliberately NOT keyed off `sessionSource == "shortcut"`: that value also
+    /// drives near-capacity auto-compaction and the context-exhausted error path
+    /// (see `send()`), and RetryRun/FollowUp operate on sessions the user may
+    /// have created by hand in the app. Tagging those as "shortcut" to get the
+    /// notification behaviour would silently opt them into auto-compaction too.
+    /// This flag carries exactly one meaning and nothing else reads it.
+    ///
+    /// Run-scoped and CONSUMED on read: `endBackgroundProcessing` clears it as it
+    /// checks it, so it suppresses exactly the one completion it was set for.
+    /// That matters because a VM is cached and reused — if the user opens the
+    /// same session later and sends a message by hand, that run must still get
+    /// its normal completion notification. A sticky flag would silence the
+    /// session forever. Not persisted; each intent sets it fresh.
+    var suppressGeneralCompletionNotification: Bool = false
+
     /// Model group to bind when creating a new session (from long-press FAB).
     var initialGroupId: String?
 
@@ -1977,6 +2069,25 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
     var currentTask: Task<Void, Never>?
     var compactTask: Task<Void, Never>?
     var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
+
+    /// [T-ios-bgkeepalive-diag] Process-wide count of LIVE
+    /// `beginBackgroundTask` grants, so crash diagnostics can report whether a
+    /// real `UIBackgroundTaskIdentifier` was held — previously the crash report's
+    /// "BG task active" field showed `BackgroundKeepAliveManager.isActive`, a
+    /// keep-alive *intent* flag with no relation to the OS grant, which made
+    /// every report read as "background task healthy" even when no task was held.
+    /// Maintained by begin/endBackgroundProcessing; `nonisolated(unsafe)` +
+    /// lock-free because it is only mutated on the MainActor.
+    @MainActor
+    private(set) static var liveBackgroundTaskCount = 0
+
+    @MainActor
+    static func noteBackgroundTaskBegan() { liveBackgroundTaskCount += 1 }
+
+    @MainActor
+    static func noteBackgroundTaskEnded() {
+        liveBackgroundTaskCount = max(0, liveBackgroundTaskCount - 1)
+    }
     /// Tracks how many blocks on the current assistant message have been fully committed
     /// to agentHistory. Used by retry()/resume() to trim partial iteration content.
     var committedBlockCount: Int = 0
@@ -2226,6 +2337,29 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         // Note: toolSnapshots are NOT cleared here so the floating toolbar shows the full session history
         let displayText = text.isEmpty && pendingAttachments.isEmpty ? "" : text
         let userMsg = ChatMessage(role: .user, content: displayText)
+        // [T-ios-user-attach-two-phase-birth] Attach the user's OWN selection before
+        // the row is inserted, so the cell is born with its final height.
+        //
+        // The list's height estimator already prefers `attachments` and falls back to
+        // `inputAttachments` (CollectionViewMessageListV3 ~3036 and ~3334), and the tile
+        // block is pure geometry — `UserAttachmentTileMetrics.blockHeight(count:availableWidth:)`
+        // takes only a COUNT and a width (tile 64pt, gap 6pt). Nothing in `AttachmentMeta`
+        // (path / size / modified) feeds the height, so the count is fully known here and
+        // never needed the file I/O below.
+        //
+        // Without this line the fallback always read 0: `attachments` is only assigned
+        // after the copy/compress/upload pass (~2500), so the row was inserted as
+        // text-only, estimated short, and grew a second time when the metas landed —
+        // an UNDER-estimate, the harmful direction (f1304a3e1 measured est=48 at insert
+        // vs est=118 some 350ms later). That two-phase birth is the race the mount-time
+        // invalidations (988f67b8, 9be8058f) were added to chase; seeding here removes
+        // the window itself rather than reacting to it. The later
+        // `userMsg.attachments = attachmentMetas` then only adds metadata and no longer
+        // changes the height.
+        //
+        // `enqueuePrompt` (AIChatViewModel+Misc ~72) has always done exactly this before
+        // its own append; this is the send path catching up, not a new mechanism.
+        userMsg.inputAttachments = pendingAttachments
         messages.append(userMsg)
 
         // Snapshot and clear attachments synchronously so the UI clears immediately
@@ -2393,7 +2527,33 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             Self.cleanupAttachmentFiles(pendingAttachments)
 
             // Update ChatMessage with structured attachment metadata for UI display
-            await MainActor.run { userMsg.attachments = attachmentMetas }
+            //
+            // [T-ios-user-attach-mount-invalidate] THIRD mount site. 988f67b8
+            // covered only the two queued-drain sites (both keyed on
+            // `queuedPromptId`); this is the ORDINARY send path, and it has the
+            // same two-phase birth: `messages.append(userMsg)` runs
+            // synchronously before this Task, so the message is inserted
+            // TEXT-ONLY and the tiles arrive here, one attachment-I/O later. If
+            // the cell's first real self-size lands in that window it caches a
+            // tile-less height, and without an invalidation pair the width-
+            // matched cell cache (b4268586) plus the streaming-window
+            // short-circuit (81e43b58) serve it for the rest of the turn —
+            // the truncated bubble with a seemingly detached tile.
+            //
+            // Field report 2026-08-09 (msg F70F81DD, image via the system share
+            // sheet) reproduced exactly this on a build where `AttachMount` had
+            // zero hits across the whole log: est=48 attachCount=0 at insert,
+            // est=118 attachCount=1 some 350ms later, and no idx=0 real measure
+            // in between. Share/voice sends widen the window precisely because
+            // they do more attachment I/O — which 988f67b8's own message called
+            // out while still leaving this site unpatched.
+            await MainActor.run {
+                userMsg.attachments = attachmentMetas
+                if !attachmentMetas.isEmpty {
+                    NotificationCenter.default.post(name: .minisUserAttachmentsMounted,
+                                                    object: userMsg.id)
+                }
+            }
 
             // Build <user-attached-files> XML metadata for the model (no base64 data)
             if !attachmentMetas.isEmpty {
@@ -2937,6 +3097,17 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
 
             // Update the ChatMessage's attachments for display
             messages[idx].attachments = newMetas
+            // [T-ios-user-attach-mount-invalidate] FOURTH mount site. Unlike the
+            // send/drain sites this one has no two-phase race — it rewrites the
+            // attachments of an EXISTING message — but that is precisely why it
+            // needs the pair: the cell has certainly measured and cached a
+            // height by now, and swapping the tile set is an in-place height
+            // change on an item whose identity does not move, so the cached
+            // value would be served until something else forced a relayout.
+            if !newMetas.isEmpty {
+                NotificationCenter.default.post(name: .minisUserAttachmentsMounted,
+                                                object: messages[idx].id)
+            }
         }
 
         // Trim persisted messages to match.
@@ -3595,6 +3766,10 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             let queuedIds = Set(queued.map(\.id))
             for msg in self.messages where msg.isQueued {
                 if let pid = msg.queuedPromptId, queuedIds.contains(pid) {
+                    // Queue drain: isQueued true -> false. The withdraw button
+                    // disappears here, so the bubble's wrap width widens by
+                    // ~28pt and any measurement taken while queued is
+                    // superseded from this point on.
                     msg.isQueued = false
                 }
             }
@@ -3616,6 +3791,12 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                     if let chatMsg = self.messages.first(where: { $0.queuedPromptId == prompt.id }) {
                         chatMsg.attachments = attMetas
                         chatMsg.inputAttachments = []
+                        // [T-ios-user-attach-mount-invalidate #182-followup] The
+                        // mount above is an in-place +70pt/row content change on
+                        // a cell whose item identity does not move; without this
+                        // the tile-less height measured moments earlier stays
+                        // cached and the bubble truncates (see the Name's doc).
+                        NotificationCenter.default.post(name: .minisUserAttachmentsMounted, object: chatMsg.id)
                     }
                 }
                 if !prompt.text.isEmpty {
@@ -3738,6 +3919,8 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                 if let chatMsg = messages.first(where: { $0.queuedPromptId == prompt.id }) {
                     chatMsg.attachments = attMetas
                     chatMsg.inputAttachments = []
+                    // [T-ios-user-attach-mount-invalidate] See the sibling drain site.
+                    NotificationCenter.default.post(name: .minisUserAttachmentsMounted, object: chatMsg.id)
                 }
             }
             if !prompt.text.isEmpty {
@@ -4331,7 +4514,7 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         // any retry / fallback catch path we resync `msgIdx` via this id
         // before touching `messages[msgIdx]`; if the message is gone we
         // bail out cleanly instead of crashing with Index out of range.
-        let runMsgId: UUID = msgIdx < messages.count ? messages[msgIdx].id : UUID()
+        var runMsgId: UUID = msgIdx < messages.count ? messages[msgIdx].id : UUID()
         /// Track how many blocks were already committed to agentHistory
         /// so subsequent iterations only add new blocks.
         var committedBlockCount = committedBlocks ?? 0
@@ -4476,17 +4659,49 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
         var compactionsThisLoop = 0
         loopLabel: while turnCount < Self.maxAgentTurns {
             defer { turnCount += 1 }
+            // [LoopHeartbeat] (#181) One line per loop iteration. If the loop
+            // wedges on an await, the last heartbeat pins which iteration it
+            // died in, even when every other diagnostic is missing.
+            logger.info("[LoopHeartbeat] turnCount=\(turnCount) session=\(self.sessionId ?? "nil") time=\(Self.diagTimestamp(Date()))")
             try Task.checkCancellation()
             if let sid = self.sessionId {
                 SessionActivityTracker.shared.updateLoopIteration(sid, iteration: turnCount + 1)
             }
 
-            // Safety: if messages were mutated externally (retry/delete/resend) while
-            // the agent loop was running, msgIdx may be out of bounds. Bail out.
-            guard msgIdx >= 0, msgIdx < messages.count else {
-                logger.error("⚠️ Agent loop: msgIdx \(msgIdx) out of bounds (messages.count=\(messages.count)), breaking")
-                hitTurnLimit = false
-                break
+            // [T-ios-inloop-compact-freeze] Re-anchor msgIdx by stable id every
+            // iteration. External mutations while the loop runs — in-loop
+            // compaction's divider insert / status-row removeAll, a mid-loop
+            // reloadMessagesFromDB wholesale rebuild, user delete — shift or
+            // replace array members; a raw index (or a bail-out `break`) then
+            // silently streams every later round into the wrong / a detached
+            // ChatMessage: the UI freezes on the last rendered block while the
+            // DB keeps advancing (field case 2026-07-31, sessions 35D4D2B2 /
+            // 7FDC5B52: vm froze at sortOrder≈130 while DB reached 138).
+            if msgIdx < 0 || msgIdx >= messages.count || messages[msgIdx].id != runMsgId {
+                if let resynced = messages.firstIndex(where: { $0.id == runMsgId }) {
+                    AppLogger(category: "BlocksLost").warning("[BlocksLost] LOOP-RESYNC msgIdx \(msgIdx)→\(resynced) after external messages mutation (count=\(messages.count))")
+                    msgIdx = resynced
+                } else if let lastIdx = messages.indices.last, messages[lastIdx].role == .assistant {
+                    // Array was rebuilt with fresh instances (reload) — adopt the
+                    // trailing assistant message, which the rebuild reconstructed
+                    // from the same rows this loop already persisted. Everything
+                    // it now holds came from the DB, so it is all committed.
+                    AppLogger(category: "BlocksLost").warning("[BlocksLost] LOOP-REBIND msgIdx \(msgIdx)→\(lastIdx) — streaming message instance gone, adopting trailing assistant (count=\(messages.count))")
+                    msgIdx = lastIdx
+                    runMsgId = messages[lastIdx].id
+                    committedBlockCount = messages[lastIdx].blocks.count
+                    self.committedBlockCount = committedBlockCount
+                } else {
+                    // No trailing assistant to adopt — append a fresh one so the
+                    // rest of the turn stays visible instead of streaming into a
+                    // detached object.
+                    AppLogger(category: "BlocksLost").warning("[BlocksLost] LOOP-REAPPEND — streaming message gone and no trailing assistant (count=\(messages.count)); appending fresh assistant message")
+                    messages.append(ChatMessage(role: .assistant, content: "", blocks: []))
+                    msgIdx = messages.count - 1
+                    runMsgId = messages[msgIdx].id
+                    committedBlockCount = 0
+                    self.committedBlockCount = 0
+                }
             }
 
             // Trim old images: keep only the most recent `kImageContextKeepCount`
@@ -4547,6 +4762,13 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
 
             CrashReporter.shared.setLastAPI(provider: provider.name, model: activeModelForOffload.id)
             logger.info("Calling \(provider.name) API (streaming) with \(self.agentHistory.count) messages")
+            // [StreamDiag] (#181) Monotonic request sequence, so a
+            // [StreamDiag][STALL] line can be matched against the request it
+            // belongs to — or shown to belong to none, which would mean the
+            // request never went out (candidate 1).
+            Self.diagRequestSeq &+= 1
+            let diagReqSeq = Self.diagRequestSeq
+            logger.info("[StreamDiag] req#\(diagReqSeq) DISPATCH turnCount=\(turnCount) session=\(self.sessionId ?? "nil") provider=\(provider.name) model=\(activeModelForOffload.id) messages=\(self.agentHistory.count) at=\(Self.diagTimestamp(Date()))")
 
             #if DEBUG
             // Begin a new agent request trace
@@ -4625,6 +4847,13 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                 activeGroupId: &activeGroupId,
                 activeEntryId: &activeEntryId
             )
+            // [StreamDiag] (#181) The stream object now exists. Note this is
+            // "request accepted / stream handle obtained", NOT first byte — the
+            // first actual SSE event is logged by [StreamDiag] event #1 in
+            // processStreamEvents. If a stall is logged with a DISPATCH and this
+            // line but no event #1, the connection produced no first byte; if
+            // event #1 appeared and it stalled later, the stream died mid-flight.
+            logger.info("[StreamDiag] req#\(diagReqSeq) STREAM-OPEN elapsed=\(String(format: "%.2f", Date().timeIntervalSince(iterationStreamStart)))s at=\(Self.diagTimestamp(Date()))")
 
             // Helper: update provider & system prompt when fallback switched entries.
             // Returns true if a switch occurred.
@@ -5178,6 +5407,9 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                     // We're continuing with the user's new turn, so this session is
                     // no longer in an interrupted/resumable state. Reset per-turn
                     // usage for the fresh assistant message.
+                    // [T-ios-inloop-compact-freeze] msgIdx now points at the fresh
+                    // assistant message — retarget the stable anchor with it.
+                    if msgIdx < messages.count { runMsgId = messages[msgIdx].id }
                     canResume = false
                     turnUsage = TokenUsage()
                     continue
@@ -5416,6 +5648,9 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
                     committedBlockCount: &committedBlockCount,
                     turnUsage: turnUsage
                 ) {
+                    // [T-ios-inloop-compact-freeze] Retarget the stable anchor
+                    // alongside msgIdx (fresh assistant message for the new turn).
+                    if msgIdx < messages.count { runMsgId = messages[msgIdx].id }
                     canResume = false
                     turnUsage = TokenUsage()
                     continue
@@ -5786,8 +6021,17 @@ final class AIChatViewModel: ObservableObject, SpeechControlling {
             return pendingThinkingLevel ?? defaultGroupThinkingLevel
         }()
         guard stored.isEnabled else { return stored }
-        let maxLevel = resolveCurrentEntry()?.effectiveMaxThinkingLevel ?? .xhigh
-        return min(stored, maxLevel)
+        guard let entry = resolveCurrentEntry() else { return min(stored, .xhigh) }
+        let clamped = min(stored, entry.effectiveMaxThinkingLevel)
+        // [T-thinking-levels-data-driven] The offered set can be SPARSE (a model
+        // declaring ["high","max"] offers only High/Max), and a level persisted
+        // before that was known — or carried over from another model — may not
+        // be in it. Snap onto the nearest offered tier at or below, mirroring
+        // `clampEffort`'s prefer-downgrade rule, so the pill and the checkmark
+        // agree with the value actually sent.
+        let levels = entry.selectableThinkingLevels
+        guard !levels.isEmpty, !levels.contains(clamped) else { return clamped }
+        return levels.last(where: { $0 <= clamped }) ?? levels[0]
     }
 
     /// Flush pending thinking level to the store once sessionId is available.

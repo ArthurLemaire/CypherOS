@@ -21,6 +21,7 @@ import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
@@ -269,6 +270,11 @@ private fun MdText(
     maxLines: Int = Int.MAX_VALUE,
     overflow: TextOverflow = TextOverflow.Clip,
     inlineContent: Map<String, androidx.compose.foundation.text.InlineTextContent> = emptyMap(),
+    /**
+     * Marks this text as a self-contained selection unit — set by table cells
+     * so a long-press grabs exactly the cell. See [TextShard.isAtomicUnit].
+     */
+    isAtomicSelectionUnit: Boolean = false,
 ) {
     var layoutResult by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
     // MinisTextKit registration: when this MdText is inside a markdown
@@ -300,7 +306,7 @@ private fun MdText(
         }
     }
     val selectionController = LocalMinisSelectionController.current
-    val currentShard = remember(shardId, layoutResult, text) {
+    val currentShard = remember(shardId, layoutResult, text, isAtomicSelectionUnit) {
         val sid = shardId
         val result = layoutResult
         if (sid == null || result == null) null else buildTextShard(
@@ -308,6 +314,7 @@ private fun MdText(
             plainText = text.text,
             layoutResult = result,
             coordinatesProvider = { layoutCoordinatesHolder[0] },
+            isAtomicUnit = isAtomicSelectionUnit,
         )
     }
     RegisterSelectionShard(currentShard)
@@ -1294,6 +1301,55 @@ private data class TaskItem(val checked: Boolean, val text: String)
 
 // ─── Block parser ───────────────────────────────────────────────────────────
 
+/**
+ * [T-android-latex-code-mask] Find the line index that closes a multi-line
+ * `$$` display-math block opened just before [from], or null when no
+ * *plausible* closer exists.
+ *
+ * Mirrors the rules ported into MarkdownParser (521b2dc7 / iOS bce7e2ed):
+ *  - stop at a blank line — that is a paragraph break, so the `$$` was never
+ *    a formula opener;
+ *  - stop at a fence marker (``` / ~~~) and never look past it, so a `$$`
+ *    living inside a code block can never be mistaken for the closer;
+ *  - require at least one LaTeX-ish glyph in the body, so runs of plain prose
+ *    are not silently rendered as math.
+ *
+ * Returning null makes the caller emit the `$$` as literal text, which is what
+ * the user typed and what every other markdown renderer does.
+ */
+private fun findDisplayMathClose(lines: List<String>, from: Int): Int? {
+    var j = from
+    val body = StringBuilder()
+    while (j < lines.size) {
+        val l = lines[j]
+        val t = l.trimStart()
+        // A fence starts/ends a code region — a `$$` beyond it is not our closer.
+        if (t.startsWith("```") || t.startsWith("~~~")) return null
+        // Blank line = paragraph break; real display math has no interior blank.
+        if (t.isBlank()) return null
+        val close = l.indexOf("$$")
+        if (close >= 0) {
+            body.append(l.substring(0, close))
+            val text = body.toString()
+            // A closer sitting alone on its own line is the conventional
+            // `$$ … $$` block shape and is accepted unconditionally — that
+            // covers glyph-free but perfectly valid math like "1 + 2 = 3",
+            // which an "always require a LaTeX glyph" rule would wrongly
+            // demote to plain text.
+            if (t == "$$") return j
+            // Degenerate empty body is harmless.
+            if (text.isBlank()) return j
+            // Otherwise the closer is mid-line (e.g. "… foo $$ bar"), which is
+            // the shape a stray delimiter in prose produces. Only accept it
+            // when the body actually looks like a formula.
+            return if (text.any { it == '\\' || it == '^' || it == '_' || it == '{' || it == '}' }) j else null
+        }
+        body.append(l).append('\n')
+        j++
+    }
+    return null
+}
+
 private suspend fun parseMarkdownBlocks(content: String): List<MdBlock> {
     val blocks = mutableListOf<MdBlock>()
     val lines = content.lines()
@@ -1322,24 +1378,46 @@ private suspend fun parseMarkdownBlocks(content: String): List<MdBlock> {
                     blocks.add(MdBlock.MathDisplay(line, latex))
                     i++
                 } else {
-                    // Multi-line: scan forward until a line containing `$$`
-                    val rawLines = mutableListOf(line)
-                    val mathLines = mutableListOf<String>()
-                    if (rest.isNotEmpty()) mathLines.add(rest)
-                    i++
-                    while (i < lines.size) {
-                        rawLines.add(lines[i])
-                        val close = lines[i].indexOf("$$")
-                        if (close >= 0) {
-                            val pre = lines[i].substring(0, close)
-                            if (pre.isNotEmpty()) mathLines.add(pre)
-                            i++
-                            break
-                        }
-                        mathLines.add(lines[i])
+                    // [T-android-latex-code-mask] Multi-line: LOOK AHEAD for the
+                    // closing `$$` and validate it before committing. The old
+                    // loop scanned forward unconditionally, so an unclosed `$$`
+                    // (a model forgetting to close it, or prose explaining
+                    // LaTeX) paired with a `$$` inside a LATER ``` fence and
+                    // swallowed every paragraph in between plus the fence's own
+                    // opening line — leaving an orphaned closing fence. This is
+                    // issue #117 defect 3 on the streaming path; the same defect
+                    // was fixed in MarkdownParser (521b2dc7), but THIS is the
+                    // renderer the chat transcript actually uses.
+                    val closeIdx = findDisplayMathClose(lines, i + 1)
+                    if (closeIdx == null) {
+                        // No plausible closer — emit the `$$` as ordinary text
+                        // and let the following lines parse normally.
+                        blocks.add(MdBlock.Paragraph(line))
                         i++
+                    } else {
+                        val rawLines = mutableListOf(line)
+                        val mathLines = mutableListOf<String>()
+                        if (rest.isNotEmpty()) mathLines.add(rest)
+                        i++
+                        while (i <= closeIdx) {
+                            rawLines.add(lines[i])
+                            if (i == closeIdx) {
+                                val close = lines[i].indexOf("$$")
+                                val pre = lines[i].substring(0, close)
+                                if (pre.isNotEmpty()) mathLines.add(pre)
+                                i++
+                                break
+                            }
+                            mathLines.add(lines[i])
+                            i++
+                        }
+                        blocks.add(
+                            MdBlock.MathDisplay(
+                                rawLines.joinToString("\n"),
+                                mathLines.joinToString("\n").trim(),
+                            ),
+                        )
                     }
-                    blocks.add(MdBlock.MathDisplay(rawLines.joinToString("\n"), mathLines.joinToString("\n").trim()))
                 }
             }
             trimmed.startsWith("\\[") -> {
@@ -1944,7 +2022,15 @@ private fun rememberKatexInlineContent(
                 placeholder = androidx.compose.ui.text.Placeholder(
                     width = w,
                     height = h,
-                    placeholderVerticalAlign = androidx.compose.ui.text.PlaceholderVerticalAlign.AboveBaseline,
+                    // [T-android-math-baseline] TextCenter, was AboveBaseline.
+                    // The slot is over-estimated AND the KaTeX bitmap carries
+                    // its own top/bottom whitespace, so an above-baseline slot
+                    // put the formula's optical center well ABOVE the line's
+                    // ("N(100) 渲染偏上"). Centering the slot on the line and
+                    // the bitmap in the slot (CenterStart below) aligns the
+                    // two optical centers instead — robust against both the
+                    // generous estimate and the bitmap padding.
+                    placeholderVerticalAlign = androidx.compose.ui.text.PlaceholderVerticalAlign.TextCenter,
                 ),
             ) { _ ->
                 // Compose passes the alternative-text to the children lambda;
@@ -1970,7 +2056,17 @@ private fun RenderInlineMath(latex: String, fontSize: TextUnit) {
     // device), which produced a bitmap ~2.6× too large; combined with the
     // CSS-vs-physical-px snapshot bug it accidentally landed near correct
     // size, but with the snapshot bug fixed the inflation showed through.
-    val fontSizeCssPx = fontSize.value.toInt().coerceAtLeast(12)
+    //
+    // [T-android-math-fontscale] ×fontScale: 16 sp of TEXT draws at
+    // 16 × fontScale dp when the SYSTEM font size setting isn't 100%, and
+    // the inline Placeholder (TextUnit sp) scales with it — but the CSS-px
+    // bitmap did NOT. On a small-font device (fontScale < 1) the bitmap
+    // came out LARGER than the shrunken slot, and Compose clips inline
+    // content to the placeholder bounds — the field report's "N(10(" (a
+    // clipped N(100)) and formulas visibly oversized next to their own
+    // paragraph text. fontScale > 1 gave the inverse: formulas too small.
+    val fontScale = androidx.compose.ui.platform.LocalDensity.current.fontScale
+    val fontSizeCssPx = (fontSize.value * fontScale).toInt().coerceAtLeast(12)
     val palette = currentMdColors()
     val result by androidx.compose.runtime.produceState<KatexRenderResult?>(
         initialValue = null,
@@ -1995,12 +2091,36 @@ private fun RenderInlineMath(latex: String, fontSize: TextUnit) {
         val density = androidx.compose.ui.platform.LocalDensity.current.density
         val naturalWidthDp = (rendered.bitmap.width / density).dp
         val naturalHeightDp = (rendered.bitmap.height / density).dp
-        androidx.compose.foundation.Image(
-            bitmap = rendered.bitmap.asImageBitmap(),
-            contentDescription = "math: $latex",
-            modifier = Modifier.size(naturalWidthDp, naturalHeightDp),
-            contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-        )
+        // [T-android-math-fontscale] Defensive de-clip: the slot was sized by
+        // estimateInlineMathSize, but any residual estimator drift (or a
+        // future slot/bitmap unit mismatch) used to CLIP the formula — inline
+        // content never exceeds its placeholder bounds. Measure the slot and
+        // scale the bitmap DOWN to fit when needed: a slightly shrunken
+        // formula is readable, a clipped one ("N(10(") is not.
+        //
+        // [T-android-math-baseline] BOTTOM-align the bitmap. The placeholder
+        // uses AboveBaseline (slot bottom sits ON the text baseline), but its
+        // height is deliberately over-estimated — with the default TopStart
+        // alignment the formula rode at the TOP of the too-tall slot,
+        // floating visibly above its own line ("N(100) 渲染偏上"). Anchoring
+        // to the slot's bottom puts the formula on the baseline regardless of
+        // how generous the height estimate is.
+        androidx.compose.foundation.layout.BoxWithConstraints(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            val fit = minOf(
+                1f,
+                if (naturalWidthDp > maxWidth) maxWidth / naturalWidthDp else 1f,
+                if (naturalHeightDp > maxHeight) maxHeight / naturalHeightDp else 1f,
+            )
+            androidx.compose.foundation.Image(
+                bitmap = rendered.bitmap.asImageBitmap(),
+                contentDescription = "math: $latex",
+                modifier = Modifier.size(naturalWidthDp * fit, naturalHeightDp * fit),
+                contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+            )
+        }
     } else {
         // Fallback while loading or on error: show the raw latex so the
         // user is never staring at an empty rectangle.
@@ -2030,8 +2150,11 @@ private fun RenderMathDisplay(latex: String) {
     val isDark = isSystemInDarkTheme()
     // T208-5: render at sp.value (CSS px = dp) so glyph height matches the
     // surrounding 16-sp body text. See RenderInlineMath comment for the
-    // full reasoning.
-    val fontSizeCssPx = BaseFontSize.value.toInt().coerceAtLeast(12)
+    // full reasoning. [T-android-math-fontscale] ×fontScale so display math
+    // tracks the SYSTEM font size setting the way the surrounding sp text
+    // does (the inline path had the same gap — see RenderInlineMath).
+    val displayFontScale = androidx.compose.ui.platform.LocalDensity.current.fontScale
+    val fontSizeCssPx = (BaseFontSize.value * displayFontScale).toInt().coerceAtLeast(12)
     val palette = currentMdColors()
 
     val result by androidx.compose.runtime.produceState<KatexRenderResult?>(
@@ -2629,6 +2752,12 @@ private fun RenderTable(block: MdBlock.Table) {
                                 fontWeight = if (isHeader) FontWeight.SemiBold else null,
                                 color = colors.text,
                                 inlineContent = rememberKatexInlineContent(14.sp, MarkdownParseCaches.mathLatex(cellText)),
+                                // Long-press selects the whole cell rather than a
+                                // sentence-fragment of it: a cell holding "1,200"
+                                // or "v1.2, beta" would otherwise stop at the
+                                // comma, which is never what someone pressing a
+                                // table cell is after.
+                                isAtomicSelectionUnit = true,
                             )
                         }
                     }

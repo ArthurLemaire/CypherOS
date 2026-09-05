@@ -644,7 +644,20 @@ fileprivate final class MarkdownNSRenderer {
         // Mark the entire range with blockquote depth for bar drawing
         let fullRange = NSRange(location: 0, length: result.length)
         if fullRange.length > 0 {
-            result.addAttribute(.blockquoteDepth, value: newDepth, range: fullRange)
+            // Only fill in ranges that are missing a depth or carry a
+            // shallower one. Children have already been rendered at
+            // `newDepth + 1`…, so a blanket addAttribute (replace semantics)
+            // used to stomp a nested quote's depth=2 back down to the outer
+            // depth=1 — the text still indented for two levels (paragraph
+            // style records that separately) but only one bar was drawn.
+            var deeperRanges: [NSRange] = []
+            result.enumerateAttribute(.blockquoteDepth, in: fullRange, options: []) { value, range, _ in
+                let existing = (value as? Int) ?? 0
+                if existing < newDepth { deeperRanges.append(range) }
+            }
+            for range in deeperRanges {
+                result.addAttribute(.blockquoteDepth, value: newDepth, range: range)
+            }
             // minisChat blockquote uses secondaryText color
             result.addAttribute(.foregroundColor, value: theme.secondaryLabelColor, range: fullRange)
         }
@@ -3141,6 +3154,10 @@ final class MathAttachment: NSTextAttachment {
     let theme: SelectableMarkdownTheme
     private(set) var renderedImage: UIImage?
     private(set) var renderedSize: CGSize = .zero
+    /// [issue #117-4] Baseline offset from the rendered image's bottom edge,
+    /// straight out of SwiftMath's typesetter. 0 = unknown (Unicode fallback),
+    /// in which case `attachmentBounds` falls back to an approximation.
+    private(set) var renderedBaselineFromBottom: CGFloat = 0
     private var didAttemptRender = false
     private var isKaTeXPending = false
     /// Both SwiftMath and KaTeX failed — show raw LaTeX fallback.
@@ -3165,19 +3182,118 @@ final class MathAttachment: NSTextAttachment {
     private static let inlinePlaceholderHeight: CGFloat = 20
     private static let blockPlaceholderHeight: CGFloat = 44
 
+    /// [T-ios-math-sync-render-at-measure] One-shot guard so a failed sync
+    /// render is not retried on every glyph pass (render() does not cache
+    /// failures, so retrying would re-parse per typeset).
+    private var didAttemptSyncRender = false
+
     override func attachmentBounds(for textContainer: NSTextContainer?, proposedLineFragment lineFrag: CGRect, glyphPosition position: CGPoint, characterIndex charIndex: Int) -> CGRect {
+        // [T-ios-math-sync-render-at-measure] Render HERE, synchronously, before
+        // ever answering with a placeholder.
+        //
+        // Why: the placeholder heights (44pt block / 20pt inline) participate in
+        // the FIRST measurement of the cell, and that number is cached above us
+        // by SwiftUI's hosting-configuration view graph — a cache that only
+        // invalidates on a SwiftUI-visible state change, which a UIKit-side
+        // async render completion is not. Six successive fixes cleared every
+        // cache we own (layout memo 22df168cf, TextKit re-typeset c7ee9f16a,
+        // representable size cache 48043be1e) and the device number never
+        // moved: cell 6166 vs canvas 7154.7, both before and after, because
+        // every fresh parse re-measured with placeholders and every correction
+        // dead-ended at the SwiftUI layout cache. The only durable fix is for
+        // the first measure to be RIGHT.
+        //
+        // Why this is affordable: SwiftMathRenderer.render is synchronous and
+        // NSCache-backed (256 entries, keyed latex+mode+fontSize). The
+        // scheduler's own telemetry on the failing device: 55 formulas in
+        // 123ms wall, avg 0.62ms — and that work was ALREADY being done
+        // moments after the measure; this moves it before the measure and the
+        // cache makes every later parse of the same formula free. KaTeX
+        // (WebView, truly async) stays on the scheduler path: if sync render
+        // fails we fall through to the placeholder exactly as before.
+        // Main-thread only — MTMathUILabel is UIKit.
+        if renderedImage == nil, !renderFailed, !isKaTeXPending,
+           !didAttemptSyncRender {
+            if Thread.isMainThread {
+                didAttemptSyncRender = true
+                // Mirror performRender's chain exactly. This MUST include
+                // renderFallback: SwiftMath cannot render CJK, so render()
+                // returns nil for precisely the formulas this bug ships with
+                // (`N_{A流}`, `公司整体股权市值 = …`) — instrumented on device:
+                // every CJK formula logged "sync render FAILED" while ASCII
+                // (`P_A`, `R`) rendered, which is why the placeholder height
+                // still won the first measure. renderFallback is equally
+                // synchronous and NSCache-backed ("F:" key).
+                let result = SwiftMathRenderer.render(latex: latex, displayMode: isBlock, fontSize: theme.baseFontSize)
+                    ?? SwiftMathRenderer.renderFallback(latex: latex, displayMode: isBlock, fontSize: theme.baseFontSize)
+                if let result {
+                    applyResult(result)
+                    // Scheduler no longer needs to touch this attachment.
+                    didAttemptRender = true
+                    MathAttachment.syncRenderHits &+= 1
+                    if MathAttachment.syncRenderHits <= 5 || MathAttachment.syncRenderHits % 50 == 0 {
+                        AppLogger(category: "MathSync").info("[MathSync] SYNC-RENDERED #\(MathAttachment.syncRenderHits) h=\(String(format: "%.1f", result.image.size.height)) isBlock=\(self.isBlock) latex=\(self.latex.prefix(24))")
+                    }
+                } else {
+                    AppLogger(category: "MathSync").info("[MathSync] sync render FAILED (falls to scheduler) latex=\(self.latex.prefix(24))")
+                }
+            } else {
+                // [T-ios-math-sync-render-at-measure] Diagnostic: if measures
+                // reach attachmentBounds OFF-MAIN, the sync path can never help
+                // them and the placeholder participates in that measurement.
+                MathAttachment.offMainSkips &+= 1
+                if MathAttachment.offMainSkips <= 5 || MathAttachment.offMainSkips % 50 == 0 {
+                    AppLogger(category: "MathSync").info("[MathSync] OFF-MAIN skip #\(MathAttachment.offMainSkips) — placeholder used in this measurement thread=\(Thread.current)")
+                }
+            }
+        }
         if let img = renderedImage {
             let imgW = min(img.size.width, lineFrag.width)
             let imgH = img.size.height
             if isBlock {
                 return CGRect(x: 0, y: 0, width: lineFrag.width, height: imgH)
             } else {
-                // Center the formula vertically on the text baseline.
-                // y offset = -(imgH - capHeight) / 2 positions the image so its
-                // vertical center aligns roughly with the cap-height center.
-                let baseFont = theme.baseFont
-                let yOffset = -(imgH - baseFont.capHeight) / 2
-                return CGRect(x: 0, y: yOffset, width: imgW, height: imgH)
+                // [issue #117-4] TRUE BASELINE ALIGNMENT.
+                //
+                // attachmentBounds' y is the offset from the surrounding text's
+                // baseline to the image's BOTTOM edge (positive = up). So to
+                // seat the formula's own baseline on the text baseline, the
+                // bottom edge must sit `baselineFromBottom` BELOW it:
+                //
+                //     y = -baselineFromBottom
+                //
+                // and everything follows from the typesetter: `x` (no descender)
+                // renders with a baseline at the image bottom → y ≈ 0, sitting
+                // flush on the line; `y`/`p` carry a real descent → the tail
+                // drops below the baseline exactly as in running text; `x²` gets
+                // its extra height entirely above → the base `x` lands on the
+                // baseline, pixel-aligned with a standalone `x`; an inline
+                // fraction's denominator descends below the baseline, which is
+                // the correct TeX behaviour (the fraction bar rides the math
+                // axis ≈0.25em above the baseline) and NOT something to "fix" —
+                // TextKit grows the line fragment to fit it.
+                //
+                // The previous cap-height/x-height centring could not express
+                // any of this: it pinned a fixed fraction of the image height
+                // regardless of where the content's baseline actually was,
+                // leaving a 0–4pt residual that varied with the formula
+                // (≈+2.4pt for bare lowercase, ≈+4pt with descenders, ≈0 with
+                // superscripts).
+                // >0 rather than >=0: an exactly-zero descent is also how
+                // "unknown" is spelled (the Unicode fallback), and a formula
+                // whose real descent rounds to 0 is indistinguishable from the
+                // baseline sitting at the image bottom — which is what the
+                // y=0 branch below produces anyway for that case.
+                if renderedBaselineFromBottom > 0 {
+                    return CGRect(x: 0, y: -renderedBaselineFromBottom, width: imgW, height: imgH)
+                }
+                // Unknown baseline (Unicode fallback bitmap — drawn by UIKit,
+                // not SwiftMath). Approximate: that path draws a single text
+                // line with 1pt top padding, so its baseline sits one descender
+                // plus that padding up from the bottom.
+                let fallbackFont = UIFont.systemFont(ofSize: theme.baseFontSize)
+                let approxBaseline = min(abs(fallbackFont.descender) + 1, imgH)
+                return CGRect(x: 0, y: -approxBaseline, width: imgW, height: imgH)
             }
         }
         if renderFailed {
@@ -3194,9 +3310,14 @@ final class MathAttachment: NSTextAttachment {
                 let textSize = (latex as NSString).size(withAttributes: [.font: fallbackFont])
                 let w = min(ceil(textSize.width) + 4, lineFrag.width)
                 let h = max(ceil(textSize.height), Self.inlinePlaceholderHeight)
-                let baseFont = theme.baseFont
-                let yOffset = -(h - baseFont.capHeight) / 2
-                return CGRect(x: 0, y: yOffset, width: w, height: h)
+                // [issue #117-4] Baseline-align the raw-LaTeX label too. This
+                // branch draws monospaced TEXT, so its baseline is one
+                // descender up from the bottom of the drawn line; `h` may have
+                // been floored up to the placeholder height, and that extra
+                // padding lands below the text, so count it in.
+                let lineHeight = ceil(textSize.height)
+                let baselineFromBottom = abs(fallbackFont.descender) + max(0, h - lineHeight)
+                return CGRect(x: 0, y: -baselineFromBottom, width: w, height: h)
             }
         }
         if isBlock {
@@ -3221,6 +3342,9 @@ final class MathAttachment: NSTextAttachment {
     }
 
     nonisolated(unsafe) static var beginCount: Int = 0
+    // [T-ios-math-sync-render-at-measure] diagnostics
+    nonisolated(unsafe) static var syncRenderHits: Int = 0
+    nonisolated(unsafe) static var offMainSkips: Int = 0
 
     /// Synchronous render body. Called by `MathRenderScheduler` on the main
     /// thread from inside a yielding batch loop — do not call directly.
@@ -3238,6 +3362,7 @@ final class MathAttachment: NSTextAttachment {
     private func applyResult(_ result: SwiftMathRenderResult) {
         renderedImage = result.image
         renderedSize = result.size
+        renderedBaselineFromBottom = result.baselineFromBottom
         if inlineDrawable {
             self.image = result.image
         }
@@ -4546,6 +4671,14 @@ final class SelectableMarkdownTextView: UITextView, UIGestureRecognizerDelegate 
     /// `invalidateCellSizeIfNeeded` to skip the costly sizeThatFits + collection
     /// view layout invalidation when nothing observable changed since the last
     /// measurement. Refreshed after a successful sizeThatFits.
+    /// [T-ios-refresh-teardown-guard] Content fingerprint of the last
+    /// `performRefreshAttachmentViews` pass. When the next async media-load
+    /// callback arrives with the SAME storage length and width, the content did
+    /// not change — only an attachment's intrinsic size did — so the views can
+    /// be repositioned in place instead of destroyed and rebuilt.
+    private var lastRefreshStorageLen: Int = -1
+    private var lastRefreshWidth: CGFloat = -1
+
     private var lastSizedStorageLen: Int = -1
     private var lastSizedWidth: CGFloat = -1
     /// Sum of every TableAttachment's `contentGeneration` at the moment of
@@ -4573,6 +4706,24 @@ final class SelectableMarkdownTextView: UITextView, UIGestureRecognizerDelegate 
     /// skipped. Guarantees one post-settle retry of invalidateCellSizeIfNeeded
     /// even if no further UAV/measure call arrives after the glide ends.
     private var pendingDeferredRemeasure = false
+    /// [T-ios-defer-retry-never-consumed] Set alongside `pendingDeferredRemeasure`
+    /// when a correction is skipped inside a deferSelfSizing window. Two jobs:
+    ///
+    ///  1. It lets the retry BYPASS the `[SKIP-DEDUPE]` fingerprint early-exit.
+    ///     The skip path deliberately does not consume the measurement, on the
+    ///     assumption (see the comment there) that "token growth mutates storage
+    ///     length, which already defeats the fingerprint". That holds only WHILE
+    ///     the stream is running. In the field repro the skip landed 43ms before
+    ///     `isProcessing=false`, so the storage stopped changing, the fingerprint
+    ///     matched forever, and every retry early-exited before re-measuring —
+    ///     the correction was lost for good (log evidence: 128 `SKIP-DEDUPE`
+    ///     lines in the session, zero after the skip).
+    ///  2. It is consumed by `consumeDeferredCorrectionIfNeeded()`, which the
+    ///     Coordinator calls the moment `deferSelfSizing` is actually cleared at
+    ///     settle — instead of guessing with a fixed 0.6s timer that can (and
+    ///     did) fire while the user is still dragging, landing straight back in
+    ///     the same skip branch.
+    private var deferredCorrectionPending = false
     /// Records the last time the layout loop tripped the re-entry guard, for
     /// watchdog diagnostics. If this fires many times per second we know the
     /// loop is hot even if we successfully short-circuit it.
@@ -4594,6 +4745,14 @@ final class SelectableMarkdownTextView: UITextView, UIGestureRecognizerDelegate 
     /// last image renders clipped or empty until the user exits + re-enters
     /// the chat. (T-multi-image-last d8a51f73.)
     private var pendingRefreshAfterWindowAttach = false
+
+    /// [T-ios-reuse-cachewipe] Method B burst-coalescing state — see
+    /// `refreshAttachmentViews()`. `isCoalescingRefresh` is set while a
+    /// commit is already scheduled for the next runloop turn;
+    /// `coalescedRefreshPending` records that more async completions landed
+    /// during that window (used only to log that a burst was absorbed).
+    private var isCoalescingRefresh = false
+    private var coalescedRefreshPending = false
 
     init() {
         // Use TextKit 1 for reliable NSLayoutManager overrides
@@ -5350,6 +5509,82 @@ final class SelectableMarkdownTextView: UITextView, UIGestureRecognizerDelegate 
         lastUAVStorageLen = -1
         lastUAVWidth = -1
         lastUAVViewCount = -1
+        // [T-ios-refresh-teardown-guard] Also drop the refresh fingerprint. The
+        // `!attachmentViewMap.isEmpty` term already makes the in-place path
+        // unreachable right after this call, but clearing it here keeps the
+        // invariant explicit: a cleared view set never counts as "same
+        // content", whichever site did the clearing.
+        lastRefreshStorageLen = -1
+        lastRefreshWidth = -1
+    }
+
+    /// [issue #117-4] Exact on-screen origin for an INLINE attachment overlay.
+    ///
+    /// `boundingRect(forGlyphRange:)` reports the glyph's LINE rect vertically:
+    /// x/width are the glyph's own, but y/height describe the whole line
+    /// fragment. Block attachments own their line, so the two coincide and
+    /// nobody noticed — but an inline formula shares its line with text, and
+    /// pinning its overlay at the line's top floats it above where TextKit
+    /// actually typeset it. The gap is the line's ascent minus the formula's
+    /// own height, so SMALL formulas float MOST (measured ≈13pt for `x` inside
+    /// a quote block, versus ≈7pt for `x²`) — the "some formulas look higher
+    /// than others" report.
+    ///
+    /// Rebuild the rect from the glyph origin instead. `location(forGlyphAt:)`
+    /// returns the glyph's origin ON the baseline, relative to its line
+    /// fragment, so baseline_y = lineFragment.minY + glyphLocation.y, and the
+    /// attachment's top edge is that baseline minus (bounds.origin.y + height)
+    /// — the same geometry TextKit itself uses when it draws an attachment.
+    ///
+    /// Returns nil when the caller should keep using `boundingRect` (block
+    /// attachments, or a layout state too raw to trust).
+    private func inlineAttachmentOrigin(
+        for attachment: NSTextAttachment,
+        characterRange range: NSRange,
+        glyphRange: NSRange,
+        layoutManager: NSLayoutManager
+    ) -> CGPoint? {
+        guard let mathAttach = attachment as? MathAttachment, !mathAttach.isBlock else { return nil }
+        guard glyphRange.length > 0 else { return nil }
+        let glyphIndex = glyphRange.location
+        let lineFragment = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+        guard lineFragment.height > 0 else { return nil }
+        let glyphLocation = layoutManager.location(forGlyphAt: glyphIndex)
+        let bounds = mathAttach.attachmentBounds(
+            for: self.textContainer,
+            proposedLineFragment: lineFragment,
+            glyphPosition: glyphLocation,
+            characterIndex: range.location
+        )
+        guard bounds.height > 0 else { return nil }
+        // Vertical geometry, measured on-device (log [MathPos]/[MathBase],
+        // 4 formulas × 17.49pt): for an ATTACHMENT glyph,
+        // `location(forGlyphAt:)` does NOT return the text baseline the way it
+        // does for a normal glyph — it returns the attachment's TOP-OF-ASCENT,
+        // i.e. `baseline − bounds.origin.y` (bounds.origin.y is ≤0 for a
+        // formula that descends below the baseline). Confirmed by the
+        // invariant: `glyphLoc.y + bounds.origin.y` came out at exactly
+        // 16.653 for all four formulas — one shared baseline — while
+        // glyphLoc.y itself ranged 17.0–23.1.
+        //
+        // Hence the attachment's top edge is simply:
+        //     top = glyphLoc.y − height
+        // and the baseline lands `-bounds.origin.y` up from the image bottom,
+        // which is exactly the descent captured at render time. Reading the
+        // top directly also means we do NOT have to re-enter
+        // `attachmentBounds` for the y (TextKit has already applied it).
+        // `lineFragmentRect` / `location(forGlyphAt:)` are TEXT CONTAINER
+        // coordinates; view frames are VIEW coordinates. UITextView offsets the
+        // container by `textContainerInset` (this view sets top: 4 — the
+        // T-dot-clip fix at init). `boundingRect(forGlyphRange:)`, which the
+        // non-math attachments still use, comes back already offset, which is
+        // why nothing needed this before; the glyph-level APIs do not.
+        // Omitting it put every inline formula exactly 4pt too high — the
+        // residual that survived the first pass of this fix.
+        return CGPoint(
+            x: lineFragment.minX + glyphLocation.x + bounds.origin.x + textContainerInset.left,
+            y: lineFragment.minY + glyphLocation.y - bounds.height + textContainerInset.top
+        )
     }
 
     func updateAttachmentViews() {
@@ -5462,6 +5697,12 @@ final class SelectableMarkdownTextView: UITextView, UIGestureRecognizerDelegate 
             if boundingRect.width < 1 || (containerWidth > 0 && boundingRect.width > containerWidth) {
                 boundingRect.size.width = containerWidth
             }
+            // [issue #117-4] Inline formulas: replace the line-level y with the
+            // glyph-derived one (see inlineAttachmentOrigin). nil for every
+            // other attachment kind, which keeps their existing behaviour.
+            let inlineOrigin = self.inlineAttachmentOrigin(
+                for: attachment, characterRange: range,
+                glyphRange: glyphRange, layoutManager: layoutManager)
 
             let attachId = ObjectIdentifier(attachment)
             let view: UIView
@@ -5604,7 +5845,7 @@ final class SelectableMarkdownTextView: UITextView, UIGestureRecognizerDelegate 
                     view = existingView
                 }
                 reusedIds.insert(attachId)
-                view.frame = CGRect(origin: boundingRect.origin, size: view.frame.size)
+                view.frame = CGRect(origin: inlineOrigin ?? boundingRect.origin, size: view.frame.size)
             } else if let codeBlock = attachment as? CodeBlockAttachment {
                 // New attachment object (content changed or first time).
                 // Try to reuse the previous view at the same index via updateExistingView.
@@ -5684,15 +5925,23 @@ final class SelectableMarkdownTextView: UITextView, UIGestureRecognizerDelegate 
             // layoutSubviews fallback (line ~4677) refuses to move it
             // because both the cached origin and boundingRect.origin are
             // zero — so the only chance to land it correctly is right here.
+            // [issue #117-4] Re-derive the inline origin after a retry: the
+            // retry re-runs layout, so the value computed before it describes
+            // a superseded glyph position.
+            var resolvedInlineOrigin = inlineOrigin
             if boundingRect.origin == .zero {
                 layoutManager.invalidateGlyphs(forCharacterRange: range, changeInLength: 0, actualCharacterRange: nil)
                 layoutManager.ensureLayout(forCharacterRange: NSRange(location: 0, length: textStorage.length))
-                let retry = layoutManager.boundingRect(forGlyphRange: layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil), in: self.textContainer)
+                let retryGlyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+                let retry = layoutManager.boundingRect(forGlyphRange: retryGlyphRange, in: self.textContainer)
                 if retry.origin != .zero {
                     boundingRect = retry
+                    resolvedInlineOrigin = self.inlineAttachmentOrigin(
+                        for: attachment, characterRange: range,
+                        glyphRange: retryGlyphRange, layoutManager: layoutManager)
                 }
             }
-            view.frame.origin = boundingRect.origin
+            view.frame.origin = resolvedInlineOrigin ?? boundingRect.origin
             if view.superview !== self {
                 self.addSubview(view)
             }
@@ -5751,7 +6000,35 @@ final class SelectableMarkdownTextView: UITextView, UIGestureRecognizerDelegate 
     }
 
     /// Re-layout attachment views after an async image/video load completes.
+    ///
+    /// [T-ios-reuse-cachewipe] Method B — burst coalescing. A cell holding N
+    /// LaTeX formulas gets N separate completion callbacks, and each one
+    /// re-typesets the whole storage and invalidates the cell size. Field logs
+    /// showed 7 height rewrites inside 200ms oscillating 7733↔8066 without
+    /// converging, because every commit landed while later formulas were still
+    /// rendering. Coalesce a burst into a single commit on the next runloop
+    /// turn: correctness is unaffected (the work is idempotent — it rebuilds
+    /// from current state, it does not accumulate), and the cell now resizes
+    /// once, after the burst, instead of once per formula.
     private func refreshAttachmentViews() {
+        guard !isCoalescingRefresh else {
+            coalescedRefreshPending = true
+            return
+        }
+        isCoalescingRefresh = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.isCoalescingRefresh = false
+            let hadBurst = self.coalescedRefreshPending
+            self.coalescedRefreshPending = false
+            if hadBurst {
+                AppLogger(category: "AttachHotPath").info("[REFRESH] burst coalesced — collapsed into a single updateAttachmentViews + invalidateCellSize")
+            }
+            self.performRefreshAttachmentViews()
+        }
+    }
+
+    private func performRefreshAttachmentViews() {
         AppLogger(category: "AttachHotPath").info("[REFRESH] entry — async media-load callback fired (image/video/math finished loading); will run updateAttachmentViews + invalidateCellSize")
         guard window != nil else {
             // Detached from window — defer the refresh until re-attach so an
@@ -5781,7 +6058,31 @@ final class SelectableMarkdownTextView: UITextView, UIGestureRecognizerDelegate 
         // (a) invalidate the layout so ensureLayout will re-typeset.
         if let layoutManager = self.layoutManager as? MinisLayoutManager,
            let textStorage = self.textStorage as? NSTextStorage {
-            layoutManager.invalidateLayout(forCharacterRange: NSRange(location: 0, length: textStorage.length), actualCharacterRange: nil)
+            let full = NSRange(location: 0, length: textStorage.length)
+            layoutManager.invalidateLayout(forCharacterRange: full, actualCharacterRange: nil)
+            // [T-ios-math-height-measured-from-placeholders] Invalidating alone
+            // is NOT enough — it only MARKS the range dirty. TextKit re-typesets
+            // lazily, so the very next `systemLayoutSizeFitting` can still be
+            // answered from the previous layout, i.e. with every formula still
+            // contributing its 44pt (block) / 20pt (inline) PLACEHOLDER height
+            // instead of its rendered size.
+            //
+            // Device evidence for this being the live path: on a build where the
+            // scheduler logged `burst done rendered=42/42`, every [MemoWrite]
+            // AFTER that line still recorded h=9501.5 while the text canvas
+            // measured 11433.5 — a 1931.5pt (17%) deficit that no amount of
+            // cache invalidation moved. On the field device the same shape was
+            // 6166 vs 7154.7 across 31 display formulas: 988.7 / 31 = 31.9pt
+            // short EACH, i.e. a rendered display formula (~76pt) being counted
+            // as the 44pt placeholder.
+            //
+            // Forcing the re-typeset here means the measure that follows sees
+            // the real `attachmentBounds`. Cost is bounded: this runs on the
+            // coalesced async-media callback (at most one per runloop tick via
+            // `scheduleCoalescedMathRefresh`), not per formula.
+            if let container = self.textContainer as NSTextContainer? {
+                layoutManager.ensureLayout(for: container)
+            }
         }
         // (b) reset the sizeThatFits fingerprint so invalidateCellSizeIfNeeded
         // below cannot DEDUPE-SKIP. textStorage.length and measureWidth are
@@ -5795,24 +6096,125 @@ final class SelectableMarkdownTextView: UITextView, UIGestureRecognizerDelegate 
         lastSizedStorageLen = -1
         lastSizedWidth = -1
         lastComputedHeight = 0
-        // Remove old attachment subviews before clearing tracking state,
-        // otherwise updateAttachmentViews sees an empty previousViewMap
-        // and cannot clean up orphaned views — causing duplication/overlap.
-        for view in attachmentViews { view.removeFromSuperview() }
-        attachmentViews.removeAll()
-        attachmentViewMap.removeAll()
-        codeBlockViewCache.removeAll()
+
+        // [T-ios-refresh-teardown-guard] Only tear the attachment views down
+        // when the CONTENT actually changed. Previously this ran
+        // unconditionally on every async media-load callback.
+        //
+        // Why the unconditional teardown is harmful: with hundreds of formulas
+        // each completing asynchronously (see `scheduleCoalescedMathRefresh`),
+        // this path fires repeatedly — the field log shows 4 full
+        // teardown+rebuild cycles inside ONE second. Each cycle destroys every
+        // attachment view and recreates it, so any pass that lands while the
+        // layout is mid-flight republishes every attachment at a freshly
+        // computed origin. That is the window in which the reported overlap
+        // (assistant header / tool capsule / attachment card drawn across the
+        // prose) becomes possible.
+        //
+        // Why skipping the teardown is SAFE for the growth case — which is the
+        // regression this must not cause ("image/video/math loads but the cell
+        // never grows"):
+        //   * `updateAttachmentViews` already REUSES and REPOSITIONS existing
+        //     views through `previousViewMap` (see the `existingView` branches)
+        //     and removes orphans at the end of that same pass. The teardown
+        //     only DEFEATS that reuse by emptying the map first.
+        //   * The three `lastSized*` resets above are untouched, so
+        //     `invalidateCellSizeIfNeeded` below still cannot dedupe-skip and
+        //     the cell still re-measures and grows. Growth comes from those
+        //     resets plus the layoutManager invalidation, NOT from destroying
+        //     subviews.
+        //   * The UAV dedupe fingerprint is still reset, so the reposition pass
+        //     runs in full rather than early-exiting.
+        //
+        // The discriminator is deliberately the same signal the rest of this
+        // class already trusts: an async media load changes NEITHER
+        // `storage.length` (the attachment is still a single
+        // NSAttachmentCharacter) NOR the container width — only the
+        // attachment's intrinsic size. So "same length, same width" means
+        // "same content, a resource just finished loading" and the cheap
+        // in-place path is correct. Anything else (content rewritten, width
+        // changed, first pass) still takes the full teardown.
+        let storageLen = (self.textStorage as? NSTextStorage)?.length ?? -1
+        let widthNow = self.textContainer.size.width
+        let sameContent = storageLen >= 0
+            && storageLen == lastRefreshStorageLen
+            && abs(widthNow - lastRefreshWidth) < 0.5
+            && !attachmentViewMap.isEmpty
+        lastRefreshStorageLen = storageLen
+        lastRefreshWidth = widthNow
+
+        if sameContent {
+            AppLogger(category: "AttachHotPath").info("[REFRESH] in-place — same content (len=\(storageLen) w=\(String(format: "%.0f", widthNow))), repositioning \(self.attachmentViewMap.count) attachment view(s) without teardown")
+        } else {
+            // Remove old attachment subviews before clearing tracking state,
+            // otherwise updateAttachmentViews sees an empty previousViewMap
+            // and cannot clean up orphaned views — causing duplication/overlap.
+            for view in attachmentViews { view.removeFromSuperview() }
+            attachmentViews.removeAll()
+            attachmentViewMap.removeAll()
+            codeBlockViewCache.removeAll()
+        }
         // Reset dedupe fingerprint so the next updateAttachmentViews fully runs.
+        // Done in BOTH branches: the in-place path still needs the reposition
+        // pass to run rather than early-exit on an unchanged fingerprint.
         lastUAVStorageLen = -1
         lastUAVWidth = -1
         lastUAVViewCount = -1
         updateAttachmentViews()
+        // [T-ios-memo-key-ignores-render-state] Drop this block's memoised
+        // height. This callback IS the moment an async attachment (math /
+        // image) finished rendering and the block's true height changed, and it
+        // was the one place on that path that never touched the memo — the
+        // height stored before the render stayed authoritative and got seeded
+        // back onto the cell on every later reuse.
+        //
+        // Belt-and-braces with the render-qualified key: the qualification
+        // means the stale entry can no longer be FOUND, this makes sure it is
+        // not merely orphaned in the dictionary. Cheap — one dictionary removal
+        // on a callback that already does a full attachment reposition.
+        if let cell = enclosingSelfSizingCell(),
+           let cv = cell.superview as? UICollectionView,
+           let layout = cv.collectionViewLayout as? MessageListLayout,
+           let key = cell.contentKey {
+            layout.invalidateMemo(forKey: SelfSizingCell.renderQualifiedKey(key, for: cell))
+            layout.invalidateMemo(forKey: key)
+        }
+        // [T-ios-math-height-measured-from-placeholders] Drop the SwiftUI
+        // representable's own size cache too.
+        //
+        // `sizeThatFits` memoises into `coord.cachedSizes[widthKey]`, keyed on
+        // (markdown character count, width bucket) — and until now that cache
+        // was only ever cleared on a WIDTH CHANGE. An async math render changes
+        // the height while leaving both key components identical, so a height
+        // computed from 44pt/20pt placeholders stayed servable forever and was
+        // handed back on the next reuse.
+        //
+        // This is the same class of bug as the layout memo fixed in 22df168cf,
+        // one level up: character count cannot see a formula rendering. It is
+        // the route that survived that fix — measured on device as a cell still
+        // reading 1462 against a 2089 canvas (+627) after scrolling, even
+        // though the first display had been corrected to −4.5.
+        if let coord = self.delegate as? SelectableMarkdownView.Coordinator {
+            coord.cachedSizes.removeAll(keepingCapacity: true)
+            coord.cachedSizeMarkdownCount = -1
+        }
         // invalidateIntrinsicContentSize() alone is NOT enough for
         // UICollectionView self-sizing — it marks the intrinsic size dirty
         // but doesn't trigger preferredLayoutAttributesFitting. We must
         // go through invalidateCellSizeIfNeeded() which clears the
         // SelfSizingCell cache and invalidates the collection view layout.
         invalidateCellSizeIfNeeded()
+    }
+
+    /// [T-ios-memo-key-ignores-render-state] Walk up to the owning
+    /// `SelfSizingCell`, if this text view is hosted in one.
+    private func enclosingSelfSizingCell() -> SelfSizingCell? {
+        var v: UIView? = self
+        while let cur = v {
+            if let cell = cur as? SelfSizingCell { return cell }
+            v = cur.superview
+        }
+        return nil
     }
 
     override func didMoveToWindow() {
@@ -5835,6 +6237,37 @@ final class SelectableMarkdownTextView: UITextView, UIGestureRecognizerDelegate 
                 pendingRefreshAfterWindowAttach = false
                 DispatchQueue.main.async { [weak self] in
                     self?.refreshAttachmentViews()
+                }
+            }
+            // [T-ios-defer-debt-offscreen] Same replay for an unpaid HEIGHT
+            // correction. The debt is created in `invalidateCellSizeIfNeeded`
+            // when `deferSelfSizing` is active, and it has exactly two
+            // consumers today:
+            //
+            //   1. `armDeferredRemeasureBackstop` — gives up after
+            //      `maxDeferredRemeasureAttempts` (~6s of continuous drag) and
+            //      explicitly hands the debt to "the settle hook";
+            //   2. `settleAfterInteraction` — but that walks
+            //      `cv.visibleCells` ONLY.
+            //
+            // So a cell that owes a correction and scrolls OFF-SCREEN before
+            // the drag settles is seen by neither: the backstop has bowed out,
+            // and settle cannot reach a view that is no longer a visible cell.
+            // `deferredCorrectionPending` is cleared only where the debt is
+            // actually paid (both sites are inside
+            // `invalidateCellSizeIfNeeded`), so the flag correctly survives the
+            // recycle — it just had nobody to act on it until now.
+            //
+            // This is the same shape as `pendingRefreshAfterWindowAttach`
+            // directly above (T-multi-image-last d8a51f73), which already
+            // replays a dropped async-load refresh on re-attach; the height
+            // debt simply never got its counterpart. Async for the same reason:
+            // let the rebind / collection view layout pass settle first.
+            //
+            // Cost on the happy path is one Bool test per re-attach.
+            if deferredCorrectionPending {
+                DispatchQueue.main.async { [weak self] in
+                    self?.consumeDeferredCorrectionIfNeeded()
                 }
             }
         }
@@ -5974,19 +6407,31 @@ final class SelectableMarkdownTextView: UITextView, UIGestureRecognizerDelegate 
             // boundingRect.origin == .zero here (stale controlCharacter glyph
             // property), an invalidateGlyphs + ensureLayout consistently
             // yields the real origin on the second query.
+            var inlineOrigin = self.inlineAttachmentOrigin(
+                for: attachment, characterRange: range,
+                glyphRange: glyphRange, layoutManager: layoutManager)
             if boundingRect.origin == .zero {
                 layoutManager.invalidateGlyphs(forCharacterRange: range, changeInLength: 0, actualCharacterRange: nil)
                 layoutManager.ensureLayout(forCharacterRange: NSRange(location: 0, length: textStorage.length))
-                let retry = layoutManager.boundingRect(forGlyphRange: layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil), in: self.textContainer)
+                let retryGlyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+                let retry = layoutManager.boundingRect(forGlyphRange: retryGlyphRange, in: self.textContainer)
                 if retry.origin != .zero {
                     boundingRect = retry
+                    // [issue #117-4] Re-derive after the relayout — see the
+                    // matching comment in updateAttachmentViews.
+                    inlineOrigin = self.inlineAttachmentOrigin(
+                        for: attachment, characterRange: range,
+                        glyphRange: retryGlyphRange, layoutManager: layoutManager)
                 }
             }
             // Only reposition if boundingRect has a valid origin (non-zero rect).
             // A zero rect means layout hasn't been computed yet — keep current position.
+            // [issue #117-4] The gate stays keyed on boundingRect (the
+            // "is layout ready" signal); only the value written changes.
             if boundingRect.origin != .zero || view.frame.origin == .zero {
-                if view.frame.origin != boundingRect.origin {
-                    view.frame.origin = boundingRect.origin
+                let target = inlineOrigin ?? boundingRect.origin
+                if view.frame.origin != target {
+                    view.frame.origin = target
                 }
             }
         }
@@ -6033,6 +6478,37 @@ final class SelectableMarkdownTextView: UITextView, UIGestureRecognizerDelegate 
         return sum
     }
 
+    /// [T-ios-memo-key-ignores-render-state] How much vertical space this
+    /// block's ASYNC attachments currently occupy, quantised to a stable
+    /// integer.
+    ///
+    /// The height memo (`measuredHeightByContentKey`) is keyed on
+    /// `block.content.count`. A LaTeX formula does not change that count when
+    /// it renders — the markdown source `$P_A$` is byte-identical before and
+    /// after MathJax turns it into a tall glyph — so a height measured while
+    /// the formulas were still blank placeholders is stored under the SAME key
+    /// as the finished layout, and is then seeded back onto the cell forever.
+    /// Measured on device: cell frame 6166pt vs text canvas 7154.7pt, a 989pt
+    /// (16%) deficit that never re-measured because the seed short-circuits
+    /// `preferredLayoutAttributesFitting` before the real measure runs.
+    ///
+    /// Summing the rendered heights makes the key move exactly when the
+    /// rendered geometry moves: 0 while every formula is an unrendered
+    /// placeholder, non-zero and stable once they have all resolved. Rounded to
+    /// whole points so sub-pixel jitter cannot churn the key.
+    func asyncAttachmentRenderSignal() -> Int {
+        guard let storage = textStorage as? NSTextStorage, storage.length > 0 else { return 0 }
+        var total: CGFloat = 0
+        storage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: storage.length), options: []) { value, _, _ in
+            if let math = value as? MathAttachment {
+                total += math.renderedSize.height
+            } else if let img = value as? ImageAttachment {
+                total += img.bounds.height
+            }
+        }
+        return Int(total.rounded())
+    }
+
     func invalidateCellSizeIfNeeded() {
         guard textContainer.size.width > 1 else {
             return
@@ -6066,7 +6542,14 @@ final class SelectableMarkdownTextView: UITextView, UIGestureRecognizerDelegate 
         // — visible as a streaming table rendering only its first column
         // until the entire message stops streaming.
         let tableGenSum = currentTableGenerationSum()
+        // [T-ios-defer-retry-never-consumed] A pending deferred correction must
+        // NOT be swallowed by the fingerprint. The skip path left
+        // `lastComputedHeight` at the stale value on purpose, so "fingerprint
+        // matches" here does not mean "height is right" — it means the content
+        // stopped changing (stream ended) while the height was still wrong.
+        // Fall through to the real `sizeThatFits` so the correction can land.
         if lastSizedStorageLen >= 0,
+           !deferredCorrectionPending,
            textStorage.length == lastSizedStorageLen,
            abs(measureWidth - lastSizedWidth) < 0.5,
            tableGenSum == lastSizedTableGenSum,
@@ -6089,6 +6572,34 @@ final class SelectableMarkdownTextView: UITextView, UIGestureRecognizerDelegate 
             lastSizedStorageLen = textStorage.length
             lastSizedWidth = measureWidth
             lastSizedTableGenSum = tableGenSum
+            // [T-ios-defer-retry-never-consumed] Do NOT clear
+            // `deferredCorrectionPending` here. Reaching this branch means the
+            // TEXT VIEW's own height is stable, but the debt we owe is on the
+            // HOST CELL: the skip path returned before `cell.clearCachedHeight()`
+            // + `invalidateLayout()`, so SelfSizingCell may still be serving the
+            // pre-correction height even though this view now measures fine.
+            // Clearing here is what made the first attempt at this fix a no-op —
+            // the 0.6s backstop timer landed in this branch ~250ms before settle,
+            // dropped the flag, and every subsequent `[SettleConsume]` reported
+            // `pending=0` while the cell stayed wrong (device trace 11:25:50).
+            // The debt is settled only where the correction is actually applied.
+            if deferredCorrectionPending {
+                // Clear the debt ONLY if the correction actually landed.
+                // `applyCellCorrection` refuses while deferSelfSizing is open,
+                // because its `invalidateLayout()` mid-scroll is exactly what
+                // 879ce867's skip guards against. When it refuses, keep the flag
+                // so the settle hook consumes it the moment the window closes —
+                // the same "wait, don't drop it" contract the backstop timer
+                // follows. Dropping it here regardless is what made the first
+                // version of this fix a silent no-op.
+                if applyCellCorrection() {
+                    cellSizeLogger.info("[invalidateCell] deferred debt CONSUMED — view height stable at \(String(format: "%.1f", newHeight)), cell invalidated")
+                    deferredCorrectionPending = false
+                } else {
+                    cellSizeLogger.info("[invalidateCell] deferred debt HELD — view height stable at \(String(format: "%.1f", newHeight)) but deferSelfSizing still open; leaving it to settle")
+                    armDeferredRemeasureBackstop()
+                }
+            }
             return
         }
         let delta = newHeight - previousHeight
@@ -6152,14 +6663,22 @@ final class SelectableMarkdownTextView: UITextView, UIGestureRecognizerDelegate 
                 // Arm one guaranteed post-settle retry in case no further
                 // measure call arrives after the glide ends.
                 cellSizeLogger.info("[invalidateCell] SKIPPED — deferSelfSizing active (correction NOT consumed, delta=\(String(format: "%+.1f", delta)); will retry)")
-                if !pendingDeferredRemeasure {
-                    pendingDeferredRemeasure = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
-                        guard let self else { return }
-                        self.pendingDeferredRemeasure = false
-                        self.invalidateCellSizeIfNeeded()
-                    }
-                }
+                // [T-ios-defer-retry-never-consumed] Remember that a real
+                // correction is owed. The authoritative consumer is
+                // `consumeDeferredCorrectionIfNeeded()`, invoked the moment
+                // `settleAfterInteraction` clears deferSelfSizing. The timer is
+                // only a backstop for the mid-drag window (stream finishes while
+                // the finger is still down), and it re-arms itself while that
+                // window stays open — see armDeferredRemeasureBackstop.
+                // [T-ios-defer-debt-offscreen] Mark WHEN the debt was created so
+                // an unpaid one can be attributed later. `wasPending` shows the
+                // debt is being re-owed (an earlier correction was still
+                // outstanding), which is the signature of a long drag over
+                // async-rendering content.
+                let wasPending = deferredCorrectionPending
+                cellSizeLogger.info("[DeferDebt] OWED delta=\(String(format: "%+.1f", delta)) attached=\(self.window != nil) reOwed=\(wasPending)")
+                deferredCorrectionPending = true
+                armDeferredRemeasureBackstop()
                 return
             }
         }
@@ -6177,6 +6696,13 @@ final class SelectableMarkdownTextView: UITextView, UIGestureRecognizerDelegate 
         lastSizedWidth = measureWidth
         lastSizedTableGenSum = tableGenSum
         lastComputedHeight = newHeight
+        // [T-ios-defer-retry-never-consumed] The correction is being committed
+        // for real here, so the debt is settled. Clearing it re-arms the
+        // fingerprint early-exit for subsequent calls (no permanent extra cost).
+        if deferredCorrectionPending {
+            deferredCorrectionPending = false
+            cellSizeLogger.info("[invalidateCell] DEFERRED CORRECTION CONSUMED newH=\(String(format: "%.1f", newHeight)) delta=\(String(format: "%+.1f", delta))")
+        }
         if let coord = self.delegate as? SelectableMarkdownView.Coordinator {
             // [JitterFix] Key by render width (measureWidth), matching the
             // SwiftUI sizeThatFits cache key. Using textContainer.size.width
@@ -6232,6 +6758,107 @@ final class SelectableMarkdownTextView: UITextView, UIGestureRecognizerDelegate 
         cvOpt?.collectionViewLayout.invalidateLayout()
     }
 
+    /// [T-ios-defer-retry-never-consumed] Backstop for the settle-driven
+    /// consumer, and the reason the 0.6s timer is kept rather than deleted.
+    ///
+    /// `deferSelfSizing` has exactly one setter — `scrollViewWillBeginDragging`
+    /// — and both exits of that gesture (`didEndDragging(willDecelerate:false)`
+    /// and `didEndDecelerating`) run `settleAfterInteraction`, which clears the
+    /// flag and immediately calls `consumeDeferredCorrectionIfNeeded()`. So the
+    /// event path covers the normal case. What it does NOT cover is the window
+    /// while the finger is still down: if the stream finishes mid-drag, the
+    /// correction would otherwise wait for the user to lift their finger.
+    ///
+    /// The original timer (879ce867) fired exactly once. If it landed while the
+    /// drag was still in progress it hit the same skip branch, cleared
+    /// `pendingDeferredRemeasure`, and never re-armed — so the backstop silently
+    /// gave up precisely when it was needed. Re-schedule instead while the
+    /// window is still open, bounded so a stuck flag cannot tick forever.
+    private func armDeferredRemeasureBackstop(attempt: Int = 0) {
+        guard !pendingDeferredRemeasure else { return }
+        guard attempt < Self.maxDeferredRemeasureAttempts else {
+            cellSizeLogger.info("[invalidateCell] backstop GAVE UP after \(attempt) attempts — leaving the debt to the settle hook")
+            return
+        }
+        pendingDeferredRemeasure = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            guard let self else { return }
+            self.pendingDeferredRemeasure = false
+            // Debt already paid (settle got there first, or a natural measure
+            // call consumed it) — nothing to do.
+            guard self.deferredCorrectionPending else { return }
+            let stillDeferred = (self.findCollectionView()?.collectionViewLayout
+                as? MessageListLayout)?.deferSelfSizing ?? false
+            if stillDeferred {
+                // Window still open: re-measuring now would just hit the same
+                // skip branch. Wait another interval instead of giving up.
+                self.armDeferredRemeasureBackstop(attempt: attempt + 1)
+                return
+            }
+            self.invalidateCellSizeIfNeeded()
+        }
+    }
+
+    /// Bound on `armDeferredRemeasureBackstop` re-arming (~6s of drag). Past
+    /// that the settle hook is the only consumer, which is correct: a drag that
+    /// long always ends in `settleAfterInteraction`.
+    private static let maxDeferredRemeasureAttempts = 10
+
+    /// [T-ios-defer-retry-never-consumed] Drop the host cell's frozen height and
+    /// ask the layout to re-flow. Same two statements the normal commit path
+    /// ends with, extracted so the "view height already stable, but the CELL is
+    /// still stale" case can apply the correction without pretending to
+    /// re-measure. That case is real: after a skip, SwiftUI may re-render the
+    /// text view to the right height on its own while `SelfSizingCell` keeps
+    /// serving the pre-correction value from its width-matched cache (which
+    /// b4268586 made unbounded), so the cell never asks again.
+    ///
+    /// Returns false when the deferSelfSizing window is still open, in which
+    /// case NOTHING was applied and the caller must keep the debt.
+    ///
+    /// The guard lives here rather than at the call site so it covers every
+    /// caller, including future ones. It is not optional politeness: this method
+    /// ends in `invalidateLayout()`, and 879ce867's skip exists precisely because
+    /// a full layout invalidation mid-scroll "causes contentSize changes that
+    /// push the streaming cell into other cells during deceleration" — i.e.
+    /// running it inside the window can produce the very overlap this whole
+    /// change set is removing. The `abs(delta) <= 1` caller sits ~40 lines ABOVE
+    /// the `isDeferred` gate in `invalidateCellSizeIfNeeded`, so it does not
+    /// inherit that protection, and `updateUIView` calls into that path on every
+    /// SwiftUI re-render — including while a finger is down mid-stream.
+    @discardableResult
+    private func applyCellCorrection() -> Bool {
+        let deferred = (findCollectionView()?.collectionViewLayout
+            as? MessageListLayout)?.deferSelfSizing ?? false
+        guard !deferred else { return false }
+        if let cell = findCell() as? SelfSizingCell {
+            cell.clearCachedHeight()
+        }
+        findCollectionView()?.collectionViewLayout.invalidateLayout()
+        return true
+    }
+
+    /// [T-ios-defer-retry-never-consumed] Consume a correction that was skipped
+    /// during a deferSelfSizing window. Called by the message list's Coordinator
+    /// at settle, right after it sets `deferSelfSizing = false` — the first
+    /// moment the correction can actually be applied.
+    ///
+    /// This is what makes the "will retry" promise real. The 0.6s timer alone
+    /// could not keep it: it fires on a fixed delay that may still land inside
+    /// the drag, and even when it lands correctly the fingerprint early-exit
+    /// swallows it once the stream has stopped changing the text storage.
+    /// `deferredCorrectionPending` bypasses that early-exit, so this call
+    /// re-measures for real.
+    func consumeDeferredCorrectionIfNeeded() {
+        guard deferredCorrectionPending else { return }
+        // [T-ios-defer-debt-offscreen] `attached` distinguishes the two
+        // consumers in the log: settle (window != nil, the cell was visible)
+        // vs the new re-attach replay (this view just came back on screen
+        // still owing a correction — the case that previously had no consumer).
+        cellSizeLogger.info("[DeferDebt] CONSUME — paying deferred correction attached=\(self.window != nil)")
+        invalidateCellSizeIfNeeded()
+    }
+
     // MARK: Blockquote Bars
 
     override func draw(_ rect: CGRect) {
@@ -6282,71 +6909,48 @@ final class SelectableMarkdownTextView: UITextView, UIGestureRecognizerDelegate 
 
         textStorage.enumerateAttribute(.blockquoteDepth, in: fullRange, options: []) { value, range, _ in
             guard let depth = value as? Int, depth > 0 else { return }
-
-            // Split the range into sub-ranges that exclude attachment characters
-            var subStart = range.location
-            let rangeEnd = range.location + range.length
-            for i in range.location..<rangeEnd {
-                if textStorage.attribute(.attachment, at: i, effectiveRange: nil) != nil {
-                    if i > subStart {
-                        addBarSpan(depth: depth, range: NSRange(location: subStart, length: i - subStart))
-                    }
-                    subStart = i + 1
-                }
-            }
-            if subStart < rangeEnd {
-                addBarSpan(depth: depth, range: NSRange(location: subStart, length: rangeEnd - subStart))
-            }
+            // [T-blockquote-bar-attachment-holes] Measure the WHOLE quoted
+            // range, attachment characters included. This used to split the
+            // range at every attachment character, which fragmented the span
+            // before it was ever drawn — a quote containing only a code block
+            // produced no span at all and therefore no bar. Attachment glyphs
+            // occupy real line fragments inside the quote, so including them is
+            // what makes the bar span the quote's true extent.
+            addBarSpan(depth: depth, range: range)
         }
 
-        // Collect attachment view frames to exclude from bar drawing.
-        // TextKit bounding rects for characters near attachments can span the
-        // attachment's visual area, causing bars to overlap tables/images.
-        let excludeRects = attachmentViews.map { $0.frame }
-
-        // Draw one bar per merged span, splitting around attachment views
+        // Draw each bar as ONE continuous run.
+        //
+        // [T-blockquote-bar-attachment-holes] This used to punch holes wherever
+        // an attachment view's frame overlapped the span *on the Y axis only* —
+        // it never checked whether the attachment actually intersected the bar
+        // in X (x = depth*13 + 1, width 3). That broke the bar for every
+        // attachment kind: a code block indents by `quoteDepth * 13` and never
+        // covers the bar at all, yet still cut it; inline math and inline
+        // images punched a line-height gap nowhere near the bar; and a quote
+        // holding only a code block lost its bar entirely.
+        //
+        // No clipping is needed. Attachments are SUBVIEWS and therefore
+        // composite above `draw(_:)`, so wherever one is genuinely opaque over
+        // the bar it already hides it — exactly what the punch-out did — while
+        // the transparent regions (a code card's 13pt left inset) now keep the
+        // continuous bar they should always have had.
+        //
+        // The same fix was applied to MarkdownRenderView in e235132f, but that
+        // view has no call sites; this is the copy the chat actually renders
+        // through, which is why OpenMinis#123 stayed reproducible after it.
         for span in spans {
-            // Build list of bar segments by subtracting attachment view regions
-            var segments: [(minY: CGFloat, maxY: CGFloat)] = [(span.rect.minY, span.rect.maxY)]
-            for exRect in excludeRects {
-                // Only exclude if the attachment overlaps this bar's vertical range
-                guard exRect.minY < span.rect.maxY && exRect.maxY > span.rect.minY else { continue }
-                var newSegments: [(minY: CGFloat, maxY: CGFloat)] = []
-                for seg in segments {
-                    if exRect.minY <= seg.minY && exRect.maxY >= seg.maxY {
-                        // Attachment fully covers this segment — remove it
-                        continue
-                    } else if exRect.minY > seg.minY && exRect.maxY < seg.maxY {
-                        // Attachment splits segment into two
-                        newSegments.append((seg.minY, exRect.minY))
-                        newSegments.append((exRect.maxY, seg.maxY))
-                    } else if exRect.minY <= seg.minY && exRect.maxY > seg.minY {
-                        // Attachment trims top of segment
-                        newSegments.append((exRect.maxY, seg.maxY))
-                    } else if exRect.minY < seg.maxY && exRect.maxY >= seg.maxY {
-                        // Attachment trims bottom of segment
-                        newSegments.append((seg.minY, exRect.minY))
-                    } else {
-                        newSegments.append(seg)
-                    }
-                }
-                segments = newSegments
+            let height = span.rect.maxY - span.rect.minY
+            guard height > 1 else { continue }
+            context.saveGState()
+            context.setFillColor(theme.blockquoteBarColor.cgColor)
+            for d in 1...span.depth {
+                let x = CGFloat(d - 1) * 13 + 1
+                let barRect = CGRect(x: x, y: span.rect.minY, width: 3, height: height)
+                context.addPath(UIBezierPath(roundedRect: barRect, cornerRadius: 2).cgPath)
             }
-
-            for seg in segments {
-                let segHeight = seg.maxY - seg.minY
-                guard segHeight > 1 else { continue }
-                context.saveGState()
-                context.setFillColor(theme.blockquoteBarColor.cgColor)
-                for d in 1...span.depth {
-                    let x = CGFloat(d - 1) * 13 + 1
-                    let barRect = CGRect(x: x, y: seg.minY, width: 3, height: segHeight)
-                    let barPath = UIBezierPath(roundedRect: barRect, cornerRadius: 2)
-                    context.addPath(barPath.cgPath)
-                }
-                context.fillPath()
-                context.restoreGState()
-            }
+            context.fillPath()
+            context.restoreGState()
         }
     }
 }
@@ -6571,8 +7175,68 @@ struct SelectableMarkdownView: UIViewRepresentable {
             textView.clearAllAttachmentViews()
         }
 
-        let isNewMessage = !oldMarkdown.isEmpty && !markdown.hasPrefix(oldMarkdown)
-        if isNewMessage {
+        // [T-ios-reuse-cachewipe] Identity of what we are about to render.
+        // Prefer `blockId` — under V3 cell-per-block a single message spans
+        // many text views, so `messageId` alone would report "same content"
+        // for two different blocks of one message.
+        let contentId = blockId ?? messageId
+        let previousContentId = context.coordinator.lastContentId
+        context.coordinator.lastContentId = contentId
+        // True only when this view is being recycled onto DIFFERENT content.
+        // `previousContentId == nil` is a first render, not a reuse.
+        let isDifferentContent = contentId != nil
+            && previousContentId != nil
+            && contentId != previousContentId
+
+        // [T-ios-reuse-cachewipe] `isNewMessage` is a misnomer: it only asks
+        // whether the new text is a prefix-extension of the old. That is a
+        // sound "content was rewritten" test DURING STREAMING, but it is also
+        // trivially true whenever a cell is recycled onto an unrelated message
+        // — and recycling is exactly what a large jump (the "previous turn"
+        // button) produces en masse.
+        //
+        // Field evidence (2026-08-13, three separate reports): 9 rapid
+        // prevUserTurn taps traversed ~58,000pt; each one recycled cells and
+        // tripped this branch, so `oldLen/newLen` jumped between the lengths
+        // of entirely different messages (3998→1702, 3866→4014). Every hit
+        // dropped the math cache and tore down every attachment view, so all
+        // the LaTeX in the newly-shown message had to re-render
+        // asynchronously; each completion called back into
+        // `updateAttachmentViews + invalidateCellSize`, producing 57
+        // FIRST-MEASURE CORRECTIONs oscillating 7733↔8066 without converging.
+        // Screenshots caught the midpoint: text laid out for not-yet-rendered
+        // formulas while tool-card / table / code-block attachment views still
+        // sat at their pre-teardown coordinates — the "collapse".
+        //
+        // So only take the destructive path for a genuine same-content
+        // rewrite. A recycled view gets the rebuild path below instead, which
+        // reuses the prebuilt attributed string and lays out synchronously.
+        let isContentRewrite = !oldMarkdown.isEmpty
+            && !markdown.hasPrefix(oldMarkdown)
+            && !isDifferentContent
+        if isDifferentContent {
+            // Recycled onto different content. The caches are keyed per
+            // message/block and the incoming content brings its own, so the
+            // previous occupant's attachment VIEWS must go — but we must not
+            // strand the text in a laid-out-without-attachments state the way
+            // the wipe branch did. `clearAllAttachmentViews` is paired with a
+            // synchronous re-layout below (the `cachedAttributedString` fast
+            // path), so the very first frame this view presents already has
+            // its attachments positioned.
+            //
+            // Deliberately NOT cleared: the renderer's per-content caches
+            // (image/video/audio/code/math). They are keyed by content hash,
+            // so the incoming block simply misses them and renders its own;
+            // wiping them would throw away entries the PREVIOUS occupant will
+            // want the moment it scrolls back into view — that repeated
+            // discard-and-re-render is what drove the burst.
+            context.coordinator.fadeAnimator.cancelAll()
+            textView.clearAllAttachmentViews()
+            // Force the render below to actually run: the incoming content may
+            // hash-collide with whatever this view last drew.
+            context.coordinator.lastRenderedContentHash = nil
+        }
+        if isContentRewrite {
             // [WordFade] The storage is about to be rebuilt from scratch; any
             // in-flight fade ranges are stale. Drop them before the rewrite.
             context.coordinator.fadeAnimator.cancelAll()
@@ -6589,7 +7253,12 @@ struct SelectableMarkdownView: UIViewRepresentable {
             let codeN = context.coordinator.renderer.codeBlockAttachmentCache.count
             let tailOld = String(oldMarkdown.suffix(40)).replacingOccurrences(of: "\n", with: "⏎")
             let headNew = String(markdown.prefix(40)).replacingOccurrences(of: "\n", with: "⏎")
-            AppLogger(category: "AttachHotPath").info("[CACHE-WIPE] isNewMessage=true — clearing img=\(imgN) vid=\(vidN) aud=\(audN) code=\(codeN) oldLen=\(oldMarkdown.count) newLen=\(markdown.count) oldTail=\"\(tailOld)\" newHead=\"\(headNew)\"")
+            // [T-ios-reuse-cachewipe] `sameId=true` is the invariant this
+            // branch now guarantees: a wipe may only happen for content that
+            // kept its identity. A cross-message oldLen/newLen jump here
+            // means the identity check regressed.
+            let idStr = contentId?.uuidString.prefix(8) ?? "nil"
+            AppLogger(category: "AttachHotPath").info("[CACHE-WIPE] contentRewrite id=\(idStr) sameId=true — clearing img=\(imgN) vid=\(vidN) aud=\(audN) code=\(codeN) oldLen=\(oldMarkdown.count) newLen=\(markdown.count) oldTail=\"\(tailOld)\" newHead=\"\(headNew)\"")
             let renderer = context.coordinator.renderer
             renderer.imageAttachmentCache.removeAll()
             renderer.videoAttachmentCache.removeAll()
@@ -7630,6 +8299,13 @@ struct SelectableMarkdownView: UIViewRepresentable {
     final class Coordinator: NSObject, UITextViewDelegate {
         var lastMarkdown: String = ""
         var lastRenderedContentHash: Int? = nil
+        /// [T-ios-reuse-cachewipe] Identity of the content this coordinator's
+        /// text view is currently showing — `blockId` when the caller renders
+        /// per-block (V3 cell-per-block), else `messageId`. Used to tell a
+        /// genuine *identity change* (this view was recycled onto different
+        /// content) apart from *the same content being rewritten* (streaming
+        /// append, regenerate). See `updateUIView`'s wipe branch.
+        var lastContentId: UUID? = nil
         /// [FGReload] Markdown whose render was skipped because the app was
         /// not `.active` (see the `!= .active` guard in `updateUIView`). The
         /// skip exists to avoid the expensive `setAttributedText` +

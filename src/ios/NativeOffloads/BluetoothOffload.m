@@ -305,6 +305,43 @@ static BLEHelper *sharedBLE(void) {
     return helper;
 }
 
+// [T-ish-offload-hang-audit] Drop stale tokens from the shared BLE semaphore
+// before issuing a new request.
+//
+// BLEHelper is a process-wide singleton (above) and `semaphore` is created ONCE
+// with a count of 0, yet it is signalled from seven different delegate
+// callbacks (didUpdateState / didConnect / didFailToConnect / didDisconnect /
+// didDiscoverServices / didDiscoverCharacteristics / didUpdateValue /
+// didWriteValue). A dispatch semaphore COUNTS: when a call times out and gives
+// up, a CoreBluetooth callback that arrives afterwards — routine with a slow or
+// flaky peripheral — still signals, raising the count to 1 where it stays
+// forever.
+//
+// The next command's wait then returns immediately on that leftover token
+// rather than on its own callback, and the code proceeds to read state the
+// callback never set: a characteristic read returns the PREVIOUS read's value,
+// a write reports success it never got. That is a silent wrong answer, which is
+// worse than the timeout it masquerades as.
+//
+// The same hazard was already recognised for `notifyStateSem`, which drains
+// exactly like this before use (see the notify path). This generalises that fix
+// to the main semaphore, which had no such protection.
+//
+// Deliberately called just before the async request is issued, NOT immediately
+// before the wait: the request must be in flight only after the counter is
+// clean, otherwise a genuine fast callback could be drained away.
+//
+// `errorMessage` is already reset at each of these sites, so error state was
+// never the gap — only the semaphore counter.
+static void drainStaleBLESignals(BLEHelper *ble) {
+    NSUInteger drained = 0;
+    while (dispatch_semaphore_wait(ble.semaphore, DISPATCH_TIME_NOW) == 0)
+        drained++;
+    if (drained > 0)
+        NSLog(@"[BLE] dropped %lu stale semaphore token(s) from a previous command",
+              (unsigned long)drained);
+}
+
 static NSString *stateString(CBManagerState state) {
     switch (state) {
         case CBManagerStatePoweredOn:    return @"powered_on";
@@ -463,6 +500,7 @@ static int cmd_connect(int argc, char **argv, int stdout_fd, BOOL compact, BOOL 
 
     ble.errorMessage = nil;
     ble.connectedPeripheral = nil;
+    drainStaleBLESignals(ble);
     dispatch_async(dispatch_get_main_queue(), ^{
         [ble.central connectPeripheral:peripheral options:nil];
     });
@@ -501,6 +539,7 @@ static int cmd_disconnect(int argc, char **argv, int stdout_fd, BOOL compact, BO
         return NOFF_EXIT_ERROR;
     }
 
+    drainStaleBLESignals(ble);
     dispatch_async(dispatch_get_main_queue(), ^{
         [ble.central cancelPeripheralConnection:peripheral];
     });
@@ -529,6 +568,7 @@ static int cmd_services(int argc, char **argv, int stdout_fd, BOOL compact, BOOL
     ble.servicesDiscovered = NO;
     ble.errorMessage = nil;
     peripheral.delegate = ble;
+    drainStaleBLESignals(ble);
     dispatch_async(dispatch_get_main_queue(), ^{
         [peripheral discoverServices:nil];
     });
@@ -545,6 +585,7 @@ static int cmd_services(int argc, char **argv, int stdout_fd, BOOL compact, BOOL
     NSMutableArray *servicesArr = [NSMutableArray new];
     for (CBService *service in peripheral.services) {
         ble.errorMessage = nil;
+        drainStaleBLESignals(ble);
         dispatch_async(dispatch_get_main_queue(), ^{
             [peripheral discoverCharacteristics:nil forService:service];
         });
@@ -617,6 +658,7 @@ static CBPeripheral *ensureConnected(BLEHelper *ble, NSString *uuidStr, NSString
     }
     ble.errorMessage = nil;
     ble.connectedPeripheral = nil;
+    drainStaleBLESignals(ble);
     dispatch_async(dispatch_get_main_queue(), ^{
         [ble.central connectPeripheral:peripheral options:nil];
     });
@@ -646,6 +688,7 @@ static BOOL ensureServicesDiscovered(BLEHelper *ble, CBPeripheral *peripheral, N
     ble.servicesDiscovered = NO;
     ble.errorMessage = nil;
     peripheral.delegate = ble;
+    drainStaleBLESignals(ble);
     dispatch_async(dispatch_get_main_queue(), ^{
         [peripheral discoverServices:nil];
     });
@@ -657,6 +700,7 @@ static BOOL ensureServicesDiscovered(BLEHelper *ble, CBPeripheral *peripheral, N
     for (CBService *s in peripheral.services) {
         if (s.characteristics.count > 0) continue;
         ble.errorMessage = nil;
+        drainStaleBLESignals(ble);
         dispatch_async(dispatch_get_main_queue(), ^{
             [peripheral discoverCharacteristics:nil forService:s];
         });
@@ -714,6 +758,10 @@ static int cmd_read(int argc, char **argv, int stdout_fd, BOOL compact, BOOL qui
     ble.readValue = nil;
     ble.errorMessage = nil;
     peripheral.delegate = ble;
+    // The read path is the clearest case for this: without the drain, a stale
+    // token returns the wait instantly and `readValue` is whatever the PREVIOUS
+    // read left behind.
+    drainStaleBLESignals(ble);
     dispatch_async(dispatch_get_main_queue(), ^{
         [peripheral readValueForCharacteristic:characteristic];
     });
@@ -795,6 +843,7 @@ static int cmd_write(int argc, char **argv, int stdout_fd, BOOL compact, BOOL qu
             ? CBCharacteristicWriteWithResponse
             : CBCharacteristicWriteWithoutResponse;
 
+    drainStaleBLESignals(ble);
     dispatch_async(dispatch_get_main_queue(), ^{
         [peripheral writeValue:writeData forCharacteristic:characteristic type:writeType];
     });

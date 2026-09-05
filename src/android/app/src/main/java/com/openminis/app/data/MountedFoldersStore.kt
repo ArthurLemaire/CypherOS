@@ -156,7 +156,18 @@ class MountedFoldersStore(private val context: Context) {
                 android.content.pm.PackageManager.PERMISSION_GRANTED
             val write = context.checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
                 android.content.pm.PackageManager.PERMISSION_GRANTED
-            "sdk=$sdk readGranted=$read writeGranted=$write legacyView=${Environment.isExternalStorageLegacy()}"
+            // Issue #118: Environment.isExternalStorageLegacy() is API 29, but this
+            // branch covers everything below R (30) — i.e. our whole 26..28 floor.
+            // Same defect as PRootKernel.storageAccessDiag; both are reachable from
+            // the boot path, so an unguarded call is a NoSuchMethodError that kills
+            // the process in Application.onCreate. Below 29 scoped storage doesn't
+            // exist, so the legacy view is unconditionally in effect.
+            val legacyView = if (sdk >= Build.VERSION_CODES.Q) {
+                Environment.isExternalStorageLegacy().toString()
+            } else {
+                "n/a(pre-Q)"
+            }
+            "sdk=$sdk readGranted=$read writeGranted=$write legacyView=$legacyView"
         }
     }
 

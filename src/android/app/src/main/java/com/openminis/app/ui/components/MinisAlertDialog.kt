@@ -13,6 +13,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -38,6 +39,16 @@ fun MinisAlertDialog(
     dismissText: String = stringResource(R.string.cancel),
     isDestructive: Boolean = false,
     onDismiss: () -> Unit = onDismissRequest,
+    /**
+     * Optional third action, rendered between dismiss and confirm. When set,
+     * the buttons stack vertically instead of sitting in a row: three labels
+     * of real length (the pre-send compact prompt's "Compact & Enable
+     * Auto-Compact" is 29 chars, and its zh translations are similar) do not
+     * fit side by side on a phone, and a Row would either clip them or shrink
+     * the text. Callers that pass nothing keep the original two-button row.
+     */
+    neutralText: String? = null,
+    onNeutral: (() -> Unit)? = null,
 ) {
     Dialog(
         onDismissRequest = onDismissRequest,
@@ -65,25 +76,45 @@ fun MinisAlertDialog(
                     )
                 }
                 Spacer(modifier = Modifier.height(16.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.End,
-                ) {
-                    MinisTextButton(onClick = onDismiss) {
-                        Text(dismissText)
+                val confirmColor = if (isDestructive) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.primary
+                }
+                if (neutralText != null && onNeutral != null) {
+                    // Stacked layout. Order runs least-committal first
+                    // (dismiss) down to the most specific action, so the
+                    // primary choice sits closest to the thumb.
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 8.dp),
+                        horizontalAlignment = Alignment.End,
+                    ) {
+                        MinisTextButton(onClick = onDismiss) {
+                            Text(dismissText)
+                        }
+                        MinisTextButton(onClick = onConfirm) {
+                            Text(text = confirmText, color = confirmColor)
+                        }
+                        MinisTextButton(onClick = onNeutral) {
+                            Text(text = neutralText, color = confirmColor)
+                        }
                     }
-                    Spacer(modifier = Modifier.width(4.dp))
-                    MinisTextButton(onClick = onConfirm) {
-                        Text(
-                            text = confirmText,
-                            color = if (isDestructive) {
-                                MaterialTheme.colorScheme.error
-                            } else {
-                                MaterialTheme.colorScheme.primary
-                            },
-                        )
+                } else {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.End,
+                    ) {
+                        MinisTextButton(onClick = onDismiss) {
+                            Text(dismissText)
+                        }
+                        Spacer(modifier = Modifier.width(4.dp))
+                        MinisTextButton(onClick = onConfirm) {
+                            Text(text = confirmText, color = confirmColor)
+                        }
                     }
                 }
             }

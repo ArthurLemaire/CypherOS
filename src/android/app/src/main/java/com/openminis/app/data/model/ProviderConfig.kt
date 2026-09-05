@@ -183,6 +183,24 @@ data class ProviderInstance(
         }
 
     /**
+     * [T-empty-key-compat-endpoints] Whether an EMPTY API key is a valid
+     * configuration for this instance. True only for API-key-mode instances
+     * pointing at a third-party OpenAI/Anthropic-compatible endpoint (custom
+     * base URL set): local gateways, ollama, LM Studio, LiteLLM and many
+     * relay deployments require no key, and forcing a dummy one is friction.
+     * Deliberately NOT extended to official endpoints (no custom base URL —
+     * an empty key against the official API is always a misconfiguration) or
+     * OAuth instances (their credential is the token). Mirrors iOS
+     * `ProviderInstance.allowsEmptyAPIKey`; Android has no `openAIResponses`
+     * type — the `useResponsesAPI` flag rides on `.openAI`, so the type gate
+     * is just {openAI, anthropic}.
+     */
+    val allowsEmptyAPIKey: Boolean
+        get() = credentialType == ProviderCredential.apiKey &&
+            !customBaseURL.isNullOrBlank() &&
+            (providerType == ProviderType.openAI || providerType == ProviderType.anthropic)
+
+    /**
      * [T-android-image-endpoint-mode] Whether the "Image Generation" endpoint
      * picker is surfaced for this instance. Mirrors iOS
      * `supportsImageEndpointSetting`. Android has no `openAIResponses` provider
@@ -204,6 +222,28 @@ data class ProviderInstance(
      */
     val supportsAzureMode: Boolean
         get() = providerType == ProviderType.openAI && credentialType == ProviderCredential.apiKey
+
+    /**
+     * [T-android-thinking-rules-phase2 / parity with iOS 93eb4090] Whether custom
+     * thinking rules are meaningful for this instance, i.e. its requests actually run
+     * through the Chat Completions path that consults [ThinkingRuleResolver].
+     *
+     * Anthropic and Gemini use their own thinking emitters and never read the rule
+     * registry. An OpenAI instance in Responses mode (useResponsesAPI) builds its
+     * `reasoning` inline, and a Codex-shaped OAuth instance (oauth, no custom base)
+     * resolves to the Responses backend — neither consults user rules. So on all of
+     * those the UI must show an explanatory notice, NOT an interactive list that
+     * promises behaviour the request path ignores.
+     */
+    val supportsCustomThinkingRules: Boolean
+        get() = when (providerType) {
+            ProviderType.anthropic, ProviderType.gemini -> false
+            else -> {
+                val codexOAuth = credentialType == ProviderCredential.oauth &&
+                    customBaseURL.isNullOrBlank()
+                !useResponsesAPI && !codexOAuth
+            }
+        }
 }
 
 @Serializable
@@ -281,6 +321,12 @@ data class ProviderConfig(
     // declared defaults), so adding them is downgrade/round-trip safe.
     var voiceInputGroupId: String? = null,
     var voiceOutputGroupId: String? = null,
+    // [T-android-vision-group / GH#182] Vision Group binding — the group whose
+    // vision-capable members read images on behalf of a main model that cannot
+    // see pixels. Per-device pointer at an ordinary ModelGroup, mirroring
+    // voiceInputGroupId (meta KV row, not synced CRDT member maps). Absent in
+    // old persisted JSON → deserializes to null (ignoreUnknownKeys + default).
+    var visionGroupId: String? = null,
     // Models and groups exposed to the agent loop (minis-model-use terminal
     // command) — mirrors iOS agentLoopModelEntryIds / agentLoopGroupIds.
     val agentLoopModelEntryIds: MutableList<String> = mutableListOf(),
@@ -292,5 +338,53 @@ data class ProviderConfig(
     // and ProviderDetailScreen / ModelGroupDetailScreen miss refreshes.
     // @Transient: revision is in-memory only, never persisted to prefs
     // or iCloud sync.
-    @kotlinx.serialization.Transient var revision: Long = 0L,
-)
+    //
+    // [T-android-providerconfig-cme] Defaults to a globally-unique value, NOT
+    // 0. equals() compares revision alone, so two configs sharing a revision
+    // are indistinguishable — and with a 0 default, a freshly LOADED config
+    // (revision 0) compared equal to the initial empty placeholder (revision
+    // 0), so MutableStateFlow's distinct-until-changed silently DISCARDED the
+    // assignment and the app ran with zero providers despite a populated DB.
+    // Every construction now gets its own id; saveConfig still bumps it
+    // explicitly, which remains correct because any new number is also unique.
+    @kotlinx.serialization.Transient var revision: Long = nextRevision(),
+) {
+    companion object {
+        private val revisionSeq = java.util.concurrent.atomic.AtomicLong(1L)
+
+        /** Monotonic, process-unique id for a ProviderConfig value. */
+        fun nextRevision(): Long = revisionSeq.getAndIncrement()
+    }
+
+    /**
+     * [T-android-providerconfig-cme] Hand-written equals that tests [revision]
+     * FIRST and never walks the mutable lists.
+     *
+     * The generated data-class equals compares fields in DECLARATION order, so
+     * it reached `instances` / `modelEntries` / `modelGroups` long before the
+     * revision short-circuit at the end could help. Those are MutableLists that
+     * writers (addInstance, provider.import, replaceEntries…) mutate IN PLACE
+     * on a background thread, while StateFlowImpl.collect calls equals() on the
+     * main thread to decide whether to emit — so the comparison walked a list
+     * that was being appended to and threw ConcurrentModificationException,
+     * crashing the app from inside StateFlow's own emission path:
+     *
+     *   ArrayList.checkForComodification → ArrayList.equals
+     *     → ProviderConfig.equals → StateFlowImpl.collect
+     *
+     * Reproduced by importing a provider over the debug server while a picker
+     * was collecting config (crash-2026-08-16_19-59-40 / _20-00-21).
+     *
+     * revision is bumped by saveConfig on EVERY mutation, so it is already the
+     * authoritative "did anything change" signal — comparing it alone is both
+     * correct for change detection and immune to concurrent mutation. Identity
+     * is checked first so a value always equals itself.
+     */
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is ProviderConfig) return false
+        return revision == other.revision
+    }
+
+    override fun hashCode(): Int = revision.hashCode()
+}

@@ -69,6 +69,9 @@ struct QuickTaskIntent: AppIntent {
     @Parameter(title: "Wait for Result", description: "When enabled, waits for the AI to finish and returns the full response for use in subsequent actions.", default: false)
     var waitForResult: Bool
 
+    @Parameter(title: "Send Notifications", description: "When enabled, posts a system notification when the task starts and again when it finishes. Turn this off for automations that run silently. The app's global task-notification setting still applies.", default: true)
+    var sendCompletionNotification: Bool
+
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<SendPromptResult> & ProvidesDialog {
         BackgroundKeepAliveManager.shared.setup()
@@ -114,6 +117,8 @@ struct QuickTaskIntent: AppIntent {
 
         let vm = ViewModelCache.shared.createDraft()
         vm.sessionSource = "shortcut"
+        // [T-shortcut-duplicate-completion-notification] See SendPromptIntent.
+        vm.suppressGeneralCompletionNotification = true
         await vm.ensureSessionReturningId()
         // [T-shortcuts-eager-keepalive] Real id now known — re-arm with it and
         // drop the placeholder.
@@ -161,7 +166,8 @@ struct QuickTaskIntent: AppIntent {
             }
         }
 
-        // Notification: started
+        // Display name for the task, used by the start/completion notifications
+        // and the intent dialog below.
         let taskDisplay = QuickTask.caseDisplayRepresentations[task]
         let taskName: String
         if let res = taskDisplay?.title {
@@ -169,12 +175,17 @@ struct QuickTaskIntent: AppIntent {
         } else {
             taskName = "Task"
         }
-        ShortcutNotification.post(
-            id: "shortcut-start-\(sid)",
-            title: "Minis: \(taskName)",
-            body: "\(modelName) is working on it…",
-            sessionId: sid
-        )
+
+        // Notification: started. See the note in SendPromptIntent — same toggle,
+        // same fire-and-forget placement after the prompt is sent.
+        if sendCompletionNotification {
+            ShortcutNotification.post(
+                id: "shortcut-start-\(sid)",
+                title: String(localized: "Minis: \(taskName)"),
+                body: String(localized: "\(modelName) is working on it…"),
+                sessionId: sid
+            )
+        }
 
         if waitForResult {
             // Synchronous mode: wait for the agent to finish
@@ -187,12 +198,16 @@ struct QuickTaskIntent: AppIntent {
 
             let responseText = SendPromptIntent.extractResponseText(from: vm)
 
-            ShortcutNotification.post(
-                id: "shortcut-done-\(sid)",
-                title: "Minis: \(taskName) Done",
-                body: "\(modelName): \(String(responseText.prefix(200)))",
-                sessionId: sid
-            )
+            // Per-run opt-out. ANDs with the app-wide toggle, which
+            // ShortcutNotification.post checks internally — do not duplicate it here.
+            if sendCompletionNotification {
+                ShortcutNotification.post(
+                    id: "shortcut-done-\(sid)",
+                    title: String(localized: "Minis: \(taskName) Done"),
+                    body: "\(modelName): \(String(responseText.prefix(200)))",
+                    sessionId: sid
+                )
+            }
 
             let result = SendPromptResult(
                 sessionId: sid,
@@ -210,6 +225,7 @@ struct QuickTaskIntent: AppIntent {
         let capturedSid = sid
         let capturedTaskName = taskName
         let capturedPendingId = pendingId
+        let capturedSendCompletionNotification = sendCompletionNotification
         Task { @MainActor in
             for await processing in vm.$isProcessing.values {
                 if !processing { break }
@@ -220,12 +236,14 @@ struct QuickTaskIntent: AppIntent {
 
             let summary = String(SendPromptIntent.extractResponseText(from: vm).prefix(200))
 
-            ShortcutNotification.post(
-                id: "shortcut-done-\(capturedSid)",
-                title: "Minis: \(capturedTaskName) Done",
-                body: "\(capturedModelName): \(summary)",
-                sessionId: capturedSid
-            )
+            if capturedSendCompletionNotification {
+                ShortcutNotification.post(
+                    id: "shortcut-done-\(capturedSid)",
+                    title: String(localized: "Minis: \(capturedTaskName) Done"),
+                    body: "\(capturedModelName): \(summary)",
+                    sessionId: capturedSid
+                )
+            }
         }
 
         let result = SendPromptResult(
@@ -236,6 +254,21 @@ struct QuickTaskIntent: AppIntent {
             prompt: task.prompt
         )
 
-        return .result(value: result, dialog: "\(taskName) started with \(modelName).")
+        return .result(value: result, dialog: IntentDialog(stringLiteral: String(localized: "\(taskName) started with \(modelName).")))
+    }
+
+    // This intent previously declared no `parameterSummary`. AppIntents uses the
+    // summary as the action card's layout, so without one the card can render
+    // title-only with no inline editors (the #121 failure mode) — which would
+    // leave `sendCompletionNotification` with no way to be found or toggled.
+    // `task` goes on the Summary line since it is the one required choice; the
+    // rest are optional refinements under "Show More".
+    static var parameterSummary: some ParameterSummary {
+        Summary("Run \(\.$task) in Minis") {
+            \.$files
+            \.$model
+            \.$waitForResult
+            \.$sendCompletionNotification
+        }
     }
 }

@@ -80,6 +80,28 @@ object DebugMethodRegistry {
                 "args" to JSONArray().apply { put("messages"); put("--id"); put("<session_id>"); put("--full") },
             ),
         ),
+        MethodSpec(
+            name = "debug.minisConfig.exec",
+            description = "DEBUG-only: drive minis-config through the REAL ConfigBridge (same code path as the in-shell CLI), so a harness can exercise every collection, the confirmation gate and the audit log without an in-shell prompt. Subcommands: set, get, topics, topic-help, audit-list.",
+            params = listOf(
+                ParamSpec("subcommand", "string", required = true, description = "One of: set, get, topics, topic-help, audit-list."),
+                ParamSpec("path", "string", required = false, description = "Config path, for get and single-path set (e.g. \"thinkingrules.<inst>:<rule>.label\")."),
+                ParamSpec("value_json", "string", required = false, description = "JSON-encoded new value, for single-path set."),
+                ParamSpec("items", "[{path,value_json}]", required = false, description = "Multi-path set applied as ONE write batch; alternative to path+value_json."),
+                ParamSpec("skipConfirmation", "bool", required = false, description = "set only. Default true (unattended). Pass false to drive the real on-device confirmation sheet."),
+                ParamSpec("filter", "string", required = false, description = "get only. Space-separated terms; filters JSON array values."),
+                ParamSpec("page", "int", required = false, description = "get only. 1-BASED page number (page=1 and page=0 both mean the first page). Omit together with pageSize for no pagination."),
+                ParamSpec("pageSize", "int", required = false, description = "get only. 0 = return everything."),
+                ParamSpec("topic", "string", required = false, description = "topic-help only. Topic name from subcommand=topics."),
+                ParamSpec("limit", "int", required = false, description = "audit-list only. 1..1000, default 100."),
+                ParamSpec("scope", "string", required = false, description = "audit-list only. Restrict the audit trail to one scope."),
+            ),
+            returns = "get/set -> the bridge's {ok,…} envelope; topics -> {ok, topics:[string]}; topic-help -> {ok, topic, empty, fields:[{path,display_name,description,schema,access,risk,revertable}]} (empty=true means a registered collection with no children yet, e.g. thinkingrules before any rule is authored); audit-list -> {ok, count, capacity, total_used, entries}",
+            example = ex(
+                "subcommand" to "get",
+                "path" to "thinkingrules",
+            ),
+        ),
     )
 
     private val BASE_METHODS: List<MethodSpec> = listOf(
@@ -146,6 +168,42 @@ object DebugMethodRegistry {
             ),
             returns = "{name, size, content, bytesRead, truncated?}",
             example = ex("name" to "2026-04-17.log", "limit" to 16384),
+        ),
+        MethodSpec(
+            name = "provider.quickTest",
+            description = "Run Quick Test on a model entry (same code path as the UI Quick Test sheet). " +
+                "Tests applicable modalities (text, speechOut, transcription, imageGen) and returns " +
+                "per-kind status. Audio/image results report byte counts, not payloads. " +
+                "Android counterpart of iOS debug.providers.quickTest.",
+            params = listOf(
+                ParamSpec("entryId", "string", required = true, description = "Model entry id from provider.models.list."),
+                ParamSpec("kinds", "string[]", required = false, description = "Subset of text/speechOut/transcription/imageGen; omit to auto-detect."),
+            ),
+            returns = "{entryId, modelId, displayName, providerLabel, results:[{kind, status, elapsedMs, detail, bytes?}]}",
+            example = ex("entryId" to "pi_xyz/mimo-v2.5-tts"),
+        ),
+        MethodSpec(
+            name = "debug.crash.list",
+            description = "List on-device crash reports (ACRA Java/Kotlin + native), newest first, " +
+                "each with a one-line summary of the exception and first app frame.",
+            params = listOf(
+                ParamSpec("limit", "int", required = false, default = 20, description = "Max reports to return (1-200)."),
+            ),
+            returns = "{count, returned, crashes:[{name, size, modified, native, summary}]}",
+            example = ex("limit" to 5),
+        ),
+        MethodSpec(
+            name = "debug.crash.read",
+            description = "Read a crash report. Omit 'name' to get the NEWEST crash — the usual " +
+                "\"why did it just die?\" call. Returns the stack section only by default; " +
+                "pass stackOnly=false for the full file including the embedded logcat tail.",
+            params = listOf(
+                ParamSpec("name", "string", required = false, description = "Report filename from debug.crash.list; omit for newest."),
+                ParamSpec("stackOnly", "bool", required = false, default = true, description = "Trim the trailing logcat/Build dump."),
+                ParamSpec("limit", "int", required = false, default = 262144, description = "Max characters to return."),
+            ),
+            returns = "{name, modified, native, fileSize, stackOnly, content, truncated?}",
+            example = ex("stackOnly" to true),
         ),
         MethodSpec(
             name = "debug.tap",

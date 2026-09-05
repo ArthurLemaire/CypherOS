@@ -27,6 +27,9 @@
 #endif
 #include "kernel/native_offload.h"
 #include <unistd.h>
+#include <stdatomic.h>
+#include <stdbool.h>
+#include <string.h>
 
 static NSString *const TOOL_NAME = @"minis-debug";
 
@@ -500,6 +503,47 @@ static int debug_handler(int argc, char **argv,
     return NOFF_EXIT_INVALID_ARGS;
 }
 
+#if DEBUG
+// [T-ish-offload-signal-forward] Deliberately-wedged offload, for verifying the
+// signal-forwarding path without having to wedge a real ffmpeg transcode.
+//
+// Reproduces the exact failure shape: the handler never returns on its own, so
+// the guest task can never reach do_exit() and `kill` has nothing that will
+// look at the signal queue. With the abort callback registered, a terminating
+// signal releases the wait and the guest process exits — which is the whole
+// behaviour under test.
+static atomic_bool g_hangtest_abort = ATOMIC_VAR_INIT(false);
+
+static bool hangtest_abort_requested(int sig) {
+    atomic_store_explicit(&g_hangtest_abort, true, memory_order_release);
+    NSLog(@"[HangTest] abort requested by signal %d", sig);
+    return true;
+}
+
+static int hangtest_handler(int argc, char **argv,
+                            int stdin_fd, int stdout_fd, int stderr_fd) {
+    (void)argc; (void)argv; (void)stdin_fd; (void)stderr_fd;
+    atomic_store_explicit(&g_hangtest_abort, false, memory_order_release);
+    const char *msg = "minis-hangtest: wedged; send a signal to abort\n";
+    if (stdout_fd >= 0) (void) write(stdout_fd, msg, strlen(msg));
+    NSLog(@"[HangTest] handler entered — will block until aborted");
+
+    // Bounded at 10 minutes purely so a forgotten test process cannot pin a
+    // guest task forever; the real exit is the abort flag.
+    for (int i = 0; i < 600 * 50; i++) {
+        if (atomic_load_explicit(&g_hangtest_abort, memory_order_acquire)) {
+            NSLog(@"[HangTest] abort observed — returning so the guest task can exit");
+            const char *done = "minis-hangtest: aborted\n";
+            if (stdout_fd >= 0) (void) write(stdout_fd, done, strlen(done));
+            return 0;
+        }
+        usleep(20 * 1000);
+    }
+    NSLog(@"[HangTest] safety timeout reached without an abort");
+    return 1;
+}
+#endif
+
 void debug_offload_register(void) {
     int err = native_offload_add_handler("minis-debug", debug_handler);
     if (err == 0) {
@@ -508,4 +552,12 @@ void debug_offload_register(void) {
     } else {
         NSLog(@"NativeOffloads: failed to register minis-debug handler (err=%d)", err);
     }
+
+#if DEBUG
+    if (native_offload_add_handler("minis-hangtest", hangtest_handler) == 0) {
+        noff_ensure_guest_stub("/usr/local/bin/minis-hangtest");
+        native_offload_set_abort_handler("minis-hangtest", hangtest_abort_requested);
+        NSLog(@"NativeOffloads: minis-hangtest handler registered (DEBUG only)");
+    }
+#endif
 }

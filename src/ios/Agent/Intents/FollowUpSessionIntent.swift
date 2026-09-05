@@ -24,6 +24,9 @@ struct FollowUpSessionIntent: AppIntent {
     @Parameter(title: "Wait for Result", description: "When enabled, waits for the AI to finish and returns the full response for use in subsequent actions.", default: false)
     var waitForResult: Bool
 
+    @Parameter(title: "Send Notifications", description: "When enabled, posts a system notification when the task starts and again when it finishes. Turn this off for automations that run silently. The app's global task-notification setting still applies.", default: true)
+    var sendCompletionNotification: Bool
+
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<SendPromptResult> & ProvidesDialog {
         BackgroundKeepAliveManager.shared.setup()
@@ -56,6 +59,9 @@ struct FollowUpSessionIntent: AppIntent {
         )
 
         let (vm, isNew) = ViewModelCache.shared.getOrCreate(for: session.id)
+        // [T-shortcut-duplicate-completion-notification] See SendPromptIntent.
+        // Deliberately not `sessionSource = "shortcut"` — see RetryRunIntent.
+        vm.suppressGeneralCompletionNotification = true
         if isNew {
             await vm.loadSession()
         }
@@ -101,13 +107,16 @@ struct FollowUpSessionIntent: AppIntent {
             }
         }
 
-        let promptPreview = String(prompt.prefix(50))
-        ShortcutNotification.post(
-            id: "shortcut-followup-\(sid)",
-            title: "Minis: Follow-up Sent",
-            body: "\(modelName): \(promptPreview)\(prompt.count > 50 ? "…" : "")",
-            sessionId: sid
-        )
+        // Notification: follow-up sent. See the note in SendPromptIntent.
+        if sendCompletionNotification {
+            let promptPreview = String(prompt.prefix(50))
+            ShortcutNotification.post(
+                id: "shortcut-followup-\(sid)",
+                title: String(localized: "Minis: Follow-up Sent"),
+                body: "\(modelName): \(promptPreview)\(prompt.count > 50 ? "…" : "")",
+                sessionId: sid
+            )
+        }
 
         if waitForResult {
             // Synchronous mode: wait for completion
@@ -121,12 +130,16 @@ struct FollowUpSessionIntent: AppIntent {
 
             let responseText = SendPromptIntent.extractResponseText(from: vm)
 
-            ShortcutNotification.post(
-                id: "shortcut-followup-done-\(sid)",
-                title: "Minis: Follow-up Done",
-                body: "\(modelName): \(String(responseText.prefix(200)))",
-                sessionId: sid
-            )
+            // Per-run opt-out. ANDs with the app-wide toggle, which
+            // ShortcutNotification.post checks internally — do not duplicate it here.
+            if sendCompletionNotification {
+                ShortcutNotification.post(
+                    id: "shortcut-followup-done-\(sid)",
+                    title: String(localized: "Minis: Follow-up Done"),
+                    body: "\(modelName): \(String(responseText.prefix(200)))",
+                    sessionId: sid
+                )
+            }
 
             let result = SendPromptResult(
                 sessionId: sid,
@@ -143,6 +156,7 @@ struct FollowUpSessionIntent: AppIntent {
         let capturedModelName = modelName
         let capturedSid = sid
         let capturedPendingId = pendingId
+        let capturedSendCompletionNotification = sendCompletionNotification
         Task { @MainActor in
             for await processing in vm.$isProcessing.values {
                 if !processing { break }
@@ -157,12 +171,14 @@ struct FollowUpSessionIntent: AppIntent {
 
             let summary = String(SendPromptIntent.extractResponseText(from: vm).prefix(200))
 
-            ShortcutNotification.post(
-                id: "shortcut-followup-done-\(capturedSid)",
-                title: "Minis: Follow-up Done",
-                body: "\(capturedModelName): \(summary)",
-                sessionId: capturedSid
-            )
+            if capturedSendCompletionNotification {
+                ShortcutNotification.post(
+                    id: "shortcut-followup-done-\(capturedSid)",
+                    title: String(localized: "Minis: Follow-up Done"),
+                    body: "\(capturedModelName): \(summary)",
+                    sessionId: capturedSid
+                )
+            }
         }
 
         let result = SendPromptResult(
@@ -173,6 +189,18 @@ struct FollowUpSessionIntent: AppIntent {
             prompt: prompt
         )
 
-        return .result(value: result, dialog: "Follow-up sent to \(session.displayName) with \(modelName).")
+        return .result(value: result, dialog: IntentDialog(stringLiteral: String(localized: "Follow-up sent to \(session.displayName) with \(modelName).")))
+    }
+
+    // See the note in QuickTaskIntent: without a `parameterSummary` the action
+    // card can render title-only, leaving `sendCompletionNotification`
+    // untoggleable. `prompt` and `session` are the required inputs and go on the
+    // Summary line; the rest are refinements under "Show More".
+    static var parameterSummary: some ParameterSummary {
+        Summary("Send \(\.$prompt) to \(\.$session)") {
+            \.$files
+            \.$waitForResult
+            \.$sendCompletionNotification
+        }
     }
 }

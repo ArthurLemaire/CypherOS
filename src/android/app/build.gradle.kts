@@ -36,8 +36,8 @@ android {
         applicationId = "com.openminis.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 20
-        versionName = "0.20-preview"
+        versionCode = 24
+        versionName = "1.12"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -142,8 +142,13 @@ val stageDebugSkillAssets by tasks.registering(Exec::class) {
     val script = rootProject.file("../../scripts/gen_debug_skill_android.sh")
     val skillDir = rootProject.file("../../.claude/skills/debug-server")
     onlyIf { script.exists() }
-    inputs.dir(skillDir).optional()
-    inputs.file(script).optional()
+    // Declare the inputs only when they exist. `.optional()` covers an unset
+    // property, not a path that is absent: Gradle validates inputs before it
+    // consults onlyIf, so a missing skill dir fails the build outright. The
+    // public mirror has neither the script nor .claude/skills, and must still
+    // build.
+    if (skillDir.isDirectory) inputs.dir(skillDir)
+    if (script.isFile) inputs.file(script)
     outputs.dir(layout.projectDirectory.dir("src/debug/assets/debug-skill"))
     commandLine("bash", script.absolutePath)
 }
@@ -185,6 +190,14 @@ dependencies {
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
     // OkHttp
+    // [T-android-vad] Silero v5 VAD (ONNX Runtime + WebRTC APM). The Android
+    // build of the exact library iOS uses via SPM, from the same author, so
+    // both platforms share one model and one set of thresholds. Carries
+    // native .so payloads for ONNX Runtime and the APM — see the abiFilters
+    // note in `ndk`; we ship arm64-v8a only.
+    implementation("com.github.helloooideeeeea:RealTimeCutVADLibraryForAndroid:1.0.5@aar")
+
+
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:okhttp-sse:4.12.0")
 

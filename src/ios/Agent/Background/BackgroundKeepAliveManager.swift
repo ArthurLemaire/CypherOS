@@ -177,7 +177,12 @@ final class BackgroundKeepAliveManager: NSObject, ObservableObject, CLLocationMa
     /// Timer for periodic Live Activity updates.
     private var updateTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
-    private let locationManager = CLLocationManager()
+    /// [T-ios-scene-create-watchdog-corelocation] `lazy`, not a stored `let`:
+    /// allocating a CLLocationManager opens a connection to locationd, so a
+    /// plain stored property would drag that IPC into this singleton's `init()`
+    /// — i.e. into whatever thread first touches `.shared`. Created on first
+    /// real use (from `configureLocationManager()` onward), never at init.
+    private lazy var locationManager = CLLocationManager()
     private var locationUpdating = false
     private var locationTimer: Timer?
     private var appIsInBackground = false
@@ -234,6 +239,20 @@ final class BackgroundKeepAliveManager: NSObject, ObservableObject, CLLocationMa
     /// Wall-clock when the current debounced stop was scheduled, for logging the
     /// remaining window. nil when no stop is pending.
     private var pendingStopScheduledAt: Date?
+
+    /// [T-ios-bg-idle-grace] One-shot timer holding keep-alive briefly after the
+    /// last session ends. Non-nil ONLY while that window is open. A
+    /// `DispatchSourceTimer` (not `Timer`) so it still fires with the run loop
+    /// suspended in the background, and deliberately non-repeating so a missed
+    /// cleanup can fire at most once. See `beginIdleGraceIfNeeded` for the full
+    /// list of paths that clear it.
+    private var idleGraceTimer: DispatchSourceTimer?
+    /// When the current idle grace was armed, for log/diagnostic elapsed times.
+    private var idleGraceStartedAt: Date?
+    /// How long keep-alive survives after going idle. Distinct from — and much
+    /// longer than — `silentAudioStopDebounce` (1.5s), which covers a transient
+    /// foreground blip while sessions are STILL active. The two never overlap.
+    private static let idleGracePeriod: TimeInterval = 60.0
 
     // MARK: - [BKA] Diagnostic snapshot state (read by CrashReporter)
 
@@ -309,19 +328,42 @@ final class BackgroundKeepAliveManager: NSObject, ObservableObject, CLLocationMa
         }
     }
 
+    // [T-ios-scene-create-watchdog-corelocation] `init()` deliberately does NO
+    // CoreLocation work. Every CLLocationManager touch — the allocation itself
+    // and `authorizationStatus` — is a synchronous XPC round-trip to locationd.
+    // This is a `static let` singleton, so its init runs inside a dispatch_once
+    // on whichever thread first reads `.shared`; that turned out to be the main
+    // thread during SwiftUI's scene-create body evaluation, where a slow
+    // locationd blocks the watchdog's 10s budget. See `configureLocationManager()`.
     private override init() {
         super.init()
+    }
+
+    private var didSetup = false
+
+    /// Wire up the CLLocationManager. Split out of `init()` so no CoreLocation
+    /// IPC can ever run as a side effect of merely touching `.shared`; callers
+    /// reach this only from `setup()`, which runs after the scene exists.
+    private func configureLocationManager() {
         locationManager.delegate = self
         locationManager.desiredAccuracy = kCLLocationAccuracyThreeKilometers
         locationManager.pausesLocationUpdatesAutomatically = false
         locationAuthStatus = locationManager.authorizationStatus
     }
 
-    private var didSetup = false
+    /// Read the current authorization status on demand, for UI that displays it
+    /// without having necessarily gone through `setup()` first. Safe to call
+    /// from a settings screen (the user is deep in the app by then, nowhere near
+    /// the scene-create watchdog window) but NEVER from a view-body/init path
+    /// that can run during launch — this performs synchronous locationd IPC.
+    func refreshLocationAuthStatus() {
+        locationAuthStatus = locationManager.authorizationStatus
+    }
 
     func setup() {
         guard !didSetup else { return }
         didSetup = true
+        configureLocationManager()
         logger.info("[BackgroundKeepAlive] Setup: enabled=\(self.enhancedBackgroundEnabled), locationTracking=\(self.locationTrackingEnabled)")
 
         if #available(iOS 17.0, *) {
@@ -342,6 +384,19 @@ final class BackgroundKeepAliveManager: NSObject, ObservableObject, CLLocationMa
 
         evaluateBackgroundActivitySession()
 
+        // [T-ish-bg-cpu-governor] Background LAUNCH coverage: a process
+        // relaunched directly into the background (RunningBoard after-life,
+        // push/location wake) never receives didEnterBackgroundNotification,
+        // so the governor sink below would leave background CPU unguarded —
+        // exactly the state a post-kill relaunch resumes into. Arm it here
+        // when setup finds the app already backgrounded (begin is idempotent;
+        // a later real didEnterBackground is a no-op).
+        if UIApplication.shared.applicationState == .background {
+            appIsInBackground = true
+            ISHKernel.shared.beginBackgroundCPUGovernor()
+            logger.info("[BKA] launched in background — iSH CPU governor armed at setup")
+        }
+
         // Observe app lifecycle
         NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)
             .receive(on: DispatchQueue.main)
@@ -352,8 +407,12 @@ final class BackgroundKeepAliveManager: NSObject, ObservableObject, CLLocationMa
                 // deferred willEnterForeground handler flip appIsInBackground.
                 self.pendingForegroundTransition = false
                 self.appIsInBackground = true
-                ISHKernel.shared.enableCPUThrottle(withDutyCycle: 0.8)
-                logger.info("[BKA] iSH CPU throttle ENABLED (background, 80%)")
+                // [T-ish-bg-cpu-governor] Closed-loop governor replaces the
+                // old fixed 80% duty cycle (which sat exactly on the iOS
+                // background kill line and still measured 91% — see
+                // docs/ish-bg-cpu-governor-design.md).
+                ISHKernel.shared.beginBackgroundCPUGovernor()
+                logger.info("[BKA] iSH background CPU governor STARTED")
                 self.logLifecycleSnapshot("Background")
                 // [T-ios-bg-location-arm-delay] Don't start location keep-alive
                 // immediately on backgrounding — arm it after a delay so a brief
@@ -386,8 +445,8 @@ final class BackgroundKeepAliveManager: NSObject, ObservableObject, CLLocationMa
                     guard self.pendingForegroundTransition else { return }
                     self.pendingForegroundTransition = false
                     self.appIsInBackground = false
-                    ISHKernel.shared.disableCPUThrottle()
-                    logger.info("[BKA] iSH CPU throttle DISABLED (foreground)")
+                    ISHKernel.shared.endBackgroundCPUGovernor()
+                    logger.info("[BKA] iSH background CPU governor STOPPED (foreground)")
                     self.logLifecycleSnapshot("Foreground")
                     // [T-ios-bg-location-arm-delay] Unified location-state
                     // cleanup on every foreground return — disarms, tears down
@@ -630,6 +689,8 @@ final class BackgroundKeepAliveManager: NSObject, ObservableObject, CLLocationMa
     /// + foreground `retractOrphanedLocationSession(...)` paths are the backstop.
     func prepareForTermination() {
         logger.info("[BackgroundKeepAlive] prepareForTermination — stopping location session + Live Activity")
+        // [T-ios-bg-idle-grace] Never carry a pending grace timer into termination.
+        cancelIdleGrace(reason: "prepareForTermination")
         disarmBackgroundLocation()
         locationTimer?.invalidate()
         locationTimer = nil
@@ -1110,8 +1171,96 @@ final class BackgroundKeepAliveManager: NSObject, ObservableObject, CLLocationMa
             // stale stop is still queued.
             cancelPendingSilentAudioStop(reason: "still shouldPlay")
         } else if !shouldPlay && silentAudioActive {
-            requestStopSilentAudio(transientForeground: !appIsInBackground)
+            // [T-ios-bg-idle-grace] Split the single "should stop" branch by WHY.
+            // Only the pure-idle transition (isActive went false while every other
+            // condition still says "keep playing") gets the 60s grace window.
+            // Everything else — Background Speak switched off, an explicit media
+            // suspend, a genuine foreground return — is an explicit intent to
+            // stop and must take effect immediately, so those fall through to the
+            // pre-existing path unchanged (which includes the 1.5s transient-
+            // foreground debounce; the two windows never overlap because this
+            // branch requires appIsInBackground && backgroundSpeakEnabled).
+            let idleOnly = !isActive
+                && backgroundSpeakEnabled
+                && appIsInBackground
+                && silentAudioSuspendCount == 0
+            if idleOnly {
+                beginIdleGraceIfNeeded()
+            } else {
+                // An explicit stop supersedes a grace window already in flight.
+                cancelIdleGrace(reason: "explicit stop (\(reason))")
+                requestStopSilentAudio(transientForeground: !appIsInBackground)
+            }
+        } else if shouldPlay {
+            // Work is back (or never left) — a queued idle grace is now moot.
+            // Covers both shouldPlay branches above; cancelIdleGrace is a no-op
+            // when nothing is pending.
+            cancelIdleGrace(reason: "shouldPlay=true")
         }
+    }
+
+    // MARK: - [T-ios-bg-idle-grace] Idle grace period
+
+    /// Arm the one-shot idle grace timer, unless one is already pending.
+    ///
+    /// Purely time-driven: it consults no "is something still running" signal.
+    /// It buys a fixed, bounded window of background battery in exchange for
+    /// tolerating a state-sync hiccup around the moment the last session ends.
+    ///
+    /// Leak safety — this timer is cleared in EVERY one of these paths:
+    ///   1. its own handler, which always nils it before doing anything else;
+    ///   2. `cancelIdleGrace` from `evaluateSilentAudio` when work returns
+    ///      (`shouldPlay`) or when an explicit stop reason appears;
+    ///   3. `stopSilentAudio` — catches direct callers (media suspend,
+    ///      interruption teardown) that bypass `evaluateSilentAudio` entirely;
+    ///   4. `startSilentAudio` — a restart must never leave a stale stop queued;
+    ///   5. `prepareForTermination`.
+    /// Non-repeating by construction (`.now() + interval`, no `repeating:`), so
+    /// even a missed cleanup can only ever fire once.
+    private func beginIdleGraceIfNeeded() {
+        // Idempotent: never let repeated evaluations stack timers or slide the
+        // deadline forward, which is what would turn this into "keep-alive that
+        // never stops".
+        guard idleGraceTimer == nil else {
+            let waited = idleGraceStartedAt.map { Date().timeIntervalSince($0) } ?? 0
+            logger.info("[BKA][IdleGrace] already pending (\(String(format: "%.1f", waited))s elapsed) — not re-arming")
+            return
+        }
+        logger.info("[BKA][IdleGrace] idle — holding keep-alive for \(Int(Self.idleGracePeriod))s before stopping")
+        recordBKAEvent("IdleGrace(start,\(Int(Self.idleGracePeriod))s)")
+        idleGraceStartedAt = Date()
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + Self.idleGracePeriod)
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            // Clear state FIRST so every path below leaves no residue, and so a
+            // stop triggered from here can't re-enter this handler.
+            self.idleGraceTimer?.cancel()
+            self.idleGraceTimer = nil
+            self.idleGraceStartedAt = nil
+            // Unconditional stop. Re-checking "is it still idle" here would
+            // reintroduce a branch that can expire WITHOUT stopping, which is
+            // exactly the failure mode this design forbids. It is safe to be
+            // unconditional: any path that made keep-alive wanted again
+            // (evaluateSilentAudio -> shouldPlay, startSilentAudio) has already
+            // cancelled this timer, so reaching here means nothing re-armed it.
+            logger.info("[BKA][IdleGrace] expired — stopping keep-alive now")
+            self.stopSilentAudio(reason: "idle_grace_expired(\(Int(Self.idleGracePeriod))s)")
+        }
+        idleGraceTimer = timer
+        timer.resume()
+    }
+
+    /// Cancel a pending idle grace. Safe to call unconditionally; a no-op when
+    /// nothing is armed.
+    private func cancelIdleGrace(reason: String) {
+        guard let timer = idleGraceTimer else { return }
+        timer.cancel()
+        idleGraceTimer = nil
+        let waited = idleGraceStartedAt.map { Date().timeIntervalSince($0) } ?? 0
+        idleGraceStartedAt = nil
+        logger.info("[BKA][IdleGrace] cancelled after \(String(format: "%.1f", waited))s — \(reason)")
+        recordBKAEvent("IdleGrace(cancel,\(reason))")
     }
 
     /// [T-bg-keepalive-debounce] Decide whether to stop silent audio now or
@@ -1180,6 +1329,7 @@ final class BackgroundKeepAliveManager: NSObject, ObservableObject, CLLocationMa
         guard !silentAudioActive else { return }
         // Starting up means we definitely don't want any queued stop to fire.
         cancelPendingSilentAudioStop(reason: "startSilentAudio")
+        cancelIdleGrace(reason: "startSilentAudio")
         let attempt = silentAudioActivationRetries + 1
         let sessions = SessionActivityTracker.shared.activeSessions.count
         logger.info("[BKA][Start] reason=\(reason) sessions=\(sessions) attempt=\(attempt)/\(Self.maxActivationRetries)")
@@ -1312,6 +1462,12 @@ final class BackgroundKeepAliveManager: NSObject, ObservableObject, CLLocationMa
     func stopSilentAudio(reason: String = "direct") {
         // A direct stop supersedes any debounced one and aborts pending retries.
         cancelPendingSilentAudioStop(reason: "stopSilentAudio called")
+        // [T-ios-bg-idle-grace] Also clear a pending idle grace. Required, not
+        // belt-and-braces: stopSilentAudio has direct callers (media suspend,
+        // interruption teardown) that never go through evaluateSilentAudio, and
+        // the grace timer's own handler calls in here — clearing it first there
+        // makes this a no-op rather than re-entrancy.
+        cancelIdleGrace(reason: "stopSilentAudio called")
         silentAudioActivationRetries = 0
         guard silentAudioActive else { return }
         let sessions = SessionActivityTracker.shared.activeSessions.count
@@ -1504,10 +1660,24 @@ final class BackgroundInterruptionTracker: ObservableObject {
     private var wasInterrupted = false
     private var cancellables: Set<AnyCancellable> = []
 
-    private init() {
-        // Auto-dismiss the banner once enhanced background is turned on, so
-        // the user isn't left wondering what else they need to enable after
-        // tapping "Enable" and flipping the switch.
+    // [T-ios-scene-create-watchdog-corelocation] This singleton is first touched
+    // from a SwiftUI view body (BackgroundInterruptionBanner, mounted at the app
+    // root), so its init runs on the main thread during scene-create. Reaching
+    // for `BackgroundKeepAliveManager.shared` HERE is what dragged that manager's
+    // own dispatch_once — and, before the fix, its CoreLocation IPC — onto that
+    // critical path. Keep this init free of cross-singleton work and subscribe
+    // lazily instead.
+    private init() {}
+
+    /// Auto-dismiss the banner once enhanced background is turned on, so the
+    /// user isn't left wondering what else they need to enable after tapping
+    /// "Enable" and flipping the switch. Deferred out of `init()` (see above);
+    /// idempotent, and only forces the keep-alive manager once the banner is
+    /// actually being observed.
+    private var didSubscribe = false
+    func startObservingIfNeeded() {
+        guard !didSubscribe else { return }
+        didSubscribe = true
         BackgroundKeepAliveManager.shared.$enhancedBackgroundEnabled
             .removeDuplicates()
             .sink { [weak self] enabled in
@@ -1571,6 +1741,13 @@ struct BackgroundInterruptionBanner: View {
                 .sheet(isPresented: $showSettings) {
                     NavigationStack { EnhancedBackgroundSettingsView() }
                 }
+                // [T-ios-scene-create-watchdog-corelocation] Subscribe only once
+                // the banner is actually on screen — the subscription exists to
+                // auto-dismiss a VISIBLE banner, so there is nothing to observe
+                // before that. This keeps BackgroundKeepAliveManager.shared off
+                // the scene-create path (it is otherwise forced by setup(), well
+                // after the scene exists).
+                .onAppear { tracker.startObservingIfNeeded() }
         }
     }
 

@@ -604,7 +604,11 @@ private fun ColumnScope.ApiKeyConfigSection(
                 useResponsesAPI = providerType == ProviderType.openAI && useResponsesAPI,
             )
             providerRepository.addInstance(instance)
-            providerRepository.saveApiKey(instance.id, apiKey.trim())
+            // [T-empty-key-compat-endpoints] Never persist an empty string as
+            // the key — usableApiKey() treats absent as the keyless-valid case.
+            if (apiKey.isNotBlank()) {
+                providerRepository.saveApiKey(instance.id, apiKey.trim())
+            }
             // Auto-refresh models in background (fetches from API or falls back to models.dev)
             scope.launch { providerRepository.refreshModels(instance) }
             onSaved()
@@ -612,7 +616,15 @@ private fun ColumnScope.ApiKeyConfigSection(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
-        enabled = apiKey.isNotBlank(),
+        // [T-empty-key-compat-endpoints] An empty key is a valid input when
+        // targeting a third-party OpenAI/Anthropic-compatible endpoint
+        // (custom base URL filled in) — ollama / LM Studio / LiteLLM /
+        // private relays need no key. Official endpoints and OAuth flows
+        // keep requiring a credential. Mirrors iOS AddProviderView.
+        enabled = apiKey.isNotBlank() || (
+            customBaseURL.isNotBlank() &&
+                (providerType == ProviderType.openAI || providerType == ProviderType.anthropic)
+        ),
     ) {
         Text(stringResource(R.string.provider_list_add_provider))
     }

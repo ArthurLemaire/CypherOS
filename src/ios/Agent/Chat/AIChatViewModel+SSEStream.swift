@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 private let logger = AppLogger(category: "AIChatVM")
 
@@ -24,6 +25,52 @@ private final class StreamIteratorBox<T: Sendable>: @unchecked Sendable {
 // MARK: - Background SSE Stream Processing
 
 extension AIChatViewModel {
+
+    // MARK: - Stall diagnostics helpers (#181)
+
+    /// Millisecond-precision wall-clock stamp for stall diagnosis. The
+    /// `AppLogger` line already carries a timestamp, but that one is written
+    /// when the line is flushed; these are captured at the measurement point,
+    /// which is what makes "was Task.sleep stretched?" answerable.
+    nonisolated static func diagTimestamp(_ date: Date) -> String {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "HH:mm:ss.SSS"
+        return fmt.string(from: date)
+    }
+
+    /// Foreground/background at the instant the watchdog fired. If the app was
+    /// backgrounded, candidate 3 (throttled/stretched timer) becomes the prime
+    /// suspect; if it was active the whole time, candidate 3 is out.
+    @MainActor
+    static func diagAppStateName() -> String {
+        switch UIApplication.shared.applicationState {
+        case .active: return "active"
+        case .inactive: return "inactive"
+        case .background: return "background"
+        @unknown default: return "unknown"
+        }
+    }
+
+    /// Short event-kind label for the arrival timeline. Deliberately does NOT
+    /// include payloads — this runs on a hot path and must never log message
+    /// content.
+    nonisolated static func diagEventName(_ event: AgentStreamEvent) -> String {
+        switch event {
+        case .contentBlockStart(let s):
+            switch s {
+            case .text: return "contentBlockStart(text)"
+            case .toolUse(_, let name): return "contentBlockStart(tool:\(name))"
+            }
+        case .textDelta: return "textDelta"
+        case .toolInputDelta(let name, _): return "toolInputDelta(\(name))"
+        case .toolCallComplete(_, let name, _, _): return "toolCallComplete(\(name))"
+        case .usage: return "usage"
+        case .thinkingDelta: return "thinkingDelta"
+        case .reasoningContent: return "reasoningContent"
+        case .reasoningEcho: return "reasoningEcho"
+        case .done(let stop): return "done(\(stop))"
+        }
+    }
 
     // MARK: - Background SSE Stream Processing
 
@@ -271,12 +318,44 @@ extension AIChatViewModel {
         let stallTimeoutSeconds: TimeInterval = 120
         var _streamError: Error? = nil
         let iterBox = StreamIteratorBox(stream)
+        // [StreamDiag] (#181) Diagnostics for the "No response from the server
+        // for 120 seconds" stall. Three hypotheses are still live and this
+        // instrumentation is what separates them:
+        //   1. the request never actually went out (loop stuck on an await)
+        //   2. the stream really did go 120s without an event
+        //   3. Task.sleep got stretched by background CPU throttling, so the
+        //      watchdog fired on wall-clock far from the nominal 120s
+        //      (BrowserTabPool.swift documents this exact trap, verified on
+        //      device — that code switched to a GCD wall-clock timer; this
+        //      watchdog is still a plain Task.sleep).
+        // Both timestamps below are wall-clock, so comparing the measured gap
+        // against `stallTimeoutSeconds` settles (3) on its own.
+        let streamDiagSession = await MainActor.run { self.sessionId ?? "nil" }
+        let streamDiagModel = await MainActor.run { self.selectedModel.id }
+        var lastEventAt = Date()
+        var eventSeq = 0
+        logger.info("[StreamDiag] stream open session=\(streamDiagSession) provider=\(provider.name) model=\(streamDiagModel) at=\(Self.diagTimestamp(Date()))")
         do {
         while true {
+            let iterationStartedAt = Date()
             let maybeEvent: AgentStreamEvent? = try await withThrowingTaskGroup(of: AgentStreamEvent?.self) { group in
                 group.addTask { try await iterBox.next() }
                 group.addTask {
                     try await Task.sleep(nanoseconds: UInt64(stallTimeoutSeconds * 1_000_000_000))
+                    // Measured elapsed vs the nominal timeout: a gap far above
+                    // 120s means the sleep was stretched (candidate 3); a gap
+                    // very close to 120s rules that out and points at a genuine
+                    // silent stream (candidate 2).
+                    let firedAt = Date()
+                    let measured = firedAt.timeIntervalSince(iterationStartedAt)
+                    let sinceLastEvent = firedAt.timeIntervalSince(lastEventAt)
+                    let appState = await MainActor.run { Self.diagAppStateName() }
+                    logger.error(
+                        "[StreamDiag][STALL] watchdog fired session=\(streamDiagSession) provider=\(provider.name) model=\(streamDiagModel) "
+                        + "nominal=\(Int(stallTimeoutSeconds))s measured=\(String(format: "%.1f", measured))s "
+                        + "sinceLastEvent=\(String(format: "%.1f", sinceLastEvent))s eventsThisStream=\(eventSeq) "
+                        + "appState=\(appState) iterStart=\(Self.diagTimestamp(iterationStartedAt)) firedAt=\(Self.diagTimestamp(firedAt))"
+                    )
                     throw StreamStallError(seconds: Int(stallTimeoutSeconds))
                 }
                 let result = try await group.next()!
@@ -285,6 +364,19 @@ extension AIChatViewModel {
             }
             guard let event = maybeEvent else { break }
             try Task.checkCancellation()
+            // [StreamDiag] Per-event timeline. Throttled: the first 5 events of
+            // a stream (covers "did the first byte ever arrive"), then only when
+            // a gap exceeds 5s — enough to reconstruct the arrival timeline
+            // without flooding the log on a normal fast stream.
+            do {
+                let now = Date()
+                let gap = now.timeIntervalSince(lastEventAt)
+                eventSeq += 1
+                if eventSeq <= 5 || gap >= 5 {
+                    logger.info("[StreamDiag] event #\(eventSeq) \(Self.diagEventName(event)) gap=\(String(format: "%.2f", gap))s at=\(Self.diagTimestamp(now)) session=\(streamDiagSession)")
+                }
+                lastEventAt = now
+            }
 
             switch event {
             case .contentBlockStart(let start):
@@ -376,7 +468,14 @@ extension AIChatViewModel {
                             block.content = assistantText
                             block.cachedMarkdown = parsed
                             cacheAttributedString(for: block)
-                            objectWillChange.send()
+                            // [T-ios-stream-publish-transition-gap] "Bypassing
+                            // the suspend check" (above) refers to
+                            // `streamingUIUpdatesSuspended` — the scroll/defer
+                            // gate, which this path deliberately ignores so text
+                            // is never swallowed. It must NOT also bypass
+                            // `transitionSuspended`: that one exists solely to
+                            // keep publishes out of a hosting-subgraph teardown.
+                            publishUnlessTransitioning()
                             if wasEmpty {
                                 blockContentFilledSignal.send((
                                     messageId: messages[msgIdx].id,
@@ -408,7 +507,8 @@ extension AIChatViewModel {
                         logger.debug("[TOOL:CREATED] \(name) id:\(tuId.prefix(20)) displayText=\"\(toolBlock.toolSummary ?? toolBlock.toolDescription)\" content=\"\"")
                         #endif
                         logger.info("[ToolLifecycle] RECEIVED toolId=\(tuId.prefix(20)) tool=\(name) sid=\(self.sessionId?.prefix(8) ?? "nil") appState=\(UIApplication.shared.applicationState == .active ? "fg" : "bg") suspended=\(self.streamingUIUpdatesSuspended) isProcessing=\(self.isProcessing)")
-                        objectWillChange.send()
+                        // [T-ios-stream-publish-transition-gap]
+                        publishUnlessTransitioning()
                         scrollToBottomSignal.send()
                     }
                     currentStreamingToolId = tuId
@@ -623,7 +723,10 @@ extension AIChatViewModel {
                     logger.debug("[TOOL:STREAMING] \(name) displayText=\"\(blk.toolSummary ?? blk.toolDescription)\" content=\"\(displayContent.prefix(120))\" bytes:\(byteCount)")
                     #endif
                     if !hadSummary && blk.toolSummary != nil {
-                        objectWillChange.send()
+                        // [T-ios-stream-publish-transition-gap] This is the
+                        // `[TOOL:STREAMING]` site whose publishes straddled the
+                        // teardown in the 2026-08-10 crash log.
+                        publishUnlessTransitioning()
                     }
                     if shouldScroll { scrollToBottomSignal.send() }
                 }
@@ -822,7 +925,8 @@ extension AIChatViewModel {
                               let thinkIdx = currentThinkingBlockIdx,
                               thinkIdx < self.messages[msgIdx].blocks.count else { return }
                         self.messages[msgIdx].blocks[thinkIdx].flushThinkingBuffer()
-                        self.objectWillChange.send()
+                        // [T-ios-stream-publish-transition-gap]
+                        self.publishUnlessTransitioning()
                         if self.isNearBottom { self.scrollToBottomSignal.send() }
                     }
                 }

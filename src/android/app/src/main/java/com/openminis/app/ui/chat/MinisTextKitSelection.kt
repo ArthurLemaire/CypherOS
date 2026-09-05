@@ -75,6 +75,19 @@ class TextShard(
     val renderedToRawOffset: ((Int) -> Int)? = null,
     /** The raw markdown source for this shard. Used together with [renderedToRawOffset] for "copy markdown" paths. */
     val rawMarkdown: String? = null,
+    /**
+     * True when this shard is a self-contained unit that a long-press should
+     * select in full — currently, a table cell.
+     *
+     * Prose wants the sentence-level expansion [SelectionController] normally
+     * applies; a table cell does not. A cell's text is usually punctuation-free
+     * ("Alice Smith", "张三 项目经理"), so that scan runs to both ends and picks
+     * up the whole cell anyway — but a cell that DOES contain punctuation
+     * ("1,200", "v1.2, beta") would select only a fragment, which is never what
+     * someone long-pressing a table wants. Marking the cell atomic makes the
+     * cell boundary the rule instead of an accident of its content.
+     */
+    val isAtomicUnit: Boolean = false,
 )
 
 /**
@@ -304,6 +317,20 @@ class SelectionController {
         val text = shard.plainText
         if (text.isEmpty()) {
             beginSelection(pos)
+            return
+        }
+        // A table cell selects as a whole cell — see TextShard.isAtomicUnit.
+        if (shard.isAtomicUnit) {
+            val start = text.indexOfFirst { !it.isWhitespace() }
+            if (start < 0) {
+                beginSelection(pos)
+                return
+            }
+            val end = text.indexOfLast { !it.isWhitespace() } + 1
+            selection.value = TextSelection(
+                start = TextPosition(pos.shard, start),
+                end = TextPosition(pos.shard, end),
+            )
             return
         }
         val (lo, hi) = wordBoundsAt(text, pos.charOffset)
@@ -1130,10 +1157,12 @@ fun buildTextShard(
     coordinatesProvider: () -> LayoutCoordinates?,
     rawMarkdown: String? = null,
     renderedToRawOffset: ((Int) -> Int)? = null,
+    isAtomicUnit: Boolean = false,
 ): TextShard = TextShard(
     id = id,
     plainText = plainText,
     textLayoutResult = layoutResult,
+    isAtomicUnit = isAtomicUnit,
     positionInWindow = {
         val c = coordinatesProvider()
         if (c != null && c.isAttached) c.positionInWindow() else Offset.Zero

@@ -400,7 +400,11 @@ struct MinisApp: App {
                 // user hadn't enabled Background Keep-Alive at the time get a
                 // one-shot guidance notification with the setting to turn on;
                 // stale (>24h) records are dropped silently.
-                ShortcutRunTracker.checkPendingOnForeground()
+                // [T-shortcut-orphan-false-positive] Now async: it verifies
+                // against ChatStore whether each orphan actually completed before
+                // warning. Wrapped in a Task so scenePhase handling stays
+                // synchronous; the scan is advisory and nothing below depends on it.
+                Task { await ShortcutRunTracker.checkPendingOnForeground() }
                 AgentLiveActivityManager.shared.cleanupStaleActivities(source: "scenePhase.active")
                 // [T-ios-live-activity-soft-finish] If a completed task's Live
                 // Activity is lingering (soft-finished, awaiting the user), the
@@ -485,6 +489,12 @@ struct MinisApp: App {
             if #available(iOS 17.0, *) {
                 SkillFilesystemNotifier.shared.drainIfDirtyAsync(reason: "scenePhase background")
             }
+            // [T-config-audit-wal-loss] The config-audit DB runs in WAL mode and
+            // nothing else checkpoints it (it lives in its own file, deliberately
+            // outside minis.db). Without a checkpoint here a jetsam can drop
+            // history that only ever reached the -wal sidecar.
+            // Cheap and synchronous — this is the last reliable moment to do it.
+            ConfigAuditLog.shared.checkpoint()
             // "Lock on exit" mode — drop every cached unlock
             // stamp so re-entering any locked session requires Face ID.
             // Per-session AIChatView observer only covers the session

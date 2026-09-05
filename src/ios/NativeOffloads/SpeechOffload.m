@@ -333,11 +333,48 @@ static int cmd_transcribe(int argc, char **argv, int stdout_fd, BOOL compact, BO
             }];
 
             AVAudioInputNode *inputNode = audioEngine.inputNode;
-            AVAudioFormat *recordingFormat = [inputNode outputFormatForBus:0];
-            [inputNode installTapOnBus:0 bufferSize:1024 format:recordingFormat
-                                 block:^(AVAudioPCMBuffer *buffer, AVAudioTime *when) {
-                [request appendAudioPCMBuffer:buffer];
-            }];
+            // [T-ios-speech-installtap-nsexception] Use the INPUT bus format, not
+            // outputFormatForBus:. The two disagree when the hardware route runs
+            // at a non-48k rate (e.g. after a Bluetooth / TTS route change) and
+            // installTap then rejects the format. This mirrors
+            // VoiceActivityDetector.setupEngineAndVAD, which documents the input
+            // bus as the one installTap actually accepts.
+            AVAudioFormat *recordingFormat = [inputNode inputFormatForBus:0];
+
+            // A 0-channel / 0 Hz format means the input node isn't usable — the
+            // session isn't active, the route is mid-change, or (the reported
+            // case) we're running in the BACKGROUND where the mic isn't ours.
+            // installTapOnBus: does not return an NSError for this: it RAISES
+            // from _AVAE_CheckAndReturnErr, which no NSError** check can catch,
+            // and the uncaught exception killed the process (TestFlight 1.11
+            // build 13, background task). Fail the tool instead.
+            if (recordingFormat.channelCount == 0 || recordingFormat.sampleRate <= 0) {
+                recognitionError = [NSError errorWithDomain:@"MinisSpeech" code:-3 userInfo:@{
+                    NSLocalizedDescriptionKey: @"Microphone input unavailable (0 channels / 0 Hz). "
+                                                @"The app may be in the background or another app holds the mic."
+                }];
+                dispatch_semaphore_signal(sem);
+                return;
+            }
+
+            // Even with a valid-looking format installTapOnBus: can still raise
+            // (engine/route in a bad state). Wrap it — an ObjC exception here is
+            // otherwise fatal.
+            __block BOOL tapInstalled = NO;
+            tapInstalled = noff_try_objc(^{
+                [inputNode installTapOnBus:0 bufferSize:1024 format:recordingFormat
+                                     block:^(AVAudioPCMBuffer *buffer, AVAudioTime *when) {
+                    [request appendAudioPCMBuffer:buffer];
+                }];
+            });
+            if (!tapInstalled) {
+                recognitionError = [NSError errorWithDomain:@"MinisSpeech" code:-4 userInfo:@{
+                    NSLocalizedDescriptionKey: @"Failed to attach the microphone tap "
+                                                @"(audio engine rejected the input format)."
+                }];
+                dispatch_semaphore_signal(sem);
+                return;
+            }
 
             [audioEngine prepare];
             NSError *startError = nil;

@@ -427,24 +427,15 @@ extension AIChatViewModel {
 
         // 1. Session-specific sub model binding takes precedence — user
         //    explicitly picked a sub model for this conversation.
+        //    [T-ios-regen-title-model-resolution #112] Resolution now goes
+        //    through the shared static helper so this path and the static
+        //    regenerate path can never drift apart again (the original #34
+        //    availability fix was hand-copied into regenerateSessionTitle and
+        //    the copy missed it).
         if let sid = sessionId, let binding = store.binding(for: sid),
-           let sub = binding.subModelSource {
-            switch sub {
-            case .directEntry(let entryId, _):
-                if let entry = store.entry(for: entryId) { return entry }
-                // Entry was deleted — fall through.
-            case .group(let groupId, let resolvedEntryId):
-                // [T-ios-disabled-provider-still-selectable-via-group #34] Mirror
-                // resolveCurrentEntry: only honor the cached resolvedEntryId when
-                // its provider is still usable; otherwise re-resolve through the
-                // router so a disabled-provider sub-model isn't silently used.
-                if let entry = store.entry(for: resolvedEntryId),
-                   let inst = store.instance(for: entry.providerInstanceId),
-                   inst.isEnabled, inst.hasAnyCredential, !entry.isHidden { return entry }
-                if let group = store.group(for: groupId),
-                   let freshEntryId = ModelGroupRouter.resolve(group: group, sessionId: sid, store: store),
-                   let entry = store.entry(for: freshEntryId) { return entry }
-            }
+           let sub = binding.subModelSource,
+           let entry = Self.resolveSourceForSubTasks(sub, sessionId: sid, store: store) {
+            return entry
         }
 
         // 2. No session-level sub binding — use the current session's primary
@@ -454,6 +445,120 @@ extension AIChatViewModel {
         //    different default. Users who DO want a separate cheap sub model
         //    can configure it explicitly per-session.
         return resolveCurrentEntry()
+    }
+
+    // MARK: - [T-ios-regen-title-model-resolution #112] Shared sub-task source resolution
+
+    /// Resolve one SessionModelSource for sub-tasks (title generation etc.).
+    /// Stateless so BOTH the instance auto-title path (`resolveSubEntry`) and
+    /// the static regenerate path use the same code — GitHub #112 was caused
+    /// by a hand-copied inline version that missed #34's availability rules.
+    ///
+    /// Group sources ALWAYS re-route through ModelGroupRouter first, so a
+    /// member-order change takes effect on the very next resolution (#112
+    /// symptom ①). The router already filters to available members
+    /// (enabled + credentialed + not hidden, #34), and both its strategies
+    /// are deterministic (fallback → first available; loadBalance → stable
+    /// hash), so when nothing changed the result equals the cached
+    /// resolvedEntryId. The cached id is kept only as a last resort for the
+    /// "router finds no available member right now" edge.
+    static func resolveSourceForSubTasks(
+        _ source: SessionModelSource,
+        sessionId: String,
+        store: ProviderConfigStore
+    ) -> ModelEntry? {
+        switch source {
+        case .directEntry(let entryId, _):
+            // Explicit user pick: honor it as long as the entry still exists
+            // (deleted → nil so the caller can fall through, mirroring the
+            // historical auto-path behavior).
+            return store.entry(for: entryId)
+        case .group(let groupId, let resolvedEntryId):
+            if let group = store.group(for: groupId),
+               let freshEntryId = ModelGroupRouter.resolve(group: group, sessionId: sessionId, store: store),
+               let entry = store.entry(for: freshEntryId) {
+                return entry
+            }
+            // No routable member (e.g. everything temporarily disabled) —
+            // fall back to the cached resolution iff still usable.
+            if let entry = store.entry(for: resolvedEntryId),
+               let inst = store.instance(for: entry.providerInstanceId),
+               inst.isEnabled, inst.hasAnyCredential, !entry.isHidden {
+                return entry
+            }
+            return nil
+        }
+    }
+
+    /// [T-ios-regen-title-model-resolution #112] Title-eligibility filter,
+    /// aligned with Android's T334 rules (SessionListViewModel.regenerateTitle):
+    /// the model must output text (no declared modalities counts as text) and
+    /// its id must not name a non-chat capability — those endpoints reject the
+    /// chat/completions schema or stream nothing useful.
+    static func isTitleEligible(_ entry: ModelEntry) -> Bool {
+        // Declared modalities without text output = pure TTS/image/video/ASR
+        // model. No override (nil) counts as a normal text chat model —
+        // mirrors Android's "outs == null || outs.isEmpty() || contains(text)".
+        if let modality = entry.baseModel.modalityOverride, !modality.contains(.textOutput) {
+            return false
+        }
+        let idLower = entry.model.id.lowercased()
+        let nonChat = ["tts", "voiceclone", "voicedesign", "embedding", "embed-", "whisper", "image", "video"]
+        return !nonChat.contains { idLower.contains($0) }
+    }
+
+    /// [T-ios-regen-title-model-resolution #112] Ordered candidate list for the
+    /// regenerate-title fallback loop, mirroring Android:
+    ///   session sub-model → session primary (binding / session.modelId /
+    ///   default group) → every other available title-eligible entry.
+    /// All candidates are deduped by entry id and must pass the availability
+    /// (enabled + credentialed + visible) and title-eligibility filters.
+    static func regenerateTitleCandidates(sessionId: String) async -> [ModelEntry] {
+        let store = ProviderConfigStore.shared
+
+        func isAvailable(_ entry: ModelEntry) -> Bool {
+            guard let inst = store.instance(for: entry.providerInstanceId) else { return false }
+            return inst.isEnabled && inst.hasAnyCredential && !entry.isHidden
+        }
+
+        var ordered: [ModelEntry] = []
+        var seen = Set<String>()
+        func push(_ entry: ModelEntry?) {
+            guard let entry, !seen.contains(entry.id),
+                  isAvailable(entry), Self.isTitleEligible(entry) else { return }
+            seen.insert(entry.id)
+            ordered.append(entry)
+        }
+
+        let binding = store.binding(for: sessionId)
+
+        // Tier 1: explicit per-session sub model.
+        if let sub = binding?.subModelSource {
+            push(Self.resolveSourceForSubTasks(sub, sessionId: sessionId, store: store))
+        }
+        // Tier 2: the session's primary model.
+        if let primary = binding?.primarySource {
+            push(Self.resolveSourceForSubTasks(primary, sessionId: sessionId, store: store))
+        }
+        // Tier 2b: no binding (or unresolvable) — the session row's persisted
+        // modelId (survives iCloud sync without a binding row).
+        if ordered.isEmpty, let session = await ChatStore.shared.getSession(sessionId) {
+            let mid = session.modelId
+            if !mid.isEmpty {
+                let matching = store.modelEntries.filter { $0.model.id == mid }
+                push(matching.first(where: isAvailable))
+            }
+        }
+        // Tier 2c: default primary group.
+        if let gid = store.defaultPrimaryGroupId, let group = store.group(for: gid),
+           let entryId = ModelGroupRouter.resolve(group: group, sessionId: sessionId, store: store) {
+            push(store.entry(for: entryId))
+        }
+        // Tier 3: every other available title-eligible entry (fallback pool).
+        for entry in store.modelEntries {
+            push(entry)
+        }
+        return ordered
     }
 
 }

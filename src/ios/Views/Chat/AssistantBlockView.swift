@@ -204,6 +204,11 @@ struct ToolCapsuleView: View {
     @State private var dotsActive = false
     /// [T-tool-bg-suspended-hint] Drives the background-suspension info alert.
     @State private var showBgHintAlert = false
+    /// [T-ios-memory-write-revoke] Confirmation + result alerts for undoing a
+    /// memory_write straight from the tool capsule's long-press menu.
+    @State private var showRevokeMemoryAlert = false
+    @State private var revokeMemoryResult: String?
+    @State private var showRevokeMemoryResultAlert = false
     @ObservedObject private var keepAlive = BackgroundKeepAliveManager.shared
 
     /// Show the yellow ⓘ hint only when this tool was flagged as background-
@@ -216,6 +221,27 @@ struct ToolCapsuleView: View {
     /// Here" long-press menu item while the agent loop is busy — tapping it
     /// mid-run would corrupt the in-flight processing state.
     @EnvironmentObject private var vm: AIChatViewModel
+
+    /// [T-ios-memory-write-revoke] Whether this block is a `memory_write` that
+    /// carries input args at all — the cheap check that decides whether the Undo
+    /// menu item is offered. Deliberately does NOT parse the JSON: this feeds
+    /// `ToolMenuKey`, which is rebuilt on every eager body pass, and re-running
+    /// `JSONSerialization` there is exactly the per-frame work the menu gate
+    /// exists to avoid. Other tools and `memory_get` never match.
+    private var isRevocableMemoryWrite: Bool {
+        guard case .memoryTool(let action) = block.kind, action == "memory_write" else { return false }
+        guard let args = block.toolInputArgs else { return false }
+        return !args.isEmpty
+    }
+
+    /// The text this block wrote to memory. Parsed lazily — only when the menu
+    /// item is actually tapped — same treatment as `toolDetailsClipboard`.
+    /// Nil when the args carry no non-empty `content` (e.g. a malformed or
+    /// still-streaming tool call), which the confirm action treats as a no-op.
+    private var memoryWriteContent: String? {
+        guard case .memoryTool(let action) = block.kind, action == "memory_write" else { return nil }
+        return MemoryWriteRevoker.writtenContent(fromToolInputArgs: block.toolInputArgs)
+    }
 
     /// Display text: prefer LLM-generated toolSummary, fall back to toolDescription.
     private var displayText: String {
@@ -396,10 +422,14 @@ struct ToolCapsuleView: View {
                 // subtree every frame (part of the deep ContextMenuModifier
                 // recursion in incident 98E8805F). `toolDetailsClipboard` is read
                 // lazily at TAP time, so the key only tracks structure: the tool
-                // (blockId) and whether the Re-run branch is shown (isProcessing).
+                // (blockId), whether the Re-run branch is shown (isProcessing),
+                // and whether the memory-Undo branch is shown. All three are
+                // cheap reads — the expensive payloads (clipboard dump, written
+                // memory text) are built at tap time, never in the key.
                 EquatableMenuGate(key: ToolMenuKey(
                     blockId: block.id,
-                    isProcessing: vm.isProcessing
+                    isProcessing: vm.isProcessing,
+                    canRevokeMemoryWrite: isRevocableMemoryWrite
                 )) {
                     // [T-ios-tool-bubble-longpress-menu]
                     Button {
@@ -429,6 +459,18 @@ struct ToolCapsuleView: View {
                             )
                         } label: {
                             Label(String(localized: "Re-run From Here"), systemImage: "arrow.clockwise")
+                        }
+                    }
+                    // [T-ios-memory-write-revoke] Undo the daily-log entry this
+                    // memory_write produced, without a detour through
+                    // Memories in Session → detail sheet. Only appears for a
+                    // memory_write that carries input args.
+                    if isRevocableMemoryWrite {
+                        Divider()
+                        Button(role: .destructive) {
+                            showRevokeMemoryAlert = true
+                        } label: {
+                            Label(String(localized: "Undo This Memory Write"), systemImage: "trash.slash")
                         }
                     }
                 }
@@ -469,6 +511,32 @@ struct ToolCapsuleView: View {
             Button(String(localized: "Maybe Later"), role: .cancel) {}
         } message: {
             Text(String(localized: "This tool may have been paused by the system while running in the background. Enable enhanced background execution to improve background task reliability."))
+        }
+        // [T-ios-memory-write-revoke] Mirrors the Revoke Memory confirmation in
+        // SessionMemoryView: confirm, then report the outcome in place — the
+        // user stays in the transcript, no navigation. The bubble itself is
+        // left alone; only the underlying daily-log file changed.
+        .alert(
+            String(localized: "Revoke Memory"),
+            isPresented: $showRevokeMemoryAlert
+        ) {
+            Button(String(localized: "Cancel"), role: .cancel) {}
+            Button(String(localized: "Revoke"), role: .destructive) {
+                // The menu item is gated on the cheap enum+args check, so the
+                // `content` parse can still come back empty here (malformed or
+                // still-streaming args). Report that rather than failing silently.
+                if let written = memoryWriteContent {
+                    revokeMemoryResult = MemoryWriteRevoker.revoke(writtenContent: written)
+                } else {
+                    revokeMemoryResult = String(localized: "No written content to revoke.")
+                }
+                showRevokeMemoryResultAlert = true
+            }
+        } message: {
+            Text(String(localized: "Remove this memory entry from the daily log? This cannot be undone."))
+        }
+        .alert(revokeMemoryResult ?? "", isPresented: $showRevokeMemoryResultAlert) {
+            Button(String(localized: "OK")) {}
         }
         .onChange(of: isStreaming) { streaming in
             dotsActive = streaming
@@ -605,101 +673,54 @@ struct ChatInputAppendListener: ViewModifier {
 
 // MARK: - Thinking Block View
 
-/// [T-thinking-stream-jank] Main-thread hitch monitor, active only while an
-/// expanded thinking block is streaming. Logs frame gaps > 100ms together with
-/// the current thinking length so hitches can be correlated with content size.
-/// One shared instance — at most one thinking block streams at a time.
+/// [T-thinkperf-release-displaylink] Retired hitch monitor.
+///
+/// This was a CADisplayLink that ticked at 60fps for the entire life of an
+/// expanded, streaming thinking block, logging frame gaps > 100ms plus a
+/// per-second frame summary. It was pure instrumentation for
+/// T-thinking-stream-jank: nothing ever read it but its own log lines.
+///
+/// It has been removed rather than `#if DEBUG`-gated, for two reasons:
+///
+///  1. It shipped. The originating commit (7573e28b8) called it "cheap enough
+///     to stay on in Debug" but never gated it, so every Release build ran the
+///     display link in the field. A 60fps timer's cost is not its tick body
+///     (85ms of main-thread CPU across a 209s Time Profiler trace, 2026-08-11)
+///     but the main-thread wake-up it forces every frame, which keeps the CPU
+///     out of idle. `stop()` only began a 25s grace window, so it kept ticking
+///     for 18s after the stream ended — observed at 172-190s while the app was
+///     otherwise idle at ~15ms/s. That is the shape of a battery complaint,
+///     and a CPU-percentage view hides it.
+///  2. A display link perturbs exactly what it claims to measure: holding the
+///     frame pipeline active changes the frame timing being sampled.
+///
+/// The jank it was built to investigate was diagnosed and fixed (the follow
+/// trigger moved from per-delta to flush pace). Should that work resume, prefer
+/// Instruments over a permanent in-app probe on a per-frame path.
+///
+/// The type is kept as an inert stub so call sites stay put and no behaviour
+/// depends on whether a probe happens to be compiled in.
 @MainActor
 final class ThinkingHitchMonitor {
     static let shared = ThinkingHitchMonitor()
-    private let logger = AppLogger(category: "ThinkPerf")
-    private var displayLink: CADisplayLink?
-    private var lastTimestamp: CFTimeInterval = 0
-    /// Body-eval counter since start (bumped by the view; sampled into hitch logs).
+
+    /// Retained so `ThinkingBlockView` keeps compiling; nothing reads it.
     var bodyEvalCount = 0
     var contentLenProvider: (() -> Int)?
-    /// The block that started the monitor. Stops from OTHER blocks are ignored —
-    /// with several thinking blocks in one chat, an older (collapsed / finished)
-    /// block's task(id:) firing false must not kill the live block's monitor.
-    private var ownerId: UUID?
 
-    func start(owner: UUID) {
-        if displayLink != nil {
-            ownerId = owner  // live monitor adopted by the newest streaming block
-            if collapsedAt != nil {
-                collapsedAt = nil  // re-expanded within the grace window
-                logger.info("[ThinkPerf] phase → EXPANDED (re-expand)")
-            }
-            return
-        }
-        ownerId = owner
-        lastTimestamp = 0
-        bodyEvalCount = 0
-        let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
-        link.add(to: .main, forMode: .common)
-        displayLink = link
-        logger.info("[ThinkPerf] hitch-monitor START owner=\(owner.uuidString.prefix(8))")
-    }
-
-    /// When the owner collapses, keep sampling for a grace window so the
-    /// COLLAPSED state's frame stats can be compared A/B against EXPANDED
-    /// under the same interactions. Frame lines are tagged with the phase.
-    private var collapsedAt: CFTimeInterval?
-    private static let collapsedGraceSeconds: CFTimeInterval = 25
-
-    func stop(owner: UUID) {
-        guard displayLink != nil, owner == ownerId else { return }
-        collapsedAt = CACurrentMediaTime()
-        logger.info("[ThinkPerf] phase → COLLAPSED (monitor continues \(Int(Self.collapsedGraceSeconds))s for A/B) bodyEvals=\(self.bodyEvalCount)")
-    }
-
-    private func hardStop() {
-        displayLink?.invalidate()
-        displayLink = nil
-        ownerId = nil
-        collapsedAt = nil
-        logger.info("[ThinkPerf] hitch-monitor STOP bodyEvals=\(self.bodyEvalCount)")
-    }
-
-    // Per-second frame statistics: dropped-frame count (>33ms), worst gap, and
-    // frame count — a per-second FPS/drop summary shows sub-100ms jank the
-    // single HITCH threshold misses.
-    private var statWindowStart: CFTimeInterval = 0
-    private var statFrames = 0
-    private var statDropped = 0
-    private var statWorstMs: Double = 0
-
-    @objc private func tick(_ link: CADisplayLink) {
-        defer { lastTimestamp = link.timestamp }
-        guard lastTimestamp > 0 else { statWindowStart = link.timestamp; return }
-        let gapMs = (link.timestamp - lastTimestamp) * 1000
-        statFrames += 1
-        if gapMs > 33 { statDropped += 1 }
-        if gapMs > statWorstMs { statWorstMs = gapMs }
-        if gapMs > 100 {
-            logger.info("[ThinkPerf] HITCH gap=\(Int(gapMs))ms contentLen=\(self.contentLenProvider?() ?? -1) bodyEvals=\(self.bodyEvalCount)")
-        }
-        let windowDt = link.timestamp - statWindowStart
-        if windowDt >= 1.0 {
-            let fps = Double(statFrames) / windowDt
-            let phase = collapsedAt == nil ? "EXP" : "COL"
-            // [T-log-noise-privacy 2026-07-18] info → debug: per-second frame
-            // stats; the HITCH lines (rare, actionable) stay at info.
-            logger.debug("[ThinkPerf] [\(phase)] frames/s=\(Int(fps)) dropped=\(self.statDropped) worst=\(Int(self.statWorstMs))ms contentLen=\(self.contentLenProvider?() ?? -1) bodyEvals=\(self.bodyEvalCount)")
-            statWindowStart = link.timestamp
-            statFrames = 0
-            statDropped = 0
-            statWorstMs = 0
-        }
-        if let c = collapsedAt, link.timestamp - c > Self.collapsedGraceSeconds {
-            hardStop()
-        }
-    }
+    func start(owner: UUID) {}
+    func stop(owner: UUID) {}
 }
 
 struct ThinkingBlockView: View {
     @ObservedObject var block: AssistantBlock
     let isStreaming: Bool
+
+    // [T-thinking-scroll-followback GH#125] Per-view follow state. Reset on
+    // cell reuse / re-entry is fine — a fresh view simply follows again.
+    @State private var thinkingUserScrolledAway = false
+    @State private var lastThinkingDragAt: Date = .distantPast
+    @State private var frozenThinkingContent: String? = nil
 
     /// Bind to block.isThinkingExpanded so state survives cell reuse and triggers cell re-sizing.
     private var isExpanded: Binding<Bool> {
@@ -768,23 +789,25 @@ struct ThinkingBlockView: View {
             // Content — only visible when expanded, windowed to the tail
             // to prevent UI freeze on very long thinking (T-thinking-render-perf-ios).
             if isExpanded.wrappedValue, !block.content.isEmpty {
-                let windowSize = 8000
+                // [T-thinking-stream-window] While STREAMING, shrink the tail
+                // window 8000 → 2000: every flush re-lays-out the whole Text
+                // on the main thread, and an 8K plain-text relayout per flush
+                // is the reported "5K starts to lag, 10K unusable" jank (the
+                // hitch cost scales with the WINDOW, not the total). Reading
+                // the live tail only needs the recent context; the full 8K
+                // window comes back the moment streaming ends.
+                let windowSize = isStreaming ? 2000 : 8000
                 let total = block.content.count
                 let isTruncated = total > windowSize
-                let displayContent: String = {
-                    // [T-thinking-stream-jank] Time the tail-window slice and count
-                    // body re-evals. This closure runs on EVERY body evaluation of
-                    // an expanded thinking block — if body re-evals track the
-                    // per-token contentUpdateSeq rather than the 0.3s flush, the
-                    // eval counter in the 1s summary exposes it directly.
-                    let t0 = CFAbsoluteTimeGetCurrent()
-                    defer {
-                        let ms = (CFAbsoluteTimeGetCurrent() - t0) * 1000
-                        ThinkingHitchMonitor.shared.bodyEvalCount += 1
-                        if ms > 4 {
-                            AppLogger(category: "ThinkPerf").info("[ThinkPerf] slice SLOW total=\(total) took=\(String(format: "%.1f", ms))ms eval#\(ThinkingHitchMonitor.shared.bodyEvalCount)")
-                        }
-                    }
+                let displayContent: String = frozenThinkingContent ?? {
+                    // [T-thinkperf-release-displaylink] The slice timing and
+                    // body-eval counter that used to wrap this closure are gone.
+                    // It runs on EVERY body evaluation of an expanded thinking
+                    // block, so it paid two CFAbsoluteTimeGetCurrent calls per
+                    // eval to feed a counter only ThinkPerf's own log lines read.
+                    // The question it existed to answer — do body re-evals track
+                    // per-token contentUpdateSeq rather than the flush? — was
+                    // answered (they did) and fixed.
                     guard isTruncated else { return block.content }
                     let startIdx = block.content.index(block.content.endIndex, offsetBy: -windowSize)
                     let cleanStart = block.content[startIdx...].firstIndex(of: "\n")
@@ -802,11 +825,22 @@ struct ThinkingBlockView: View {
                                     .padding(.horizontal, 12)
                                     .padding(.bottom, 4)
                             }
-                            Text(displayContent)
+                            // [T-thinking-stream-jank] textSelection(.enabled)
+                            // makes SwiftUI Text substantially more expensive
+                            // per layout; selecting text that is actively
+                            // moving is useless anyway — enable it only once
+                            // streaming finished.
+                            let thinkingText = Text(displayContent)
                                 .font(.system(size: 13))
                                 .foregroundStyle(ChatColors.tertiaryText)
                                 .lineSpacing(3)
-                                .textSelection(.enabled)
+                            Group {
+                                if isStreaming {
+                                    thinkingText
+                                } else {
+                                    thinkingText.textSelection(.enabled)
+                                }
+                            }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.horizontal, 12)
                                 .padding(.bottom, 10)
@@ -814,6 +848,36 @@ struct ThinkingBlockView: View {
                         }
                     }
                     .frame(maxHeight: 300)
+                    // [T-thinking-scroll-followback GH#125] User-intent gate,
+                    // Android parity (ChatAssistantMessageUI.kt): mark
+                    // scrolled-away ONLY when a real finger drag moved the view
+                    // off the bottom — programmatic scrollTo offsets must not
+                    // set it, or follow would permanently disarm. Deployment
+                    // target is iOS 16 (no onScrollPhaseChange), so "real drag"
+                    // = a simultaneous DragGesture seen within the last 350ms.
+                    // A downward drag inside the box means "show me earlier
+                    // text" — that IS the scrolled-away intent, and unlike a
+                    // geometry probe it cannot be spoofed by our own
+                    // programmatic scrollTo (which fires no gesture). An
+                    // upward drag (heading back toward the tail) re-arms
+                    // following, as does the stream ending.
+                    .simultaneousGesture(
+                        DragGesture(minimumDistance: 6)
+                            .onEnded { value in
+                                lastThinkingDragAt = Date()
+                                if value.translation.height > 12 {
+                                    if !thinkingUserScrolledAway {
+                                        thinkingUserScrolledAway = true
+                                        frozenThinkingContent = displayContent
+                                        AppLogger(category: "ThinkPerf").info("[ThinkPerf] user scrolled away (dy=\(Int(value.translation.height))) — follow paused, content frozen at \(displayContent.count) chars")
+                                    }
+                                } else if value.translation.height < -12, thinkingUserScrolledAway {
+                                    thinkingUserScrolledAway = false
+                                    frozenThinkingContent = nil
+                                    AppLogger(category: "ThinkPerf").info("[ThinkPerf] user scrolled back (dy=\(Int(value.translation.height))) — following resumed")
+                                }
+                            }
+                    )
                     // [T-thinking-stream-jank] Follow the tail at FLUSH pace
                     // (content updates every 0.3s), not per token. The old
                     // trigger was the per-delta contentUpdateSeq — with it
@@ -821,10 +885,27 @@ struct ThinkingBlockView: View {
                     // scrollTo for every delta (~60-105/s measured); the flush
                     // pace is ~3-4/s for the same visual result.
                     .onChange(of: block.content.count) { len in
-                        guard isStreaming else { return }
-                        AppLogger(category: "ThinkPerf").debug("[ThinkPerf] scrollTo(flush) contentLen=\(len) seq=\(block.contentUpdateSeq)")
-                        withAnimation(.linear(duration: 0.15)) {
+                        guard isStreaming, !thinkingUserScrolledAway else { return }
+                        // [T-thinkperf-release-displaylink] Removed: this fired on
+                        // every content flush of a streaming thinking block, and
+                        // building the interpolated string cost more than the log
+                        // call. The two scroll-gesture lines above stay — they
+                        // fire once per user drag, not per flush.
+                        // Animated follow only for short content — animating a
+                        // long text's scroll re-lays-out every frame of the
+                        // 0.15s animation; a jump is one layout.
+                        if len > 3000 {
                             proxy.scrollTo("thinkingBottom", anchor: .bottom)
+                        } else {
+                            withAnimation(.linear(duration: 0.15)) {
+                                proxy.scrollTo("thinkingBottom", anchor: .bottom)
+                            }
+                        }
+                    }
+                    .onChange(of: isStreaming) { streaming in
+                        if !streaming {
+                            thinkingUserScrolledAway = false
+                            frozenThinkingContent = nil
                         }
                     }
                 }
@@ -876,6 +957,29 @@ struct ThinkingBlockView: View {
             if !streaming, !block.thinkingUserToggled {
                 AppLogger(category: "ThinkingCollapse").info("[ThinkingCollapse] auto-collapse block=\(block.id.uuidString.prefix(8)) streaming→false userToggled=false contentLen=\(block.content.count)")
                 block.isThinkingExpanded = false
+                // [T-ios-thinking-autocollapse-no-post] Post the invalidation
+                // HERE rather than relying on the `.onChange(of:)` below.
+                //
+                // Field evidence (2026-08-13 device log): `auto-collapse` fired
+                // 6 times while `[ThinkingCollapse] post` fired 0 times. The
+                // observer never ran, because this write happens inside another
+                // `onChange` handler in the same view update — SwiftUI compares
+                // `isThinkingExpanded` before and after that update as a whole,
+                // and the write is not observed as a transition. A manual tap is
+                // its own update, which is why tapping to collapse always worked
+                // and only the stream-end auto-collapse left a gap.
+                //
+                // Without the post, `SelfSizingCell`'s width-keyed dedup keeps
+                // answering with the EXPANDED height (the cache the
+                // `.thinkingBlockToggled` receiver exists to clear), so the pill
+                // draws collapsed inside a frame still sized for the expanded
+                // body — the blank strip under the first thinking block.
+                //
+                // Posting from both places is safe: the receiver only clears
+                // caches and reconfigures, and a duplicate notification
+                // re-measures to the same height.
+                NotificationCenter.default.post(name: .thinkingBlockToggled,
+                                                object: block.id)
             } else if !streaming {
                 AppLogger(category: "ThinkingCollapse").info("[ThinkingCollapse] stream-end-skip block=\(block.id.uuidString.prefix(8)) userToggled=\(block.thinkingUserToggled) currentlyExpanded=\(block.isThinkingExpanded)")
             }

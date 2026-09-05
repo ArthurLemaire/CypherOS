@@ -106,6 +106,25 @@ final class VoiceActivityDetector: NSObject {
     /// Timestamp (seconds since boot) when the current segment's speech started.
     private var segmentStartTime: TimeInterval = 0
 
+    #if DEBUG
+    /// [T-debug-full-session-capture] Every sample seen between start() and
+    /// stop(), with NO VAD trimming and no 5-minute rolling eviction — the
+    /// un-cut reference recording you compare the ASR payloads against to judge
+    /// whether the VAD's cut points are right. DEBUG only, so Release pays no
+    /// memory for it. Guarded by `captureLock` like the other buffers.
+    private var fullSessionSamples: [Float] = []
+    /// Hard ceiling so a forgotten-open mic can't grow this without bound.
+    /// 10 minutes @ 48 kHz ≈ 28.8M floats ≈ 115 MB; past it we stop appending
+    /// (rather than evicting) so the recording's true START is always preserved
+    /// — the start is exactly what this buffer exists to verify.
+    private static let fullSessionMaxSeconds: Double = 600
+    private var fullSessionTruncated = false
+    /// Identifies one start()→stop() recording. Stamped onto every segment
+    /// captured during the session so `debug.voiceInputs` can map the ASR
+    /// payloads back to this session's un-cut audio.
+    private(set) var currentSessionId: String?
+    #endif
+
     struct Configuration {
         /// Frames to confirm speech start (default 10 ≈ 0.32 s).
         var voiceStartFrameCount: Int32 = 10
@@ -168,6 +187,15 @@ final class VoiceActivityDetector: NSObject {
         rawAudioBuffer.removeAll(keepingCapacity: true)
         samplesSinceSegmentEnd = 0
         rawAudioStartTime = ProcessInfo.processInfo.systemUptime
+        #if DEBUG
+        captureLock.lock()
+        fullSessionSamples.removeAll(keepingCapacity: true)
+        fullSessionTruncated = false
+        captureLock.unlock()
+        let sessionId = UUID().uuidString
+        currentSessionId = sessionId
+        VoiceInputCapture.shared.beginSession(id: sessionId)
+        #endif
         isRunning = true
         interruptedWhileRunning = false
         registerSessionObservers()
@@ -274,6 +302,9 @@ final class VoiceActivityDetector: NSObject {
     /// that capture ended (button returns to idle instead of a frozen "Listening").
     private func fullStopFromInterruption() {
         tearDown()
+        #if DEBUG
+        publishFullSessionRecording()
+        #endif
         DispatchQueue.main.async { [weak self] in
             self?.delegate?.voiceActivityInterrupted()
         }
@@ -282,8 +313,41 @@ final class VoiceActivityDetector: NSObject {
     func stop() {
         guard isRunning else { return }
         tearDown()
+        #if DEBUG
+        publishFullSessionRecording()
+        #endif
         logger.info("VAD stopped")
     }
+
+    #if DEBUG
+    /// [T-debug-full-session-capture] Encode the whole start()→stop() recording
+    /// and hand it to `VoiceInputCapture`, which back-fills it onto every ASR
+    /// payload captured under this session id. Called after `tearDown()` so the
+    /// tap is already detached and the buffer is final. Encoding runs off the
+    /// caller's thread — a 10-minute buffer is ~29M samples and the WAV pass is
+    /// far too slow to sit on the stop path.
+    private func publishFullSessionRecording() {
+        guard let sessionId = currentSessionId else { return }
+        currentSessionId = nil
+        captureLock.lock()
+        let samples = fullSessionSamples
+        let rate = captureSampleRate
+        let truncated = fullSessionTruncated
+        fullSessionSamples.removeAll(keepingCapacity: false)
+        captureLock.unlock()
+        guard !samples.isEmpty else { return }
+        DispatchQueue.global(qos: .utility).async {
+            guard let wav = Self.wavData(fromFloatSamples: samples, sampleRate: rate) else { return }
+            let seconds = Double(samples.count) / rate
+            VoiceLog.log(String(format: "full-session capture: %.2fs (%d samples) → %d bytes WAV truncated=%@",
+                                seconds, samples.count, wav.count, truncated ? "yes" : "no"))
+            VoiceInputCapture.shared.attachFullSessionAudio(sessionId: sessionId,
+                                                           audioData: wav,
+                                                           durationSeconds: seconds,
+                                                           truncated: truncated)
+        }
+    }
+    #endif
 
     /// Flush any in-progress speech to recognition NOW (e.g. the user tapped
     /// pause). Builds a WAV from the captured samples and delivers it through the
@@ -333,6 +397,21 @@ final class VoiceActivityDetector: NSObject {
     }
 
     private func flushCapturedSegment(reason: SegmentEndReason) {
+        // A manual flush (user tapped pause) is NOT routed through the VAD
+        // library, so `voiceEnded()` never fires and `isSpeaking` stays true —
+        // the audio tap then keeps appending frames into `captureSamples` the
+        // instant this method releases `captureLock`, leaving ~0.1s of
+        // post-flush audio behind. That residue made the NEXT recording's
+        // `voiceStarted()` take the `alreadyHasSamples` (resume) branch and skip
+        // the 1.5s start back-fill, clipping the opening syllables. Close the
+        // speech state here so the tap stops contributing.
+        // `.maxLengthReached` deliberately does NOT clear it: that flush cuts a
+        // 60s chunk out of an utterance that is still in progress, and the tap
+        // must keep filling the next chunk (the library won't re-fire
+        // `voiceStarted()` until the next silence→speech transition).
+        // `.silenceDetected` never reaches here — `voiceEnded()` flushes inline
+        // and clears `isSpeaking` itself.
+        if reason == .manualFlush { isSpeaking = false }
         captureLock.lock()
         let samples = captureSamples
         let rate = captureSampleRate
@@ -391,6 +470,18 @@ final class VoiceActivityDetector: NSObject {
         vad = nil
         isRunning = false
         isSpeaking = false
+        // Belt-and-braces: drop any segment residue so the NEXT start() begins
+        // from a clean slate. Even with the manual-flush fix above, an in-flight
+        // tap callback can land between the flush and the engine actually
+        // stopping; whatever it appended belongs to the finished recording, not
+        // the next one. Leaving it behind is what made `voiceStarted()` mistake a
+        // brand-new recording for an interruption resume and skip the back-fill.
+        // (`tearDownEngineOnly()` intentionally does NOT do this — interruption
+        // resume relies on the samples surviving.)
+        captureLock.lock()
+        captureSamples.removeAll(keepingCapacity: true)
+        samplesSinceSegmentEnd = 0
+        captureLock.unlock()
         // End the capture intent — the coordinator drops `.capture` and either
         // re-applies a lower-priority intent's profile (e.g. reply TTS) or
         // deactivates the session, letting other audio resume.
@@ -408,11 +499,22 @@ final class VoiceActivityDetector: NSObject {
         // the `.capture` intent makes it apply `.record/.measurement` + activate;
         // we no longer call setCategory/setActive directly (that caused last-wins
         // races with TTS / keep-alive). All call sites run on the main actor.
+        //
+        // [T-voice-input-double-tap] MUST be beginAndWait, not begin: the profile
+        // switch is applied on a background queue, and `setupEngineAndVAD` reads
+        // `inputNode.inputFormat` immediately after. Reading it while the session
+        // still carries TTS's `.playback` profile yields 0 channels / 0 Hz and the
+        // start throws "Microphone input unavailable" — the first mic tap then
+        // stopped the speech but never began recording, and only the second tap
+        // (by which time the queue had drained) worked.
+        let t0 = CFAbsoluteTimeGetCurrent()
+        var applied = false
         MainActor.assumeIsolated {
             BackgroundKeepAliveManager.shared.suspendSilentAudioForMedia(caller: "VAD.capture")
-            AudioSessionCoordinator.shared.begin(.capture)
+            applied = AudioSessionCoordinator.shared.beginAndWait(.capture)
         }
-        VoiceLog.log("AVAudioSession: begin(.capture)")
+        let ms = (CFAbsoluteTimeGetCurrent() - t0) * 1000
+        VoiceLog.log("[VoiceInputDebug] AVAudioSession: begin(.capture) applied=\(applied) waited=\(String(format: "%.0f", ms))ms")
     }
 
     private func setupEngineAndVAD() throws {
@@ -562,6 +664,17 @@ final class VoiceActivityDetector: NSObject {
         }
 
         captureLock.lock()
+        #if DEBUG
+        // [T-debug-full-session-capture] Un-cut reference copy: no VAD gating,
+        // no rolling eviction, so the recording's real start survives.
+        if !fullSessionTruncated {
+            if Double(fullSessionSamples.count) / captureSampleRate >= Self.fullSessionMaxSeconds {
+                fullSessionTruncated = true
+            } else {
+                fullSessionSamples.append(contentsOf: samples)
+            }
+        }
+        #endif
         // Fallback: always accumulate raw audio (capped at 5 min = 300s)
         rawAudioBuffer.append(contentsOf: samples)
         // Track how much of it arrived outside a speech segment — this bounds

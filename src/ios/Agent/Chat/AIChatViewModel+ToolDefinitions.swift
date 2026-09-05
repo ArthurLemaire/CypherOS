@@ -4,6 +4,27 @@ import Foundation
 
 extension AIChatViewModel {
 
+    /// [T-ios-vision-branch-mismatch #182] THE single source of truth for
+    /// "can the model that will actually receive this turn see images itself".
+    ///
+    /// Both the `read_image` registration (which picks the tool DESCRIPTION) and
+    /// its handler (which picks pixels-vs-Vision-Group) must agree, or the model
+    /// is told one thing and handed another. They previously each wrote
+    /// `selectedModel.capabilities.supportedModalities.contains(.imageInput)` —
+    /// textually identical, yet wrong: `selectedModel` is the @Published UI
+    /// property, while the REQUEST is built from `resolveCurrentEntry()` (see
+    /// `activeModel` in runAgentLoop). With group routing or a session binding
+    /// those are different models, so a text-only model could be registered with
+    /// the Vision Group tool description and then served by the native pixel
+    /// branch — returning metadata and no description at all.
+    ///
+    /// Resolve from the same entry the request uses, and fall back to
+    /// `selectedModel` only when that resolution fails.
+    var activeModelHasNativeVision: Bool {
+        let model = resolveCurrentEntry()?.model ?? selectedModel
+        return model.capabilities.supportedModalities.contains(.imageInput)
+    }
+
     // MARK: - Tool Definitions (Canonical)
 
     func makeAgentTools() -> [AgentToolDefinition] {
@@ -124,17 +145,49 @@ extension AIChatViewModel {
             ))
         }
 
-        // Only include read_image when the model supports image input
-        if selectedModel.capabilities.supportedModalities.contains(.imageInput) {
+        // [T-ios-vision-group #182] Expose read_image when the model can see
+        // images ITSELF, or when a Vision Group is configured to see them on its
+        // behalf. Previously a text-only model simply never got this tool, so an
+        // image on disk was invisible to it with no recourse. The handler picks
+        // the matching branch: native models get pixels, others get the Vision
+        // Group's description as text.
+        //
+        // `isConfigured` is strict (group must resolve AND hold a usable
+        // image-capable member), so we never advertise a tool whose non-native
+        // path has nothing behind it.
+        let nativeVision = activeModelHasNativeVision
+        // Evaluate FIRST, not inside the `||` below: short-circuiting on
+        // `nativeVision` would skip the call, and this read is also what keeps
+        // `isConfiguredCached` — which the off-main T264 placeholder builder
+        // relies on — up to date.
+        let visionGroupConfigured = VisionGroupResolver.isConfigured
+        if nativeVision || visionGroupConfigured {
+            // Describe what this model will ACTUALLY receive. Promising "the
+            // image is returned directly" to a text-only model would set up a
+            // false expectation and invite it to re-call the tool when no pixels
+            // arrive; the non-native branch returns a written description instead.
+            let readImageDescription = nativeVision
+                ? "Read an image file from the Linux filesystem and return it for visual analysis. Supports PNG, JPEG, GIF, WEBP, and other common image formats. Use this to inspect generated charts, downloaded images, screenshots, or any visual output. The image is returned directly for your analysis along with metadata (dimensions, file size)."
+                : "Read an image file from the Linux filesystem and return a written description of it. Supports PNG, JPEG, GIF, WEBP, and other common image formats. Use this to inspect generated charts, downloaded images, screenshots, user-attached photos, or any visual output. You cannot see images directly, so the image is analyzed by a separate vision model and you receive its detailed description plus a transcription of any visible text, along with metadata (dimensions, file size). Because you cannot look again yourself, use the optional 'prompt' argument to ask for exactly what you need from the image — that is your only way to follow up on specific details."
+            // [T-ios-vision-group-t264 #182] The `prompt` argument is what makes
+            // the non-native branch usable for anything but a generic caption:
+            // the host model can't look at the image, so this is its only lever
+            // for directing the describing model. On the native branch the model
+            // sees the pixels itself, so the argument is documented as optional
+            // context rather than a question.
+            let promptDescription = nativeVision
+                ? "Optional. A note about what you are looking for in the image. Recorded alongside the result; the image itself is returned to you in full either way."
+                : "Optional. A specific question or instruction about the image, e.g. 'transcribe the table', 'what error message is shown in this screenshot', 'describe the people and their expressions'. This is passed to the vision model that reads the image for you, so ask for exactly the detail you need. If omitted, a generic detailed description with full text transcription is returned."
             tools.append(AgentToolDefinition(
                 name: "read_image",
-                description: "Read an image file from the Linux filesystem and return it for visual analysis. Supports PNG, JPEG, GIF, WEBP, and other common image formats. Use this to inspect generated charts, downloaded images, screenshots, or any visual output. The image is returned directly for your analysis along with metadata (dimensions, file size).",
+                description: readImageDescription,
                 parameters: [
                     "tool_title": AgentToolParam(type: .string, description: "A concise 5-10 word summary of what this tool call does, shown to the user (e.g. 'View generated bar chart', 'Inspect downloaded screenshot'). Use the same language as the user."),
                     "path": AgentToolParam(type: .string, description: "Linux path (e.g. /var/minis/attachments/chart.png) or minis:// URL (e.g. minis://attachments/chart.png)"),
+                    "prompt": AgentToolParam(type: .string, description: promptDescription),
                 ],
                 required: ["tool_title", "path"],
-                propertyOrdering: ["tool_title", "path"]
+                propertyOrdering: ["tool_title", "path", "prompt"]
             ))
         }
 

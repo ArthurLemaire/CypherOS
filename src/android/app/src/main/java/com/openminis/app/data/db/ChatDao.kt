@@ -98,6 +98,79 @@ interface ChatDao {
     """)
     suspend fun searchSessions(pattern: String): List<ChatSessionEntity>
 
+    // ─── Folders (session groups) ──────────────────────────────────────────
+    // [T-android-session-grouping] "Folder" in code, "Group" in the UI.
+
+    /**
+     * Ordered `updated_at DESC` to match iOS `listFolders()`. Rows with a blank
+     * id are skipped — such a row could not be opened, filed into, or synced,
+     * so surfacing it would only produce a dead card.
+     */
+    @Query("SELECT * FROM folders WHERE id != '' ORDER BY updated_at DESC")
+    fun observeFolders(): Flow<List<FolderEntity>>
+
+    @Query("SELECT * FROM folders WHERE id != '' ORDER BY updated_at DESC")
+    suspend fun listFolders(): List<FolderEntity>
+
+    @Query("SELECT * FROM folders WHERE id = :id")
+    suspend fun getFolder(id: String): FolderEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertFolder(folder: FolderEntity)
+
+    /**
+     * `description = COALESCE(:description, description)` so passing null LEAVES
+     * the stored description alone while an empty string clears it — the
+     * caller's two intents stay distinguishable, matching iOS renameFolder.
+     */
+    @Query(
+        """
+        UPDATE folders
+        SET name = :name,
+            description = COALESCE(:description, description),
+            updated_at = :updatedAt
+        WHERE id = :id
+        """,
+    )
+    suspend fun renameFolder(id: String, name: String, description: String?, updatedAt: Long)
+
+    /** Pin toggles bump `updated_at` too, so the change carries a fresh LWW stamp. */
+    @Query("UPDATE folders SET pinned_at = :pinnedAt, updated_at = :updatedAt WHERE id = :id")
+    suspend fun setFolderPinned(id: String, pinnedAt: Long?, updatedAt: Long)
+
+    @Query("DELETE FROM folders WHERE id = :id")
+    suspend fun deleteFolder(id: String)
+
+    @Query("SELECT id FROM sessions WHERE folder_id = :folderId ORDER BY updated_at DESC")
+    suspend fun sessionIdsInFolder(folderId: String): List<String>
+
+    @Query("SELECT COUNT(*) FROM sessions WHERE folder_id = :folderId")
+    suspend fun sessionCountInFolder(folderId: String): Int
+
+    /**
+     * Move a session in (non-null) or out (null) of a group.
+     *
+     * Writes ONLY `folder_id` — `updated_at` is deliberately untouched, because
+     * an organizational move must not re-sort the session list (which orders by
+     * `updated_at DESC`). Filing a months-old chat should not shove it to the
+     * top of Today.
+     */
+    @Query("UPDATE sessions SET folder_id = :folderId WHERE id = :sessionId")
+    suspend fun setSessionFolder(sessionId: String, folderId: String?)
+
+    /**
+     * Conditional variant for any future automatic-grouping path: the
+     * `AND folder_id IS NULL` lives in the STATEMENT rather than a caller-side
+     * read-then-write, so a group the user chose by hand can never be
+     * overwritten by a machine guess racing it.
+     */
+    @Query("UPDATE sessions SET folder_id = :folderId WHERE id = :sessionId AND folder_id IS NULL")
+    suspend fun setSessionFolderIfUnfiled(sessionId: String, folderId: String): Int
+
+    /** Clear membership for every session of a group — the dissolve half. */
+    @Query("UPDATE sessions SET folder_id = NULL WHERE folder_id = :folderId")
+    suspend fun clearFolderForSessions(folderId: String)
+
     // Messages
     @Query("SELECT * FROM messages WHERE session_id = :sessionId ORDER BY sort_order ASC")
     suspend fun loadMessages(sessionId: String): List<MessageEntity>
@@ -137,10 +210,28 @@ interface ChatDao {
     @Query("SELECT token_usage FROM messages WHERE session_id = :sessionId AND token_usage IS NOT NULL")
     suspend fun tokenUsages(sessionId: String): List<String>
 
-    /** Fetch all token usage records joined with session model_id for aggregation. */
+    /**
+     * Fetch all token usage records joined with session model_id for aggregation.
+     *
+     * [T-android-usage-orphan-rows] GH#168 (iOS a192fad0f): LEFT JOIN, not
+     * INNER JOIN. The Usage page is built entirely from this query, so any row
+     * it drops is silently missing from the user's totals. With an INNER JOIN,
+     * a message whose `sessions` row is gone — orphaned by a failed sync or
+     * migration, or a partially-deleted session — vanished from the totals even
+     * though its `token_usage` is still sitting in the table. Those tokens were
+     * really billed, so the page under-reported with nothing to indicate it.
+     *
+     * LEFT JOIN keeps those rows, which is why [UsageRecord.modelId] is
+     * nullable: it comes back NULL for an orphan, and the caller groups those
+     * under "Unknown" rather than discarding them.
+     *
+     * This does NOT recover usage from sessions the user deleted outright —
+     * deleting a session removes its message rows too. It only stops
+     * orphaned-but-present rows from being thrown away.
+     */
     @Query("""
         SELECT s.model_id AS modelId, m.token_usage AS tokenUsage, m.created_at AS createdAt, m.session_id AS sessionId
-        FROM messages m JOIN sessions s ON m.session_id = s.id
+        FROM messages m LEFT JOIN sessions s ON m.session_id = s.id
         WHERE m.token_usage IS NOT NULL
     """)
     suspend fun allUsageRecords(): List<UsageRecord>
@@ -294,8 +385,53 @@ interface ChatDao {
     """)
     suspend fun loadMessagesPage(sessionId: String, offset: Int, limit: Int): List<MessageEntity>
 
+    /**
+     * [T-android-sessions-cli-messages-daterange] GH#200 (iOS 8f3189a73).
+     * Date-filtered variant of [loadMessagesPage]. `--start` / `--end` were
+     * documented in the CLI help and honoured by `list` / `search`, but
+     * `messages` parsed neither and silently returned the whole session.
+     *
+     * Both bounds are inclusive and independently optional — a NULL bound means
+     * "unbounded on that side", which keeps one query serving all four
+     * combinations instead of four hand-written ones.
+     */
+    @Query("""
+        SELECT * FROM messages
+        WHERE session_id = :sessionId
+          AND (:startMs IS NULL OR created_at >= :startMs)
+          AND (:endMs IS NULL OR created_at <= :endMs)
+        ORDER BY sort_order ASC, created_at ASC
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun loadMessagesPageInRange(
+        sessionId: String,
+        offset: Int,
+        limit: Int,
+        startMs: Long?,
+        endMs: Long?,
+    ): List<MessageEntity>
+
     /** Used by `minis-sessions-cli messages` to surface the total count
      *  alongside the paginated slice so callers can compute `hasMore`. */
     @Query("SELECT COUNT(*) FROM messages WHERE session_id = :sessionId")
     suspend fun messageCountForSession(sessionId: String): Int
+
+    /**
+     * [T-android-sessions-cli-messages-daterange] Count under the SAME range as
+     * [loadMessagesPageInRange]. Using the unfiltered count alongside a
+     * filtered page would make `total` describe the whole session while the
+     * slice covers only the filtered subset, so `hasMore` would lie — the
+     * specific trap called out in iOS 8f3189a73.
+     */
+    @Query("""
+        SELECT COUNT(*) FROM messages
+        WHERE session_id = :sessionId
+          AND (:startMs IS NULL OR created_at >= :startMs)
+          AND (:endMs IS NULL OR created_at <= :endMs)
+    """)
+    suspend fun messageCountForSessionInRange(
+        sessionId: String,
+        startMs: Long?,
+        endMs: Long?,
+    ): Int
 }

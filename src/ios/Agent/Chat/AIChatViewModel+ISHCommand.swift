@@ -130,33 +130,51 @@ extension AIChatViewModel {
 
         let cmdIdx = await ShellCommandRingBuffer.shared.didStart(command: command, sessionId: sid)
 
-        let result = try await ISHExecutionCoordinator.shared.execute(
-            sessionId: sid,
-            command: command,
-            timeout: effectiveTimeout,
-            // ISHShellExecutor dispatches every line on the main queue
-            // already (ISHShellExecutor.m:780/812), so we're guaranteed to
-            // run on the main thread here. Calling the MainActor-isolated
-            // closure synchronously via `assumeIsolated` avoids spawning a
-            // fresh `Task { @MainActor in ... }` per line — that wrapper
-            // used to pile up behind high-volume output (one MainActor job
-            // per line) and starve other MainActor work such as
-            // BrowserUseOffloadBridge's semaphore signal, causing
-            // execute_js/navigate to hang inside a Python subprocess.
-            lineCallback: { line in
-                MainActor.assumeIsolated { lineCallback(line) }
-            },
-            pidCallback: { [weak self] pid in
-                // Unlike lineCallback, pidCallback is invoked from the
-                // coordinator actor context (not the main queue), so we
-                // can't MainActor.assumeIsolated here. It only fires 1-2
-                // times per command so a Task hop is fine.
-                Task { @MainActor in
-                    self?.runningCommandPid = pid
-                    self?.commandStartTime = pid > 0 ? Date() : nil
+        // [T-ios-shellring-counter-leak] Balance didStart on EVERY exit path.
+        // The old code called didExit only on the normal-return path below, so a
+        // throw (CancellationError / kernelNotBooted) or a cancelled enclosing
+        // task leaked `_runningCount` permanently — leaving the entry rendered as
+        // "RUNNING" forever in crash reports and making `hasRunningCommand` a
+        // one-way latch that pinned keep-alive on for the rest of the process.
+        //
+        // Deliberately do-catch rather than `defer { Task { … } }`: a detached
+        // Task spawned from a defer during CANCELLATION is exactly the case that
+        // may never be scheduled, which is the main path we need to cover. An
+        // `await` on the error path is structured and always runs. `exitCode`
+        // stays nil so the entry records an abort, not a fake exit status.
+        let result: ISHCommandResult
+        do {
+            result = try await ISHExecutionCoordinator.shared.execute(
+                sessionId: sid,
+                command: command,
+                timeout: effectiveTimeout,
+                // ISHShellExecutor dispatches every line on the main queue
+                // already (ISHShellExecutor.m:780/812), so we're guaranteed to
+                // run on the main thread here. Calling the MainActor-isolated
+                // closure synchronously via `assumeIsolated` avoids spawning a
+                // fresh `Task { @MainActor in ... }` per line — that wrapper
+                // used to pile up behind high-volume output (one MainActor job
+                // per line) and starve other MainActor work such as
+                // BrowserUseOffloadBridge's semaphore signal, causing
+                // execute_js/navigate to hang inside a Python subprocess.
+                lineCallback: { line in
+                    MainActor.assumeIsolated { lineCallback(line) }
+                },
+                pidCallback: { [weak self] pid in
+                    // Unlike lineCallback, pidCallback is invoked from the
+                    // coordinator actor context (not the main queue), so we
+                    // can't MainActor.assumeIsolated here. It only fires 1-2
+                    // times per command so a Task hop is fine.
+                    Task { @MainActor in
+                        self?.runningCommandPid = pid
+                        self?.commandStartTime = pid > 0 ? Date() : nil
+                    }
                 }
-            }
-        )
+            )
+        } catch {
+            await ShellCommandRingBuffer.shared.didAbort(index: cmdIdx)
+            throw error
+        }
 
         await ShellCommandRingBuffer.shared.didExit(index: cmdIdx, exitCode: result.exitCode)
 

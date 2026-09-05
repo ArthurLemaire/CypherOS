@@ -112,8 +112,29 @@
     <string name="overlay_completion_failed">Failed</string>
     <string name="overlay_completion_cancelled">Cancelled</string>
     <string name="overlay_completion_timeout">Timed out</string>
+    <!-- [T-android-a11y-force-stop-recovery] Accessibility grant repair. Shown
+         when a force-stop has stripped the service out of Settings.Secure. -->
+    <string name="a11y_repair_dialog_title">Accessibility turned off</string>
+    <string name="a11y_repair_dialog_message_shizuku">Minis lost its accessibility permission — this happens after the app is force-stopped. Shizuku is available, so it can be restored right now without opening Settings.</string>
+    <string name="a11y_repair_dialog_message_manual">Minis lost its accessibility permission — this happens after the app is force-stopped. Re-enable Minis under Settings → Accessibility to continue.</string>
+    <string name="a11y_repair_action_repair">Repair now</string>
+    <string name="a11y_repair_action_open_settings">Open Settings</string>
+    <string name="a11y_repair_cancel">Not now</string>
+    <string name="a11y_repair_section_header">Needs attention</string>
+    <string name="a11y_repair_row_shizuku">Repair accessibility permission</string>
+    <string name="a11y_repair_row_manual">Re-enable accessibility</string>
+    <string name="a11y_repair_row_sub">The permission was revoked, likely by a force-stop</string>
+    <string name="a11y_repair_in_progress">Repairing…</string>
+    <string name="a11y_repair_failed">Repair failed — try enabling it in Settings</string>
+    <string name="a11y_repair_footer_shizuku">Android removes the accessibility grant whenever an app is force-stopped, and does not restore it automatically. Shizuku can write it back directly.</string>
+    <string name="a11y_repair_footer_manual">Android removes the accessibility grant whenever an app is force-stopped, and does not restore it automatically. Install and authorize Shizuku to repair this in one tap in future.</string>
     <string name="bg_service_notification_title">Minis Agent Active</string>
     <string name="bg_service_notification_text">%1$s | %2$s | %3$s</string>
+    <!-- Shown on the ongoing notification / Live Update chip once the agent
+         task has finished but the service is still alive because the user is
+         still in the chat. %1$s = session count label, %2$s = total run time. -->
+    <string name="bg_service_notification_title_completed">Task completed</string>
+    <string name="bg_service_notification_text_completed">%1$s | Completed in %2$s</string>
     <string name="bg_service_stop_action">Stop</string>
     <plurals name="bg_service_sessions">
         <item quantity="one">%d session</item>
@@ -207,6 +228,8 @@
     <string name="quicktest_clip_failed">Couldn\'t synthesize the local test clip.</string>
     <string name="model_groups_voice_input">Voice Input</string>
     <string name="model_groups_voice_output">Voice Output</string>
+    <!-- [T-android-vision-group / GH#182] Vision Input slot label: the group whose vision-capable members read images for a main model that cannot natively see them. -->
+    <string name="model_groups_vision">Vision Input</string>
     <!-- [T-mcp-env-var-picker-android] Insert a reference to an App env var as $$VAR -->
     <string name="mcp_form_env_insert_app_var">Insert app var</string>
     <!-- [T-mcp-env-var-delete-confirm-android] Clear-all env vars affordance + confirm -->
@@ -447,6 +470,40 @@
     <string name="sessionlist_select_all">Select All</string>
     <string name="sessionlist_deselect_all">Deselect All</string>
     <string name="sessionlist_select_action">Select</string>
+
+    <!-- [T-android-session-grouping] Session groups. Keys mirror the iOS
+         wording so the two platforms read identically. -->
+    <string name="group_move_to">Move to Group</string>
+    <string name="group_change">Change Group</string>
+    <string name="group_picker_title_move">Move to Group</string>
+    <string name="group_picker_title_change">Change Group</string>
+    <string name="group_picker_title_move_n">Move %1$d to Group</string>
+    <string name="group_picker_title_change_n">Change Group for %1$d</string>
+    <string name="group_new_name_hint">New Group Name</string>
+    <string name="group_name_hint">Group Name</string>
+    <string name="group_desc_hint">Description (optional, guides auto-grouping)</string>
+    <string name="group_create">Create</string>
+    <string name="group_section_header">Groups</string>
+    <string name="group_none">No Group</string>
+    <string name="group_none_subtitle">Remove from its current group</string>
+    <string name="group_n_chats">%1$d chats</string>
+    <string name="group_empty">Empty group</string>
+    <string name="group_rename">Rename Group</string>
+    <string name="group_new_chat_in">New Chat in Group</string>
+    <string name="group_dissolve">Dissolve Group</string>
+    <string name="group_dissolve_confirm_title">Dissolve Group?</string>
+    <string name="group_dissolve_confirm_message">%1$d sessions will move back to the main list. No session will be deleted.</string>
+    <string name="group_delete_with_sessions">Delete Group &amp; %1$d Sessions</string>
+    <string name="group_delete_confirm_title">Delete Group?</string>
+    <string name="group_delete_confirm_message">The group and its %1$d sessions will be permanently deleted. This cannot be undone.</string>
+    <string name="group_duplicate_exists">“%1$s” already exists</string>
+    <string name="group_duplicate_hint">Rename to something else, or tap to use it</string>
+    <string name="group_suggest">AI Suggest</string>
+    <string name="group_suggest_failed">AI Suggest (failed — try again)</string>
+    <string name="group_suggest_merge">Move into “%1$s”?</string>
+    <string name="group_move_action">Move</string>
+    <string name="group_collapse">Collapse group</string>
+    <string name="group_expand">Expand group</string>
     <string name="sessionlist_settings">Settings</string>
     <string name="sessionlist_shell">Shell</string>
     <string name="sessionlist_shell_terminal">Shell Terminal</string>
@@ -497,6 +554,8 @@
     <string name="browser_minis_browsing">Minis is browsing</string>
     <!-- Streaming indicator shown while the assistant is composing a reply. %1$s is the Soul-customized assistant name (default "Minis"). -->
     <string name="chat_typing_indicator">%1$s is thinking</string>
+    <string name="read_aloud_unavailable">Read aloud failed: no usable voice engine. Check Voice Output settings or install a system speech engine.</string>
+    <string name="chat_error_stream_dropped_partial">The connection dropped — this reply may be incomplete. Tap Retry to continue.</string>
     <!-- Composer placeholder. %1$s is the Soul-customized assistant name (default "Minis"). The parenthetical is an inline hint reminding the user that typing '@' opens the file-mention picker. T-android-placeholder-single-line collapses the prior two-row (title + hint) layout into a single line, matching iOS 19e1d61f. -->
     <string name="chat_input_placeholder">Message %1$s (@ to mention files)</string>
     <string name="browser_takeover">Takeover</string>
@@ -543,6 +602,44 @@
     <string name="common_delete">Delete</string>
     <string name="common_save">Save</string>
     <string name="common_edit">Edit</string>
+    <!-- [T-android-thinking-rules-phase2] Provider-detail Thinking Rules section -->
+    <string name="thinking_rules_section">Thinking Rules</string>
+    <string name="thinking_rules_footer">Rules are evaluated top to bottom. The first rule matching the model decides which thinking parameters are sent. Default rules are built in and cannot be deleted — add a rule above them to override one.</string>
+    <string name="thinking_rules_official_protocol_notice">This provider uses an official protocol, so its thinking parameters are maintained by Minis. Custom rules apply to OpenAI-compatible providers on the Chat Completions API.</string>
+    <string name="thinking_rules_default_rules_count">Default rules (%1$d)</string>
+    <string name="thinking_rules_add_rule">Add Rule</string>
+    <string name="thinking_rules_move_up">Move up</string>
+    <string name="thinking_rules_move_down">Move down</string>
+    <string name="thinking_rules_new_rule">New Rule</string>
+    <string name="thinking_rules_edit_rule">Edit Rule</string>
+    <string name="thinking_rules_rule_name">Rule name</string>
+    <string name="thinking_rules_all_models">All models</string>
+    <string name="thinking_rules_model_pattern">Model pattern (e.g. deepseek-v4*)</string>
+    <string name="thinking_rules_glob_hint">"*" matches any characters. Matching ignores case and treats "." and "-" as the same character.</string>
+    <string name="thinking_rules_what_to_send">What to send</string>
+    <string name="thinking_rules_send_off_value">Send a value when thinking is off</string>
+    <string name="thinking_rules_off_value">Off value (e.g. none, minimal)</string>
+    <string name="thinking_rules_field_path">Field path</string>
+    <string name="thinking_rules_dotted_path">Dotted path</string>
+    <string name="thinking_rules_value_at_high">Value at High</string>
+    <string name="thinking_rules_request_preview">Request preview</string>
+    <!-- Wire-format picker: titles + one-line explanations (protocol field names left in English on purpose) -->
+    <string name="thinking_fmt_omit_title">Send nothing</string>
+    <string name="thinking_fmt_omit_desc">Send no thinking field at all. Use for endpoints that reject an unknown key.</string>
+    <string name="thinking_fmt_effort_title">reasoning_effort (root)</string>
+    <string name="thinking_fmt_effort_desc">Root-level reasoning_effort string, the OpenAI Chat Completions shape.</string>
+    <string name="thinking_fmt_effort_nested_title">reasoning.effort (nested)</string>
+    <string name="thinking_fmt_effort_nested_desc">Nested reasoning: {effort} — the Responses / OpenRouter shape.</string>
+    <string name="thinking_fmt_bool_title">Boolean toggle</string>
+    <string name="thinking_fmt_bool_desc">A plain boolean switch at a root field path (no tiers).</string>
+    <string name="thinking_fmt_extrabody_title">extra_body toggle</string>
+    <string name="thinking_fmt_extrabody_desc">A boolean nested under extra_body, e.g. extra_body.thinking.enabled.</string>
+    <string name="thinking_fmt_deepseek_title">thinking + reasoning_effort</string>
+    <string name="thinking_fmt_deepseek_desc">DeepSeek V4 shape: a thinking switch and reasoning_effort as root siblings.</string>
+    <string name="thinking_fmt_qwen_title">enable_thinking + budget</string>
+    <string name="thinking_fmt_qwen_desc">Qwen/DashScope: enable_thinking plus a thinking_budget below max tokens.</string>
+    <string name="thinking_fmt_custom_title">Custom field path</string>
+    <string name="thinking_fmt_custom_desc">Escape hatch: a dotted path plus a value at High for an endpoint not covered above.</string>
     <string name="common_share">Share</string>
     <string name="common_copy">Copy</string>
     <string name="appearance_title">Appearance</string>
@@ -569,6 +666,10 @@
     <string name="appearance_show_chat_title_subtitle">Show a sticky title pill while scrolling</string>
     <string name="appearance_show_chat_title_footer">Display the current session title as a floating pill at the top of the chat while scrolling through history.</string>
     <string name="chat_title_pill_session_default">Untitled</string>
+    <string name="appearance_section_grouping">Grouping</string>
+    <string name="appearance_auto_grouping">Auto-Grouping</string>
+    <string name="appearance_auto_grouping_subtitle">File new chats into a matching group</string>
+    <string name="appearance_auto_grouping_footer">When a chat\'s title is first generated, also file it into a matching existing group. Runs once per chat, only uses groups you already created, and leaves the chat ungrouped when nothing matches.</string>
     <string name="appearance_section_tool_preview">Tool Status Bar</string>
     <string name="appearance_tool_preview_footer">Show a live preview thumbnail alongside the tool status bar during agent execution.</string>
     <string name="appearance_tool_preview_title">Tool Preview Window</string>
@@ -690,22 +791,48 @@
     <string name="shizuku_title">Shizuku</string>
     <string name="shizuku_settings_subtitle">Privileged Android control via Shizuku or AXManager</string>
     <string name="shizuku_status_header">Status</string>
-    <string name="shizuku_status_footer">Shizuku exposes privileged system APIs to user apps without root, by running a small service started via wireless ADB or root. Two compatible manager apps are supported — Shizuku (RikkaApps) and AXManager (Axeron); install either one. Once authorized, Minis can use the android-shizuku-cli CLI for package, permission, settings, input, and activity management.</string>
+    <string name="shizuku_status_footer">Shizuku exposes privileged system APIs to user apps without root, by running a small service started via wireless ADB or root. Three compatible providers are supported — Shizuku (RikkaApps), AXManager (Axeron), and Sui (a Magisk/KernelSU module for rooted devices); install any one. Once authorized, Minis can use the android-shizuku-cli CLI for package, permission, settings, input, and activity management.</string>
     <string name="shizuku_actions_header">Next Step</string>
     <string name="shizuku_capabilities_header">Capabilities</string>
-    <string name="shizuku_capabilities_footer">android-shizuku-cli exposes the full subcommand surface: package, permission, activity, display, settings, user, network, input, notification, file, device, service. Run `android-shizuku-cli --help` from a shell to see usage.</string>
-    <string name="shizuku_install_footer">Install either Shizuku (RikkaApps) or AXManager (Axeron) — both implement the same protocol and are fully interchangeable. Pick one, install from GitHub releases, then return here.</string>
+    <string name="shizuku_capabilities_footer">Run `android-shizuku-cli --help` in a shell for full usage. Available whether the binder comes from Shizuku, AXManager, or Sui — the command surface is identical.</string>
+    <string name="shizuku_cap_package">package</string>
+    <string name="shizuku_cap_package_desc">Install, uninstall, list, and query apps</string>
+    <string name="shizuku_cap_permission">permission</string>
+    <string name="shizuku_cap_permission_desc">Grant or revoke runtime permissions</string>
+    <string name="shizuku_cap_activity">activity</string>
+    <string name="shizuku_cap_activity_desc">Start activities and send broadcasts</string>
+    <string name="shizuku_cap_display">display</string>
+    <string name="shizuku_cap_display_desc">Query and adjust display settings</string>
+    <string name="shizuku_cap_settings">settings</string>
+    <string name="shizuku_cap_settings_desc">Read and write system / secure / global settings</string>
+    <string name="shizuku_cap_user">user</string>
+    <string name="shizuku_cap_user_desc">List and manage device users</string>
+    <string name="shizuku_cap_network">network</string>
+    <string name="shizuku_cap_network_desc">Inspect and toggle network state</string>
+    <string name="shizuku_cap_input">input</string>
+    <string name="shizuku_cap_input_desc">Inject taps, swipes, keys, and text</string>
+    <string name="shizuku_cap_notification">notification</string>
+    <string name="shizuku_cap_notification_desc">Post and manage notifications</string>
+    <string name="shizuku_cap_file">file</string>
+    <string name="shizuku_cap_file_desc">Read and write privileged file paths</string>
+    <string name="shizuku_cap_device">device</string>
+    <string name="shizuku_cap_device_desc">Query device properties and hardware state</string>
+    <string name="shizuku_cap_service">service</string>
+    <string name="shizuku_cap_service_desc">Call and inspect system services</string>
+    <string name="shizuku_install_footer">Install any one of Shizuku (RikkaApps), AXManager (Axeron), or Sui (RikkaApps) — all three implement the same protocol and are fully interchangeable. Shizuku and AXManager are regular apps activated via wireless ADB. Sui is for already-rooted devices: it installs as a Magisk/KernelSU module, needs no app, and stays active across reboots. On KernelSU or APatch, Sui also requires a Zygisk implementation (Zygisk Next / ReZygisk / NeoZygisk) — without it Sui will not load. Install one, then return here.</string>
     <string name="shizuku_start_footer">Open the manager app and start the service via wireless ADB (no PC) or root. After it shows running, return here.\n\nUsing AXManager? Also enable Settings → "AX-Permission Intercept" inside AXManager — only that switch makes AXManager push its Shizuku-compatible binder to Minis.</string>
     <string name="shizuku_grant_footer">The service is running. Tap Authorize Minis to grant access. A system dialog from the manager app will ask you to confirm.</string>
+    <string name="shizuku_grant_footer_sui">Sui is running. Tap Authorize Minis to grant access — Sui will show the confirmation dialog itself. There is no separate manager app to open.</string>
 
     <string name="shizuku_state_not_installed">Manager Not Installed</string>
-    <string name="shizuku_state_not_installed_subtitle">Install Shizuku or AXManager — either one works.</string>
+    <string name="shizuku_state_not_installed_subtitle">Install Shizuku, AXManager, or Sui — any one works.</string>
     <string name="shizuku_state_not_running">Service Not Running</string>
     <string name="shizuku_state_not_running_subtitle">Open the manager app and press Start.</string>
     <string name="shizuku_state_need_permission">Authorization Required</string>
     <string name="shizuku_state_need_permission_subtitle">The service is running but Minis is not authorized.</string>
     <string name="shizuku_state_ready">Ready</string>
     <string name="shizuku_ready_subtitle">version=%1$d, uid=%2$d</string>
+    <string name="shizuku_ready_subtitle_sui">Sui (root) · version=%1$d, uid=%2$d</string>
 
     <string name="shizuku_badge_not_installed">Not Installed</string>
     <string name="shizuku_badge_not_running">Stopped</string>
@@ -716,6 +843,8 @@
     <string name="shizuku_install_btn_subtitle">RikkaApps · opens the GitHub releases page</string>
     <string name="shizuku_install_btn_axmanager">Install AXManager</string>
     <string name="shizuku_install_btn_axmanager_subtitle">Axeron · opens the GitHub releases page</string>
+    <string name="shizuku_install_btn_sui">Install Sui</string>
+    <string name="shizuku_install_btn_sui_subtitle">RikkaApps · for rooted devices (Magisk/KernelSU) · no app, survives reboots</string>
     <string name="shizuku_open_btn">Open Manager App</string>
     <string name="shizuku_open_btn_subtitle">Launch the installed manager to start or manage the service</string>
     <string name="shizuku_recheck_btn">Recheck</string>
@@ -873,11 +1002,13 @@
     <string name="provider_list_import_provider">Import Provider</string>
     <!-- [T-android-json-open-provider-import-prompt] Shown when a JSON opened/shared into Minis looks like a Provider export. -->
     <string name="share_provider_json_title">Provider configuration detected</string>
+    <string name="share_expired_toast">Shared content expired. Please share again.</string>
     <string name="share_provider_json_message">This JSON file looks like an exported provider. What would you like to do?</string>
     <string name="share_provider_json_import">Import Provider</string>
     <string name="share_provider_json_attach">Add as chat attachment</string>
     <string name="share_provider_json_imported">Imported provider \"%1$s\"</string>
     <string name="share_provider_json_import_failed">Invalid provider configuration file</string>
+    <string name="share_open_app_failed">Content saved. Couldn\'t open Minis automatically — please open the app to continue.</string>
     <string name="provider_list_api_key">API Key</string>
     <string name="provider_list_disabled">Disabled</string>
     <string name="provider_detail_export">Export</string>
@@ -900,6 +1031,8 @@
     <string name="provider_detail_add_custom_model">Add Custom Model</string>
     <string name="provider_detail_delete_provider">Delete Provider</string>
     <string name="provider_detail_delete_model">Delete Model</string>
+    <string name="provider_detail_hide_model">Hide Model</string>
+    <string name="provider_detail_show_model">Show Model</string>
     <string name="provider_detail_sign_out">Sign Out</string>
     <string name="provider_detail_sign_in">Sign In</string>
     <string name="provider_detail_save_key">Save Key</string>
@@ -1129,6 +1262,12 @@
     <string name="chat_menu_browse_chat_files">Browse Chat Files</string>
     <string name="chat_menu_enhanced_cache">Enhanced Cache</string>
     <string name="chat_menu_fast_mode">Enable Fast Mode</string>
+    <string name="chat_menu_auto_compact">Auto Compact</string>
+    <string name="context_near_capacity_title">Context Near Capacity</string>
+    <string name="context_near_capacity_message">Conversation context is nearly full. Compact the history to free up space before sending. Enabling auto-compact will do this automatically from now on.</string>
+    <string name="context_compact_and_send">Compact &amp; Send</string>
+    <string name="context_compact_and_enable_auto">Compact &amp; Enable Auto-Compact</string>
+    <string name="context_send_anyway">Send Anyway</string>
     <string name="enhanced_cache_dialog_body">Enhanced Cache extends Anthropic\'s prompt cache from 5 minutes to 1 hour, keeping context warm for longer sessions. This may add extra cache-write charges. Enable it?</string>
     <string name="enhanced_cache_dialog_confirm">Enable</string>
     <string name="chat_longpress_copy">Copy</string>
@@ -1166,6 +1305,9 @@
     <string name="settings_mount_external_folders_subtitle">Bind picked folders into /var/minis/mounts/</string>
     <string name="mount_folders_title">Mounted Folders</string>
     <string name="mount_folders_info_banner">Picked folders are bind-mounted at /var/minis/mounts/&lt;name&gt;. Up to 10 folders can be mounted at a time.</string>
+    <string name="mount_picker_intro_title">Choose a folder</string>
+    <string name="mount_picker_intro_message">Android doesn\'t allow mounting the whole internal storage — pick a specific folder inside it, such as Documents or Download.\n\nThe file picker that opens next belongs to the system. If a folder shows \u201ccan\u2019t use this folder\u201d, go into one of its subfolders, or use the system Back gesture to return here.</string>
+    <string name="mount_picker_intro_continue">Choose folder</string>
     <string name="mount_folders_empty_title">No mounted folders</string>
     <string name="mount_folders_empty_subtitle">Tap + to pick a folder</string>
     <string name="mount_folders_limit_reached">Mount limit reached (10)</string>
@@ -1224,6 +1366,11 @@
     <string name="model_picker_no_models">No models available</string>
     <string name="model_picker_configure_hint">Configure providers in Settings to see models here.</string>
     <string name="model_picker_try_different_search">Try a different search term.</string>
+    <plurals name="model_picker_show_models">
+        <item quantity="one">Show %d model</item>
+        <item quantity="other">Show %d models</item>
+    </plurals>
+    <string name="model_picker_quick_test">Quick test</string>
     <plurals name="model_picker_models_count">
         <item quantity="one">%d model</item>
         <item quantity="other">%d models</item>
@@ -1234,6 +1381,10 @@
 
     <!-- [T-android-voice-panel] Inline voice input panel (mirrors iOS InlineVoiceInputView) -->
     <string name="voice_panel_collapse">Collapse voice panel</string>
+    <string name="voice_panel_no_engine_title">No speech recognition available</string>
+    <string name="voice_panel_no_engine_body">Voice input needs a recognition engine. Enable your device\'s speech service, or configure a transcription provider in Minis.</string>
+    <string name="voice_panel_no_engine_open_system">Device settings</string>
+    <string name="voice_panel_no_engine_open_providers">Minis providers</string>
     <string name="voice_panel_expand">Expand voice panel</string>
     <string name="voice_panel_language">Recognition language</string>
     <string name="voice_panel_tap_to_speak">Tap to speak</string>
@@ -1251,6 +1402,9 @@
     <string name="voice_panel_toggle_recording">Toggle recording</string>
     <string name="voice_panel_delete">Delete dictated text</string>
     <string name="voice_panel_read_replies">Read replies</string>
+    <string name="tts_capsule_picker_title">Voice Output Model</string>
+    <string name="tts_capsule_system_engine">System TTS</string>
+    <string name="voice_system_tts_subtitle">Android built-in text-to-speech</string>
     <string name="voice_system_recognition_online">System Recognition (Online)</string>
     <string name="voice_system_recognition_offline">System Recognition (Offline)</string>
     <string name="voice_system_online_subtitle">Android built-in, needs network</string>
@@ -1383,6 +1537,7 @@
     <string name="crash_freq_dialog_message">Minis has crashed several times in the last hour. Share crash logs to help fix the issue?</string>
     <string name="crash_freq_dialog_share">Share logs</string>
     <string name="crash_freq_dialog_dismiss">Not now</string>
+    <string name="crash_safe_mode_restart_needed">Minis needs to restart to finish recovering. Please tap the app icon again.</string>
     <string name="crash_freq_email_subject">Minis Crash Report %1$s</string>
     <string name="crash_freq_email_body">Crash log zip is attached. Device model, Minis version, and timestamp are included inside.</string>
     <string name="crash_freq_share_chooser">Send crash logs</string>
@@ -1522,4 +1677,5 @@
     <string name="browser_downloads_cancel">Cancel download</string>
     <string name="browser_downloads_failed">Failed</string>
     <string name="browser_downloads_open">Open</string>
+    <string name="provider_no_key_required">No key required</string>
 </resources>

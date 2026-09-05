@@ -646,11 +646,34 @@ extension AIChatViewModel {
         Task { await ISHExecutionCoordinator.shared.mountForSession(sid) }
     }
 
+    /// [T-ish-container-identity GH#99] One-shot per launch: detect an iOS
+    /// data-container migration (the UUID rotates on EVERY app update /
+    /// reinstall; contents migrate). All /var/minis symlinks carry absolute
+    /// paths from the previous container, so right after an update — before
+    /// the first session mounts and re-points them — the shell sees dangling
+    /// links / empty dirs, which users read as data loss. Log the migration
+    /// explicitly so that window is diagnosable from the log alone.
+    private static var containerMigrationChecked = false
+    private static func noteContainerMigrationIfNeeded() {
+        guard !containerMigrationChecked else { return }
+        containerMigrationChecked = true
+        let current = URL(fileURLWithPath: NSHomeDirectory()).lastPathComponent
+        let key = "lastKnownDataContainerUUID"
+        let previous = UserDefaults.standard.string(forKey: key)
+        if let previous, previous != current {
+            AppLogger(category: "MinisSymlink").warning("[MinisSymlink] Data container migrated \(previous.prefix(8))… → \(current.prefix(8))… (normal after an app update; contents were migrated by iOS). Session symlinks will be re-pointed as sessions mount.")
+        }
+        if previous != current {
+            UserDefaults.standard.set(current, forKey: key)
+        }
+    }
+
     /// Create symlinks in the fakefs data/ directory so the file browser
     /// can access minis directories without requiring the iSH kernel to be booted.
     private func ensureMinisSymlinks(for sid: String) {
         let fm = FileManager.default
         let dataPath = RootfsManager.shared.dataPath
+        Self.noteContainerMigrationIfNeeded()
 
         // Ensure /var/minis/ exists in data/
         let minisDataDir = dataPath.appendingPathComponent("var/minis")
@@ -735,28 +758,66 @@ extension AIChatViewModel {
     ///   - App launch after `activateAll`
     ///
     /// Safe to call before the iSH kernel is booted — writes only into `data/`.
+    ///
+    /// **Must not do filesystem work on the main thread.** A mount's resolved
+    /// `target` can be a network- or FileProvider-backed volume (SMB share,
+    /// iCloud Drive vault). Any path-resolving call on such a URL —
+    /// `resolvingSymlinksInPath()`, `appendingPathComponent` on a `file:` URL,
+    /// `resourceValues(forKeys:)` — becomes a `getattrlist(2)` that traps into
+    /// a synchronous XPC round-trip to the owning provider. When the volume is
+    /// slow or unreachable that parks the calling thread indefinitely; doing it
+    /// on the main thread from the launch `.onAppear` tripped the 10s
+    /// `scene-update` watchdog and iOS SIGKILLed the app (0x8BADF00D).
+    /// So: snapshot the manager state on the main actor (cheap dictionary
+    /// reads only), then do every filesystem touch on a detached task.
     nonisolated static func refreshMountedFolderSymlinks() {
-        // Must run on main actor to access MountedFoldersManager.shared.
         if Thread.isMainThread {
-            MainActor.assumeIsolated {
-                performMountedFolderSymlinkRefresh()
+            let snapshot = MainActor.assumeIsolated { mountedFolderSymlinkSnapshot() }
+            Task.detached(priority: .utility) {
+                performMountedFolderSymlinkRefresh(snapshot: snapshot)
             }
         } else {
-            DispatchQueue.main.async {
-                performMountedFolderSymlinkRefresh()
+            Task.detached(priority: .utility) {
+                let snapshot = await MainActor.run { mountedFolderSymlinkSnapshot() }
+                performMountedFolderSymlinkRefresh(snapshot: snapshot)
             }
         }
     }
 
+    /// One mount's desired symlink state, captured on the main actor.
+    /// `target` is nil for entries that failed activation (stale bookmark,
+    /// permission denied, contents unavailable) — those get their leftover
+    /// symlink removed so FileBrowserView doesn't show a broken entry.
+    struct MountedFolderSymlinkSpec: Sendable {
+        let name: String
+        let targetPath: String?
+    }
+
+    /// Cheap main-actor snapshot: reads `entries` and the `activeURLs`
+    /// dictionary. Deliberately does **no** filesystem I/O — `url.path` is a
+    /// pure string accessor, unlike `resolvingSymlinksInPath()`.
     @MainActor
-    private static func performMountedFolderSymlinkRefresh() {
+    private static func mountedFolderSymlinkSnapshot() -> [MountedFolderSymlinkSpec] {
+        let manager = MountedFoldersManager.shared
+        return manager.entries.map { entry in
+            MountedFolderSymlinkSpec(
+                name: entry.name,
+                targetPath: manager.resolvedURL(for: entry.id)?.path
+            )
+        }
+    }
+
+    /// Reconcile `/var/minis/mounts/<name>` against `snapshot`. Runs entirely
+    /// off the main thread — see `refreshMountedFolderSymlinks` for why.
+    nonisolated private static func performMountedFolderSymlinkRefresh(
+        snapshot: [MountedFolderSymlinkSpec]
+    ) {
         let fm = FileManager.default
         let dataPath = RootfsManager.shared.dataPath
         let mountsDir = dataPath.appendingPathComponent("var/minis/mounts", isDirectory: true)
         try? fm.createDirectory(at: mountsDir, withIntermediateDirectories: true)
 
-        let manager = MountedFoldersManager.shared
-        let desiredNames = Set(manager.entries.map(\.name))
+        let desiredNames = Set(snapshot.map(\.name))
 
         // 1. Remove symlinks for mounts that no longer exist.
         if let existing = try? fm.contentsOfDirectory(atPath: mountsDir.path) {
@@ -771,29 +832,38 @@ extension AIChatViewModel {
         }
 
         // 2. Create or fix symlinks for active mounts.
-        for entry in manager.entries {
-            guard let target = manager.resolvedURL(for: entry.id) else {
+        for spec in snapshot {
+            let link = mountsDir.appendingPathComponent(spec.name)
+            guard let targetPath = spec.targetPath else {
                 // Inactive (stale/denied) — remove any leftover symlink so the
                 // user doesn't see a broken entry in FileBrowserView.
-                let link = mountsDir.appendingPathComponent(entry.name)
                 var buf = stat()
                 if lstat(link.path, &buf) == 0 { unlink(link.path) }
                 continue
             }
 
-            let link = mountsDir.appendingPathComponent(entry.name)
             var buf = stat()
             let exists = lstat(link.path, &buf) == 0
             if exists && (buf.st_mode & S_IFMT) == S_IFLNK {
-                let resolved = link.resolvingSymlinksInPath().standardized.path
-                let expected = target.resolvingSymlinksInPath().standardized.path
-                if resolved == expected { continue }
+                // Compare the symlink's *stored* destination rather than
+                // resolving both sides. `destinationOfSymbolicLink` is a plain
+                // readlink(2) against the local fakefs — it never touches the
+                // mount's backing volume, so an unreachable SMB/FileProvider
+                // target can't stall us here. The previous
+                // `resolvingSymlinksInPath()` comparison on both sides was the
+                // watchdog-kill site. We write the link with `target.path`
+                // below, so a byte-equal destination means it's already correct.
+                let current = try? fm.destinationOfSymbolicLink(atPath: link.path)
+                if current == targetPath { continue }
                 unlink(link.path)
             } else if exists {
                 // Non-symlink in the way — unexpected, remove.
                 unlink(link.path)
             }
-            try? fm.createSymbolicLink(at: link, withDestinationURL: target)
+            try? fm.createSymbolicLink(
+                atPath: link.path,
+                withDestinationPath: targetPath
+            )
         }
     }
 

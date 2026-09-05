@@ -1,6 +1,5 @@
 package com.openminis.app.diagnostics
 
-import android.os.Debug
 import com.openminis.app.logging.AppLogger
 import java.util.concurrent.atomic.AtomicLong
 
@@ -125,14 +124,19 @@ object PerfLongCtx {
         } else {
             -1L
         }
-        val rt = Runtime.getRuntime()
-        val javaHeapMB = (rt.totalMemory() - rt.freeMemory()) / (1024L * 1024L)
-        val nativeHeapMB = Debug.getNativeHeapAllocatedSize() / (1024L * 1024L)
+        // [T-android-mem-probe-trust] Was `javaHeapMB=… nativeHeapMB=…`, where
+        // the native figure came straight from Debug.getNativeHeapAllocatedSize().
+        // On the 2026-08-15 field device (vivo) that call reported 9744 MB on a
+        // 6 GB phone, for a 17-message session — it tracked nothing, and it was
+        // read as an OOM smoking gun. MemorySnapshot reports kernel RSS as the
+        // primary number and keeps the legacy value under `nativeRawMB` so it
+        // can still be compared across reports without being mistaken for truth.
+        val mem = MemorySnapshot.capture()
         val extraPart = if (extra.isEmpty()) "" else " $extra"
         AppLogger.info(
             CATEGORY,
             "[Perf][LongCtx] step=$name session=$sessionId elapsedMs=$elapsedMs " +
-                "sinceClickMs=$sinceClickMs javaHeapMB=$javaHeapMB nativeHeapMB=$nativeHeapMB$extraPart",
+                "sinceClickMs=$sinceClickMs ${mem.toLogString()}$extraPart",
         )
     }
 }

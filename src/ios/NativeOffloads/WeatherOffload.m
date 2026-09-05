@@ -31,6 +31,7 @@ static NSString *const HELP_TEXT =
      "COMMANDS:\n"
      "  current    Current weather conditions (default when no command given)\n"
      "  hourly     Hourly forecast\n"
+     "  minute     Minute-by-minute precipitation for the next hour\n"
      "  daily      Daily forecast\n"
      "  alerts     Weather alerts\n"
      "  report     Combined report (current + hourly + daily + alerts)\n"
@@ -42,11 +43,22 @@ static NSString *const HELP_TEXT =
      "  --lat <latitude>    Location latitude (default: current location)\n"
      "  --lng <longitude>   Location longitude\n"
      "  --hours <N>         Number of hourly forecasts (default: 24)\n"
+     "  --minutes <N>       Number of minute entries for `minute` (default: 60)\n"
      "  --days <N>          Number of daily forecasts (default: 7)\n"
+     "\n"
+     "MINUTE NOTES:\n"
+     "  Returns `available: false` with a `reason` when WeatherKit has no\n"
+     "  minute-by-minute data — it covers only some regions (NOT mainland\n"
+     "  China) and is also omitted when no precipitation is expected. That is\n"
+     "  distinct from an empty list, so \"no coverage\" is never reported as\n"
+     "  \"no rain\". Each entry has precip_chance (0-1) and\n"
+     "  precip_intensity_mmh (mm/hour).\n"
      "\n"
      "EXAMPLES:\n"
      "  apple-weather                  (same as: apple-weather current)\n"
      "  apple-weather hourly --hours 12 --compact -q\n"
+     "  apple-weather minute                 (is it about to rain?)\n"
+     "  apple-weather minute --minutes 15 --lat 51.5074 --lng -0.1278\n"
      "  apple-weather report --lat 37.3349 --lng -122.0090\n"
      "  apple-weather daily --days 10\n"
      "  apple-weather alerts\n";
@@ -136,12 +148,12 @@ static int weather_handler(int argc, char **argv,
     }
 
     // Validate subcommand
-    NSSet *validCmds = [NSSet setWithArray:@[@"current", @"hourly", @"daily", @"alerts", @"report"]];
+    NSSet *validCmds = [NSSet setWithArray:@[@"current", @"hourly", @"minute", @"daily", @"alerts", @"report"]];
     if (![validCmds containsObject:subcmd]) {
         noff_emit_help(stderr_fd, HELP_TEXT);
         NSDictionary *err = noff_json_error(TOOL_NAME, subcmd,
                                              NOFF_ERR_INVALID_ARGS,
-                                             [NSString stringWithFormat:@"Unknown command '%@'. Valid commands: current, hourly, daily, alerts. Use --help for details.", subcmd]);
+                                             [NSString stringWithFormat:@"Unknown command '%@'. Valid commands: current, hourly, minute, daily, alerts, report. Use --help for details.", subcmd]);
         noff_emit_json(stdout_fd, err, compact, quiet);
         return NOFF_EXIT_INVALID_ARGS;
     }
@@ -194,6 +206,23 @@ static int weather_handler(int argc, char **argv,
             hourly = [hourly subarrayWithRange:NSMakeRange(0, maxHours)];
         }
         data = @{@"hourly": hourly ?: @[], @"count": @([(hourly ?: @[]) count])};
+    } else if ([subcmd isEqualToString:@"minute"]) {
+        // [T-weather-minute-precip] Passed through as the bridge built it —
+        // including `available: false` + `reason` where WeatherKit has no
+        // minute data — so the caller can tell "no rain" from "no coverage".
+        // --minutes trims the list the way --hours/--days do elsewhere.
+        NSDictionary *minute = weatherData[@"minute"];
+        NSString *minsStr = noff_find_arg(argc, argv, "--minutes");
+        NSInteger maxMinutes = minsStr ? [minsStr integerValue] : 60;
+        if (maxMinutes < 1) maxMinutes = 60;
+        NSMutableDictionary *m = [(minute ?: @{}) mutableCopy];
+        NSArray *minutes = m[@"minutes"];
+        if (minutes && (NSInteger)minutes.count > maxMinutes) {
+            minutes = [minutes subarrayWithRange:NSMakeRange(0, maxMinutes)];
+            m[@"minutes"] = minutes;
+        }
+        m[@"count"] = @([(minutes ?: @[]) count]);
+        data = m;
     } else if ([subcmd isEqualToString:@"daily"]) {
         NSArray *daily = weatherData[@"daily"];
         if (daily && (NSInteger)daily.count > maxDays) {

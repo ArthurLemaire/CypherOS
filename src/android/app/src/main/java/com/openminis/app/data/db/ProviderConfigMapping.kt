@@ -44,6 +44,8 @@ object ProviderConfigMetaKeys {
     // Meta KV rows are additive — no Room schema migration needed.
     const val VOICE_INPUT_GROUP_ID = "voice_input_group_id"
     const val VOICE_OUTPUT_GROUP_ID = "voice_output_group_id"
+    // [T-android-vision-group / GH#182] Vision Group pointer (per-device meta KV).
+    const val VISION_GROUP_ID = "vision_group_id"
     const val JSON_SYNC_HASH = "json_sync_hash"
 }
 
@@ -176,6 +178,9 @@ fun ProviderConfig.toSnapshot(
     voiceOutputGroupId?.let {
         metaRows.add(ProviderConfigMetaEntity(ProviderConfigMetaKeys.VOICE_OUTPUT_GROUP_ID, it))
     }
+    visionGroupId?.let {
+        metaRows.add(ProviderConfigMetaEntity(ProviderConfigMetaKeys.VISION_GROUP_ID, it))
+    }
     jsonSyncHash?.let {
         metaRows.add(ProviderConfigMetaEntity(ProviderConfigMetaKeys.JSON_SYNC_HASH, it))
     }
@@ -269,6 +274,7 @@ fun ProviderConfigSnapshot.toProviderConfig(jsonForBlobs: Json): ProviderConfig 
         defaultSubGroupId = metaMap[ProviderConfigMetaKeys.DEFAULT_SUB_GROUP_ID],
         voiceInputGroupId = metaMap[ProviderConfigMetaKeys.VOICE_INPUT_GROUP_ID],
         voiceOutputGroupId = metaMap[ProviderConfigMetaKeys.VOICE_OUTPUT_GROUP_ID],
+        visionGroupId = metaMap[ProviderConfigMetaKeys.VISION_GROUP_ID],
         agentLoopModelEntryIds = entryLoopIds,
         agentLoopGroupIds = groupLoopIds,
     )

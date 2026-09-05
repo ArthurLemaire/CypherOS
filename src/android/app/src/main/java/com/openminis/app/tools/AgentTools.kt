@@ -13,6 +13,13 @@ object AgentTools {
 
     fun makeAgentTools(
         supportsImageInput: Boolean = true,
+        // [T-android-vision-group / GH#182] When the main model can't natively
+        // see images but the user has bound a Vision Group, still expose
+        // read_image: ReadImageTool routes the image through a vision-capable
+        // group member and returns a text description. Mirrors iOS makeAgentTools
+        // visionGroupConfigured. Neither native vision nor a Vision Group → tool
+        // stays absent (current behaviour).
+        visionGroupConfigured: Boolean = false,
         // [T-memory-toggle-gates-injection-and-tools-android] When the
         // user has turned memory off (via /memory or
         // Settings/SessionMemorySheet), drop both memory_write and
@@ -25,7 +32,7 @@ object AgentTools {
         add(FileReadTool.definition())
         add(FileWriteTool.definition())
         add(FileEditTool.definition())
-        if (supportsImageInput) {
+        if (supportsImageInput || visionGroupConfigured) {
             add(ReadImageTool.definition())
         }
         add(browserUseDefinition())

@@ -102,12 +102,17 @@ class GroupsCollection(
         repo.config.value.modelGroups.firstOrNull { it.id == id }
 
     private fun mutate(id: String, apply: (ModelGroup) -> Unit) {
-        val g = group(id) ?: throw ConfigError.UnknownPath("groups.$id")
-        // ModelGroup fields used here (name/strategy/fallbackStrategy/
-        // memberEntryIds) are all `var`, so an in-place mutate followed
-        // by updateGroup persists the change.
-        apply(g)
-        repo.updateGroup(g)
+        val published = group(id) ?: throw ConfigError.UnknownPath("groups.$id")
+        // [T-android-provider-mutator-lock] Apply to a COPY, then hand that to
+        // updateGroup. `group(id)` returns the live object out of the published
+        // config, so mutating it in place — the `entries` field writer does
+        // memberEntryIds.clear()/addAll — races Compose readers iterating the
+        // same list, reachable from minis-config and the agent loop. The
+        // deep-copied memberEntryIds is what makes the structural edits safe;
+        // ProvidersCollection.mutate already uses this shape.
+        val draft = published.copy(memberEntryIds = published.memberEntryIds.toMutableList())
+        apply(draft)
+        repo.updateGroup(draft)
     }
 
     private fun nameField(id: String): ConfigField =

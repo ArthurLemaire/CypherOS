@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.ButtonDefaults
@@ -36,6 +37,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -95,6 +98,11 @@ fun ProviderDetailScreen(
     // mirrors DebugProviderMutationMethods note "Built-in entries can't be
     // deleted — set isHidden=true instead".
     var entryToDelete by remember { mutableStateOf<com.openminis.app.data.model.ModelEntry?>(null) }
+    // [T-android-model-row-hide-action] Id of the entry whose long-press menu is
+    // open. Keyed by id rather than holding the ModelEntry so the menu re-reads
+    // the CURRENT entry after a hide toggle — holding a stale copy would leave
+    // the item labelled "Hide" right after hiding it.
+    var menuEntryId by remember { mutableStateOf<String?>(null) }
     var deleted by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
@@ -512,6 +520,9 @@ fun ProviderDetailScreen(
             }
         }
 
+        // ─── Thinking Rules [T-android-thinking-rules-phase2 §3] ─────
+        ThinkingRulesSection(instance = instance, providerRepository = providerRepository)
+
         // ─── Models ─────────────────────────────────────────────────
         SettingsSection(
             header = stringResource(R.string.provider_detail_models_count_header, entries.size),
@@ -548,9 +559,7 @@ fun ProviderDetailScreen(
 
             entries.forEachIndexed { idx, entry ->
                 // Drive both tap and long-press from a Box wrapper so we
-                // don't have to expand SettingsRow's signature. Long-press
-                // is a no-op for built-in entries (they reappear on the next
-                // model refresh anyway).
+                // don't have to expand SettingsRow's signature.
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -563,9 +572,29 @@ fun ProviderDetailScreen(
                         .then(if (entry.isHidden) Modifier.alpha(0.45f) else Modifier)
                         .combinedClickable(
                             onClick = { onModelEntryClick(entry.id) },
-                            onLongClick = if (entry.isCustom) {
-                                { entryToDelete = entry }
-                            } else null,
+                            // [T-android-model-row-hide-action] Long-press now
+                            // opens a menu instead of going straight to delete.
+                            // Hiding was previously reachable ONLY by opening
+                            // the model's detail screen, flipping the
+                            // Visibility switch and pressing Save — five steps
+                            // for what iOS does with one tap on an eye button
+                            // in this very list (ProviderInstanceDetailView).
+                            //
+                            // A menu rather than a trailing icon button because
+                            // the row's trailing slot is a FIXED 72dp capability
+                            // -badge area, deliberately sized so the chevron
+                            // lands at the same x on every row; adding a button
+                            // there would reintroduce the ragged column that
+                            // sizing exists to prevent.
+                            //
+                            // It also fills a dead gesture: long-press used to
+                            // be null for built-in entries, so they had no
+                            // context action at all. They still cannot be
+                            // deleted (the repo re-creates them from
+                            // ProviderType.builtInModels on the next refresh),
+                            // but hiding is exactly the supported way to get one
+                            // out of the picker.
+                            onLongClick = { menuEntryId = entry.id },
                         ),
                 ) {
                     // [T-android-model-capability-output-tags] (XIN msg 38847)
@@ -610,6 +639,67 @@ fun ProviderDetailScreen(
                             }
                         },
                     )
+
+                    // [T-android-model-row-hide-action] Row context menu. Anchored
+                    // inside the row's Box so it opens over the entry the user
+                    // pressed. Delete stays custom-only, matching the previous
+                    // long-press behaviour and the repo's constraint.
+                    DropdownMenu(
+                        expanded = menuEntryId == entry.id,
+                        onDismissRequest = { menuEntryId = null },
+                    ) {
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    stringResource(
+                                        if (entry.isHidden) R.string.provider_detail_show_model
+                                        else R.string.provider_detail_hide_model,
+                                    ),
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    if (entry.isHidden) Icons.Filled.Visibility
+                                    else Icons.Filled.VisibilityOff,
+                                    contentDescription = null,
+                                )
+                            },
+                            onClick = {
+                                menuEntryId = null
+                                // Write straight through — no Save step. This is
+                                // the whole point of the affordance, and it
+                                // mirrors iOS, whose eye button calls
+                                // store.updateEntry immediately.
+                                providerRepository.updateEntry(entry.copy(isHidden = !entry.isHidden))
+                                AppLogger.info(
+                                    TAG,
+                                    "Model entry ${entry.id} (${entry.model.displayName}) " +
+                                        "isHidden ${entry.isHidden} -> ${!entry.isHidden}",
+                                )
+                            },
+                        )
+                        if (entry.isCustom) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        stringResource(R.string.common_delete),
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Filled.Delete,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error,
+                                    )
+                                },
+                                onClick = {
+                                    menuEntryId = null
+                                    entryToDelete = entry
+                                },
+                            )
+                        }
+                    }
                 }
             }
         }

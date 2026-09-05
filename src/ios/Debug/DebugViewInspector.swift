@@ -99,6 +99,39 @@ final class DebugViewInspector {
         if let value = view.accessibilityValue, !value.isEmpty {
             dict["value"] = value
         }
+        // UIInteraction objects — drag, drop, context menus, pointer, text
+        // interactions. These are NOT subviews and NOT gesture recognizers, so
+        // a tree walk without them cannot answer the question that matters when
+        // one of those features silently does nothing: "is the interaction
+        // actually installed, and on WHICH view?" (SwiftUI in particular hoists
+        // `.draggable` / `.dropDestination` / `.onDrop` off the view they were
+        // written on and onto a shared container, which is invisible without
+        // this.) Emitted only when non-empty so ordinary nodes stay compact.
+        //
+        // Drag interactions additionally report their enabled flag: an
+        // interaction can be present but switched off (e.g. a collection view
+        // with dragInteractionEnabled = false), and the class name alone would
+        // read as "installed and working".
+        let interactionNames = view.interactions.map { interaction -> String in
+            let name = String(describing: type(of: interaction))
+            if let drag = interaction as? UIDragInteraction {
+                return name + (drag.isEnabled ? "(enabled)" : "(DISABLED)")
+            }
+            return name
+        }
+        if !interactionNames.isEmpty {
+            dict["interactions"] = interactionNames
+        }
+        // Gesture recognizers, with the disabled ones marked. UIKit leaves
+        // plenty of recognizers attached-but-disabled, and telling those apart
+        // is the difference between "this gesture lost arbitration" and "this
+        // gesture was never in the running".
+        if let recognizers = view.gestureRecognizers, !recognizers.isEmpty {
+            dict["gestures"] = recognizers.map { recognizer -> String in
+                let name = String(describing: type(of: recognizer))
+                return recognizer.isEnabled ? name : name + "(disabled)"
+            }
+        }
         if depth < maxDepth && shouldDescend(into: view) {
             // Merge the UIKit subview tree with any explicit accessibility
             // element children exposed by SwiftUI hosting views. Both flat
@@ -657,6 +690,27 @@ final class DebugViewInspector {
             dict["superviewAddress"] = addressString(for: superview)
         }
 
+        // Same interaction / gesture reporting as the tree walk — see the note
+        // in `nodeDict`. `debug.inspect` is the "tell me everything about this
+        // one view" call, so it would be odd for it to omit what the cheaper
+        // tree dump already shows.
+        let interactionNames = view.interactions.map { interaction -> String in
+            let name = String(describing: type(of: interaction))
+            if let drag = interaction as? UIDragInteraction {
+                return name + (drag.isEnabled ? "(enabled)" : "(DISABLED)")
+            }
+            return name
+        }
+        if !interactionNames.isEmpty {
+            dict["interactions"] = interactionNames
+        }
+        if let recognizers = view.gestureRecognizers, !recognizers.isEmpty {
+            dict["gestures"] = recognizers.map { recognizer -> String in
+                let name = String(describing: type(of: recognizer))
+                return recognizer.isEnabled ? name : name + "(disabled)"
+            }
+        }
+
         // -- Transform (detect scaling / rotation / translation) --
         let t = view.transform
         if t != .identity {
@@ -801,6 +855,14 @@ final class DebugViewInspector {
             dict["placeholder"] = tf.placeholder ?? ""
             dict["isEditing"] = tf.isEditing
             dict["isFirstResponder"] = tf.isFirstResponder
+            // [T-provider-label-keyboard] The keyboard a field will actually raise.
+            // Without this, "does this field show a number pad?" was only answerable
+            // by tapping it and eyeballing a screenshot — and a synthetic tap does
+            // not reliably move SwiftUI focus, so it was effectively unverifiable.
+            dict["keyboardType"] = Self.keyboardTypeName(tf.keyboardType)
+            dict["textContentType"] = tf.textContentType?.rawValue ?? ""
+            dict["autocapitalizationType"] = tf.autocapitalizationType.rawValue
+            dict["isSecureTextEntry"] = tf.isSecureTextEntry
         }
         if let tv = view as? UITextView {
             let text = tv.text ?? ""
@@ -946,6 +1008,27 @@ final class DebugViewInspector {
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         color.getRed(&r, green: &g, blue: &b, alpha: &a)
         return String(format: "rgba(%.0f,%.0f,%.0f,%.2f)", r * 255, g * 255, b * 255, a)
+    }
+
+    /// [T-provider-label-keyboard] Readable name for a `UIKeyboardType`, so a
+    /// caller can assert "this field is `.default`, not `.numberPad`" without
+    /// decoding a raw Int.
+    static func keyboardTypeName(_ t: UIKeyboardType) -> String {
+        switch t {
+        case .default: return "default"
+        case .asciiCapable: return "asciiCapable"
+        case .numbersAndPunctuation: return "numbersAndPunctuation"
+        case .URL: return "URL"
+        case .numberPad: return "numberPad"
+        case .phonePad: return "phonePad"
+        case .namePhonePad: return "namePhonePad"
+        case .emailAddress: return "emailAddress"
+        case .decimalPad: return "decimalPad"
+        case .twitter: return "twitter"
+        case .webSearch: return "webSearch"
+        case .asciiCapableNumberPad: return "asciiCapableNumberPad"
+        @unknown default: return "unknown(\(t.rawValue))"
+        }
     }
 
     private func parseColor(_ name: String) -> UIColor {

@@ -342,6 +342,41 @@ private let logger = AppLogger(category: "ConfigOffload")
         return result
     }
 
+    #if DEBUG
+    /// [T-config-debug-rpc] Same write batch, with the confirmation gate optionally
+    /// bypassed, for the `config.set` debug RPC.
+    ///
+    /// It is a SEPARATE, DEBUG-only overload rather than a defaulted parameter on
+    /// `writeFields` so the shipping CLI signature is untouched and no release build can
+    /// reach a bypass at all. `skip: false` (the RPC's default) goes through the real
+    /// on-device sheet — that is the honest path, and the one worth testing; `true`
+    /// exists only so an unattended run can still exercise apply/audit.
+    @objc public static func writeFieldsForDebug(items: [NSDictionary],
+                                                 caption: String?,
+                                                 actorRaw: String,
+                                                 sessionId: String?,
+                                                 skipConfirmation: Bool) -> NSDictionary {
+        let sem = DispatchSemaphore(value: 0)
+        var result: NSDictionary = [:]
+        Task.detached { @MainActor in
+            ConfigRegistry.shared.registerBuiltinsIfNeeded()
+            guard MinisConfigPermissionStore.shared.enabled else {
+                result = Self.disabledErrorEnvelope()
+                sem.signal()
+                return
+            }
+            result = await Self.performWriteBatch(items: items,
+                                                  caption: caption,
+                                                  actorRaw: actorRaw,
+                                                  sessionId: sessionId,
+                                                  skipConfirmation: skipConfirmation)
+            sem.signal()
+        }
+        sem.wait()
+        return result
+    }
+    #endif
+
     @MainActor
     private static func performWriteBatch(items: [NSDictionary],
                                           caption: String?,

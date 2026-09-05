@@ -38,6 +38,7 @@ extension AIChatViewModel {
                 self.backgroundTaskID = .invalid
                 if expiringId != .invalid {
                     UIApplication.shared.endBackgroundTask(expiringId)
+                    AIChatViewModel.noteBackgroundTaskEnded()
                 }
                 self.beginBackgroundProcessing()
                 return
@@ -78,7 +79,16 @@ extension AIChatViewModel {
             // Must end the background task to avoid termination.
             self.endBackgroundProcessing()
         }
-        logger.info("[BKA][BGTask] started id=\(self.backgroundTaskID.rawValue) sessions=\(sessions)")
+        // [T-ios-bgkeepalive-diag] Only count a grant the OS actually gave
+        // us: beginBackgroundTask returns .invalid when the request is refused,
+        // and treating that as live is exactly the false "healthy" signal this
+        // counter exists to remove.
+        if backgroundTaskID != .invalid {
+            AIChatViewModel.noteBackgroundTaskBegan()
+        } else {
+            logger.warning("[BKA][BGTask] beginBackgroundTask REFUSED (.invalid) — no OS grant held")
+        }
+        logger.info("[BKA][BGTask] started id=\(self.backgroundTaskID.rawValue) sessions=\(sessions) liveGrants=\(AIChatViewModel.liveBackgroundTaskCount)")
         startBackgroundStatusTimer()
     }
 
@@ -125,8 +135,8 @@ extension AIChatViewModel {
             let wasBackground = UIApplication.shared.applicationState != .active
             let hasError = messages.last?.error != nil || errorMessage != nil
             let responseSummary: String = {
-                let assistantTurns = agentHistory.filter { $0.role == .assistant }
-                logger.info("[BackgroundNotification] building responseSummary from agentHistory: totalMsgs=\(agentHistory.count) assistantTurns=\(assistantTurns.count) wasBackground=\(wasBackground) hasError=\(hasError)")
+                let allAssistantTurns = agentHistory.filter { $0.role == .assistant }
+                logger.info("[BackgroundNotification] building responseSummary from agentHistory: totalMsgs=\(agentHistory.count) assistantTurns=\(allAssistantTurns.count) wasBackground=\(wasBackground) hasError=\(hasError)")
 
                 func textFromTurn(_ msg: AgentMessage) -> String {
                     let raw = msg.parts.compactMap { part -> String? in
@@ -138,6 +148,36 @@ extension AIChatViewModel {
 
                 func hasToolUse(_ msg: AgentMessage) -> Bool {
                     msg.parts.contains { if case .toolUse = $0 { return true }; return false }
+                }
+
+                // [T-bgnotif-internal-text-leak] Never let a model-facing string
+                // become the notification body.
+                //
+                // The internal "bridge" turn inserted when a queued user message
+                // interrupts a tool loop is role=.assistant, a single .text part,
+                // and has NO toolUse — i.e. it is precisely what the
+                // "last pure-text turn" preference below looks for. It shipped to
+                // a user's lock screen verbatim ("(Interrupted mid-task by a new
+                // user message. Decide based on the new message…"), which is an
+                // instruction addressed to the model, not a summary of anything.
+                //
+                // The chat UI already hides these rows (ChatModels.isInternalBridge,
+                // CollectionViewMessageListV3, Persistence), but every one of those
+                // filters is on RawMessage/ChatMessage. This path reads
+                // `agentHistory` (AgentMessage), so it inherited none of them.
+                // Filter here rather than at each `last(where:)` so any future
+                // selection strategy added below is covered by construction.
+                func isInternalOnly(_ msg: AgentMessage) -> Bool {
+                    let raw = msg.parts.compactMap { part -> String? in
+                        if case .text(let t) = part { return t }
+                        return nil
+                    }.joined(separator: "\n")
+                    return RawMessage.isInternalBridgeText(raw)
+                }
+
+                let assistantTurns = allAssistantTurns.filter { !isInternalOnly($0) }
+                if assistantTurns.count != allAssistantTurns.count {
+                    logger.info("[BackgroundNotification] filtered \(allAssistantTurns.count - assistantTurns.count) internal-only turn(s) out of summary candidates")
                 }
 
                 for (idx, msg) in assistantTurns.enumerated() {
@@ -159,13 +199,50 @@ extension AIChatViewModel {
                     logger.info("[BackgroundNotification] source=any-text-turn(agentHistory) first20=\(String(t.prefix(20)).debugDescription)")
                     return String(t.prefix(200))
                 }
+                // No usable assistant text. If the only thing this turn produced
+                // was an internal bridge, the task did not finish — it was
+                // interrupted by a queued user message — so say that in the
+                // user's own terms instead of claiming completion.
+                if allAssistantTurns.contains(where: { isInternalOnly($0) }) {
+                    logger.info("[BackgroundNotification] source=fallback-interrupted")
+                    return String(localized: "Task interrupted by a new message. Open the session to continue.")
+                }
                 logger.info("[BackgroundNotification] source=fallback")
-                return "Task completed."
+                return String(localized: "Task completed.")
             }()
             logger.info("[BackgroundNotification] responseSummary ready length=\(responseSummary.count) first20=\(String(responseSummary.prefix(20)).debugDescription) wasBackground=\(wasBackground)")
             let fallbackTitle = messages.first(where: { $0.role == .user })?.content.prefix(60).description ?? "Agent task"
             let bgTaskID = backgroundTaskID
             backgroundTaskID = .invalid
+            // [T-ios-bgkeepalive-diag] Decrement HERE, synchronously with the
+            // `.invalid` reset — not inside the Task below. That Task first
+            // awaits the Live Activity finish and a ChatStore lookup; if the
+            // process is suspended or terminated before it lands, the decrement
+            // never runs, while the `backgroundTaskID != .invalid` guard above
+            // makes any retry a no-op. The count would then over-report live
+            // grants forever — the same false-healthy signal this field was
+            // added to eliminate. The OS-side endBackgroundTask stays in the
+            // Task (it must outlive the notification work); only our own
+            // bookkeeping moves up, so the two can disagree for a few hundred ms
+            // in exchange for never leaking.
+            if bgTaskID != .invalid {
+                AIChatViewModel.noteBackgroundTaskEnded()
+            }
+            // [T-shortcut-duplicate-completion-notification] Read AND clear here,
+            // synchronously, before the Task below: a Shortcuts intent already
+            // posted its own completion notification for this run, so the generic
+            // one would be a second, overlapping alert for one task. Consuming the
+            // flag (rather than leaving it set) means only THIS completion is
+            // suppressed — the cached VM stays usable, and a message the user
+            // later sends by hand in the same session notifies normally.
+            // Scope is deliberately narrow: only the notification is skipped.
+            // Live Activity finish, badge counting, and endBackgroundTask all
+            // still run below.
+            let suppressGenericNotification = suppressGeneralCompletionNotification
+            suppressGeneralCompletionNotification = false
+            if suppressGenericNotification {
+                logger.info("[BackgroundNotification] suppressed — a Shortcuts intent owns this run's notification")
+            }
             let otherActive = SessionActivityTracker.shared.activeSessions
                 .filter { $0 != sid }
             logger.info("[BKA][BGTask] otherActive=\(otherActive.count) ids=[\(otherActive.map { $0.prefix(8) }.joined(separator: ","))] before Task")
@@ -187,10 +264,13 @@ extension AIChatViewModel {
                 } else {
                     sessionTitle = fallbackTitle
                 }
-                BackgroundKeepAliveManager.shared.postBackgroundTaskNotification(
-                    sessionTitle: sessionTitle, responseSummary: responseSummary, sessionId: sid, isError: hasError, wasBackground: wasBackground
-                )
+                if !suppressGenericNotification {
+                    BackgroundKeepAliveManager.shared.postBackgroundTaskNotification(
+                        sessionTitle: sessionTitle, responseSummary: responseSummary, sessionId: sid, isError: hasError, wasBackground: wasBackground
+                    )
+                }
                 await MainActor.run {
+                    // Bookkeeping was already decremented synchronously above.
                     UIApplication.shared.endBackgroundTask(bgTaskID)
                 }
             }
@@ -343,6 +423,15 @@ extension AIChatViewModel {
 
         logger.info("[Background] Agent loop suspended — waiting for foreground")
 
+        // [ContinuationDiag] (#181) Parks until willEnterForeground. A known
+        // registration race here was already fixed once (see the comment further
+        // down about T-ios-bgresume-registration-race), so an
+        // entering-without-resumed here means the loop is waiting on a
+        // foreground event that already passed — the loop then looks stalled
+        // even though nothing is wrong with the network.
+        let diagStart = Date()
+        logger.info("[ContinuationDiag] entering wait for backgroundSuspended at \(Self.diagTimestamp(diagStart)) session=\(self.sessionId ?? "nil") appState=\(Self.diagAppStateName())")
+
         // Listen for foreground notification to resume
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             self.foregroundContinuation = continuation
@@ -365,7 +454,33 @@ extension AIChatViewModel {
                     self.foregroundObserver = nil
                 }
             }
+            // [T-ios-bgresume-registration-race] The `.active` early-return
+            // above and this observer leave a gap: if the loop reaches here
+            // during the inactive window of a foreground transition
+            // (willEnterForeground already delivered, didBecomeActive not
+            // yet), the notification this observer waits for has ALREADY
+            // fired and never repeats this cycle — the continuation would
+            // park forever and the loop silently dies mid-run with no
+            // error and no resume affordance. Re-check AFTER registration
+            // (same main-thread turn, so no notification can interleave):
+            // any state other than .background means we may have missed the
+            // signal — resume through the same idempotent drain the
+            // observer uses.
+            if UIApplication.shared.applicationState != .background {
+                logger.warning("[Background] App left .background before observer registration — resuming immediately (missed willEnterForeground)")
+                self.backgroundSuspended = false
+                self.beginBackgroundProcessing()
+                if let c = self.foregroundContinuation {
+                    self.foregroundContinuation = nil
+                    c.resume()
+                }
+                if let obs = self.foregroundObserver {
+                    NotificationCenter.default.removeObserver(obs)
+                    self.foregroundObserver = nil
+                }
+            }
         }
+        logger.info("[ContinuationDiag] resumed backgroundSuspended after \(Int(Date().timeIntervalSince(diagStart) * 1000))ms appState=\(Self.diagAppStateName())")
     }
 
     /// Pauses the agent loop when the user activates browser takeover.
@@ -373,9 +488,16 @@ extension AIChatViewModel {
     func waitIfBrowserTakeover() async {
         guard browserTakeoverActive else { return }
         logger.info("[Takeover] Agent loop pausing for browser takeover")
+        // [ContinuationDiag] (#181) This continuation has no timeout — if it is
+        // never resumed the agent loop parks here forever and the user sees a
+        // stalled session. An "entering" line with no matching "resumed" line is
+        // the signature of candidate 1 (continuation deadlock).
+        let diagStart = Date()
+        logger.info("[ContinuationDiag] entering wait for browserTakeover at \(Self.diagTimestamp(diagStart)) session=\(self.sessionId ?? "nil")")
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             self.takeoverContinuation = continuation
         }
+        logger.info("[ContinuationDiag] resumed browserTakeover after \(Int(Date().timeIntervalSince(diagStart) * 1000))ms")
         logger.info("[Takeover] Agent loop resumed from browser takeover")
 
         // Take a screenshot so the agent sees what the user did during takeover
@@ -431,9 +553,17 @@ extension AIChatViewModel {
         self.takeoverTimeoutTask = timeoutTask
 
         // Suspend until the user finishes or timeout fires
+        // [ContinuationDiag] (#181) This one DOES have a 5-minute timeout, so it
+        // should always produce a matching "resumed" line. If a stall shows this
+        // entering-without-resumed, the timeout task itself failed to fire —
+        // which would point at Task.sleep being stretched (candidate 3) rather
+        // than a plain deadlock.
+        let diagStart = Date()
+        logger.info("[ContinuationDiag] entering wait for midActionTakeover at \(Self.diagTimestamp(diagStart)) session=\(self.sessionId ?? "nil")")
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             self.midActionTakeoverContinuation = continuation
         }
+        logger.info("[ContinuationDiag] resumed midActionTakeover after \(Int(Date().timeIntervalSince(diagStart) * 1000))ms")
 
         // Clean up timeout — if cancel() is a no-op, the timeout already fired
         let timedOut = timeoutTask.isCancelled == false

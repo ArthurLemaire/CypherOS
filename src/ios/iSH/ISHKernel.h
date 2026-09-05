@@ -170,6 +170,18 @@ typedef NSString * _Nullable (^ISHPathReverseHandler)(NSString *hostPath);
 /// but fast-paths on dutyCycle==0 (single atomic load).
 - (void)disableCPUThrottle;
 
+/// [T-ish-bg-cpu-governor] Start the closed-loop background CPU governor
+/// (see docs/ish-bg-cpu-governor-design.md): samples process-wide CPU at
+/// 4 Hz into a 60s sliding window and dynamically drives the throttle
+/// ratio (GREEN full speed / YELLOW proportional / RED hard brake) to keep
+/// the window under the iOS background kill budget with margin. Call on
+/// didEnterBackground. Idempotent.
+- (void)beginBackgroundCPUGovernor;
+
+/// Stop the governor and clear any applied throttle. Call on foreground
+/// return. Idempotent.
+- (void)endBackgroundCPUGovernor;
+
 @end
 
 NS_ASSUME_NONNULL_END

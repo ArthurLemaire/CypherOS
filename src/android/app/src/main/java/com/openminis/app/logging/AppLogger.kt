@@ -32,6 +32,44 @@ object AppLogger {
     private const val KEY_ENABLED = "logging_enabled"
 
     private var logDir: File? = null
+
+    /**
+     * T-android-safemode-lateinit-crash: application context captured as
+     * early as possible so the read-only helpers below can find
+     * `filesDir/logs` even when [init] never ran.
+     *
+     * [init] is called from MinisApp.onCreate AFTER the safe-mode
+     * early-return, so on a launch following a crash burst [logDir] stays
+     * null — and every reader keyed off it ([listLogFiles],
+     * [listLogFileMetas], [readLog], [totalSize]) reported "no logs".
+     * That is precisely the launch on which the user goes looking for the
+     * crash records, which is why they saw an empty list while the files
+     * were sitting on disk the whole time. The crash writers were never
+     * affected: CrashFileSender and NativeCrashHandler each build
+     * `filesDir/logs` from their own Context.
+     */
+    @Volatile
+    private var appContext: Context? = null
+
+    /**
+     * Capture the context for [resolveLogDir] without doing any of
+     * [init]'s side effects (no mkdirs, no prefs read, no stdout capture,
+     * no pruning). Safe to call from the very top of Application.onCreate,
+     * before any safe-mode decision is made.
+     */
+    fun primeContext(context: Context) {
+        if (appContext == null) appContext = context.applicationContext
+    }
+
+    /**
+     * Log directory for READ paths. Prefers the [init]-assigned [logDir];
+     * falls back to deriving it from [appContext]. Returns null only when
+     * neither is available, and never creates the directory — readers
+     * treat a missing directory as "no logs", which is correct.
+     */
+    private fun resolveLogDir(): File? =
+        logDir ?: appContext?.let { File(it.filesDir, LOG_DIR) }
+
     private var currentDate: String = ""
     private var writer: PrintWriter? = null
     private var enabled: Boolean = false
@@ -57,6 +95,7 @@ object AppLogger {
      * `LoggingManager.startIfEnabled()`.
      */
     fun init(context: Context) {
+        primeContext(context)
         logDir = File(context.filesDir, LOG_DIR).also { it.mkdirs() }
         enabled = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
             .getBoolean(KEY_ENABLED, false)
@@ -100,6 +139,14 @@ object AppLogger {
         logcatTailer = LogcatTailer { line -> writeLogcatLine(line) }.also { it.start() }
         captureActive = true
         info("AppLogger", "Logging session started — capturing stdout/stderr + logcat tail")
+        // [T-android-mem-probe-trust] Device/ROM/heap identity, immediately
+        // after the session marker. The 2026-08-15 field log carried none of
+        // this: the hardware had to be guessed from an incidental
+        // `/proc/vivo_rsc/…` line in the logcat tail, and triage then compared
+        // it against unrelated hardware. Emitted per logging session (not per
+        // launch) so it is present in every attached log, including the
+        // post-crash one.
+        appContext?.let { com.openminis.app.diagnostics.EnvironmentBanner.log(it) }
     }
 
     @Synchronized
@@ -294,7 +341,7 @@ object AppLogger {
      * List available log files, newest first.
      */
     fun listLogFiles(): List<File> {
-        val dir = logDir ?: return emptyList()
+        val dir = resolveLogDir() ?: return emptyList()
         return dir.listFiles { f -> f.extension == "log" }
             ?.sortedByDescending { it.name }
             ?: emptyList()
@@ -331,7 +378,7 @@ object AppLogger {
      * Pure data; safe to call from `Dispatchers.IO`.
      */
     fun listLogFileMetas(prefix: String, limit: Int): List<LogFileMeta> {
-        val dir = logDir ?: return emptyList()
+        val dir = resolveLogDir() ?: return emptyList()
         val files = dir.listFiles { f ->
             f.extension == "log" && (prefix.isEmpty() || f.name.startsWith(prefix))
         } ?: return emptyList()
@@ -348,7 +395,7 @@ object AppLogger {
      * Read content of a specific log file.
      */
     fun readLog(filename: String): String? {
-        val dir = logDir ?: return null
+        val dir = resolveLogDir() ?: return null
         val file = File(dir, filename)
         return if (file.exists()) file.readText() else null
     }
@@ -374,7 +421,12 @@ object AppLogger {
      * Total size of all log files in bytes.
      */
     fun totalSize(): Long {
-        return logDir?.listFiles()?.sumOf { it.length() } ?: 0L
+        // Read path — uses the same fallback as the listing helpers so the
+        // storage footer isn't reported as 0 B next to a populated list.
+        // Deletion paths (clearLogs / pruneOldLogs) deliberately stay on
+        // the raw logDir: a process that never finished init has no
+        // business unlinking the user's crash evidence.
+        return resolveLogDir()?.listFiles()?.sumOf { it.length() } ?: 0L
     }
 
     private fun pruneOldLogs() {

@@ -211,6 +211,15 @@ struct MCPFormSheet: View {
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
                 SecureField(String(localized: "Client Secret (optional)"), text: $oauthClientSecret)
+                    // [T-provider-label-keyboard] Same AutoFill opt-out as the
+                    // provider form. This is the textbook trigger shape: a
+                    // "Client ID" TextField directly above a SecureField reads
+                    // to iOS as a username/password pair, so AutoFill hangs the
+                    // password bar on the Client ID field. Unreported so far,
+                    // but structurally identical to the provider-Label report.
+                    .textContentType(.oneTimeCode)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
                 TextField(String(localized: "Authorization Endpoint (https://…/authorize)"), text: $oauthAuthEndpoint)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)

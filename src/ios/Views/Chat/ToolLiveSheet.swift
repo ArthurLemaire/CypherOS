@@ -2370,6 +2370,45 @@ private struct ToolPreviewThumbnail: View {
 }
 
 /// Bottom status bar: status icon + description + counter + expand chevron.
+/// Background for the collapsed floating tool-status bar.
+///
+/// iOS 26+: Liquid Glass. This bar floats over the live message list, so the
+/// material has real, moving content to sample — the case glass is actually for,
+/// and the opposite of `FolderSurface`, which had to fall back to a sampled
+/// constant precisely because it had nothing but flat list background behind it.
+///
+/// The hairline stroke and the hand-rolled shadow are both dropped on the glass
+/// path: the material renders its own edge and shadow, and stacking the old ones
+/// on top reads as a dark halo plus a doubled border (same finding as the FAB and
+/// composer conversions). Sub-26 keeps the original fill + stroke + shadow
+/// byte-for-byte.
+///
+/// The bar's content (status icon, title, pager) is *inside* the modified view,
+/// not `.overlay`-ed on it — `.glassEffect` composites the material above the
+/// view it modifies, so an overlay would be painted under the glass and vanish.
+/// That was the FAB regression; keeping the content as the modifier's `content`
+/// is what avoids it here.
+private struct ToolStatusBarSurface: ViewModifier {
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+    }
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular, in: shape)
+        } else {
+            content
+                .background(Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.15, alpha: 1) : UIColor.systemBackground }))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color(UIColor.separator).opacity(0.3), lineWidth: 0.5)
+                )
+                .shadow(color: Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.08, alpha: 0.75) : UIColor(white: 0, alpha: 0.12) }), radius: 8, x: 0, y: 4)
+        }
+    }
+}
+
 private struct ToolStatusBar: View {
     @ObservedObject var block: AssistantBlock
     let toolBlocks: [AssistantBlock]
@@ -2434,13 +2473,7 @@ private struct ToolStatusBar: View {
         .padding(.vertical, 5)
         .frame(minHeight: 38)
         .frame(maxWidth: .infinity)
-        .background(Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.15, alpha: 1) : UIColor.systemBackground }))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(Color(UIColor.separator).opacity(0.3), lineWidth: 0.5)
-        )
-        .shadow(color: Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.08, alpha: 0.75) : UIColor(white: 0, alpha: 0.12) }), radius: 8, x: 0, y: 4)
+        .modifier(ToolStatusBarSurface())
     }
 
     @ViewBuilder

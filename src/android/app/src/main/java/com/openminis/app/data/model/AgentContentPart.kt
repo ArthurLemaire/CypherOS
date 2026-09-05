@@ -14,6 +14,11 @@ sealed class AgentContentPart {
         val id: String,
         val name: String,
         val input: JSONObject,
+        // [T-android-gemini3-thoughtsig / #179] Opaque Gemini 3.x thought
+        // signature captured at tool-call time; replayed on the historical
+        // functionCall part (required by gemini-3.x or the request 400s). Null
+        // for non-Gemini providers and for pre-fix / migrated history.
+        val thoughtSignature: String? = null,
     ) : AgentContentPart()
 
     data class ToolResult(
@@ -58,17 +63,25 @@ sealed class AgentContentPart {
          * any. See [LLMMessage.ImagePart.linuxPath] for usage notes.
          */
         val linuxPath: String? = null,
+        /**
+         * [T-android-vision-group / GH#182] Provider substitutes this for the
+         * pixels on the T264 no-native-vision path. See
+         * [LLMMessage.ImagePart.noVisionPlaceholder]. Seeded by ChatViewModel
+         * only when a Vision Group is configured; null → provider default literal.
+         */
+        val noVisionPlaceholder: String? = null,
     ) : AgentContentPart() {
         override fun equals(other: Any?): Boolean {
             if (this === other) return true
             if (other !is ImageData) return false
             return data.contentEquals(other.data) && mimeType == other.mimeType &&
-                linuxPath == other.linuxPath
+                linuxPath == other.linuxPath && noVisionPlaceholder == other.noVisionPlaceholder
         }
 
         override fun hashCode(): Int {
             var result = 31 * data.contentHashCode() + mimeType.hashCode()
             result = 31 * result + (linuxPath?.hashCode() ?: 0)
+            result = 31 * result + (noVisionPlaceholder?.hashCode() ?: 0)
             return result
         }
     }

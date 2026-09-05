@@ -41,14 +41,33 @@ final class CapturedVoiceInput {
     /// persisted. Exposed base64 by the RPC for export/inspection.
     let audioData: Data
 
+    // [T-debug-full-session-capture] Un-cut reference recording for this entry's
+    // recording session. Every payload captured between one VAD start() and
+    // stop() shares a `sessionId`, and the full session audio is attached to all
+    // of them once the session ends — so you can line the ASR payload up against
+    // the untrimmed original and see exactly where VAD cut.
+    /// Identifies the VAD start()→stop() session this payload came from.
+    /// Nil if the payload was captured outside a tracked session.
+    let sessionId: String?
+    /// Whole-session WAV (16-bit PCM, same sample rate as capture). Populated
+    /// when the session ends, so it is nil for entries read mid-recording.
+    var fullSessionAudio: Data?
+    /// Duration of `fullSessionAudio` in seconds.
+    var fullSessionDurationSeconds: Double?
+    /// True when the session exceeded the 10-minute capture ceiling and the tail
+    /// was dropped (the start is always preserved).
+    var fullSessionTruncated: Bool = false
+
     init(audioData: Data,
          model: String?,
          language: String?,
          onDeviceRecognition: Bool?,
          vadSegmentCount: Int,
          vadEndReason: String?,
-         vadRunningDuration: Double?) {
+         vadRunningDuration: Double?,
+         sessionId: String? = nil) {
         self.id = UUID().uuidString
+        self.sessionId = sessionId
         self.capturedAt = Date()
         self.model = model
         self.language = language
@@ -114,6 +133,18 @@ final class CapturedVoiceInput {
         if let model { d["model"] = model }
         if let language { d["language"] = language }
         if let onDeviceRecognition { d["onDeviceRecognition"] = onDeviceRecognition }
+        if let sessionId { d["sessionId"] = sessionId }
+        if let fullSessionAudio {
+            var fs: [String: Any] = [
+                "byteCount": fullSessionAudio.count,
+                "truncated": fullSessionTruncated,
+            ]
+            if let fullSessionDurationSeconds { fs["durationSeconds"] = fullSessionDurationSeconds }
+            if includeAudio {
+                fs["audioBase64"] = fullSessionAudio.base64EncodedString()
+            }
+            d["fullSession"] = fs
+        }
         if includeAudio {
             // base64 WAV — directly saveable to a .wav for playback/inspection.
             d["audioBase64"] = audioData.base64EncodedString()
@@ -132,7 +163,46 @@ final class VoiceInputCapture: @unchecked Sendable {
     private let maxEntries = 5
     private var _entries: [CapturedVoiceInput] = []
 
+    /// [T-debug-full-session-capture] Session id of the VAD recording currently
+    /// in progress; stamped onto every payload recorded while it is set.
+    private var _currentSessionId: String?
+    /// Full-session audio for recently finished sessions, kept so that payloads
+    /// recorded AFTER `stop()` still get it. Transcription runs asynchronously,
+    /// so the last segment's `record()` frequently lands after the session ended.
+    /// Bounded to the last 2 sessions (one more than the ring can straddle).
+    private var _finishedSessions: [(id: String, audio: Data, duration: Double, truncated: Bool)] = []
+
     private init() {}
+
+    /// Mark the start of a VAD recording session. Payloads recorded from now
+    /// until the session's audio is attached carry this id.
+    func beginSession(id: String) {
+        lock.lock()
+        _currentSessionId = id
+        lock.unlock()
+    }
+
+    /// Attach the un-cut whole-session recording once the VAD session ends.
+    /// Applies it to every already-recorded entry of that session, and keeps it
+    /// around so late-arriving entries (async transcription) pick it up too.
+    func attachFullSessionAudio(sessionId: String,
+                                audioData: Data,
+                                durationSeconds: Double,
+                                truncated: Bool) {
+        lock.lock()
+        if _currentSessionId == sessionId { _currentSessionId = nil }
+        for entry in _entries where entry.sessionId == sessionId {
+            entry.fullSessionAudio = audioData
+            entry.fullSessionDurationSeconds = durationSeconds
+            entry.fullSessionTruncated = truncated
+        }
+        _finishedSessions.removeAll { $0.id == sessionId }
+        _finishedSessions.append((sessionId, audioData, durationSeconds, truncated))
+        if _finishedSessions.count > 2 {
+            _finishedSessions.removeFirst(_finishedSessions.count - 2)
+        }
+        lock.unlock()
+    }
 
     /// Snapshot the audio about to be transcribed. Called on the capture-side
     /// path immediately before `transcribe(request)`.
@@ -143,6 +213,16 @@ final class VoiceInputCapture: @unchecked Sendable {
                 vadSegmentCount: Int,
                 vadEndReason: String?,
                 vadRunningDuration: Double?) {
+        lock.lock()
+        // Which recording session does this payload belong to? While the mic is
+        // live it's the open session. Transcription is async, so the LAST
+        // segment of a recording is often handed over after stop() cleared it —
+        // in that case fall back to the session that just finished, which is the
+        // one this audio actually came from.
+        let session = _currentSessionId ?? _finishedSessions.last?.id
+        let finished = _finishedSessions.last(where: { $0.id == session })
+        lock.unlock()
+
         let entry = CapturedVoiceInput(
             audioData: audioData,
             model: model,
@@ -150,8 +230,14 @@ final class VoiceInputCapture: @unchecked Sendable {
             onDeviceRecognition: onDeviceRecognition,
             vadSegmentCount: vadSegmentCount,
             vadEndReason: vadEndReason,
-            vadRunningDuration: vadRunningDuration
+            vadRunningDuration: vadRunningDuration,
+            sessionId: session
         )
+        if let finished {
+            entry.fullSessionAudio = finished.audio
+            entry.fullSessionDurationSeconds = finished.duration
+            entry.fullSessionTruncated = finished.truncated
+        }
         lock.lock()
         _entries.append(entry)
         if _entries.count > maxEntries {
@@ -170,6 +256,7 @@ final class VoiceInputCapture: @unchecked Sendable {
     func clear() {
         lock.lock()
         _entries.removeAll()
+        _finishedSessions.removeAll()
         lock.unlock()
     }
 }

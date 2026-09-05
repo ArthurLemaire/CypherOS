@@ -16,6 +16,7 @@ import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.RecordVoiceOver
 import androidx.compose.material.icons.outlined.Accessibility
 import androidx.compose.material.icons.outlined.BatteryAlert
+import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.AlertDialog
@@ -31,15 +32,19 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import com.openminis.app.R
+import com.openminis.app.accessibility.AccessibilityRecoveryManager
 import com.openminis.app.accessibility.MinisAccessibilityService
+import com.openminis.app.offload.ShizukuManager
 import com.openminis.app.power.PowerOptimizationManager
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * T323: surfaces OS-level permission states (Accessibility service,
@@ -60,6 +65,15 @@ fun SystemPermissionsScreen(onBack: () -> Unit) {
     // battery "no restrictions"; surface those (reusing PowerOptimizationManager)
     // only when the service is degraded AND the vendor is known to enforce it.
     var a11yDegraded by remember { mutableStateOf(false) }
+    // [T-android-a11y-force-stop-recovery] Distinct from `a11yDegraded`: the
+    // grant itself is gone from Settings.Secure (force-stop stripped it), which
+    // is repairable by writing the setting back. `a11yDegraded` is the opposite
+    // case — grant present, process killed — where writing would be pointless.
+    var a11yRevoked by remember { mutableStateOf(false) }
+    var shizukuReady by remember { mutableStateOf(false) }
+    var repairing by remember { mutableStateOf(false) }
+    var repairFailed by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -67,6 +81,13 @@ fun SystemPermissionsScreen(onBack: () -> Unit) {
             val connected = MinisAccessibilityService.getInstance() != null
             a11yEnabled = inSettings || connected
             a11yDegraded = inSettings && !connected
+            // Only claim "revoked" once the user has actually granted it at
+            // least once — otherwise a first-run user who has never enabled the
+            // service would be shown a "repair" prompt for something that was
+            // never broken.
+            a11yRevoked = !inSettings && !connected &&
+                AccessibilityRecoveryManager.hasEverBeenGranted(context)
+            shizukuReady = ShizukuManager.isReady()
             delay(1000)
         }
     }
@@ -104,6 +125,54 @@ fun SystemPermissionsScreen(onBack: () -> Unit) {
                     onClick = { openAccessibilitySettings(context) },
                     showDivider = false,
                 )
+            }
+
+            // [T-android-a11y-force-stop-recovery] Repair affordance, shown ONLY
+            // when the grant was previously held and is now missing from
+            // Settings.Secure — the force-stop signature. Hidden in the healthy
+            // case and on a fresh install (see hasEverBeenGranted) so the screen
+            // stays clean.
+            if (a11yRevoked) {
+                SettingsSection(
+                    header = stringResource(R.string.a11y_repair_section_header),
+                    footer = stringResource(
+                        if (shizukuReady) R.string.a11y_repair_footer_shizuku
+                        else R.string.a11y_repair_footer_manual
+                    ),
+                ) {
+                    SettingsRow(
+                        icon = Icons.Outlined.Build,
+                        iconColor = Color(0xFFFF3B30),
+                        title = stringResource(
+                            if (shizukuReady) R.string.a11y_repair_row_shizuku
+                            else R.string.a11y_repair_row_manual
+                        ),
+                        subtitle = when {
+                            repairing -> stringResource(R.string.a11y_repair_in_progress)
+                            repairFailed -> stringResource(R.string.a11y_repair_failed)
+                            else -> stringResource(R.string.a11y_repair_row_sub)
+                        },
+                        onClick = {
+                            if (!shizukuReady) {
+                                openAccessibilitySettings(context)
+                                return@SettingsRow
+                            }
+                            if (repairing) return@SettingsRow
+                            repairing = true
+                            repairFailed = false
+                            scope.launch {
+                                val ok = AccessibilityRecoveryManager
+                                    .repairWithShizuku(context)
+                                repairing = false
+                                repairFailed = !ok
+                                // On success the polling loop above clears
+                                // a11yRevoked within a second and this whole
+                                // section disappears on its own.
+                            }
+                        },
+                        showDivider = false,
+                    )
+                }
             }
 
             // [T-android-a11y-miui-service-failure] OEM keep-alive guidance. Only

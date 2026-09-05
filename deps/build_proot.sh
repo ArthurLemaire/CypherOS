@@ -5,9 +5,23 @@ set -e
 # PRoot Android Build Script (OpenMinis fork)
 # ============================================================================
 # Cross-compiles a statically-linked libtalloc and the OpenMinis/proot fork
-# for Android aarch64 using the Android NDK. Produces a single self-contained
-# proot binary with the loader bundled, and installs it into
-# `src/android/app/src/main/assets/proot-aarch64`.
+# for Android aarch64 using the Android NDK, then installs the proot binary
+# AND its two ELF loaders into the app.
+#
+# The loaders are not optional on Android. proot does embed a copy of the
+# loader in its own binary and can normally extract it at runtime, but that
+# path is dead on Android 10+: the extracted copy lands in the app's temp dir
+# (SELinux label app_data_file), and W^X forbids untrusted_app from executing
+# anything with that label — chmod +x succeeds, the exec still gets EACCES.
+# The only executable location is nativeLibraryDir, which the installer
+# populates from `lib/**/*.so` inside the APK. Hence the loaders ship as
+# jniLibs with a .so suffix despite being executables, not shared objects.
+#
+# Drop them and the failure is quiet and misleading: proot launches fine and
+# native_offload initialises, so any "does the sandbox start?" check passes —
+# but the first execve("/bin/sh") fails and every command in the app comes
+# back as "[Shell not running] (exit code: -1)". See the commit that restored
+# this install step for the on-device diagnosis.
 #
 # Repository: https://github.com/OpenMinis/proot (fork of termux/proot)
 #
@@ -23,6 +37,15 @@ set -e
 #
 # Output:
 #   src/android/app/src/main/assets/proot-aarch64
+#   src/android/app/src/main/jniLibs/arm64-v8a/libproot.so
+#   src/android/app/src/main/jniLibs/arm64-v8a/libproot-loader.so
+#   src/android/app/src/main/jniLibs/arm64-v8a/libproot-loader32.so
+#
+# Note on reproducibility: these artifacts are NOT byte-identical across NDK
+# releases — the loader's .text differs between toolchain generations (the
+# binaries this repo shipped before they were untracked were built with
+# clang 21; NDK r28 carries clang 19). Functionally equivalent; do not expect
+# checksums to match an older build.
 # ============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -306,6 +329,126 @@ install_asset() {
     mkdir -p "$JNILIBS_DIR"
     install -m 0755 "$BUILT_PROOT" "$JNILIBS_BIN"
     log_success "Installed: $JNILIBS_BIN ($(du -h "$JNILIBS_BIN" | awk '{print $1}'))"
+
+    # The ELF loaders MUST ship as jniLibs too, or the sandbox can start but
+    # cannot execute anything inside the rootfs.
+    #
+    # Android 10+ enforces W^X for untrusted_app: a file labelled
+    # app_data_file (everything under the app's files/ dir, including the
+    # extracted Alpine rootfs) can never be exec'd. Only apk_data_file —
+    # i.e. what the installer extracts into nativeLibraryDir from lib/ in
+    # the APK — is executable. proot's answer is these loaders: the loader
+    # itself lives in nativeLibraryDir (executable), and it maps the guest
+    # ELF from the rootfs instead of handing it to the kernel's execve.
+    #
+    # Without them proot still launches and native_offload still initializes
+    # — which is why a "does the sandbox start?" smoke test passes — but the
+    # first execve("/bin/sh") fails with EACCES and every command comes back
+    # as "[Shell not running] (exit code: -1)".
+    #
+    # Only files matching lib/**/*.so are extracted to nativeLibraryDir, so
+    # the .so suffix is load-bearing here even though these are executables,
+    # not shared objects.
+    # ── DO NOT install the fork-built loaders. ────────────────────────────
+    #
+    # The loaders that ship are VENDORED TERMUX BUILDS (proot 5.1.107-70),
+    # tracked in git as an explicit exception to the no-binaries rule; this
+    # script only VERIFIES them. History, because this has now bitten twice:
+    #
+    #  * bc2566b2 untracked all jniLibs binaries; a25d93f7 then rebuilt the
+    #    loaders from deps/proot and installed them here, believing them
+    #    "identical modulo stripping" to the deleted ones. They are not: the
+    #    deleted ones were Termux's builds, which carry Android-specific
+    #    loader patches our deps/proot fork does not have.
+    #  * Pairing our proot with the FORK-built loader works on some devices
+    #    (Pixel 4a / Android 13) but SEGVs the guest's first instruction on
+    #    others (OnePlus 7 Pro / crDroid 12.11, rooted: "proot info: vpid 1:
+    #    terminated with signal 11", proot exit=255). The Termux pair works
+    #    fleet-wide and did so through 0.20.
+    #  * The exact Termux deb has been rotated out of packages.termux.dev
+    #    (404), so these bytes can be neither re-downloaded nor rebuilt from
+    #    anything in this tree. The git copies are the only source.
+    #
+    # To ever go back to fork-built loaders: first port Termux's loader
+    # patches into deps/proot, then verify on a non-stock ROM (the Pixel
+    # passing is exactly what hid this regression).
+    local want64="44ef39c1e1a18c09f6e4c4b5d6f8bba82d30596598bd155ec162d05c5122ff04"
+    local want32="25f6bd90bc5a3d3088026289a0d3eaf3e502bd2b00e5cb74fadd9791132efa34"
+    local have64 have32
+    have64=$(shasum -a 256 "$JNILIBS_DIR/libproot-loader.so" 2>/dev/null | awk '{print $1}')
+    have32=$(shasum -a 256 "$JNILIBS_DIR/libproot-loader32.so" 2>/dev/null | awk '{print $1}')
+    if [ "$have64" != "$want64" ]; then
+        log_error "libproot-loader.so is NOT the vendored Termux build (sha256=${have64:-missing}). Restore: git checkout -- src/android/app/src/main/jniLibs/arm64-v8a/libproot-loader.so"
+    fi
+    if [ "$have32" != "$want32" ]; then
+        log_error "libproot-loader32.so is NOT the vendored Termux build (sha256=${have32:-missing}). Restore: git checkout -- src/android/app/src/main/jniLibs/arm64-v8a/libproot-loader32.so"
+    fi
+    log_success "Verified vendored Termux loaders (sha256-pinned): libproot-loader.so, libproot-loader32.so"
+}
+
+# ----------------------------------------------------------------------------
+# Stage: verify every artifact the APK needs is present and sane
+# ----------------------------------------------------------------------------
+# This exists because of a real regression: when the loaders stopped being
+# installed, the build stayed green, Gradle packaged the APK happily (it never
+# inspects jniLibs contents), and the only symptom was every shell command in
+# the app returning "[Shell not running]" at runtime. Nothing between the
+# build and the user's device checked that the sandbox was actually complete.
+#
+# Fail loudly here instead. A missing file is a broken sandbox, so it must
+# stop the build rather than produce a silently unusable APK.
+verify_artifacts() {
+    log_info "Verifying installed artifacts…"
+
+    local failed=0
+
+    # path:min_bytes:arch — the size floor catches a truncated or zero-length
+    # install, which a plain -f test would happily accept. `arch` is the
+    # expected ELF machine: the 32-bit loader really is 32-bit ARM (it exists
+    # to run 32-bit guest binaries), so demanding aarch64 of it is wrong.
+    local required=(
+        "$OUTPUT_BIN:100000:aarch64"
+        "$JNILIBS_BIN:100000:aarch64"
+        "$JNILIBS_DIR/libproot-loader.so:4000:aarch64"
+    )
+    # 32-bit loader is genuinely optional (Alpine aarch64 is pure 64-bit), so
+    # it is checked only when present rather than being required.
+    if [ -f "$JNILIBS_DIR/libproot-loader32.so" ]; then
+        required+=("$JNILIBS_DIR/libproot-loader32.so:2000:elf32-littlearm")
+    fi
+
+    for entry in "${required[@]}"; do
+        local path="${entry%%:*}"
+        local rest="${entry#*:}"
+        local min="${rest%%:*}"
+        local arch="${rest#*:}"
+        local name="${path##*/}"
+
+        if [ ! -f "$path" ]; then
+            log_warn "MISSING: $path"
+            failed=1
+            continue
+        fi
+        local size
+        size=$(wc -c < "$path" | tr -d ' ')
+        if [ "$size" -lt "$min" ]; then
+            log_warn "TOO SMALL: $name is $size bytes (expected >= $min) — truncated install?"
+            failed=1
+            continue
+        fi
+        if ! "$OBJDUMP" -a "$path" 2>/dev/null | grep -q "$arch"; then
+            log_warn "WRONG ARCH: $name is not $arch"
+            failed=1
+            continue
+        fi
+        log_success "  ✓ $name ($size bytes)"
+    done
+
+    if [ "$failed" -ne 0 ]; then
+        log_error "Artifact verification failed — the APK built from this tree would have a broken sandbox (shell commands would return '[Shell not running]'). Fix the errors above and rerun."
+    fi
+
+    log_success "All sandbox artifacts present and valid"
 }
 
 # ----------------------------------------------------------------------------
@@ -339,6 +482,7 @@ main() {
     build_talloc
     build_proot
     install_asset
+    verify_artifacts
 
     log_success "All done. proot binary ready at $OUTPUT_BIN"
 }

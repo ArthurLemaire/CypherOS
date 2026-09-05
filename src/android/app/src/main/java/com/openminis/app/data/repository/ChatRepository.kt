@@ -3,6 +3,7 @@ package com.openminis.app.data.repository
 import android.database.sqlite.SQLiteBlobTooBigException
 import com.openminis.app.data.db.ChatDao
 import com.openminis.app.data.db.ChatSessionEntity
+import com.openminis.app.data.db.FolderEntity
 import com.openminis.app.data.db.MessageEntity
 import kotlinx.coroutines.flow.Flow
 import java.util.UUID
@@ -107,6 +108,120 @@ class ChatRepository(internal val dao: ChatDao) {
     suspend fun deleteSession(id: String) {
         dao.deleteMessages(id)
         dao.deleteSession(id)
+    }
+
+    // ─── Session groups ("folders") ────────────────────────────────────────
+    // [T-android-session-grouping] Ported from iOS ChatStore's Folders section.
+    // Code says Folder, UI says Group — see FolderEntity for why.
+
+    fun observeFolders(): Flow<List<FolderEntity>> = dao.observeFolders()
+
+    suspend fun listFolders(): List<FolderEntity> = dao.listFolders()
+
+    suspend fun getFolder(id: String): FolderEntity? = dao.getFolder(id)
+
+    /**
+     * Create a group. The description is trimmed and capped at
+     * [FolderEntity.DESC_MAX_CHARS]; blank collapses to null so "no
+     * description" is one value rather than two.
+     */
+    suspend fun createFolder(
+        name: String,
+        description: String? = null,
+        origin: String = FolderEntity.ORIGIN_MANUAL,
+    ): FolderEntity {
+        val now = System.currentTimeMillis()
+        val folder = FolderEntity(
+            id = UUID.randomUUID().toString(),
+            name = name.trim(),
+            origin = origin,
+            description = description?.trim()?.take(FolderEntity.DESC_MAX_CHARS)?.ifBlank { null },
+            createdAt = now,
+            updatedAt = now,
+        )
+        dao.insertFolder(folder)
+        return folder
+    }
+
+    /**
+     * Rename / re-describe. The UUID key is untouched, so members never move —
+     * that is the whole reason the group is keyed by UUID and not by name.
+     *
+     * @param description null LEAVES the stored value alone; an empty string
+     *   clears it. Callers that always pass the field through (e.g. a rename
+     *   dialog) must therefore seed the field from the current value, or they
+     *   will wipe descriptions they never meant to touch.
+     */
+    suspend fun renameFolder(id: String, name: String, description: String? = null) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+        dao.renameFolder(
+            id = id,
+            name = trimmed,
+            description = description?.trim()?.take(FolderEntity.DESC_MAX_CHARS),
+            updatedAt = System.currentTimeMillis(),
+        )
+    }
+
+    /** @return the new pinned state. Bumps `updated_at` so the edit is stamped. */
+    suspend fun toggleFolderPin(id: String): Boolean {
+        val current = dao.getFolder(id) ?: return false
+        val nowPinned = current.pinnedAt == null
+        val now = System.currentTimeMillis()
+        dao.setFolderPinned(id, if (nowPinned) now else null, now)
+        return nowPinned
+    }
+
+    /**
+     * Dissolve a group: drop the group row and return its members to ungrouped.
+     * **No session is deleted** — this is the ONLY delete operation on a group,
+     * and it can never cost the user a conversation.
+     *
+     * Members are read BEFORE the clear because the ids are the return value
+     * (callers use them to refresh, and a future sync layer would need them to
+     * push each freed session).
+     *
+     * @return ids of the sessions that became ungrouped.
+     */
+    suspend fun dissolveFolder(id: String): List<String> {
+        val memberIds = dao.sessionIdsInFolder(id)
+        dao.clearFolderForSessions(id)
+        dao.deleteFolder(id)
+        return memberIds
+    }
+
+    suspend fun sessionIdsInFolder(folderId: String): List<String> = dao.sessionIdsInFolder(folderId)
+
+    /**
+     * Move sessions into a group, or out of one when [folderId] is null.
+     *
+     * Writes only `folder_id`, never `updated_at` — filing is organizational
+     * and must not re-sort the session list.
+     */
+    suspend fun setFolderForSessions(folderId: String?, sessionIds: List<String>) {
+        if (sessionIds.isEmpty()) return
+        for (sid in sessionIds) dao.setSessionFolder(sid, folderId)
+    }
+
+    /**
+     * File a session only if it is still ungrouped. The condition is part of the
+     * UPDATE, so a hand-filed session can never be overridden by an automatic
+     * write racing it.
+     *
+     * @return true if this call actually filed the session.
+     */
+    suspend fun setFolderIfUnfiled(folderId: String, sessionId: String): Boolean =
+        dao.setSessionFolderIfUnfiled(sessionId, folderId) > 0
+
+    /**
+     * Name → group, case- and whitespace-insensitive. Duplicate-tolerant by
+     * construction (names are not unique); returns the most recently updated
+     * match, which is what [listFolders]' ordering already puts first.
+     */
+    suspend fun findFolderByName(name: String): FolderEntity? {
+        val needle = name.trim().lowercase()
+        if (needle.isEmpty()) return null
+        return dao.listFolders().firstOrNull { it.name.trim().lowercase() == needle }
     }
 
     suspend fun searchSessions(query: String): List<ChatSessionEntity> =
@@ -561,8 +676,17 @@ class ChatRepository(internal val dao: ChatDao) {
         // documented 600; `minis-sessions-cli messages --full` passes
         // MESSAGE_TEXT_MAX_FULL (50000) so exports aren't silently gutted.
         maxChars: Int = MESSAGE_TEXT_MAX,
+        // [T-android-sessions-cli-messages-daterange] GH#200. Inclusive,
+        // independently optional created_at bounds; null = unbounded on that
+        // side, so existing callers keep the previous behaviour untouched.
+        startMs: Long? = null,
+        endMs: Long? = null,
     ): List<MessagePageItem> {
-        val rows = dao.loadMessagesPage(sessionId, offset, limit)
+        val rows = if (startMs == null && endMs == null) {
+            dao.loadMessagesPage(sessionId, offset, limit)
+        } else {
+            dao.loadMessagesPageInRange(sessionId, offset, limit, startMs, endMs)
+        }
         return rows.mapNotNull { e ->
             val text = extractTextForOffload(e.partsJson)
             if (text.isBlank()) return@mapNotNull null
@@ -576,6 +700,18 @@ class ChatRepository(internal val dao: ChatDao) {
     }
 
     suspend fun messageCount(sessionId: String): Int = dao.messageCountForSession(sessionId)
+
+    /**
+     * [T-android-sessions-cli-messages-daterange] Count under the same optional
+     * range [loadMessagePage] filters by, so `total` and the returned slice
+     * always describe the same set.
+     */
+    suspend fun messageCountInRange(sessionId: String, startMs: Long?, endMs: Long?): Int =
+        if (startMs == null && endMs == null) {
+            dao.messageCountForSession(sessionId)
+        } else {
+            dao.messageCountForSessionInRange(sessionId, startMs, endMs)
+        }
 
     /**
      * Paginated raw [MessageEntity] page — used by [com.openminis.app.share.ChatExporter]

@@ -60,6 +60,29 @@ struct ModelSelectionEntity: AppEntity {
 struct ModelSelectionEntityQuery: EntityQuery, EntityStringQuery {
     typealias Result = IntentItemCollection<ModelSelectionEntity>
 
+    /// [T-shortcuts-disabled-provider] Is this entry OFFERABLE in the Shortcuts
+    /// picker — i.e. not hidden, and owned by an ENABLED provider instance?
+    ///
+    /// Disabling a provider is the user saying "stop using this account". The
+    /// picker previously filtered on `!isHidden` alone, so every model of a
+    /// disabled provider stayed selectable in Shortcuts and the resulting
+    /// automation would fail at run time against a provider the user had
+    /// deliberately switched off. `chat.models.list` already applies exactly this
+    /// instance check (DebugRPCProviderChat ~857) — the intents surface simply
+    /// never got it.
+    ///
+    /// Deliberately applied ONLY to the two *offering* paths (`entities(matching:)`
+    /// and `suggestedEntities()`). `entities(for:)` / `resolveExact` resolve an id
+    /// the user ALREADY picked, and must keep resolving it: an existing shortcut
+    /// pointing at a temporarily-disabled provider should still display its name
+    /// and re-run once the provider is switched back on, rather than silently
+    /// becoming an unrecognised entity.
+    @MainActor
+    private func isOfferable(_ entry: ModelEntry, store: ProviderConfigStore) -> Bool {
+        guard !entry.isHidden else { return false }
+        return store.instance(for: entry.providerInstanceId)?.isEnabled == true
+    }
+
     @MainActor
     func entities(for identifiers: [String]) async throws -> [ModelSelectionEntity] {
         let store = ProviderConfigStore.shared
@@ -91,7 +114,7 @@ struct ModelSelectionEntityQuery: EntityQuery, EntityStringQuery {
             }
         }
 
-        for entry in store.config.modelEntries where !entry.isHidden {
+        for entry in store.config.modelEntries where isOfferable(entry, store: store) {
             if entry.model.displayName.lowercased().contains(query)
                 || entry.model.id.lowercased().contains(query)
                 || entry.compositeKey.lowercased().contains(query) {
@@ -116,7 +139,7 @@ struct ModelSelectionEntityQuery: EntityQuery, EntityStringQuery {
 
         var seenIds = Set<String>()
         let orderedInstanceIds: [String] = store.config.modelEntries
-            .filter { !$0.isHidden }
+            .filter { isOfferable($0, store: store) }
             .compactMap { entry -> String? in
                 let id = entry.providerInstanceId
                 guard !seenIds.contains(id) else { return nil }
@@ -126,7 +149,7 @@ struct ModelSelectionEntityQuery: EntityQuery, EntityStringQuery {
 
         func providerItems(for instanceId: String) -> [IntentItem<ModelSelectionEntity>] {
             store.config.modelEntries
-                .filter { $0.providerInstanceId == instanceId && !$0.isHidden }
+                .filter { $0.providerInstanceId == instanceId && isOfferable($0, store: store) }
                 .map { entry in
                     IntentItem(
                         ModelSelectionEntity(entry: entry),

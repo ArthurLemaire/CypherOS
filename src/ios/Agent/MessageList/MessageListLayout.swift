@@ -328,7 +328,24 @@ final class MessageListLayout: UICollectionViewLayout {
         var detail: [String] = []
         for (idx, h) in deferredHeights {
             let old = heightCache[idx] ?? precalcHeights[idx] ?? estimatedHeights[idx] ?? estimatedItemHeight
-            if heightCache[idx] == nil {
+            // [T-ios-deferred-shrink-dropped] Apply the deferred height even when
+            // a cached one already exists.
+            //
+            // The two ends of this mechanism used to contradict each other.
+            // `shouldInvalidateLayout` only DEFERS a height when
+            // `heightCache[index] != nil` (a cell with no cache is allowed
+            // straight through), yet this loop only APPLIED one when
+            // `heightCache[idx] == nil`. Those conditions are mutually
+            // exclusive, so every deferred entry was counted as `dropped` and
+            // discarded — a cell that shrank while the user was browsing kept
+            // its taller frame until something else happened to invalidate it.
+            //
+            // Applying on thaw is the safe moment by construction: this runs
+            // after scrolling ends, which is precisely the point the deferral
+            // was waiting for. The GeometryReader concern the old guard cites is
+            // moot — `setCachedHeight` (its only writer) has no callers, so
+            // `geometryReaderConfirmed` is always empty.
+            if heightCache[idx] == nil || abs((heightCache[idx] ?? 0) - h) > 0.5 {
                 heightCache[idx] = h
                 let delta = h - old
                 let frame = idx < itemAttributes.count ? itemAttributes[idx].frame : .zero
@@ -545,9 +562,55 @@ final class MessageListLayout: UICollectionViewLayout {
         //   • coalesced: at most one invalidate scheduled per runloop tick, and
         //     re-armed only after it fires — so a burst of corrections collapses
         //     into a single prepare(), not one per cell.
-        if suppressContentOffsetAdjustment, abs(delta) > 0.5, !isStreamingCell(index),
-           !pendingFooterReflow {
+        //
+        // [T-ios-steadystate-reflow-gap] The `suppressContentOffsetAdjustment`
+        // gate above restricted this re-flow to the FIRST snapshot settle. In
+        // steady state (the user scrolling through an already-loaded session)
+        // the exact same staleness is reachable, and it is worse there because
+        // the frames that go stale are whole message cells rather than a
+        // footer:
+        //
+        //   * `heightCache[index] = newHeight` is written at the top of this
+        //     method, so `prepare()` WOULD lay every cell out correctly — but
+        //     UIKit's default invalidation context for a preferred-attributes
+        //     change invalidates ONLY this index path. `prepare()` is never
+        //     asked to re-run, so every cell BELOW keeps the `frame.origin.y`
+        //     it was given under the old height.
+        //   * The offset adjustment above compensates the SCROLL POSITION; it
+        //     does not move any other cell's frame.
+        //
+        // Result: cell N grows by Δ, cells N+1… stay put, and the grown cell's
+        // content is drawn straight over its neighbour. That is the reported
+        // artifact — two different assistant messages interleaving line by
+        // line, both fully opaque, with the user bubble between them rendering
+        // cleanly (it is a different cell that simply never moved).
+        //
+        // Field evidence this is the live path: the collapse reproduced on a
+        // build carrying all three attachment-level fixes (bea0ecfcf /
+        // 594800e76 / 03f5d168f), on a session whose content was already fully
+        // loaded and static — no streaming, no attachment cache work left to
+        // do. What remains at that point is exactly this: a self-size
+        // correction during scroll with no full re-flow behind it.
+        //
+        // The guards that made this safe during first-settle carry over
+        // unchanged — real delta, not a streaming cell (its position is owned
+        // by the pin logic), and coalesced to at most one `prepare()` per
+        // runloop tick so a burst of N corrections cannot go O(N²).
+        if abs(delta) > 0.5, !isStreamingCell(index), !pendingFooterReflow {
             pendingFooterReflow = true
+            // [T-ios-steadystate-reflow-gap] Rate evidence: a full prepare() is
+            // O(items), so if this fired per correction during a fast scroll it
+            // would be a regression. Counted per second to prove the coalescing
+            // actually collapses bursts.
+            Self.reflowCount &+= 1
+            let nowR = CACurrentMediaTime()
+            if nowR - Self.reflowLastFlush > 1.0 {
+                if Self.reflowCount > 0 {
+                    AppLogger(category: "ScrollStall").info("[ReflowGap] last1s coalesced re-flows=\(Self.reflowCount) firstSettle=\(self.suppressContentOffsetAdjustment)")
+                }
+                Self.reflowCount = 0
+                Self.reflowLastFlush = nowR
+            }
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.pendingFooterReflow = false
@@ -561,6 +624,11 @@ final class MessageListLayout: UICollectionViewLayout {
     /// [T-ios-footer-float-firstlayout] Coalescing flag so a burst of first-
     /// layout height corrections triggers a single prepare(), never one per cell.
     private var pendingFooterReflow = false
+
+    /// [T-ios-steadystate-reflow-gap] Per-second counter proving the coalescing
+    /// holds once the re-flow is no longer restricted to the first settle.
+    private static var reflowCount = 0
+    private static var reflowLastFlush: CFTimeInterval = 0
 
     /// [T-ios-plaf-streaming-graph-reentry] True while any streaming cell
     /// range is active. Locked snapshot (same lock as streamingCellRanges) so
@@ -758,6 +826,7 @@ final class MessageListLayout: UICollectionViewLayout {
     /// defaults to hug (the common settled case). Rebuilt on every snapshot
     /// apply, same lifecycle as contentKeyByIndex.
     private var footerHugByIndex: [Int: Bool] = [:]
+
     func setFooterHug(_ hug: Bool, at index: Int) {
         footerHugByIndex[index] = hug
     }

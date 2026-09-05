@@ -985,7 +985,36 @@ final class CloudSyncEngine: ObservableObject {
         guard let engine = syncEngine else { return }
 
         let devicesZoneID = CKRecordZone.ID(zoneName: devicesZoneName)
-        let recordID = CKRecord.ID(recordName: DeviceIdentity.deviceId, zoneID: devicesZoneID)
+
+        // [T-ios-deviceid-blank-ckrecordid-crash] This was the ONLY CKRecord.ID
+        // construction site with neither a validity pre-check nor an ObjC
+        // try/catch — the sibling sites (buildCKRecord, the delete path) already
+        // wrap theirs. An empty/whitespace `deviceId` (a blank Keychain payload;
+        // fixed at source in DeviceIdentity) made CloudKit raise
+        // NSInvalidArgumentException, and an ObjC exception crossing Swift frames
+        // is uncatchable — objc_terminate → SIGABRT on the main thread, right
+        // after foregrounding, since both the 180s foreground timer and the
+        // accountChange handler call this from a @MainActor Task.
+        //
+        // Kept even though the source is fixed: a device that already stored a bad
+        // id keeps whatever DeviceIdentity now returns, and this file must not be
+        // one bad input away from aborting the app. Skipping the device record
+        // costs only this heartbeat — the next timer tick re-queues it — whereas
+        // the alternative is a crash loop the user can only escape by disabling
+        // iCloud sync, which is exactly what was reported.
+        let deviceRecordName = DeviceIdentity.deviceId
+        guard ICloudSharedZoneTransport.isValidCKRecordName(deviceRecordName) else {
+            logger.error("[CloudSync] Skipping device record — invalid deviceId recordName \(ICloudSharedZoneTransport.escapeForLog(deviceRecordName))")
+            return
+        }
+        var recordIDOpt: CKRecord.ID?
+        let recordIDOk = noff_try_objc {
+            recordIDOpt = CKRecord.ID(recordName: deviceRecordName, zoneID: devicesZoneID)
+        }
+        guard recordIDOk, let recordID = recordIDOpt else {
+            logger.error("[CloudSync] CKRecord.ID threw for deviceId \(ICloudSharedZoneTransport.escapeForLog(deviceRecordName)) — skipping device record")
+            return
+        }
 
         // Reuse cached server record (preserves etag) to avoid "record already exists" errors
         let record = serverRecordCache[recordID] ?? CKRecord(recordType: "SyncDevice", recordID: recordID)

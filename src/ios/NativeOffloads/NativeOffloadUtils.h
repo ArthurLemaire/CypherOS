@@ -76,7 +76,27 @@ void noff_emit_help(int stderr_fd, NSString *helpText);
 
 /// Synchronously dispatch a block on the main thread and return the result.
 /// Safe to call from any thread. If already on main thread, executes directly.
-id _Nullable noff_dispatch_main_sync(id _Nullable (^block)(void));
+///
+/// WARNING: this parks the CALLING thread on the main queue. If the block calls
+/// a system API that itself blocks (XPC to a daemon, dispatch_sync into another
+/// subsystem), the main thread is held for the whole duration and the app is
+/// killed by the 10s scene-update watchdog (0x8BADF00D). Only use it for work
+/// that genuinely requires the main thread — UIKit views — and that cannot
+/// block. For anything else prefer running on the offload's own thread, or
+/// `noff_dispatch_main_sync_timeout` when a main-thread hop is unavoidable.
+id _Nullable noff_dispatch_main_sync(id _Nullable (^_Nonnull block)(void));
+
+/// Bounded-wait variant: dispatches `block` to the main queue and waits at most
+/// `timeoutSeconds`. Returns the block's result, or `nil` if the wait expired
+/// (in which case `timedOut`, when non-NULL, is set to YES and the block may
+/// still run later — it must therefore not capture anything it mutates
+/// unsafely, and callers must treat the result as best-effort).
+///
+/// Exists so an unresponsive system daemon degrades into a null result instead
+/// of consuming the whole watchdog budget and killing the process.
+id _Nullable noff_dispatch_main_sync_timeout(NSTimeInterval timeoutSeconds,
+                                              BOOL *_Nullable timedOut,
+                                              id _Nullable (^_Nonnull block)(void));
 
 // ── Guest stub creation ──
 
