@@ -368,7 +368,7 @@ class ModelUseOffloadHandler(
             provider = provider,
             inputJson = inputText,
             fallbackPromptMessages = nonSystem,
-            hasInputImages = imageParts.isNotEmpty(),
+            inputImages = imageParts,
             outputPath = outputPath,
             outputExt = outputExt,
             sessionId = request.sessionId,
@@ -1036,7 +1036,7 @@ class ModelUseOffloadHandler(
         provider: com.openminis.app.provider.LLMProvider,
         inputJson: String,
         fallbackPromptMessages: List<ParsedMessage>,
-        hasInputImages: Boolean,
+        inputImages: List<LLMMessage.ImagePart>,
         outputPath: String?,
         outputExt: String,
         sessionId: String?,
@@ -1083,31 +1083,17 @@ class ModelUseOffloadHandler(
         // models keep auto/probe/fallback.
         val isPureImageGenerator = "image" in outputs && "text" !in outputs
 
-        // [T-android-image-endpoint-edit-gap] iOS routes input-image requests to
-        // /v1/images/edits (image-to-image); Android has no editImage endpoint
-        // yet. Rather than silently DROP the input image into a text-to-image
-        // generateImage call (the model would ignore the reference image and
-        // the user wouldn't know), handle the two cases explicitly:
-        //   - mixed text+image model: decline the images route → fall through to
-        //     the chat path below, which forwards imageParts to the model so the
-        //     reference image is at least seen.
-        //   - pure image generator: chat can't serve it, so return a clear error
-        //     telling the caller image editing isn't supported here.
-        if (hasInputImages) {
-            if (isPureImageGenerator) {
-                return NativeOffloadResult(
-                    2,
-                    JSONObject().put("error", "image_edit_not_supported")
-                        .put(
-                            "message",
-                            "Image-to-image editing (input image + ${entry.model.displayName}) is not supported by minis-model-use on Android yet — only text-to-image generation. Omit the input image, or use a model that also supports text output so the image can be passed via chat.",
-                        )
-                        .toString() + "\n",
-                )
-            }
+        // [T-android-image-edit-endpoint] Input-image requests now route to
+        // /v1/images/edits via editImage, matching iOS ModelUseOffloadBridge —
+        // the endpoint whose absence made this return image_edit_not_supported.
+        // Only a PURE image generator takes that route: a mixed text+image model
+        // still declines to chat, which forwards imageParts to the model and is
+        // the better channel for "look at this image and answer" requests. That
+        // split is the pre-existing guard semantics, deliberately unchanged.
+        if (inputImages.isNotEmpty() && !isPureImageGenerator) {
             Log.i(
                 TAG,
-                "[ModelUseRoute] input images present for ${entry.model.id} — declining images route (no editImage), falling through to chat so images are forwarded",
+                "[ModelUseRoute] input images present for ${entry.model.id} (text+image model) — declining images route, falling through to chat so images are forwarded",
             )
             return null
         }
@@ -1133,9 +1119,15 @@ class ModelUseOffloadHandler(
         // is terminal (no silent fallback) so the caller sees the real error.
         if (effectiveMode == com.openminis.app.data.model.ImageEndpointMode.imagesGenerations) {
             val response = try {
-                runBlocking { openAI.generateImage(prompt, cfg.n, cfg.size, cfg.quality) }
+                runBlocking {
+                    if (inputImages.isEmpty()) {
+                        openAI.generateImage(prompt, cfg.n, cfg.size, cfg.quality)
+                    } else {
+                        openAI.editImage(prompt, inputImages, cfg.n, cfg.size, cfg.quality)
+                    }
+                }
             } catch (e: Throwable) {
-                Log.w(TAG, "[ModelUseRoute] images/generations (forced) failed: ${e.message}", e)
+                Log.w(TAG, "[ModelUseRoute] images/${if (inputImages.isEmpty()) "generations" else "edits"} (forced) failed: ${e.message}", e)
                 val hint = imageParamHint(entry)
                 val base = e.message ?: "image_generation_failed"
                 return NativeOffloadResult(
@@ -1151,7 +1143,13 @@ class ModelUseOffloadHandler(
         // auto mode: probe /images/generations; cache the result; on a
         // route-missing 4xx, cache chatCompletions and fall through to chat.
         val response = try {
-            runBlocking { openAI.generateImage(prompt, cfg.n, cfg.size, cfg.quality) }.also {
+            runBlocking {
+                if (inputImages.isEmpty()) {
+                    openAI.generateImage(prompt, cfg.n, cfg.size, cfg.quality)
+                } else {
+                    openAI.editImage(prompt, inputImages, cfg.n, cfg.size, cfg.quality)
+                }
+            }.also {
                 providerRepository.setImageEndpointResolved(
                     instance.id, com.openminis.app.data.model.ImageEndpointMode.imagesGenerations,
                 )

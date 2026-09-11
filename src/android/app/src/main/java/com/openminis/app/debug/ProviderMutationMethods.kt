@@ -81,23 +81,21 @@ internal object ProviderMutationMethods {
             customUserAgent = customUserAgent,
         )
 
-        // Inline copy of repo.addInstance with the seedBuiltInModels switch —
-        // we want to support both "create empty for custom-base endpoints"
-        // and the standard "seed with built-ins" path.
-        val cfg = repo.config.value
-        cfg.instances.add(instance)
-        if (seedBuiltInModels) {
-            for (m in instance.providerType.builtInModels) {
-                cfg.modelEntries.add(ModelEntry(providerInstanceId = instance.id, baseModel = m))
-            }
-        }
-        // Save via the public addInstance to trigger StateFlow re-emit. We
-        // already added above so use updateInstance to re-publish; equivalent
-        // because addInstance dedupes via list semantics.
-        // Simpler: call repo's setter pair manually — repo doesn't expose
-        // saveConfig, so use addInstance for a fresh insert path.
-        cfg.instances.removeAll { it.id == instance.id }
-        cfg.modelEntries.removeAll { it.providerInstanceId == instance.id }
+        // [T-android-provider-mutator-lock] Delegate straight to
+        // repo.addInstance. This used to add the instance and its seeds to
+        // `repo.config.value`'s lists FIRST, then remove them again, then call
+        // addInstance anyway — a no-op round trip whose only lasting effect was
+        // mutating the PUBLISHED lists, unlocked, from the debug server's HTTP
+        // thread. That is the one writer left outside the repository's
+        // copy-on-write discipline, and it crashed a reader on device:
+        //
+        //   ConcurrentModificationException
+        //     at ChatViewModel$showFastModeToggle$1.invokeSuspend  (combine over
+        //     providerRepository.config, iterating config.modelEntries)
+        //
+        // addInstance already applies the built-in seeding rule internally, so
+        // nothing is lost by dropping the inline copy; the seedBuiltInModels
+        // opt-out is still honoured by the sweep below.
         repo.addInstance(instance)
         if (!seedBuiltInModels) {
             // addInstance always seeds — if user opted out, sweep the seeds.
@@ -503,8 +501,18 @@ internal object ProviderMutationMethods {
         val id = params.optString("groupId", "").ifEmpty {
             throw RPCException(-32602, "Missing 'groupId' param")
         }
-        val current = repo.group(id)
+        val published = repo.group(id)
             ?: throw RPCException(-32602, "Group not found: $id")
+
+        // [T-android-provider-mutator-lock] Edit a COPY. `repo.group(id)`
+        // returns the live object out of the published config, so writing its
+        // fields — and especially `memberEntryIds.clear()` — mutated state that
+        // Compose readers (ModelGroupDetailScreen, enabledMemberEntries) are
+        // iterating, from the debug server's HTTP thread. The clear() was the
+        // worse half: it opens a window where the group has ZERO members, and a
+        // concurrent saveConfig from any other mutator would snapshot and
+        // persist that empty group — silent data loss, not just a CME.
+        val current = published.copy(memberEntryIds = published.memberEntryIds.toMutableList())
 
         if (params.has("name")) {
             val n = params.optString("name", "")

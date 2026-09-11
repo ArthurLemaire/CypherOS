@@ -523,10 +523,29 @@ object ThinkingRuleResolver {
 
     /**
      * The `generationConfig.thinkingConfig` object for a Gemini request, or null when the
-     * model takes no thinking config at all (2.5 Flash Lite, and any id matching none of
-     * the families).
+     * model takes no thinking config at all (specialized -tts/-image/-embedding/-vision
+     * modalities, 2.5 Flash Lite, and any id matching none of the families).
      */
     fun geminiThinkingConfig(modelId: String, level: ThinkingLevel): JSONObject? {
+        // [T-gemini-tts-thinking-400 / OpenMinis#226] Specialized modalities take
+        // precedence over EVERY family rule and over the requested level: these models
+        // reject the thinking parameter outright, so sending one is a hard 400
+        // ("Thinking level is not supported for this model.").
+        //
+        // Checked FIRST because these ids also match a family pattern —
+        // `gemini-3.1-flash-tts-preview` contains "gemini-3", so any later placement is
+        // shadowed. Android previously had no such test at all, so all three Gemini TTS
+        // models were unusable; iOS had one but below the family branches, equally dead.
+        //
+        // Lowercased for the same reason iOS lowercases the whole id: catalog and live
+        // API spellings differ in case. The family checks above deliberately keep their
+        // original raw-`modelId` form (Phase 2 §1 is a pure refactor).
+        val lowerId = modelId.lowercase()
+        val noThinkingSuffixes = listOf("-tts", "-image", "-embedding", "-vision")
+        if (noThinkingSuffixes.any { lowerId.endsWith(it) || lowerId.contains("$it-") }) {
+            return null
+        }
+
         val isGemini3 = modelId.contains("gemini-3")
         val is25Pro = modelId.contains("gemini-2.5-pro")
         val is25Flash = modelId.contains("gemini-2.5-flash") && !modelId.contains("lite")

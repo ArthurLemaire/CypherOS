@@ -251,6 +251,26 @@ data class LLMModel(
             if (lid.contains("o3") || lid.contains("o4")) return 200_000
             if (lid.contains("codex")) return 200_000
             if (lid.contains("deepseek")) return 128_000
+            // xAI Grok. [T-android-grok-context-underestimate] Without this
+            // branch a Grok id missing from the models.dev catalog fell through
+            // to the 128K default, and ContextPolicy turned that into
+            // compactThreshold = 128K - 20K = 108K — so a model with a 256K-2M
+            // window auto-compacted every ~20-30 tool calls. iOS field report
+            // 2026-08-13: `grok-4.6` (still absent from the bundled catalog,
+            // verified) compacted 6 times in 47 minutes.
+            //
+            // Grok 2/3 are the only 131K generation; Grok 4 and later are 256K
+            // at minimum and the fast / 4.20 lines advertise 2M. 256K is the
+            // conservative floor for an unknown Grok 4+. A handful of
+            // relay-hosted grok-4 entries do declare 128K-200K, but every one
+            // of them IS in the catalog, so the explicit `contextWindow` check
+            // above wins and this heuristic never runs for them — it only ever
+            // sees ids models.dev has not shipped yet, which is the whole
+            // failure mode. Port of iOS d63e9b9c9.
+            if (lid.contains("grok")) {
+                if (lid.contains("grok-2") || lid.contains("grok-3")) return 131_072
+                return 256_000
+            }
             // Default: assume a modern long-context model rather than 64K so the
             // group context-limit slider doesn't collapse to a single stop.
             return 128_000

@@ -4,7 +4,18 @@ import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "sessions")
+/**
+ * [T-android-session-grouping] The `folder_id` index is declared here so the
+ * entity and MIGRATION_10_11 agree — Room validates the live schema against
+ * the entity on open, and an index present in one but not the other aborts
+ * startup with an IllegalStateException.
+ *
+ * Non-unique on purpose: many sessions share one group.
+ */
+@Entity(
+    tableName = "sessions",
+    indices = [androidx.room.Index(value = ["folder_id"], name = "index_sessions_folder_id")],
+)
 data class ChatSessionEntity(
     @PrimaryKey val id: String,
     val title: String? = null,
@@ -25,4 +36,21 @@ data class ChatSessionEntity(
     // ("OFF"/"LOW"/"MEDIUM"/"HIGH"/"XHIGH") and represents an explicit user
     // choice that survives cold-start.
     @ColumnInfo(name = "thinking_override") val thinkingOverride: String? = null,
+    /**
+     * [T-android-session-grouping] Group membership. NULL = ungrouped.
+     *
+     * Deliberately NOT a declared @ForeignKey. A folder_id pointing at a group
+     * that does not exist locally is a legitimate transient state, not
+     * corruption: a future sync could deliver the session before its group, and
+     * a group dissolved on another device leaves references behind until that
+     * change arrives. Such orphans render as ungrouped (see
+     * SessionListViewModel's grouping pass) instead of failing a constraint or
+     * making the session vanish. Same rule as iOS (ChatStore.swift:610).
+     *
+     * NOTE for anyone adding list diffing: this field MUST participate in
+     * equality. Moving a session between groups changes nothing else — not even
+     * `updatedAt`, by design — so a differ that ignores it keeps drawing the row
+     * in its old section.
+     */
+    @ColumnInfo(name = "folder_id") val folderId: String? = null,
 )

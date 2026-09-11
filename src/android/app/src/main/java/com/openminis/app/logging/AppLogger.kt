@@ -139,6 +139,14 @@ object AppLogger {
         logcatTailer = LogcatTailer { line -> writeLogcatLine(line) }.also { it.start() }
         captureActive = true
         info("AppLogger", "Logging session started — capturing stdout/stderr + logcat tail")
+        // [T-android-mem-probe-trust] Device/ROM/heap identity, immediately
+        // after the session marker. The 2026-08-15 field log carried none of
+        // this: the hardware had to be guessed from an incidental
+        // `/proc/vivo_rsc/…` line in the logcat tail, and triage then compared
+        // it against unrelated hardware. Emitted per logging session (not per
+        // launch) so it is present in every attached log, including the
+        // post-crash one.
+        appContext?.let { com.openminis.app.diagnostics.EnvironmentBanner.log(it) }
     }
 
     @Synchronized
