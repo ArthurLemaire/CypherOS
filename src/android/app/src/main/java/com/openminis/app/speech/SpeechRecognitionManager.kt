@@ -36,6 +36,29 @@ object SpeechRecognitionManager {
     private val _state = MutableStateFlow(RecognitionState.IDLE)
     val state: StateFlow<RecognitionState> = _state.asStateFlow()
 
+    /**
+     * [T-android-tts-stop-on-capture] Resume read-aloud the moment capture
+     * ends, whichever way it ended.
+     *
+     * There are five separate writes of IDLE in this file — final result,
+     * engine error, engine-start throw, cancelRecording, and the mid-session
+     * locale restart — plus FINISHING from stopRecording. Hanging the resume
+     * off each one individually means a sixth path added later silently leaves
+     * TTS muted forever, which is a much worse failure than a missed pause.
+     * Funnelling every transition through one setter makes that impossible by
+     * construction.
+     *
+     * FINISHING deliberately does NOT resume: the engine is still delivering
+     * the final result and the mic may still be hot.
+     */
+    private fun setState(next: RecognitionState) {
+        val prev = _state.value
+        _state.value = next
+        if (next == RecognitionState.IDLE && prev != RecognitionState.IDLE) {
+            VoiceOutputState.resumeAllAfterCapture()
+        }
+    }
+
     private val _recognizedText = MutableStateFlow("")
     val recognizedText: StateFlow<String> = _recognizedText.asStateFlow()
 
@@ -107,9 +130,22 @@ object SpeechRecognitionManager {
     const val WAVEFORM_SIZE = 40
 
     /**
-     * Android's onRmsChanged reports values roughly in [-2, 10]. Clamp + scale
-     * to [0, 1] with a floor at the mid-point of the noise range so idle silence
-     * doesn't look like speech.
+     * Android's onRmsChanged reports values roughly in [-2, 10]. Clamp to
+     * [0, 12] and scale linearly to [0, 1]; negatives (quieter than the
+     * recognizer's own reference) land on 0 and read as silence.
+     *
+     * [T-android-voice-parity] The previous doc-comment claimed "a floor at the
+     * mid-point of the noise range" — no such floor exists here or ever did,
+     * and adding one now would raise the idle baseline and make silence look
+     * like speech, which is the opposite of what that sentence promised. The
+     * visual floor is applied at render time instead (bars are drawn at
+     * `5.dp + level * 21.dp`, so 0 still shows a 5 dp stub), matching iOS,
+     * which likewise floors in the view layer.
+     *
+     * Note this is a plain linear ramp, whereas iOS applies a perceptual
+     * `sqrt(rms * 14) * 0.95` curve (VoiceInputPanel.swift:1177). Full parity
+     * would need iOS's raw-PCM level source; with onRmsChanged's already-dB-ish
+     * scale a second curve would double-compress the top end.
      */
     private fun normalizeRms(db: Float): Float {
         val clamped = db.coerceIn(0f, 12f)
@@ -144,6 +180,41 @@ object SpeechRecognitionManager {
         }
         refreshAvailability()
         refreshSupportedLocales()
+        observeAppLifecycle()
+    }
+
+    /**
+     * [T-android-vad] Feed foreground/background transitions to the engines so
+     * their detectors can apply iOS's 15 s backgrounded auto-stop
+     * (VoiceInputPanel.swift:252-260, 285-295). Capture survives a brief switch
+     * away — a notification pull-down, a glance at another app — but not a real
+     * one, which would otherwise leave the mic live indefinitely.
+     *
+     * Observer registration is main-thread only.
+     */
+    private fun observeAppLifecycle() {
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            runCatching {
+                androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(
+                    androidx.lifecycle.LifecycleEventObserver { _, event ->
+                        when (event) {
+                            androidx.lifecycle.Lifecycle.Event.ON_STOP -> setBackgrounded(true)
+                            androidx.lifecycle.Lifecycle.Event.ON_START -> setBackgrounded(false)
+                            else -> {}
+                        }
+                    },
+                )
+            }.onFailure { Log.w(TAG, "lifecycle observer failed: ${it.message}") }
+        }
+    }
+
+    private fun setBackgrounded(backgrounded: Boolean) {
+        for (e in engines) {
+            when (e) {
+                is SystemSpeechRecognitionEngine -> e.setBackgrounded(backgrounded)
+                is ProviderSpeechRecognitionEngine -> e.setBackgrounded(backgrounded)
+            }
+        }
     }
 
     /**
@@ -208,7 +279,7 @@ object SpeechRecognitionManager {
             val cb = activeCallbacks
             if (cb != null) {
                 currentEngine()?.cancel()
-                _state.value = RecognitionState.IDLE
+                setState(RecognitionState.IDLE)
                 startRecording(cb.first, cb.second)
             }
         }
@@ -256,7 +327,17 @@ object SpeechRecognitionManager {
             return
         }
 
-        _state.value = RecognitionState.STARTING
+        // [T-android-tts-stop-on-capture] Silence read-aloud BEFORE the engine
+        // opens the mic. Done here rather than at the UI call sites so every
+        // entry point is covered — the voice panel, the voice_chat shortcut and
+        // hands-free re-arm all funnel through startRecording.
+        //
+        // Ordering matters: this runs before STARTING is published, so playback
+        // is already stopping by the time the recognizer warms up, rather than
+        // racing the first audio frames.
+        VoiceOutputState.suspendAllForCapture()
+
+        setState(RecognitionState.STARTING)
         _recognizedText.value = ""
         _lastError.value = null
         resetLevels()
@@ -264,7 +345,7 @@ object SpeechRecognitionManager {
 
         val listener = object : SpeechRecognitionEngine.Listener {
             override fun onReadyForSpeech() {
-                _state.value = RecognitionState.RECORDING
+                setState(RecognitionState.RECORDING)
             }
 
             override fun onPartial(text: String) {
@@ -275,14 +356,14 @@ object SpeechRecognitionManager {
             override fun onFinal(text: String) {
                 if (text.isNotEmpty()) _recognizedText.value = text
                 onPartialOrFinal(text, true)
-                _state.value = RecognitionState.IDLE
+                setState(RecognitionState.IDLE)
                 resetLevels()
                 refreshAvailability()
             }
 
             override fun onError(error: RecognitionError, message: String?) {
                 _lastError.value = error
-                _state.value = RecognitionState.IDLE
+                setState(RecognitionState.IDLE)
                 resetLevels()
                 onError(error, message)
                 refreshAvailability()
@@ -294,7 +375,7 @@ object SpeechRecognitionManager {
         try {
             engine.start(_locale.value, listener)
         } catch (e: Throwable) {
-            _state.value = RecognitionState.IDLE
+            setState(RecognitionState.IDLE)
             _lastError.value = RecognitionError.UNKNOWN
             onError(RecognitionError.UNKNOWN, e.message)
         }
@@ -302,13 +383,13 @@ object SpeechRecognitionManager {
 
     fun stopRecording() {
         if (_state.value != RecognitionState.RECORDING && _state.value != RecognitionState.STARTING) return
-        _state.value = RecognitionState.FINISHING
+        setState(RecognitionState.FINISHING)
         currentEngine()?.stop()
     }
 
     fun cancelRecording() {
         currentEngine()?.cancel()
-        _state.value = RecognitionState.IDLE
+        setState(RecognitionState.IDLE)
         _recognizedText.value = ""
     }
 }

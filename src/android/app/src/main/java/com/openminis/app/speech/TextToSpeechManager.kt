@@ -1,6 +1,8 @@
 package com.openminis.app.speech
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
@@ -32,7 +34,12 @@ class TextToSpeechManager : TextToSpeech.OnInitListener {
         // shared with ReadAloudPlayer, so the two TTS paths can't drift.
     }
 
+    // @Volatile: written on the binder thread in onInit / nulled on main in
+    // shutdown(), and read from both — the posted pre-init replay relies on
+    // seeing a torn-down engine rather than a stale non-null.
+    @Volatile
     private var tts: TextToSpeech? = null
+    @Volatile
     var isInitialized = false
         private set
 
@@ -118,7 +125,29 @@ class TextToSpeechManager : TextToSpeech.OnInitListener {
                 preInitQueue.clear()
                 copy
             }
-            for (text in queued) speakQueued(text)
+            // [T-android-tts-init-thread] Post the replay to the MAIN thread.
+            //
+            // onInit arrives on a binder thread. speakQueued touches
+            // pendingTexts (a plain MutableList that speak()/stop()/the
+            // progress listener also mutate) and `tts` (which shutdown()
+            // nulls), with no happens-before against any of them. Disposing the
+            // ChatScreen inside the ~4 s init window — rotate the device, or
+            // navigate away right after enabling read-replies — therefore
+            // raced a ConcurrentModificationException on pendingTexts, or a
+            // speak() against an already shut-down engine. Same lifecycle shape
+            // as the VAD SIGSEGV fixed in 91c7b2944.
+            //
+            // Re-check liveness inside the post: shutdown() can land between
+            // the binder callback and the main-thread turn.
+            if (queued.isNotEmpty()) {
+                Handler(Looper.getMainLooper()).post {
+                    if (tts != null && isInitialized) {
+                        for (text in queued) speakQueued(text)
+                    } else {
+                        Log.d(TAG, "pre-init replay dropped — engine shut down during init")
+                    }
+                }
+            }
         } else {
             initFailed = true
             synchronized(queueLock) { preInitQueue.clear() }
@@ -168,7 +197,19 @@ class TextToSpeechManager : TextToSpeech.OnInitListener {
         autoDetectAndSetLanguage(text)
 
         val params = buildSpeechParams()
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, params, generateUtteranceId())
+        // [T-android-tts-rom-compat] speak() returns ERROR synchronously when
+        // the engine rejects the request (missing language data, engine died —
+        // both real on OEM/AOSP engines without Google TTS). The result used
+        // to be discarded, so isSpeaking stayed true with NO utterance in
+        // flight and no progress callback ever coming — ReadAloudPlayer's
+        // completion poll then spun forever and the whole read-aloud queue
+        // wedged for the rest of the process.
+        val rc = tts?.speak(text, TextToSpeech.QUEUE_FLUSH, params, generateUtteranceId())
+        if (rc != TextToSpeech.SUCCESS) {
+            Log.w(TAG, "speak rejected by engine (rc=$rc len=${text.length})")
+            _isSpeaking.value = false
+            return
+        }
         _isSpeaking.value = true
     }
 
@@ -178,18 +219,33 @@ class TextToSpeechManager : TextToSpeech.OnInitListener {
     fun speakQueued(text: String) {
         if (text.isBlank()) return
         if (!isInitialized) {
+            // [T-android-tts-diag] A field report of "read replies is on but
+            // nothing is spoken" could not be diagnosed from the log: this
+            // path emitted nothing at all, so whether text ever reached the
+            // engine was unknowable. Queued-before-init is the one silent
+            // outcome that looks identical to success from the caller's side.
+            Log.i(TAG, "speakQueued deferred (init pending) len=${text.length} initFailed=$initFailed")
             if (!initFailed) {
                 synchronized(queueLock) { preInitQueue.add(text) }
                 _isSpeaking.value = true
             }
             return
         }
+        Log.i(TAG, "speakQueued len=${text.length}")
 
         pendingTexts.add(text)
         autoDetectAndSetLanguage(text)
 
         val params = buildSpeechParams()
-        tts?.speak(text, TextToSpeech.QUEUE_ADD, params, generateUtteranceId())
+        // [T-android-tts-rom-compat] Same rejected-enqueue guard as speak().
+        val rc = tts?.speak(text, TextToSpeech.QUEUE_ADD, params, generateUtteranceId())
+        if (rc != TextToSpeech.SUCCESS) {
+            Log.w(TAG, "speakQueued rejected by engine (rc=$rc len=${text.length})")
+            // Only clear the flag when nothing else is in flight — a QUEUE_ADD
+            // rejection must not mark an ongoing earlier utterance as done.
+            if (pendingTexts.isEmpty()) _isSpeaking.value = false
+            return
+        }
         _isSpeaking.value = true
     }
 
@@ -307,7 +363,27 @@ class TextToSpeechManager : TextToSpeech.OnInitListener {
     /**
      * Detects if text contains Han characters and sets language accordingly.
      */
+    /**
+     * [T-android-system-voice-catalog] Engine voice name to speak with; null =
+     * auto (per-utterance language detection below). Set per utterance by
+     * ReadAloudPlayer from the capsule's picked system voice. When the named
+     * voice exists it wins over language auto-detection — same as iOS, where a
+     * picked voice is used regardless of the reply's language.
+     */
+    @Volatile
+    var preferredVoiceName: String? = null
+
     private fun autoDetectAndSetLanguage(text: String) {
+        preferredVoiceName?.let { wanted ->
+            val v = runCatching { tts?.voices?.firstOrNull { it.name == wanted } }.getOrNull()
+            if (v != null) {
+                val rc = tts?.setVoice(v)
+                if (rc == TextToSpeech.SUCCESS) return
+                Log.w(TAG, "setVoice($wanted) rejected (rc=$rc) — falling back to auto language")
+            } else {
+                Log.w(TAG, "preferred voice '$wanted' not found on this engine — falling back to auto language")
+            }
+        }
         val locale = if (HAN_REGEX.containsMatchIn(text)) {
             Locale.SIMPLIFIED_CHINESE
         } else {
@@ -332,10 +408,19 @@ class TextToSpeechManager : TextToSpeech.OnInitListener {
             }
 
             override fun onDone(utteranceId: String?) {
-                pausedAtIndex++
-                // Only mark as not speaking if nothing else is queued
-                if (pausedAtIndex >= pendingTexts.size) {
-                    _isSpeaking.value = false
+                // [T-android-tts-init-thread] Progress callbacks arrive on a
+                // binder thread. This used to bump pausedAtIndex and read
+                // pendingTexts.size straight from there, while togglePause()
+                // takes a subList VIEW of that same list on main — a
+                // concurrent stop() clearing it makes the view throw. Confine
+                // both to the main thread so pendingTexts/pausedAtIndex have a
+                // single owner.
+                Handler(Looper.getMainLooper()).post {
+                    pausedAtIndex++
+                    // Only mark as not speaking if nothing else is queued
+                    if (pausedAtIndex >= pendingTexts.size) {
+                        _isSpeaking.value = false
+                    }
                 }
             }
 
