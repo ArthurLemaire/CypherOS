@@ -381,6 +381,25 @@ fun ModelGroupDetailScreen(
                 }
             }
 
+            // ── Add models: directly under the member list it acts on ────────
+            // Previously this sat at the very bottom, below Session Defaults and
+            // immediately above the destructive "Delete group" button. That put
+            // an additive action two sections away from the list it appends to,
+            // and pair-adjacent to a destructive one — easy to mis-tap and hard
+            // to find. Placing it right after the list makes the relationship
+            // obvious and leaves "Delete group" alone at the bottom.
+            item {
+                Spacer(Modifier.height(12.dp))
+                MinisOutlinedButton(
+                    onClick = onAddModels,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                ) {
+                    Text(stringResource(R.string.model_group_detail_add_models))
+                }
+            }
+
             // ── Session Defaults (T312, mirrors iOS ModelGroupDetailView) ────
             item {
                 SettingsSection(
@@ -537,18 +556,12 @@ fun ModelGroupDetailScreen(
                 }
             }
 
-            // ── Actions: add models, delete group ─────────────────────
+            // ── Destructive action: delete group ──────────────────────
+            // "Add models" used to share this block; it now sits directly under
+            // the member list, so the only thing left at the bottom is the
+            // destructive action, with nothing adjacent to mis-tap.
             item {
                 Spacer(Modifier.height(20.dp))
-                MinisOutlinedButton(
-                    onClick = onAddModels,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                ) {
-                    Text(stringResource(R.string.model_group_detail_add_models))
-                }
-                Spacer(Modifier.height(12.dp))
                 MinisButton(
                     onClick = { showDeleteDialog = true },
                     modifier = Modifier

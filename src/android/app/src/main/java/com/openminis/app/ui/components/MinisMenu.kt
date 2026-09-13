@@ -29,6 +29,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalDensity
@@ -58,7 +59,11 @@ fun MinisMenu(
     offset: DpOffset = DpOffset(0.dp, 0.dp),
     scrollState: ScrollState = rememberScrollState(),
     properties: PopupProperties = PopupProperties(focusable = true),
-    shape: Shape = RoundedCornerShape(14.dp),
+    // [T-android-menu-launcher-shadow] 20dp (was 14) — moved toward the Pixel
+    // Launcher shortcut popup's plumper corner language the user asked us to
+    // mirror (the launcher itself sits near 28dp, but that reads bloated on a
+    // dense 8-item list menu).
+    shape: Shape = RoundedCornerShape(20.dp),
     // [T-android-popup-dark-bg] In dark mode bare `surface` is nearly the same
     // as the chat/list background, so these popups (session-row long-press menu,
     // top-bar tools menu, message-bubble menu) read as near-invisible light
@@ -68,14 +73,23 @@ fun MinisMenu(
     // visibility). The dark-mode `border` below adds the extra edge definition.
     containerColor: Color = if (isSystemInDarkTheme()) MaterialTheme.colorScheme.surfaceContainerHigh else Color.White,
     tonalElevation: Dp = 3.dp,
-    // Lower than Material's default 8dp — at 12dp the drop shadow read as
-    // much heavier on the light theme than the iOS context menu we're
-    // mirroring. 4dp keeps a clear pop-out without the dark halo.
-    shadowElevation: Dp = 4.dp,
+    // [T-android-menu-launcher-shadow] Analyzed against the Pixel Launcher
+    // long-press popup (screenshot sample): its shadow is a WIDE, very
+    // diffuse, low-opacity halo with no tight dark edge — i.e. a large
+    // elevation whose shadow color is knocked way down, not a small
+    // elevation at full black. The old Surface shadowElevation=4dp gave the
+    // opposite (a short, comparatively dark rim). Rendered now via
+    // Modifier.shadow with alpha-reduced ambient/spot colors (API 28+;
+    // colors are ignored on 26/27, which just fall back to the default
+    // tint at the same blur). Surface's own shadowElevation is left at 0.
+    shadowElevation: Dp = 24.dp,
+    // Light mode now also gets a hairline (was null): with the launcher-style
+    // soft halo replacing the old tight shadow, the popup's edge needs a
+    // subtle line of its own to stay crisply bounded on light surfaces.
     border: BorderStroke? = if (isSystemInDarkTheme()) {
         BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
     } else {
-        null
+        BorderStroke(0.5.dp, Color.Black.copy(alpha = 0.05f))
     },
     minWidth: Dp = 180.dp,
     // T238: when true, anchor the menu's RIGHT edge to the anchor box's
@@ -162,11 +176,19 @@ fun MinisMenu(
                 // upper bound so a very long localised item can't span the screen.
                 modifier = modifier
                     .width(IntrinsicSize.Max)
-                    .widthIn(min = minWidth, max = 280.dp),
+                    .widthIn(min = minWidth, max = 280.dp)
+                    // Launcher-style soft halo — see the shadowElevation note.
+                    .shadow(
+                        elevation = shadowElevation,
+                        shape = shape,
+                        clip = false,
+                        ambientColor = Color.Black.copy(alpha = 0.35f),
+                        spotColor = Color.Black.copy(alpha = 0.35f),
+                    ),
                 shape = shape,
                 color = containerColor,
                 tonalElevation = tonalElevation,
-                shadowElevation = shadowElevation,
+                shadowElevation = 0.dp,
                 border = border,
             ) {
                 // Mirrors DropdownMenu's content layout: a vertically-scrollable

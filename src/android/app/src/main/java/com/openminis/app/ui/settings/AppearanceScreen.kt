@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.BrightnessAuto
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.FormatSize
 import androidx.compose.material.icons.outlined.History
@@ -98,6 +99,17 @@ const val KEY_SHOW_CHAT_TITLE = "appearance.show_chat_title"  // Boolean, defaul
 // `@AppStorage("chat.autoExpandThinking")` so future config sync reads the same
 // value. Read at block-mount time in ThinkingBlock.
 const val KEY_AUTO_EXPAND_THINKING = "chat.autoExpandThinking"  // Boolean, default true
+// [T-android-auto-grouping] When a chat's title is first generated, also file
+// it into a matching EXISTING group. Rides the title-generation call — no
+// second round-trip. Key name matches iOS `autoGroupingEnabled` so a future
+// config sync reads the same value.
+//
+// Default ON (both platforms, per product decision 2026-08-16). iOS originally
+// shipped this opt-in on the reasoning that it "moves user data without being
+// asked"; that concern is bounded here because the feature only ever files a
+// chat into a group the user already created, only when the model is confident,
+// only once per chat, and never over a hand-filed session (setFolderIfUnfiled).
+const val KEY_AUTO_GROUPING = "autoGroupingEnabled"  // Boolean, default true
 const val KEY_FONT_CHAT_INPUT = "font_chat_input"  // Int scale level -2..3
 const val KEY_FONT_MESSAGE = "font_message"        // Int scale level -2..3
 const val KEY_FONT_APP_BASE = "font_app_base"      // Int scale level -2..3
@@ -111,6 +123,10 @@ fun returnKeySendsMessage(context: Context): Boolean =
 
 fun keepScreenAwakeEnabled(context: Context): Boolean =
     getAppearancePrefs(context).getBoolean(KEY_KEEP_SCREEN_AWAKE, false)
+
+/** [T-android-auto-grouping] Default ON — see [KEY_AUTO_GROUPING]. */
+fun autoGroupingEnabled(context: Context): Boolean =
+    getAppearancePrefs(context).getBoolean(KEY_AUTO_GROUPING, true)
 
 /** Default ON — pill shows up on scroll for everyone unless explicitly disabled. */
 fun showChatTitleEnabled(context: Context): Boolean =
@@ -173,6 +189,7 @@ fun AppearanceScreen(
     var autoFocusAfterReply by remember { mutableStateOf(prefs.getBoolean(KEY_AUTO_FOCUS_AFTER_REPLY, true)) }
     var autoExpandThinking by remember { mutableStateOf(prefs.getBoolean(KEY_AUTO_EXPAND_THINKING, true)) }
     var showChatTitle by remember { mutableStateOf(prefs.getBoolean(KEY_SHOW_CHAT_TITLE, true)) }
+    var autoGrouping by remember { mutableStateOf(prefs.getBoolean(KEY_AUTO_GROUPING, true)) }
     var chatInputLevel by remember { mutableIntStateOf(prefs.getInt(KEY_FONT_CHAT_INPUT, 0)) }
     var messageLevel by remember { mutableIntStateOf(prefs.getInt(KEY_FONT_MESSAGE, 0)) }
     var appBaseLevel by remember { mutableIntStateOf(prefs.getInt(KEY_FONT_APP_BASE, 0)) }
@@ -400,6 +417,27 @@ fun AppearanceScreen(
                 onCheckedChange = {
                     showChatTitle = it
                     prefs.edit().putBoolean(KEY_SHOW_CHAT_TITLE, it).apply()
+                },
+                showDivider = false,
+            )
+        }
+
+        // -- Auto-Grouping (T-android-auto-grouping) --
+        // Rides the title-generation call, so enabling it costs no extra
+        // request. Port of iOS ContentView's "Grouping" section.
+        SettingsSection(
+            header = stringResource(R.string.appearance_section_grouping),
+            footer = stringResource(R.string.appearance_auto_grouping_footer),
+        ) {
+            SettingsSwitchRow(
+                icon = Icons.Outlined.Folder,
+                iconColor = tileBlue,
+                title = stringResource(R.string.appearance_auto_grouping),
+                subtitle = stringResource(R.string.appearance_auto_grouping_subtitle),
+                checked = autoGrouping,
+                onCheckedChange = {
+                    autoGrouping = it
+                    prefs.edit().putBoolean(KEY_AUTO_GROUPING, it).apply()
                 },
                 showDivider = false,
             )

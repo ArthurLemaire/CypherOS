@@ -201,8 +201,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -292,6 +294,7 @@ internal fun UserMessageBubble(
 ) {
     var showMenu by remember { mutableStateOf(false) }
     val isQueued = message.isQueued
+    val haptics = LocalHapticFeedback.current
 
     BoxWithConstraints(
         modifier = Modifier
@@ -323,6 +326,12 @@ internal fun UserMessageBubble(
                 .pointerInput(message.id) {
                     detectTapGestures(
                         onLongPress = {
+                            // Haptic must be fired by hand here. `combinedClickable`
+                            // (what the tool pill uses) buzzes on long-press for
+                            // free; raw `detectTapGestures` does not, so this
+                            // gesture — chosen for its press OFFSET — silently
+                            // lost the feedback every other long-press menu has.
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                             // Anchor the menu to the bubble — DropdownMenu
                             // already places itself just below the anchor and
                             // auto-flips above when there's no room. Using

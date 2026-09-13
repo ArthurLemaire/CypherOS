@@ -53,16 +53,21 @@ fun DialogTextField(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val colors = OutlinedTextFieldDefaults.colors()
-    // Tighten Material's default 16dp/16dp contentPadding so the 48dp
-    // min-height comfortably fits a single line of text + cursor.
-    val contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+    // Tighten Material's default 16dp/16dp contentPadding so the min-height
+    // comfortably fits a single line of text + cursor.
+    // [T-android-search-height] 8.dp of vertical padding plus the text's own
+    // line box exceeded the 42.dp target on its own, so the field would have
+    // ignored heightIn and stayed tall. 6.dp leaves the single-line case
+    // comfortably inside 42 while keeping the text off the border.
+    val contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
     val mergedTextStyle = LocalTextStyle.current.merge(textStyle)
     BasicTextField(
         value = value,
         onValueChange = onValueChange,
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 48.dp)
+            // [T-android-search-height] Unified search/input height.
+            .heightIn(min = 42.dp)
             .then(fieldModifier),
         enabled = enabled,
         readOnly = readOnly,

@@ -269,7 +269,14 @@ private fun AgentPolicyRow(
         SettingsRow(
             title = stringResource(R.string.perm_agent_policy),
             onClick = { expanded = true },
-            showChevron = false,
+            // [T-android-perm-row-affordance] This row OPENS A DROPDOWN, but with
+            // showChevron=false it looked like a read-only status line — nothing
+            // hinted it was tappable. It also broke alignment with the sibling
+            // "system authorization" row: a chevron costs 4dp spacer + 20dp icon,
+            // so that row's value text sits 24dp further left and the two values
+            // visibly failed to line up inside the same card.
+            // Showing the chevron fixes both at once.
+            showChevron = true,
             showDivider = showDivider,
             trailing = {
                 Text(
@@ -316,7 +323,11 @@ private fun PermissionRow(
             title = toolTitle(tool),
             subtitle = tool.toolName,
             onClick = { expanded = true },
-            showChevron = false,
+            // [T-android-perm-row-affordance] Same dropdown affordance as
+            // AgentPolicyRow — this row opens the same tri-state menu, so it gets
+            // the same chevron. Keeping the two in sync also keeps every value in
+            // the Privacy list on one right edge.
+            showChevron = true,
             showDivider = showDivider,
             trailing = {
                 Text(

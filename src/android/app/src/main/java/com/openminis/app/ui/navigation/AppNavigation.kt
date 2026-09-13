@@ -111,6 +111,8 @@ object Routes {
     const val STORAGE = "storage"
     const val SESSION_STORAGE_DETAIL = "session_storage/{sessionId}"
     const val ROOTFS_MANAGEMENT = "rootfs_management"
+    const val MIRROR_CATEGORY_DETAIL = "mirror_category/{categoryKey}"
+    fun mirrorCategoryDetail(categoryKey: String) = "mirror_category/$categoryKey"
     const val FILE_BROWSER = "file_browser"
     const val FILE_PREVIEW = "file_preview"
     const val ENV_VARS = "env_vars"
@@ -894,6 +896,26 @@ fun AppNavigation(
                     )
                     navController.safeNavigate(Routes.FILE_BROWSER)
                 },
+                // [T-android-mirror-manual-select] Without this callback the
+                // mirror rows fall back to the declaration-site no-op default
+                // and MirrorCategoryDetailScreen (manual mirror selection,
+                // iOS MirrorCategoryDetailView parity) was unreachable.
+                onMirrorCategoryClick = { category ->
+                    navController.safeNavigate(Routes.mirrorCategoryDetail(category.key))
+                },
+            )
+        }
+
+        composable(
+            route = Routes.MIRROR_CATEGORY_DETAIL,
+            arguments = listOf(navArgument("categoryKey") { type = NavType.StringType }),
+        ) { backStackEntry ->
+            val categoryKey = backStackEntry.arguments?.getString("categoryKey") ?: return@composable
+            val category = com.openminis.app.ui.sandbox.MirrorCatalog.categoryFromKey(categoryKey)
+                ?: return@composable
+            com.openminis.app.ui.sandbox.MirrorCategoryDetailScreen(
+                category = category,
+                onBack = { navController.safePopBackStack() },
             )
         }
 

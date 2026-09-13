@@ -198,7 +198,10 @@ fun ProviderListScreen(
                                 val mgr = com.openminis.app.auth.OAuthManager.forInstance(context, instance)
                                 mgr?.isAuthenticated() == true
                             } else {
-                                !apiKey.isNullOrBlank()
+                                // [T-empty-key-compat-endpoints] A keyless
+                                // third-party compatible endpoint is
+                                // configured-by-definition (mirrors iOS).
+                                !apiKey.isNullOrBlank() || instance.allowsEmptyAPIKey
                             }
                             // Lift the dragged row above its neighbours so it
                             // reads as "picked up" (matches ModelGroupsScreen).
@@ -369,7 +372,11 @@ private fun ProviderInstanceRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                 )
                 Text(
-                    text = if (!apiKey.isNullOrBlank()) maskKey(apiKey) else "No API key",
+                    // [T-empty-key-compat-endpoints] Keyless compatible endpoint:
+                    // say so instead of the alarming "No API key".
+                    text = if (!apiKey.isNullOrBlank()) maskKey(apiKey)
+                        else if (instance.allowsEmptyAPIKey) stringResource(R.string.provider_no_key_required)
+                        else "No API key",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,

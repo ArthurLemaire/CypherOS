@@ -65,6 +65,13 @@ private data class GrandTotal(
         else (cacheReadTokens.toDouble() / totalInput) * 100
 }
 
+/**
+ * [T-android-usage-orphan-rows] Bucket for usage rows whose session row is
+ * missing, so their (really billed) tokens still appear in the totals. See
+ * ChatDao.allUsageRecords.
+ */
+private const val UNKNOWN_MODEL_KEY = "(unknown model)"
+
 @Composable
 fun UsageStatsScreen(
     chatDao: ChatDao,
@@ -100,11 +107,17 @@ fun UsageStatsScreen(
             val cacheCr = usage.optLong("cacheCreationTokens", usage.optLong("cacheCreationInputTokens", 0))
             val cacheRd = usage.optLong("cacheReadTokens", usage.optLong("cacheReadInputTokens", 0))
 
-            val (displayName, provider) = modelLookup[record.modelId]
-                ?: (record.modelId to "Unknown")
+            // [T-android-usage-orphan-rows] GH#168: modelId is null for a
+            // message whose session row is gone (LEFT JOIN). Those tokens were
+            // still billed, so they are counted under a single "unknown" bucket
+            // instead of being dropped — matching iOS, where an unresolvable id
+            // falls back to the raw id and the "Other" provider group.
+            val modelKey = record.modelId ?: UNKNOWN_MODEL_KEY
+            val (displayName, provider) = modelLookup[modelKey]
+                ?: (modelKey to "Unknown")
 
-            val stats = statsMap.getOrPut(record.modelId) {
-                ModelStats(record.modelId, displayName, provider)
+            val stats = statsMap.getOrPut(modelKey) {
+                ModelStats(modelKey, displayName, provider)
             }
             stats.inputTokens += input
             stats.outputTokens += output
