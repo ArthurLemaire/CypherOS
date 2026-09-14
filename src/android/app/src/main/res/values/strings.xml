@@ -470,6 +470,40 @@
     <string name="sessionlist_select_all">Select All</string>
     <string name="sessionlist_deselect_all">Deselect All</string>
     <string name="sessionlist_select_action">Select</string>
+
+    <!-- [T-android-session-grouping] Session groups. Keys mirror the iOS
+         wording so the two platforms read identically. -->
+    <string name="group_move_to">Move to Group</string>
+    <string name="group_change">Change Group</string>
+    <string name="group_picker_title_move">Move to Group</string>
+    <string name="group_picker_title_change">Change Group</string>
+    <string name="group_picker_title_move_n">Move %1$d to Group</string>
+    <string name="group_picker_title_change_n">Change Group for %1$d</string>
+    <string name="group_new_name_hint">New Group Name</string>
+    <string name="group_name_hint">Group Name</string>
+    <string name="group_desc_hint">Description (optional, guides auto-grouping)</string>
+    <string name="group_create">Create</string>
+    <string name="group_section_header">Groups</string>
+    <string name="group_none">No Group</string>
+    <string name="group_none_subtitle">Remove from its current group</string>
+    <string name="group_n_chats">%1$d chats</string>
+    <string name="group_empty">Empty group</string>
+    <string name="group_rename">Rename Group</string>
+    <string name="group_new_chat_in">New Chat in Group</string>
+    <string name="group_dissolve">Dissolve Group</string>
+    <string name="group_dissolve_confirm_title">Dissolve Group?</string>
+    <string name="group_dissolve_confirm_message">%1$d sessions will move back to the main list. No session will be deleted.</string>
+    <string name="group_delete_with_sessions">Delete Group &amp; %1$d Sessions</string>
+    <string name="group_delete_confirm_title">Delete Group?</string>
+    <string name="group_delete_confirm_message">The group and its %1$d sessions will be permanently deleted. This cannot be undone.</string>
+    <string name="group_duplicate_exists">“%1$s” already exists</string>
+    <string name="group_duplicate_hint">Rename to something else, or tap to use it</string>
+    <string name="group_suggest">AI Suggest</string>
+    <string name="group_suggest_failed">AI Suggest (failed — try again)</string>
+    <string name="group_suggest_merge">Move into “%1$s”?</string>
+    <string name="group_move_action">Move</string>
+    <string name="group_collapse">Collapse group</string>
+    <string name="group_expand">Expand group</string>
     <string name="sessionlist_settings">Settings</string>
     <string name="sessionlist_shell">Shell</string>
     <string name="sessionlist_shell_terminal">Shell Terminal</string>
@@ -632,6 +666,10 @@
     <string name="appearance_show_chat_title_subtitle">Show a sticky title pill while scrolling</string>
     <string name="appearance_show_chat_title_footer">Display the current session title as a floating pill at the top of the chat while scrolling through history.</string>
     <string name="chat_title_pill_session_default">Untitled</string>
+    <string name="appearance_section_grouping">Grouping</string>
+    <string name="appearance_auto_grouping">Auto-Grouping</string>
+    <string name="appearance_auto_grouping_subtitle">File new chats into a matching group</string>
+    <string name="appearance_auto_grouping_footer">When a chat\'s title is first generated, also file it into a matching existing group. Runs once per chat, only uses groups you already created, and leaves the chat ungrouped when nothing matches.</string>
     <string name="appearance_section_tool_preview">Tool Status Bar</string>
     <string name="appearance_tool_preview_footer">Show a live preview thumbnail alongside the tool status bar during agent execution.</string>
     <string name="appearance_tool_preview_title">Tool Preview Window</string>
@@ -993,6 +1031,8 @@
     <string name="provider_detail_add_custom_model">Add Custom Model</string>
     <string name="provider_detail_delete_provider">Delete Provider</string>
     <string name="provider_detail_delete_model">Delete Model</string>
+    <string name="provider_detail_hide_model">Hide Model</string>
+    <string name="provider_detail_show_model">Show Model</string>
     <string name="provider_detail_sign_out">Sign Out</string>
     <string name="provider_detail_sign_in">Sign In</string>
     <string name="provider_detail_save_key">Save Key</string>
@@ -1326,6 +1366,11 @@
     <string name="model_picker_no_models">No models available</string>
     <string name="model_picker_configure_hint">Configure providers in Settings to see models here.</string>
     <string name="model_picker_try_different_search">Try a different search term.</string>
+    <plurals name="model_picker_show_models">
+        <item quantity="one">Show %d model</item>
+        <item quantity="other">Show %d models</item>
+    </plurals>
+    <string name="model_picker_quick_test">Quick test</string>
     <plurals name="model_picker_models_count">
         <item quantity="one">%d model</item>
         <item quantity="other">%d models</item>
@@ -1357,6 +1402,9 @@
     <string name="voice_panel_toggle_recording">Toggle recording</string>
     <string name="voice_panel_delete">Delete dictated text</string>
     <string name="voice_panel_read_replies">Read replies</string>
+    <string name="tts_capsule_picker_title">Voice Output Model</string>
+    <string name="tts_capsule_system_engine">System TTS</string>
+    <string name="voice_system_tts_subtitle">Android built-in text-to-speech</string>
     <string name="voice_system_recognition_online">System Recognition (Online)</string>
     <string name="voice_system_recognition_offline">System Recognition (Offline)</string>
     <string name="voice_system_online_subtitle">Android built-in, needs network</string>
@@ -1629,4 +1677,5 @@
     <string name="browser_downloads_cancel">Cancel download</string>
     <string name="browser_downloads_failed">Failed</string>
     <string name="browser_downloads_open">Open</string>
+    <string name="provider_no_key_required">No key required</string>
 </resources>
