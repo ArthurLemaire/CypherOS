@@ -81,6 +81,15 @@ val LLMModel.hasAudioInput: Boolean
 val LLMModel.hasAudioOutput: Boolean
     get() = normalizedOutputs?.contains("audio") == true
 
+/**
+ * True when this model natively consumes images (a vision-capable model).
+ * [T-android-vision-group] The Vision Group resolver filters group members by
+ * this predicate. Normalizes so "image_input" (OpenAI/OpenRouter suffix form)
+ * and bare "image" (models.dev) both match.
+ */
+val LLMModel.hasImageInput: Boolean
+    get() = normalizedInputs?.contains("image") == true
+
 /** True when this model has ANY audio modality — the "voice model" predicate
  *  behind Voice Services shadow visibility (iOS hasVoiceModels). */
 val LLMModel.hasVoiceModality: Boolean

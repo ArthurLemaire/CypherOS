@@ -46,6 +46,15 @@ object CorrectionAdmission {
          * trivially matches near-equal strings and lets rewrites through).
          */
         const val MAX_ACRONYM_LENGTH_FRACTION = 0.9
+
+        /**
+         * [T-android-correction-latin-phonetic] Signal 4: Levenshtein similarity
+         * of the two consonant skeletons at or above which a same-syllable-count
+         * Latin pair counts as a near-sound. 0.30 is the loosest value that still
+         * admits linux↔minis (skeletons lnx/mns, sim 0.33) while rejecting
+         * cursor↔claude (crsr/cld, 0.25) — the latter already passes Signal 1.
+         */
+        const val LATIN_SKELETON_SIMILARITY = 0.30
     }
 
     /**
@@ -62,6 +71,9 @@ object CorrectionAdmission {
         /** Chinese-number ↔ arabic / alphanumeric term. */
         object DigitNorm : Verdict()
 
+        /** Latin near-sound (consonant-skeleton match) — e.g. linux→minis. */
+        object LatinPhonetic : Verdict()
+
         data class RejectedReword(val sim: Double) : Verdict()
 
         /** Same characters, only order changed. */
@@ -71,7 +83,7 @@ object CorrectionAdmission {
 
         val isAdmitted: Boolean
             get() = when (this) {
-                is Homophone, is Acronym, is DigitNorm -> true
+                is Homophone, is Acronym, is DigitNorm, is LatinPhonetic -> true
                 is RejectedReword, is RejectedReorder, is RejectedTooGlobal -> false
             }
 
@@ -81,6 +93,7 @@ object CorrectionAdmission {
                 is Homophone -> "homophone(sim=%.2f)".format(sim)
                 is Acronym -> "acronym"
                 is DigitNorm -> "digit_norm"
+                is LatinPhonetic -> "latin_phonetic"
                 is RejectedReword -> "reword(sim=%.2f)".format(sim)
                 is RejectedReorder -> "reorder"
                 is RejectedTooGlobal -> "too_global(loc=%.2f)".format(locality)
@@ -134,6 +147,17 @@ object CorrectionAdmission {
         // 上帝→上). One phonetic key is an ordered subsequence of the other and
         // meaningfully shorter.
         if (isAcronymRelated(keyA, keyB)) return Verdict.Acronym
+
+        // Signal 4 — Latin near-sound (linux→minis). Levenshtein over the full
+        // key scores these ~0.40 because the consonants differ outright, but the
+        // words share syllable rhythm and a consonant landmark, which is what an
+        // ASR actually confuses. Gated on the ORIGINAL text being Latin-script:
+        // PinyinNormalizer renders Chinese as toneless a-z, so testing the KEY
+        // for "purely a-z" would not exclude Chinese at all and would let
+        // unrelated pairs like 挂载/规则 (guazai/guize) through.
+        if (isLatinOrigin(a) && isLatinOrigin(b) && isLatinPhoneticSimilar(keyA, keyB)) {
+            return Verdict.LatinPhonetic
+        }
 
         return Verdict.RejectedReword(sim)
     }
@@ -195,5 +219,87 @@ object CorrectionAdmission {
         val aDigit = hasArabicDigit(a)
         val bDigit = hasArabicDigit(b)
         return (aCn && bDigit && !bCn) || (bCn && aDigit && !aCn)
+    }
+
+    /**
+     * [T-android-correction-latin-phonetic] True when the ORIGINAL span is
+     * Latin-script — ASCII letters, digits and separators only, with at least
+     * one letter.
+     *
+     * Used to keep Signal 4 off Chinese input: [PinyinNormalizer] renders 挂载
+     * as "guazai", which is indistinguishable from a real Latin word once you
+     * only look at the key. Testing the key for "purely a-z" would therefore be
+     * a no-op for Chinese and would let unrelated pairs like 挂载/规则
+     * (guazai/guize — same syllable count, anchored 'g') through.
+     */
+    fun isLatinOrigin(s: String): Boolean {
+        var sawLetter = false
+        for (ch in s) {
+            when {
+                ch.isLetter() -> {
+                    // Non-ASCII letter (CJK, accented, Cyrillic…) → not Latin origin.
+                    if (ch.code > 0x7F) return false
+                    sawLetter = true
+                }
+                ch.isWhitespace() -> {}
+                ch in '0'..'9' -> {}
+                ch == '-' || ch == '_' || ch == '.' -> {}
+                else -> return false
+            }
+        }
+        return sawLetter
+    }
+
+    /**
+     * [T-android-correction-latin-phonetic] True when two Latin phonetic keys
+     * plausibly sound alike to an ASR: same syllable count (vowel-group
+     * parity), consonant skeletons that are Levenshtein-similar
+     * (≥ [Config.LATIN_SKELETON_SIMILARITY]) AND sharing a consonant at the
+     * same skeleton index.
+     *
+     * Why the skeleton rather than a consonant multiset: a bag of consonants
+     * throws away order, and linux/minis (l,n,x vs m,n,s) then scores exactly
+     * the same as linux/ninja (l,n,x vs n,n,j) — so no threshold can separate
+     * the real confusion from the spurious one. The skeleton keeps position, and
+     * the same-index anchor requires the shared consonant to land in the same
+     * slot ("n" is 2nd in both lnx and mns). cat/dog shares no consonant at any
+     * index and is rejected.
+     *
+     * Deliberately loose — it answers "could an ASR have confused these?", not
+     * "should this correction apply". The locality guard here and the vocabulary
+     * evidence downstream are the real gatekeepers. Known accepted false
+     * positive: linux↔ninja, indistinguishable from linux↔minis on every
+     * feature available to this signal.
+     */
+    fun isLatinPhoneticSimilar(keyA: String, keyB: String): Boolean {
+        val vowels = setOf('a', 'e', 'i', 'o', 'u')
+
+        // Syllable count = number of maximal vowel-character groups.
+        fun syllableCount(s: String): Int {
+            var count = 0
+            var inVowel = false
+            for (c in s) {
+                if (c in vowels) {
+                    if (!inVowel) { count++; inVowel = true }
+                } else {
+                    inVowel = false
+                }
+            }
+            return count
+        }
+
+        val scA = syllableCount(keyA)
+        val scB = syllableCount(keyB)
+        if (scA == 0 || scB == 0 || scA != scB) return false
+
+        val skelA = keyA.filter { it !in vowels }
+        val skelB = keyB.filter { it !in vowels }
+        if (skelA.isEmpty() || skelB.isEmpty()) return false
+
+        // Same-index consonant anchor.
+        val anchored = (0 until minOf(skelA.length, skelB.length)).any { skelA[it] == skelB[it] }
+        if (!anchored) return false
+
+        return PinyinNormalizer.similarity(skelA, skelB) >= Config.LATIN_SKELETON_SIMILARITY
     }
 }

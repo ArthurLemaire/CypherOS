@@ -19,7 +19,16 @@ sealed class LLMStreamChunk {
     /** Tool use streaming events */
     data class ToolUseStart(val id: String, val name: String) : LLMStreamChunk()
     data class ToolInputDelta(val id: String, val accumulated: String) : LLMStreamChunk()
-    data class ToolCallComplete(val id: String, val name: String, val args: JSONObject) : LLMStreamChunk()
+    data class ToolCallComplete(
+        val id: String,
+        val name: String,
+        val args: JSONObject,
+        // [T-android-gemini3-thoughtsig / #179] Gemini 3.x returns a
+        // `thoughtSignature` on each functionCall part; it MUST be replayed on
+        // the historical functionCall or the next request 400s. Null for every
+        // other provider (only Gemini populates it).
+        val thoughtSignature: String? = null,
+    ) : LLMStreamChunk()
 
     /**
      * [T-codex-gpt-image2-oauth-android] A model-generated media attachment

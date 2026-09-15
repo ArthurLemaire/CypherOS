@@ -72,10 +72,23 @@ struct ModelsCollection: ConfigCollection {
         var supportsReasoning: Bool? = nil
         if case .bool(let b)? = dict["supports_reasoning"] { supportsReasoning = b }
 
+        // `LLMModel.provider` is a DISPLAY string (built-in catalogues put
+        // "OpenAI" / "Anthropic" here), not an identity — the identity lives in
+        // `ModelEntry.providerInstanceId`. Writing the instance UUID here made
+        // the model-detail row read "A6FC13AE-…" instead of a provider name.
+        // Store the instance's label, matching what the in-app "Add Custom
+        // Model" form does.
+        let providerName: String = {
+            guard let inst = store.config.instances.first(where: { $0.id == instanceId }) else {
+                return instanceId
+            }
+            let label = inst.label.trimmingCharacters(in: .whitespacesAndNewlines)
+            return label.isEmpty ? inst.providerType.displayName : label
+        }()
         let model = LLMModel(
             id: modelId,
             displayName: displayName,
-            provider: instanceId,
+            provider: providerName,
             contextWindow: contextWindow,
             maxOutputTokens: maxOut,
             supportsReasoning: supportsReasoning

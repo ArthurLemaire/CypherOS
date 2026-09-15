@@ -1,10 +1,14 @@
 package com.openminis.app.speech
 
 import android.content.Context
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.media.MediaPlayer
-import android.util.Log
+import android.widget.Toast
 import com.openminis.app.MinisApp
 import com.openminis.app.R
+import com.openminis.app.logging.AppLogger
 import com.openminis.app.provider.voice.VoiceOutputRequest
 import com.openminis.app.provider.voice.VoiceProviderFactory
 import kotlinx.coroutines.CoroutineScope
@@ -101,7 +105,7 @@ class ReadAloudPlayer(context: Context) {
         worker = scope.launch {
             for (text in queue) {
                 runCatching { speakOne(text) }
-                    .onFailure { Log.e(TAG, "utterance failed", it) }
+                    .onFailure { AppLogger.error(TAG, "utterance failed: $it") }
                 // Queue drained → speech is over. Counter rather than
                 // Channel.isEmpty, which is experimental API.
                 if (pending.decrementAndGet() <= 0) _isSpeaking.value = false
@@ -180,12 +184,43 @@ class ReadAloudPlayer(context: Context) {
             val (instance, modelEntry) = entry
             val ok = runCatching { speakViaProvider(instance, modelEntry, text) }
                 .getOrElse {
-                    Log.w(TAG, "provider TTS failed, falling back to system engine", it)
+                    AppLogger.error(
+                        TAG,
+                        "provider TTS failed (model=${modelEntry.model.id} " +
+                            "vendor=${instance.providerType}), falling back to system engine: $it",
+                    )
                     false
                 }
             if (ok) return
         }
-        speakViaSystem(text)
+        if (!speakViaSystem(text)) {
+            // [T-android-tts-silent-blackhole] Terminal state: the provider path
+            // did not produce audio AND the device speech engine is unusable.
+            // iOS can't reach this (AVSpeechSynthesizer always exists), which is
+            // why read-aloud "just works" there while Android could go silent
+            // with no feedback at all — the reported OPPO symptom. Tell the user
+            // once instead of swallowing it.
+            notifySpeechUnavailable(providerConfigured = entry != null)
+        }
+    }
+
+    /** One-shot user-visible signal that read-aloud cannot produce sound. */
+    private var unavailableNotified = false
+
+    private fun notifySpeechUnavailable(providerConfigured: Boolean) {
+        AppLogger.error(
+            TAG,
+            "read-aloud produced NO audio: providerConfigured=$providerConfigured " +
+                "systemEngine=${if (system.initFailed) "init-failed" else "unavailable"}",
+        )
+        if (unavailableNotified) return
+        unavailableNotified = true
+        // The worker runs on Dispatchers.Main.immediate, so Toast is safe here.
+        Toast.makeText(
+            appContext,
+            appContext.getString(R.string.read_aloud_unavailable),
+            Toast.LENGTH_LONG,
+        ).show()
     }
 
     /** @return true when provider audio was synthesized AND played. */
@@ -194,10 +229,25 @@ class ReadAloudPlayer(context: Context) {
         modelEntry: com.openminis.app.data.model.ModelEntry,
         text: String,
     ): Boolean {
-        val repo = (appContext as? MinisApp)?.providerRepository ?: return false
-        val apiKey = repo.loadApiKey(instance.id) ?: return false
-        val voice = VoiceProviderFactory.make(instance, apiKey) ?: return false
-        if (!voice.supportsVoiceOutput) return false
+        // [T-android-safemode-lateinit-crash-147] `?.` guards a null
+        // Application but NOT an unassigned lateinit — the getter throws.
+        // Read-aloud can be driven from a notification action with no
+        // Activity, so gate on subsystemsReady() before touching a repository.
+        // Each bail-out logs its reason: these gates used to return false
+        // silently, which made "no sound" undiagnosable from a user device
+        // (the daily log files showed nothing at all).
+        val repo = (appContext as? MinisApp)
+            ?.takeIf { it.subsystemsReady() }
+            ?.providerRepository
+            ?: return false.also { AppLogger.error(TAG, "provider TTS skipped: repository unavailable") }
+        val apiKey = repo.loadApiKey(instance.id)
+            ?: return false.also { AppLogger.error(TAG, "provider TTS skipped: no API key for ${instance.id}") }
+        val voice = VoiceProviderFactory.make(instance, apiKey)
+            ?: return false.also { AppLogger.error(TAG, "provider TTS skipped: no voice adapter for ${instance.providerType}/${instance.customBaseURL}") }
+        if (!voice.supportsVoiceOutput) {
+            AppLogger.error(TAG, "provider TTS skipped: ${voice.javaClass.simpleName} does not support output")
+            return false
+        }
 
         val data = withContext(Dispatchers.IO) {
             voice.synthesize(
@@ -211,7 +261,10 @@ class ReadAloudPlayer(context: Context) {
                 ),
             )
         }
-        if (data.isEmpty()) return false
+        if (data.isEmpty()) {
+            AppLogger.error(TAG, "provider TTS returned empty audio (model=${modelEntry.model.id})")
+            return false
+        }
         playBytes(data)
         return true
     }
@@ -239,35 +292,78 @@ class ReadAloudPlayer(context: Context) {
             // the player, since the callbacks below can no longer fire.
             playbackFinisher = ::finish
             runCatching {
+                // [T-android-tts-silent-blackhole] Explicit attributes + audio
+                // focus. iOS routes playback through AudioSessionCoordinator;
+                // Android had neither, and some OEM ROMs (ColorOS among them)
+                // will silently mute focus-less media playback. Focus denial is
+                // logged but non-fatal — muting is the exception, not the rule.
+                mp.setAudioAttributes(playbackAttributes)
+                requestAudioFocus()
                 mp.setDataSource(file.absolutePath)
                 mp.setOnCompletionListener { finish() }
                 mp.setOnErrorListener { _, what, extra ->
-                    Log.w(TAG, "MediaPlayer error what=$what extra=$extra")
+                    AppLogger.error(TAG, "MediaPlayer error what=$what extra=$extra")
                     finish()
                     true
                 }
                 mp.prepare()
                 mp.start()
             }.onFailure {
-                Log.w(TAG, "MediaPlayer setup failed", it)
+                AppLogger.error(TAG, "MediaPlayer setup failed: $it")
                 finish()
             }
             cont.invokeOnCancellation { releasePlayer() }
         }
     }
 
+    // -- audio focus [T-android-tts-silent-blackhole] --
+
+    private val audioManager =
+        appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
+    private val playbackAttributes = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_MEDIA)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+        .build()
+
+    private var focusRequest: AudioFocusRequest? = null
+
+    private fun requestAudioFocus() {
+        val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+            .setAudioAttributes(playbackAttributes)
+            .build()
+        focusRequest = req
+        val granted = audioManager.requestAudioFocus(req)
+        if (granted != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+            AppLogger.info(TAG, "audio focus not granted ($granted) — playing anyway")
+        }
+    }
+
+    private fun abandonAudioFocus() {
+        focusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
+        focusRequest = null
+    }
+
     /**
      * Speak via the on-device engine and wait for it to finish, so the queue
      * stays ordered. [TextToSpeechManager.isSpeaking] flips false on the last
      * utterance's onDone.
+     *
+     * @return false when the engine is unusable (init failed / never bound) —
+     *   the caller surfaces that instead of pretending the sentence was spoken.
      */
-    private suspend fun speakViaSystem(text: String) {
+    private suspend fun speakViaSystem(text: String): Boolean {
+        // [T-android-tts-silent-blackhole] Engine binding is async; speaking
+        // before it settles used to drop the text on the floor. Wait (bounded)
+        // for a verdict first.
+        if (!system.awaitReady()) return false
         system.speak(text)
         // Poll rather than plumb a callback through: utterances are short and
         // this keeps TextToSpeechManager's public surface unchanged.
         while (system.isSpeaking.value) {
             kotlinx.coroutines.delay(POLL_MS)
         }
+        return true
     }
 
     private fun releasePlayer() {
@@ -276,6 +372,7 @@ class ReadAloudPlayer(context: Context) {
             release()
         }
         player = null
+        abandonAudioFocus()
     }
 
     /**

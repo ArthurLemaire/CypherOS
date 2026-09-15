@@ -545,6 +545,9 @@ internal object ConfigBuiltins {
         r.register(ModelsCollection(providerRepo))
         r.register(GroupsCollection(providerRepo))
         r.register(EnvVarsCollection(envVarRepo))
+        // [T-android-thinking-rules-phase2] Custom thinking rules under
+        // thinkingrules.<instanceId>:<ruleId>.<field>.
+        r.register(com.openminis.app.config.collections.ThinkingRulesCollection(providerRepo))
 
         val isoFormatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
             timeZone = TimeZone.getTimeZone("UTC")

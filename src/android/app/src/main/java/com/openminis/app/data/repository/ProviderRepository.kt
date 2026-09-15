@@ -6,6 +6,10 @@ import android.util.Base64
 import com.openminis.app.data.db.ProviderConfigDao
 import com.openminis.app.data.db.ProviderConfigMetaKeys
 import com.openminis.app.data.db.ProviderConfigSnapshot
+import com.openminis.app.data.db.ProviderThinkingRuleEntity
+import com.openminis.app.provider.thinking.ThinkingRule
+import com.openminis.app.provider.thinking.ThinkingRuleCoding
+import com.openminis.app.provider.thinking.ThinkingRuleResolver
 import com.openminis.app.data.db.ProviderDatabase
 import com.openminis.app.data.db.compositeEntryKey
 import com.openminis.app.data.db.toProviderConfig
@@ -24,9 +28,11 @@ import com.openminis.app.data.model.SystemVoiceIds
 import com.openminis.app.data.model.VoiceProviderTemplate
 import com.openminis.app.data.model.hasAudioInput
 import com.openminis.app.data.model.hasAudioOutput
+import com.openminis.app.data.model.hasImageInput
 import com.openminis.app.data.model.hasVoiceModality
 import com.openminis.app.data.model.isVoiceTemplateSeedShape
 import com.openminis.app.data.model.withInferredVoiceModality
+import com.openminis.app.provider.ModelReleaseIndex
 import com.openminis.app.provider.ModelsDevApi
 import com.openminis.app.provider.anthropic.AnthropicModelsApi
 import com.openminis.app.provider.gemini.GeminiModelsApi
@@ -442,6 +448,9 @@ class ProviderRepository(private val context: Context) {
             _config.value = loadConfig()
             _configLoaded.value = true
         }
+        // [T-android-thinking-rules-phase2] Warm the resolver's custom-rule cache once
+        // config is available, so the (sync) request builder can read user rules.
+        loadAllThinkingRulesIntoCache()
         if (!configLoadComplete.isCompleted) configLoadComplete.complete(Unit)
     }
 
@@ -693,6 +702,12 @@ class ProviderRepository(private val context: Context) {
 
         saveConfig(config)
         deleteApiKey(instanceId)
+        // [T-android-thinking-rules-phase2] The instance is gone — drop its custom
+        // rules from Room and the resolver cache (they can never fire again).
+        runCatching {
+            runBlocking { providerDao.deleteThinkingRulesForInstance(instanceId) }
+            ThinkingRuleResolver.setCustomRules(instanceId, emptyList())
+        }
     }
 
     /**
@@ -721,16 +736,42 @@ class ProviderRepository(private val context: Context) {
         _config.value.instances.filter { it.providerType == providerType && it.isEnabled }
 
     fun entriesFor(instanceId: String): List<ModelEntry> =
-        _config.value.modelEntries.filter { it.providerInstanceId == instanceId }
+        _config.value.modelEntries
+            .filter { it.providerInstanceId == instanceId }
+            .sortedWith(releaseRankOrder)
 
     fun visibleEntries(instanceId: String): List<ModelEntry> =
-        _config.value.modelEntries.filter { it.providerInstanceId == instanceId && !it.isHidden }
+        _config.value.modelEntries
+            .filter { it.providerInstanceId == instanceId && !it.isHidden }
+            .sortedWith(releaseRankOrder)
 
     fun allVisibleEntries(): List<ModelEntry> =
         _config.value.let { config ->
             val enabledIds = config.instances.filter { it.isEnabled }.map { it.id }.toSet()
-            config.modelEntries.filter { it.providerInstanceId in enabledIds && !it.isHidden }
+            config.modelEntries
+                .filter { it.providerInstanceId in enabledIds && !it.isHidden }
+                .sortedWith(releaseRankOrder)
         }
+
+    /**
+     * [T-model-release-ranking] Newest / most capable model first, so a picker
+     * never opens on a stale (or, as in OpenMinis#83, an uncallable) model.
+     * These lists previously came back in raw config order, which is insertion
+     * order from the provider's /models response — effectively arbitrary.
+     * Falls back to the model id so the ordering is total and stable when two
+     * entries rank identically; otherwise the list could visibly reshuffle
+     * between reads. Mirrors iOS `ProviderConfigStore.releaseRankOrder`.
+     */
+    private val releaseRankOrder = Comparator<ModelEntry> { a, b ->
+        val ra = ModelReleaseIndex.rank(
+            a.baseModel.id, a.baseModel.displayName, a.baseModel.contextWindow
+        )
+        val rb = ModelReleaseIndex.rank(
+            b.baseModel.id, b.baseModel.displayName, b.baseModel.contextWindow
+        )
+        val byRank = ModelReleaseIndex.comparator.compare(ra, rb)
+        if (byRank != 0) byRank else a.baseModel.id.compareTo(b.baseModel.id)
+    }
 
     // ── [T-newchat-default-model-fallback-android] last-used + newest-model ──
 
@@ -1026,6 +1067,9 @@ class ProviderRepository(private val context: Context) {
         if (config.voiceOutputGroupId == groupId) {
             config.voiceOutputGroupId = null
         }
+        if (config.visionGroupId == groupId) {
+            config.visionGroupId = null
+        }
         config.agentLoopGroupIds.removeAll { it == groupId }
         saveConfig(config)
     }
@@ -1110,6 +1154,118 @@ class ProviderRepository(private val context: Context) {
     }
 
     /**
+     * [T-android-provider-reorder] Reorder provider instances (drag-to-sort in
+     * the Providers list). Mirrors iOS `ProviderConfigStore.reorderInstances`.
+     *
+     * [newOrder] is a list of instance ids. Unknown ids are dropped and any
+     * instance missing from it is appended in its existing relative order, so a
+     * caller that only knows about ONE provider-type section can pass just that
+     * section's ids and leave the rest untouched — which is exactly what the
+     * per-section drag in ProviderListScreen does.
+     *
+     * Persistence: `sort_order` is derived from list position at save time
+     * (ProviderConfigMapping writes `sortOrder = idx`) and the DAO reads back
+     * `ORDER BY sort_order ASC`, so permuting the list IS the persistence — no
+     * per-row column write is needed.
+     *
+     * Unlike iOS there is no dirty-marking step here: Android keeps provider
+     * config local-only (Room + the JSON mirror), with no CloudKit upload, so
+     * the "pure reorder doesn't mark dirty" bug iOS had to fix has no analogue.
+     * `saveConfig` bumps `revision`, which is the Android-side equivalent
+     * concern — it guarantees the StateFlow re-emits even though a pure
+     * permutation compares equal under data-class structural equality.
+     */
+    fun reorderInstances(newOrder: List<String>) {
+        ensureConfigLoaded()
+        val config = _config.value
+        val current = config.instances.toList()
+        if (current.isEmpty()) return
+
+        val byId = current.associateBy { it.id }
+        val seen = LinkedHashSet<String>()
+        val reordered = ArrayList<ProviderInstance>(current.size)
+        for (id in newOrder) {
+            val inst = byId[id] ?: continue      // drop unknown ids
+            if (!seen.add(id)) continue          // drop duplicates
+            reordered.add(inst)
+        }
+        // Anything the caller didn't mention keeps its existing relative order.
+        for (inst in current) {
+            if (seen.add(inst.id)) reordered.add(inst)
+        }
+
+        // No-op guard: skip the DB write + StateFlow churn when nothing moved.
+        if (reordered.map { it.id } == current.map { it.id }) return
+
+        // [T-android-reorder-unlocked-mutation] Mutate under configLock.
+        //
+        // `config.instances` is the shared MutableList inside _config.value,
+        // and clear()/addAll() ran unprotected here — exactly the window the
+        // configLock KDoc above was written to close (it cites the
+        // "ConcurrentModificationException → ArrayList.next" crash seen on
+        // Pixel 6 / 4a). Concurrent readers iterate that same list with no
+        // lock: hasFoldedShadowDuplicates() and shadowVoiceProviders() are
+        // called from ProviderListScreen during composition — on the main
+        // thread, and recomposition fires precisely BECAUSE this reorder just
+        // emitted — while the background model-refresh fan-out reads it too.
+        //
+        // The empty window was the worse half: a saveConfig snapshotting
+        // between clear() and addAll() would persist ZERO instances to Room
+        // and the JSON mirror, wiping the user's providers.
+        //
+        // synchronized is reentrant, so the nested saveConfig (which takes the
+        // same lock) is fine. Matches ensureVoiceTemplateModels / replaceEntries.
+        synchronized(configLock) {
+            config.instances.clear()
+            config.instances.addAll(reordered)
+            saveConfig(config)
+        }
+    }
+
+    /**
+     * [T-android-modelgroup-reorder] Reorder the user's Model Groups
+     * (drag-to-sort in the Model Groups screen). Mirrors iOS
+     * `ProviderConfigStore.reorderGroups` (4ba54ff5) and follows the exact
+     * contract of [reorderInstances] above: unknown ids dropped, duplicates
+     * collapsed, unmentioned groups appended in their existing relative order,
+     * no-op guard, and the list mutation held under [configLock] — same
+     * CME/empty-window rationale as documented on reorderInstances
+     * ([T-android-reorder-unlocked-mutation]).
+     *
+     * Persistence needs nothing extra: ProviderConfigMapping writes each
+     * group's `sort_order` from its list index at save time and the DAO reads
+     * `ORDER BY sort_order ASC`, so list position IS the stored order.
+     */
+    fun reorderModelGroups(newOrder: List<String>) {
+        ensureConfigLoaded()
+        val config = _config.value
+        val current = config.modelGroups.toList()
+        if (current.isEmpty()) return
+
+        val byId = current.associateBy { it.id }
+        val seen = LinkedHashSet<String>()
+        val reordered = ArrayList<ModelGroup>(current.size)
+        for (id in newOrder) {
+            val group = byId[id] ?: continue     // drop unknown ids
+            if (!seen.add(id)) continue          // drop duplicates
+            reordered.add(group)
+        }
+        // Anything the caller didn't mention keeps its existing relative order.
+        for (group in current) {
+            if (seen.add(group.id)) reordered.add(group)
+        }
+
+        // No-op guard: skip the DB write + StateFlow churn when nothing moved.
+        if (reordered.map { it.id } == current.map { it.id }) return
+
+        synchronized(configLock) {
+            config.modelGroups.clear()
+            config.modelGroups.addAll(reordered)
+            saveConfig(config)
+        }
+    }
+
+    /**
      * Resolve the effective model entries visible to the agent loop (minis-model-use).
      * Expands groups to their members, unions with individual entries, dedupes by ID,
      * and filters to entries of enabled provider instances. Mirrors iOS
@@ -1179,6 +1335,182 @@ class ProviderRepository(private val context: Context) {
             config.voiceOutputGroupId = value
             saveConfig(config)
         }
+
+    // --- Vision group [T-android-vision-group / GH#182] ---
+
+    var visionGroupId: String?
+        get() = _config.value.visionGroupId
+        set(value) {
+            ensureConfigLoaded()
+            val config = _config.value
+            config.visionGroupId = value
+            saveConfig(config)
+        }
+
+    /** True when a Vision Group is bound AND still exists. Gates read_image
+     *  tool exposure for main models that cannot natively see images. */
+    fun hasVisionGroupConfigured(): Boolean {
+        val gid = _config.value.visionGroupId ?: return false
+        return _config.value.modelGroups.any { it.id == gid }
+    }
+
+    /** Bound Vision group's display name, or null. */
+    fun visionGroupName(): String? {
+        val gid = _config.value.visionGroupId ?: return null
+        return _config.value.modelGroups.find { it.id == gid }?.name
+    }
+
+    /**
+     * [T-android-vision-group] Ordered vision-capable fail-over candidates from
+     * the bound Vision Group. Mirrors resolveVoiceInputCandidates: filters
+     * members to enabled instances whose model declares image input, honours
+     * the group's routing strategy (`fallback` keeps order; `loadBalance`
+     * rotates the start by [loadBalanceSeed] so separate reads spread across
+     * members). Returns [] when no group is bound or no member is usable — the
+     * caller (ReadImageTool) then returns a clear failure text.
+     */
+    fun resolveVisionCandidates(loadBalanceSeed: Int = 0): List<Pair<ProviderInstance, ModelEntry>> {
+        ensureConfigLoaded()
+        val config = _config.value
+
+        fun providerEntry(memberId: String): Pair<ProviderInstance, ModelEntry>? {
+            val entry = config.modelEntries.find { it.id == memberId } ?: return null
+            val inst = config.instances.find { it.id == entry.providerInstanceId } ?: return null
+            if (!inst.isEnabled || !entry.model.hasImageInput) return null
+            return inst to entry
+        }
+
+        val gid = config.visionGroupId ?: return emptyList()
+        val group = config.modelGroups.find { it.id == gid } ?: return emptyList()
+        var members = group.memberEntryIds.mapNotNull { providerEntry(it) }
+        if (group.strategy == RoutingStrategy.loadBalance && members.size > 1) {
+            val offset = kotlin.math.abs(loadBalanceSeed) % members.size
+            members = members.drop(offset) + members.take(offset)
+        }
+        val out = mutableListOf<Pair<ProviderInstance, ModelEntry>>()
+        for (m in members) {
+            if (out.none { it.second.id == m.second.id }) out.add(m)
+        }
+        return out
+    }
+
+    // --- Thinking rules (custom) [T-android-thinking-rules-phase2] ---
+    //
+    // User-authored rules live in provider.db (provider_thinking_rules), keyed by
+    // provider-instance id, in sort_order priority order. Built-in vendor rules are
+    // never stored. On every mutation we publish the instance's rules into the
+    // ThinkingRuleResolver cache so the (sync) request-builder can read them.
+
+    /** Load one instance's custom rules from Room, in stored order. */
+    fun thinkingRules(instanceId: String): List<ThinkingRule> = runBlocking {
+        runCatching { providerDao.loadThinkingRules(instanceId).map { ThinkingRuleCoding.toRule(it) } }
+            .getOrDefault(emptyList())
+    }
+
+    /** The persisted ids for one instance's custom rules, parallel to [thinkingRules]. */
+    fun thinkingRuleIds(instanceId: String): List<String> = runBlocking {
+        runCatching { providerDao.loadThinkingRules(instanceId).map { it.id } }.getOrDefault(emptyList())
+    }
+
+    /** First model id served by [instanceId], for the resolution-trace sample. Null if none. */
+    fun firstModelId(instanceId: String): String? {
+        ensureConfigLoaded()
+        return _config.value.modelEntries.firstOrNull { it.providerInstanceId == instanceId }?.model?.id
+    }
+
+    /** Warm the resolver cache with every instance's custom rules (called on config load). */
+    fun loadAllThinkingRulesIntoCache() {
+        runCatching {
+            val rows = runBlocking { providerDao.loadAllThinkingRules() }
+            val byInstance = rows.groupBy { it.providerInstanceId }
+                .mapValues { (_, rs) -> rs.sortedBy { it.sortOrder }.map { ThinkingRuleCoding.toRule(it) } }
+            ThinkingRuleResolver.setAllCustomRules(byInstance)
+        }
+    }
+
+    private fun republishThinkingCache(instanceId: String) {
+        ThinkingRuleResolver.setCustomRules(instanceId, thinkingRules(instanceId))
+    }
+
+    /**
+     * Insert or update a custom rule. [id] null ⇒ new rule minted at the TOP of the
+     * list (position 0) — a rule overriding a built-in is useless below it; existing
+     * rules shift down. A non-null [id] updates in place, preserving position.
+     * Returns the rule id.
+     */
+    fun saveThinkingRule(instanceId: String, rule: ThinkingRule, id: String? = null): String = runBlocking {
+        val existing = providerDao.loadThinkingRules(instanceId).toMutableList()
+        val ruleId = id ?: java.util.UUID.randomUUID().toString()
+        val idx = existing.indexOfFirst { it.id == ruleId }
+        if (idx >= 0) {
+            // Update in place at its current sort_order.
+            existing[idx] = ThinkingRuleCoding.toEntity(rule, ruleId, instanceId, existing[idx].sortOrder)
+        } else {
+            // New rule at the top; everything else shifts down.
+            existing.add(0, ThinkingRuleCoding.toEntity(rule, ruleId, instanceId, 0))
+        }
+        val renumbered = existing.mapIndexed { i, e -> e.copy(sortOrder = i) }
+        providerDao.replaceThinkingRules(instanceId, renumbered)
+        republishThinkingCache(instanceId)
+        ruleId
+    }
+
+    /** Delete a custom rule by id. Hard delete — Android provider config is local-only,
+     *  so there is no sync channel that could resurrect it (no tombstone needed). */
+    fun deleteThinkingRule(instanceId: String, id: String) = runBlocking {
+        providerDao.deleteThinkingRule(id)
+        // Renumber survivors so sort_order stays dense.
+        val survivors = providerDao.loadThinkingRules(instanceId)
+            .sortedBy { it.sortOrder }
+            .mapIndexed { i, e -> e.copy(sortOrder = i) }
+        providerDao.replaceThinkingRules(instanceId, survivors)
+        republishThinkingCache(instanceId)
+    }
+
+    /** Reorder an instance's custom rules to match [orderedIds] (a permutation). */
+    fun reorderThinkingRules(instanceId: String, orderedIds: List<String>) = runBlocking {
+        val byId = providerDao.loadThinkingRules(instanceId).associateBy { it.id }
+        val reordered = orderedIds.mapNotNull { byId[it] }
+            .mapIndexed { i, e -> e.copy(sortOrder = i) }
+        // Keep any id the caller omitted (defensive against a partial list) appended.
+        val omitted = byId.values.filter { it.id !in orderedIds }.map { it }
+        providerDao.replaceThinkingRules(instanceId, reordered + omitted)
+        republishThinkingCache(instanceId)
+    }
+
+    /**
+     * Built-in rules relevant to THIS instance, for the Provider-detail UI. Mirrors iOS
+     * builtInRulesForDisplay: resolve the vendor context from the instance's base URL,
+     * then keep every AllModels-scoped rule (endpoint/provider-type defaults) plus any
+     * ModelPattern rule the provider actually serves a matching model for. An empty
+     * catalog keeps everything (list must not be mysteriously empty before first fetch).
+     */
+    fun builtInThinkingRulesForDisplay(instanceId: String): List<ThinkingRule> {
+        ensureConfigLoaded()
+        val config = _config.value
+        val inst = config.instances.find { it.id == instanceId } ?: return emptyList()
+        val base = (inst.effectiveBaseURL ?: "").lowercase()
+        val ctx = com.openminis.app.provider.thinking.ThinkingResolveContext(
+            modelId = "",
+            supportsReasoning = null,
+            declaredEffortValues = null,
+            level = com.openminis.app.data.model.ThinkingLevel.OFF,
+            maxTokens = 0,
+            isOpenRouter = base.contains("openrouter.ai"),
+            usesUnifiedReasoningEffort = base.contains("volces") || base.contains("ark.") || base.contains("venice.ai"),
+            isMistral = base.contains("mistral.ai"),
+            isDashScope = base.contains("dashscope"),
+            offEffort = null,
+        )
+        val modelIds = config.modelEntries.filter { it.providerInstanceId == instanceId }.map { it.model.id }
+        return ThinkingRuleResolver.builtInRules(ctx).filter { rule ->
+            when (rule.scope) {
+                is ThinkingRule.Scope.AllModels -> true
+                is ThinkingRule.Scope.ModelPattern ->
+                    modelIds.isEmpty() || modelIds.any { rule.scope.matches(it) }
+            }
+        }
+    }
 
     /**
      * Ensure a default Voice INPUT group exists and is bound when the user
@@ -1501,7 +1833,9 @@ class ProviderRepository(private val context: Context) {
     fun shadowVoiceProviders(): List<ShadowVoiceProvider> {
         ensureConfigLoaded()
         val config = _config.value
-        val candidates = config.instances.filter { inst ->
+        // [T-android-reorder-unlocked-mutation] Snapshot first — same
+        // main-thread composition reader as hasFoldedShadowDuplicates.
+        val candidates = config.instances.toList().filter { inst ->
             inst.isEnabled && hasVoiceModels(inst.id) && !isVoiceShadowDisabled(inst.id) &&
                 com.openminis.app.provider.voice.VoiceProviderFactory.supports(inst, loadApiKey(inst.id))
         }
@@ -1541,7 +1875,13 @@ class ProviderRepository(private val context: Context) {
      */
     fun hasFoldedShadowDuplicates(): Boolean {
         val seen = mutableSetOf<String>()
-        for (inst in _config.value.instances) {
+        // [T-android-reorder-unlocked-mutation] Snapshot before iterating.
+        // This runs on the MAIN thread from ProviderListScreen's composition,
+        // so taking configLock here would block the UI behind a DB write.
+        // toList() copies under no contention and removes the CME risk
+        // outright — the writer's structural edits can no longer be observed
+        // mid-iteration.
+        for (inst in _config.value.instances.toList()) {
             if (!inst.isEnabled || !hasVoiceModels(inst.id)) continue
             val key = normalizedShadowKey(inst.customBaseURL)
             if (key.isEmpty()) continue

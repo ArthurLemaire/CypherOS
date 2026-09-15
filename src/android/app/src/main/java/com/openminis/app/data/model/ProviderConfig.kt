@@ -204,6 +204,28 @@ data class ProviderInstance(
      */
     val supportsAzureMode: Boolean
         get() = providerType == ProviderType.openAI && credentialType == ProviderCredential.apiKey
+
+    /**
+     * [T-android-thinking-rules-phase2 / parity with iOS 93eb4090] Whether custom
+     * thinking rules are meaningful for this instance, i.e. its requests actually run
+     * through the Chat Completions path that consults [ThinkingRuleResolver].
+     *
+     * Anthropic and Gemini use their own thinking emitters and never read the rule
+     * registry. An OpenAI instance in Responses mode (useResponsesAPI) builds its
+     * `reasoning` inline, and a Codex-shaped OAuth instance (oauth, no custom base)
+     * resolves to the Responses backend — neither consults user rules. So on all of
+     * those the UI must show an explanatory notice, NOT an interactive list that
+     * promises behaviour the request path ignores.
+     */
+    val supportsCustomThinkingRules: Boolean
+        get() = when (providerType) {
+            ProviderType.anthropic, ProviderType.gemini -> false
+            else -> {
+                val codexOAuth = credentialType == ProviderCredential.oauth &&
+                    customBaseURL.isNullOrBlank()
+                !useResponsesAPI && !codexOAuth
+            }
+        }
 }
 
 @Serializable
@@ -281,6 +303,12 @@ data class ProviderConfig(
     // declared defaults), so adding them is downgrade/round-trip safe.
     var voiceInputGroupId: String? = null,
     var voiceOutputGroupId: String? = null,
+    // [T-android-vision-group / GH#182] Vision Group binding — the group whose
+    // vision-capable members read images on behalf of a main model that cannot
+    // see pixels. Per-device pointer at an ordinary ModelGroup, mirroring
+    // voiceInputGroupId (meta KV row, not synced CRDT member maps). Absent in
+    // old persisted JSON → deserializes to null (ignoreUnknownKeys + default).
+    var visionGroupId: String? = null,
     // Models and groups exposed to the agent loop (minis-model-use terminal
     // command) — mirrors iOS agentLoopModelEntryIds / agentLoopGroupIds.
     val agentLoopModelEntryIds: MutableList<String> = mutableListOf(),

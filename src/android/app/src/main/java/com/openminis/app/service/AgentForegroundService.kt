@@ -661,7 +661,25 @@ class AgentForegroundService : Service() {
     }
 
     private fun buildNotification(sessionCount: Int, toolStatus: String): Notification {
-        val elapsedMs = SystemClock.elapsedRealtime() - startTimeMs
+        // [T-android-live-update-completed] The service outlives the task: it
+        // stays alive while the user is merely *present* in a chat (see
+        // SessionActivityTracker.shouldRunService), so after the agent finishes
+        // the ongoing notification / Live Update chip remains on screen. Anchor
+        // the elapsed time to the task's finish moment when there is one, so the
+        // timer freezes at the real run duration instead of counting service
+        // uptime forever — the reported bug was a completed task whose dynamic
+        // island kept ticking as though it were still running.
+        val finishedAtMs = SessionActivityTracker.lastTaskFinishedAtMs.value
+        val isCompleted = finishedAtMs != null && SessionActivityTracker.activeSessions.value.isEmpty()
+        val endMs = if (isCompleted) finishedAtMs!! else SystemClock.elapsedRealtime()
+        // Anchor to the current run's start, not the service's. The service is
+        // created once per presence window and outlives individual tasks, so
+        // startTimeMs would report "time spent in this chat" — and a second task
+        // in the same sitting would show a duration that already included the
+        // first. Fall back to startTimeMs for the presence-only case (user in a
+        // chat having never run anything), where no run anchor exists.
+        val anchorMs = SessionActivityTracker.currentRunStartedAtMs.value ?: startTimeMs
+        val elapsedMs = (endMs - anchorMs).coerceAtLeast(0L)
         val elapsedSeconds = (elapsedMs / 1000).toInt()
         val minutes = elapsedSeconds / 60
         val seconds = elapsedSeconds % 60
@@ -700,14 +718,24 @@ class AgentForegroundService : Service() {
         val toolName = SessionActivityTracker.currentToolName.value
         val isToolRunning = SessionActivityTracker.isToolRunning.value
 
-        val titleText = if (toolName != null) {
-            toolDisplayLabel(toolName)
-        } else {
-            getString(R.string.bg_service_notification_title)
+        // [T-android-live-update-completed] In the completed resting state the
+        // title/status must stop describing work in progress. `toolName` is
+        // already null by then (setInactive clears it), so the old code fell
+        // through to the generic "Minis is running" title while the icon fell
+        // through to the wrench (toolSmallIconRes' else branch) — a finished
+        // task rendered exactly like a running one.
+        val titleText = when {
+            isCompleted -> getString(R.string.bg_service_notification_title_completed)
+            toolName != null -> toolDisplayLabel(toolName)
+            else -> getString(R.string.bg_service_notification_title)
         }
-        val collapsedText = getString(
-            R.string.bg_service_notification_text, sessionLabel, toolStatus, timeString,
-        )
+        val collapsedText = if (isCompleted) {
+            getString(R.string.bg_service_notification_text_completed, sessionLabel, timeString)
+        } else {
+            getString(
+                R.string.bg_service_notification_text, sessionLabel, toolStatus, timeString,
+            )
+        }
 
         // [T-android-dynamic-island] Short critical text — the ~7-char glyph
         // the system shows on the always-on / compact chip. Available since
@@ -725,8 +753,17 @@ class AgentForegroundService : Service() {
         // promoted-notification contract requires is satisfied here: ongoing,
         // a contentTitle, a supported style (ProgressStyle), NOT a group
         // summary, NOT colorized, and the channel importance is LOW (not MIN).
-        val dynamicIslandUserEnabled = (applicationContext as? MinisApp)
-            ?.backgroundSettingsRepository?.dynamicIslandEnabled?.value == true
+        // [T-android-safemode-lateinit-crash-147] `?.` protects against a null
+        // Application, NOT against an uninitialized lateinit — the safe call
+        // succeeds and then the GETTER throws
+        // UninitializedPropertyAccessException. This service can be restarted
+        // by the system with no Activity, so it can observe a MinisApp whose
+        // onCreate early-returned under safe-mode. Gate on subsystemsReady()
+        // first; a notification built without the dynamic-island style is a
+        // cosmetic downgrade, a crash here kills the FGS mid-task.
+        val minisApp = (applicationContext as? MinisApp)?.takeIf { it.subsystemsReady() }
+        val dynamicIslandUserEnabled =
+            minisApp?.backgroundSettingsRepository?.dynamicIslandEnabled?.value == true
         val dynamicIslandOn = DynamicIslandSupport.isDynamicIslandActive(
             this,
             dynamicIslandUserEnabled,
@@ -736,7 +773,7 @@ class AgentForegroundService : Service() {
                 titleText = titleText,
                 collapsedText = collapsedText,
                 shortCritical = shortCritical,
-                smallIcon = toolSmallIconRes(toolName),
+                smallIcon = smallIconRes(toolName, isCompleted),
                 isToolRunning = isToolRunning,
                 contentIntent = pendingIntent,
                 stopIntent = stopPendingIntent,
@@ -744,7 +781,7 @@ class AgentForegroundService : Service() {
         }
 
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(toolSmallIconRes(toolName))
+            .setSmallIcon(smallIconRes(toolName, isCompleted))
             .setContentTitle(titleText)
             .setContentText(collapsedText)
             .setStyle(NotificationCompat.BigTextStyle().bigText(collapsedText))
@@ -888,6 +925,15 @@ class AgentForegroundService : Service() {
      * vector drawables. The default (`ic_menu_manage`) preserves the
      * pre-T pixel-identical look for idle / between-turn rebuilds.
      */
+    /**
+     * [T-android-live-update-completed] Small icon for the ongoing notification.
+     * Once the task has finished, show a checkmark instead of a tool glyph — the
+     * icon is the most glanceable part of the Live Update chip, and leaving the
+     * generic wrench there made a completed task read as still-running.
+     */
+    private fun smallIconRes(toolName: String?, isCompleted: Boolean): Int =
+        if (isCompleted) R.drawable.ic_notification_completed else toolSmallIconRes(toolName)
+
     private fun toolSmallIconRes(toolName: String?): Int = when (toolName) {
         "shell_execute" -> android.R.drawable.ic_menu_edit
         "file_read", "read_image" -> android.R.drawable.ic_menu_view

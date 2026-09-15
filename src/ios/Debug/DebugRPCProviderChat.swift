@@ -689,6 +689,158 @@ enum DebugRPCProvider {
             .replacingOccurrences(of: "_", with: " ")
             .capitalized
     }
+
+    // MARK: - Thinking rules (Phase 2 §3 verification surface)
+    //
+    // [T-thinking-rules-phase2] These call the SAME ProviderConfigStore API the UI calls
+    // (saveThinkingRule / deleteThinkingRule / thinkingRules), so a rule created here goes
+    // through the real persistence path, the real cache refresh, and the real resolver.
+    // They exist because `debug.tap` cannot activate controls inside the sheet-hosted Form
+    // the editor lives in, which left the end-to-end path unverifiable on device. This is
+    // NOT a bypass of the application layer — writing the SQLite file directly would have
+    // been that, and was rejected (the new table lives in the WAL, so a file-level write
+    // would split the DB and risk the user's real provider config).
+    //
+    // DEBUG-only, like every other method in this file.
+
+    static func thinkingRulesList(params: [String: Any]) async throws -> [String: Any] {
+        let instanceId = try require(params["instanceId"] as? String, "instanceId")
+        let rules = await ProviderConfigStore.shared.thinkingRules(for: instanceId)
+        let builtIns = ThinkingRuleResolver.builtInRulesForDisplay(instanceId: instanceId)
+        return [
+            "instanceId": instanceId,
+            "custom": rules.map(describeRule),
+            "builtIn": builtIns.map(describeRule),
+        ]
+    }
+
+    /// Create or update ONE user rule. `wireFormat` accepts the same encoded shape the
+    /// persistence layer stores, so this exercises the real coder too.
+    static func thinkingRulesAdd(params: [String: Any]) async throws -> [String: Any] {
+        let instanceId = try require(params["instanceId"] as? String, "instanceId")
+        let label = try require(params["label"] as? String, "label")
+        let fmtObj = try require(params["wireFormat"] as? [String: Any], "wireFormat")
+        guard let fmt = ThinkingWireFormat.fromPersistedJSON(fmtObj) else {
+            throw DebugRPCErr(-32602, "Unrecognized wireFormat: \(fmtObj)")
+        }
+        let scope: ThinkingRule.Scope = {
+            if let pattern = params["pattern"] as? String, !pattern.isEmpty {
+                return .modelPattern(pattern)
+            }
+            return .allModels
+        }()
+        let rule = ThinkingRule(
+            kind: .custom, scope: scope, wireFormat: fmt,
+            label: label, id: params["id"] as? String
+        )
+        let order = (params["sortOrder"] as? Int) ?? 0
+        let ok = await ProviderConfigStore.shared.saveThinkingRule(rule, instanceId: instanceId, sortOrder: order)
+        return ["ok": ok, "id": rule.id, "instanceId": instanceId]
+    }
+
+    static func thinkingRulesDelete(params: [String: Any]) async throws -> [String: Any] {
+        let instanceId = try require(params["instanceId"] as? String, "instanceId")
+        let id = try require(params["id"] as? String, "id")
+        let ok = await ProviderConfigStore.shared.deleteThinkingRule(id: id, instanceId: instanceId)
+        return ["ok": ok, "id": id]
+    }
+
+    /// Resolve a (model, level) pair through the REAL resolver, including whatever user
+    /// rules are currently stored, and return both the emitted body and the trace. This is
+    /// what makes "did my rule actually take effect" answerable without sending a request.
+    static func thinkingRulesResolve(params: [String: Any]) async throws -> [String: Any] {
+        let instanceId = try require(params["instanceId"] as? String, "instanceId")
+        let modelId = try require(params["modelId"] as? String, "modelId")
+        let levelRaw = (params["level"] as? String) ?? "high"
+        let level = ThinkingLevel(rawValue: levelRaw) ?? .high
+        // ProviderConfigStore is @MainActor — reading it off the main actor traps at
+        // runtime and takes the app down with it. Hop once and carry out plain values.
+        // [T-thinking-vision-diag] `authoritative` added to the carried-out values. Without
+        // it this RPC could not reproduce the off-tier guard at all — it always resolved
+        // with the flag defaulted to false, so the one path that took three rounds to get
+        // right was the one path this diagnostic could not show.
+        let resolved: (base: String, supportsReasoning: Bool?, effortValues: [String]?,
+                       noEffortTiers: Bool, authoritative: Bool)? =
+            await MainActor.run {
+                let store = ProviderConfigStore.shared
+                guard let instance = store.instance(for: instanceId) else { return nil }
+                let entry = store.entries(for: instanceId).first { $0.baseModel.id == modelId }
+                return (instance.effectiveCustomBaseURL?.lowercased() ?? "",
+                        entry?.model.supportsReasoning,
+                        entry?.model.reasoningEffortValues,
+                        entry?.model.declaresNoEffortTiers ?? false,
+                        entry?.model.effortDeclarationIsAuthoritative ?? false)
+            }
+        guard let resolved else {
+            throw DebugRPCErr(-32602, "Unknown instanceId: \(instanceId)")
+        }
+        let base = resolved.base
+
+        var body: [String: Any] = [:]
+        let ctx = ThinkingResolveContext(
+            modelId: modelId,
+            supportsReasoning: resolved.supportsReasoning ?? true,
+            declaredEffortValues: resolved.effortValues,
+            declaresNoEffortTiers: resolved.noEffortTiers,
+            effortDeclarationIsAuthoritative: resolved.authoritative,
+            isXAI: base.contains("api.x.ai") || base.contains("//x.ai"),
+            level: level,
+            maxTokens: (params["maxTokens"] as? Int) ?? 8192,
+            isOpenRouter: base.contains("openrouter.ai"),
+            usesUnifiedReasoningEffort: base.contains("volces") || base.contains("ark.") || base.contains("api.venice.ai"),
+            isMistral: base.contains("mistral.ai"),
+            offEffort: params["offEffort"] as? String,
+            // Read through the same cache the request path reads.
+            userRules: ThinkingRuleCache.shared.rules(for: instanceId)
+        )
+        let trace = ThinkingRuleResolver.apply(to: &body, ctx: ctx)
+        return [
+            "modelId": modelId,
+            "level": level.rawValue,
+            "body": body,
+            "trace": [
+                "rule": trace.matchedRuleLabel,
+                "kind": "\(trace.matchedRuleKind)",
+                "source": trace.formatSource,
+                "emittedKeys": trace.emittedKeys.sorted(),
+                // [T-thinking-vision-diag] Which gates intervened, and on what class of
+                // evidence. An empty array is a positive answer, not missing data: it
+                // means nothing overrode the matched rule.
+                "gates": trace.gateEvents.map {
+                    ["id": $0.id, "evidence": $0.evidence.rawValue, "verdict": $0.verdict]
+                },
+            ] as [String: Any],
+            // [T-thinking-vision-diag] The inputs the decision turned on, echoed back so a
+            // surprising verdict can be explained from one call instead of cross-checking
+            // the catalog by hand.
+            "inputs": [
+                "supportsReasoning": resolved.supportsReasoning as Any,
+                "declaredEffortValues": resolved.effortValues as Any,
+                "declaresNoEffortTiers": resolved.noEffortTiers,
+                "effortDeclarationIsAuthoritative": resolved.authoritative,
+                "offEffort": (params["offEffort"] as? String) as Any,
+                "endpoint": [
+                    "isOpenRouter": base.contains("openrouter.ai"),
+                    "usesUnifiedReasoningEffort": base.contains("volces") || base.contains("ark.") || base.contains("api.venice.ai"),
+                    "isMistral": base.contains("mistral.ai"),
+                    "isXAI": base.contains("api.x.ai") || base.contains("//x.ai"),
+                ] as [String: Any],
+                "userRuleCount": ThinkingRuleCache.shared.rules(for: instanceId).count,
+            ] as [String: Any],
+        ]
+    }
+
+    private static func describeRule(_ r: ThinkingRule) -> [String: Any] {
+        [
+            "id": r.id,
+            "label": r.label,
+            "kind": "\(r.kind)",
+            "scope": r.scope.persistedKind,
+            "pattern": (r.scope.persistedPattern as Any?) ?? NSNull(),
+            "wireFormat": r.wireFormat?.persistedJSON as Any? ?? NSNull(),
+            "editable": r.isEditable,
+        ]
+    }
 }
 
 // MARK: - Chat Methods
@@ -1189,6 +1341,180 @@ enum DebugRPCChat {
         return ["sessionId": id, "deleted": true]
     }
 
+    // MARK: - Folders (test/automation API)
+
+    /// List folders with member counts and last member activity, so tests can
+    /// assert grouping/ordering without scraping the UI.
+    static func foldersList(params: [String: Any]) async throws -> [String: Any] {
+        let folders = await ChatStore.shared.listFolders()
+        let activity = await ChatStore.shared.folderLastActivity()
+        var rows: [[String: Any]] = []
+        for f in folders {
+            let memberIds = await ChatStore.shared.sessionIdsInFolder(f.id)
+            rows.append([
+                "id": f.id,
+                "name": f.name,
+                "origin": f.origin,
+                "pinned": f.isPinned,
+                // [T-folder-rename-desc-wipe] The auto-grouping description.
+                // Omitted here originally, which made the desc-wipe bug
+                // invisible to every RPC-driven check — the field the feature
+                // is about could not be observed at all.
+                "desc": f.desc ?? NSNull(),
+                "memberCount": memberIds.count,
+                "lastActivity": activity[f.id].map { $0.timeIntervalSince1970 } ?? NSNull(),
+            ])
+        }
+        return ["count": rows.count, "folders": rows]
+    }
+
+    static func foldersCreate(params: [String: Any]) async throws -> [String: Any] {
+        let name = try require(params["name"] as? String, "name")
+        let desc = params["desc"] as? String
+        let folder = await ChatStore.shared.createFolder(name: name, desc: desc)
+        await Self.notifySessionListChanged()
+        return ["id": folder.id, "name": folder.name, "desc": folder.desc ?? NSNull()]
+    }
+
+    /// Move sessions into a folder (or out of any folder when folderId is
+    /// absent). Mirrors the UI's picker apply path 1:1 — same ChatStore calls.
+    static func foldersMove(params: [String: Any]) async throws -> [String: Any] {
+        let ids = try require(params["sessionIds"] as? [String], "sessionIds")
+        let folderId = params["folderId"] as? String
+        await ChatStore.shared.setFolder(folderId, forSessions: ids)
+        await Self.notifySessionListChanged()
+        return ["moved": ids.count, "folderId": folderId ?? NSNull()]
+    }
+
+    /// Dissolve a folder (clear members, delete folder — deletes no session).
+    static func foldersDissolve(params: [String: Any]) async throws -> [String: Any] {
+        let id = try require(params["folderId"] as? String, "folderId")
+        let freed = await ChatStore.shared.dissolveFolder(id)
+        await Self.notifySessionListChanged()
+        return ["folderId": id, "freedSessions": freed.count]
+    }
+
+    /// One folder in full: metadata + member sessions (id/title/category/
+    /// updatedAt), newest first. The inspection counterpart of foldersList.
+    static func foldersGet(params: [String: Any]) async throws -> [String: Any] {
+        let id = try require(params["folderId"] as? String, "folderId")
+        guard let folder = await ChatStore.shared.getFolder(id) else {
+            throw DebugRPCErr(-32602, "Unknown folderId '\(id)'. Use debug.folders.list.")
+        }
+        var members: [[String: Any]] = []
+        for sid in await ChatStore.shared.sessionIdsInFolder(id) {
+            if let sess = await ChatStore.shared.getSession(sid) {
+                members.append([
+                    "id": sess.id,
+                    "title": sess.title ?? NSNull(),
+                    "category": sess.category ?? NSNull(),
+                    "updatedAt": sess.updatedAt.timeIntervalSince1970,
+                ])
+            }
+        }
+        return [
+            "id": folder.id,
+            "name": folder.name,
+            "desc": folder.desc ?? NSNull(),
+            "icon": folder.icon ?? NSNull(),
+            "color": folder.color ?? NSNull(),
+            "origin": folder.origin,
+            "pinned": folder.isPinned,
+            "createdAt": folder.createdAt.timeIntervalSince1970,
+            "updatedAt": folder.updatedAt.timeIntervalSince1970,
+            "memberCount": members.count,
+            "members": members,
+        ]
+    }
+
+    /// Rename a folder (same ChatStore call as the header menu's Rename).
+    static func foldersRename(params: [String: Any]) async throws -> [String: Any] {
+        let id = try require(params["folderId"] as? String, "folderId")
+        let name = try require(params["name"] as? String, "name")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else {
+            throw DebugRPCErr(-32602, "name must be non-empty")
+        }
+        guard await ChatStore.shared.getFolder(id) != nil else {
+            throw DebugRPCErr(-32602, "Unknown folderId '\(id)'. Use debug.folders.list.")
+        }
+        let desc = params["desc"] as? String   // nil = keep, "" = clear
+        await ChatStore.shared.renameFolder(id, name: name, desc: desc)
+        await Self.notifySessionListChanged()
+        return ["folderId": id, "name": name]
+    }
+
+    /// Inject a session badge with a back-dated entry stamp — exercises the
+    /// group-card 24h freshness filter from tests (real paused states need a
+    /// genuine interruption, unreachable headlessly).
+    static func sessionsBadge(params: [String: Any]) async throws -> [String: Any] {
+        let id = try require(params["sessionId"] as? String, "sessionId")
+        let raw = try require(params["state"] as? String, "state")
+        guard let state = SessionBadgeState(rawValue: raw) else {
+            throw DebugRPCErr(-32602, "Unknown state '\(raw)'. Known: paused, iCloudSyncing, unread")
+        }
+        let ageHours = (params["ageHours"] as? Double) ?? 0
+        let enteredAt = Date().addingTimeInterval(-ageHours * 3600)
+        await MainActor.run {
+            SessionBadgeStore.shared.debugSetBadge(state, for: id, enteredAt: enteredAt)
+        }
+        await Self.notifySessionListChanged()
+        return ["sessionId": id, "state": raw, "ageHours": ageHours]
+    }
+
+    /// Set the app's Theme override (mirrors Settings → Appearance → Theme:
+    /// 0 system / 1 light / 2 dark) — test hook so appearance-dependent
+    /// rendering (e.g. dark-mode color sampling) can be driven headlessly.
+    static func appearanceSet(params: [String: Any]) async throws -> [String: Any] {
+        let mode = try require(params["mode"] as? Int, "mode")
+        guard (0...2).contains(mode) else { throw DebugRPCErr(-32602, "mode must be 0(system)/1(light)/2(dark)") }
+        await MainActor.run {
+            UserDefaults.standard.set(mode, forKey: "appearanceMode")
+            for scene in UIApplication.shared.connectedScenes {
+                guard let ws = scene as? UIWindowScene else { continue }
+                for window in ws.windows {
+                    window.overrideUserInterfaceStyle = mode == 1 ? .light : mode == 2 ? .dark : .unspecified
+                }
+            }
+        }
+        return ["mode": mode]
+    }
+
+    /// Toggle a SESSION's pin (same ChatStore call as the row menu) — test
+    /// hook for pin-related list states the tap synthesizer can't reach.
+    static func sessionsPin(params: [String: Any]) async throws -> [String: Any] {
+        let id = try require(params["sessionId"] as? String, "sessionId")
+        let pinned = await ChatStore.shared.toggleSessionPin(id)
+        await Self.notifySessionListChanged()
+        return ["sessionId": id, "pinned": pinned]
+    }
+
+    /// Toggle a folder's pin (same ChatStore call as the header menu).
+    static func foldersPin(params: [String: Any]) async throws -> [String: Any] {
+        let id = try require(params["folderId"] as? String, "folderId")
+        let pinned = await ChatStore.shared.toggleFolderPin(id)
+        await Self.notifySessionListChanged()
+        return ["folderId": id, "pinned": pinned]
+    }
+
+    /// Toggle the auto-grouping setting (Settings → Appearance → Grouping)
+    /// for tests — the toggle lives in a sheet the tap synthesizer can't
+    /// reach, and title-generation reads this defaults key directly.
+    static func foldersSetAutoGrouping(params: [String: Any]) async throws -> [String: Any] {
+        let enabled = try require(params["enabled"] as? Bool, "enabled")
+        UserDefaults.standard.set(enabled, forKey: "autoGroupingEnabled")
+        return ["enabled": enabled]
+    }
+
+    /// Kick the sidebar's existing external-mutation refresh channel — the
+    /// same notification cloud-sync fetch uses — so an RPC mutation shows up
+    /// without waiting for an unrelated refresh trigger.
+    private static func notifySessionListChanged() async {
+        await MainActor.run {
+            NotificationCenter.default.post(name: .cloudSyncDidFetchChanges, object: nil)
+        }
+    }
+
     // MARK: - Compact (test/automation API)
 
     /// List all compact markers on a session, oldest → newest. Includes the
@@ -1323,7 +1649,18 @@ enum DebugRPCChat {
             throw DebugRPCErr(-32602, "Session not found: \(sid)")
         }
 
-        let (markdown, blockCount) = buildSyntheticMarkdown(targetChars: charCount, blockChars: blockChars)
+        // [T-ios-render-collapse-ca-limit] Optional verbatim text. Without it
+        // this RPC can only inject generated lorem-ipsum, which cannot
+        // reproduce a bug that depends on the USER's actual content (CJK line
+        // breaking, LaTeX display blocks whose async render grows the cell,
+        // real table widths). Passing `text` replays a captured conversation
+        // exactly; omitting it keeps the original synthetic behaviour.
+        let (markdown, blockCount): (String, Int) = {
+            if let verbatim = params["text"] as? String, !verbatim.isEmpty {
+                return (verbatim, verbatim.components(separatedBy: "\n\n").count)
+            }
+            return buildSyntheticMarkdown(targetChars: charCount, blockChars: blockChars)
+        }()
 
         let msgId = UUID().uuidString.lowercased()
         let raw = RawMessage(

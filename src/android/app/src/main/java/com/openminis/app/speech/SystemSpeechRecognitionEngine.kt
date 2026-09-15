@@ -221,6 +221,10 @@ class SystemSpeechRecognitionEngine(private val appContext: Context) : SpeechRec
         degraded = true
     }
 
+    override fun clearDegraded() {
+        degraded = false
+    }
+
     private fun tearDown() {
         try { recognizer?.destroy() } catch (_: Throwable) {}
         recognizer = null

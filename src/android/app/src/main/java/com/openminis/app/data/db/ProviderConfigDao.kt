@@ -73,4 +73,33 @@ interface ProviderConfigDao {
 
     @Query("SELECT COUNT(*) FROM provider_instances")
     suspend fun instanceCount(): Int
+
+    // ---- [T-android-thinking-rules-phase2] Custom thinking rules ----
+    //
+    // Deliberately NOT touched by replaceAll(): thinking rules are per-instance user
+    // data that is orthogonal to the config snapshot round-trip. They are cleaned up
+    // only when their owning instance is deleted (see deleteThinkingRulesForInstance,
+    // called from ProviderRepository.deleteInstance).
+
+    @Query("SELECT * FROM provider_thinking_rules WHERE provider_instance_id = :instanceId ORDER BY sort_order ASC")
+    suspend fun loadThinkingRules(instanceId: String): List<ProviderThinkingRuleEntity>
+
+    @Query("SELECT * FROM provider_thinking_rules ORDER BY provider_instance_id, sort_order ASC")
+    suspend fun loadAllThinkingRules(): List<ProviderThinkingRuleEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertThinkingRule(row: ProviderThinkingRuleEntity)
+
+    @Query("DELETE FROM provider_thinking_rules WHERE id = :id")
+    suspend fun deleteThinkingRule(id: String)
+
+    @Query("DELETE FROM provider_thinking_rules WHERE provider_instance_id = :instanceId")
+    suspend fun deleteThinkingRulesForInstance(instanceId: String)
+
+    /** Atomic reorder/replace of an instance's whole rule set (drag-reorder + add/edit). */
+    @Transaction
+    suspend fun replaceThinkingRules(instanceId: String, rows: List<ProviderThinkingRuleEntity>) {
+        deleteThinkingRulesForInstance(instanceId)
+        for (r in rows) upsertThinkingRule(r)
+    }
 }

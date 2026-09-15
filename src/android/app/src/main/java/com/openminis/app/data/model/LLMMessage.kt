@@ -51,6 +51,17 @@ data class LLMMessage(
          * persisted history that round-trips through new code stays valid.
          */
         val linuxPath: String? = null,
+        /**
+         * [T-android-vision-group / GH#182] Text a provider substitutes for the
+         * pixels when the target model has NO native image input (the T264
+         * placeholder path). Seeded by ChatViewModel ONLY when a Vision Group is
+         * configured: it names the image path and instructs the model to call
+         * read_image, so a text-only model routes the image through the Vision
+         * Group instead of being told "I can't see it". Null → provider emits its
+         * default "does not support vision input" literal (current behaviour when
+         * no Vision Group is set).
+         */
+        val noVisionPlaceholder: String? = null,
     )
 
     /** Mirrors iOS `LLMMessage.AudioAttachment` (GH#67). */

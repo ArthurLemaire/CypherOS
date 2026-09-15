@@ -62,7 +62,13 @@ object VoiceCorrection {
 
         recorder = VoiceCorrectionRecorder(app, database, segment)
 
-        val repository = (app as? MinisApp)?.providerRepository
+        // [T-android-safemode-lateinit-crash-147] subsystemsReady() first: the
+        // safe call only rules out a null Application, while the lateinit
+        // getter itself throws when onCreate early-returned under safe-mode.
+        // Null here already degrades gracefully (correction is skipped).
+        val repository = (app as? MinisApp)
+            ?.takeIf { it.subsystemsReady() }
+            ?.providerRepository
         if (repository != null) {
             engine = VoiceCorrectionEngine(
                 sources = listOf(
