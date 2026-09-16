@@ -450,7 +450,20 @@ object PRootKernel {
             else -> {
                 val granted = context.checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) ==
                     android.content.pm.PackageManager.PERMISSION_GRANTED
-                "sdk=$sdk legacyStorageGranted=$granted legacyExtStorageOptIn=${Environment.isExternalStorageLegacy()}"
+                // Issue #118: Environment.isExternalStorageLegacy() is API 29.
+                // This branch covers everything below R (30), so on our minSdk
+                // 26..28 floor the unguarded call was a hard NoSuchMethodError —
+                // and because it sits on the boot path it killed the process in
+                // Application.onCreate, ~250ms restart loop, before any user data
+                // was touched (hence "clear app data" not helping). Below 29 the
+                // scoped-storage opt-out doesn't exist as a concept: storage is
+                // unconditionally legacy, so report that statically.
+                val legacyOptIn = if (sdk >= Build.VERSION_CODES.Q) {
+                    Environment.isExternalStorageLegacy().toString()
+                } else {
+                    "n/a(pre-Q)"
+                }
+                "sdk=$sdk legacyStorageGranted=$granted legacyExtStorageOptIn=$legacyOptIn"
             }
         }
     }

@@ -367,10 +367,25 @@ static int cmd_messages(int argc, char **argv, int stdout_fd, int stderr_fd,
     if (offset < 0) offset = 0;
     BOOL full = noff_has_flag(argc, argv, "--full");
 
+    // [T-sessions-cli-messages-date-filter] (GH#200) HELP_TEXT documents
+    // --start/--end as "(messages only)", but this command never parsed them:
+    // they were accepted, ignored, and the full session came back from offset
+    // 0. Parsed here exactly as cmd_list/cmd_search do, including the
+    // end-of-day adjustment that makes --end inclusive of its whole day.
+    NSDate *startDate = parse_date_arg(argc, argv, "--start");
+    NSDate *endDate = parse_date_arg(argc, argv, "--end");
+    if (endDate) {
+        NSCalendar *cal = [NSCalendar currentCalendar];
+        endDate = [[cal dateByAddingUnit:NSCalendarUnitDay value:1 toDate:endDate options:0]
+                   dateByAddingTimeInterval:-1];
+    }
+
     NSDictionary *data = [SessionsOffloadBridge loadMessagesWithSessionId:sessionId
                                                                   offset:offset
                                                                    limit:limit
-                                                                    full:full];
+                                                                    full:full
+                                                               startDate:startDate
+                                                                 endDate:endDate];
 
     NSDictionary *result = noff_json_envelope(TOOL_NAME, @"messages", data);
     noff_emit_json(stdout_fd, result, compact, quiet);

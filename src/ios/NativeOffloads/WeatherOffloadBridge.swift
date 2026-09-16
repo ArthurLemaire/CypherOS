@@ -98,6 +98,50 @@ import CoreLocation
                 }
                 result["daily"] = daily
 
+                // [T-weather-minute-precip] Minute-by-minute precipitation for
+                // the next hour — the "is it about to rain?" dataset.
+                //
+                // `minuteForecast` is OPTIONAL for two independent reasons, and
+                // both are reported rather than silently emitted as an empty
+                // array: WeatherKit only produces it where minute data exists
+                // (broadly: US/UK/Ireland and a few others — notably NOT
+                // mainland China), and it also disappears when there is simply
+                // no precipitation expected. Callers get `available: false`
+                // plus a reason instead of an empty list they'd misread as
+                // "definitely no rain".
+                if let minute = weather.minuteForecast {
+                    var minutes: [[String: Any]] = []
+                    for entry in minute.forecast {
+                        minutes.append([
+                            "date": ISO8601DateFormatter().string(from: entry.date),
+                            "minute": timeFormatter.string(from: entry.date),
+                            // Probability 0…1 that precipitation falls in this minute.
+                            "precip_chance": entry.precipitationChance,
+                            // Intensity in mm/hr; 0 when nothing is falling.
+                            // WeatherKit types rainfall rate as UnitSpeed (a
+                            // length over time), so convert to m/s and scale to
+                            // millimetres per hour: m/s × 1000 mm/m × 3600 s/h.
+                            "precip_intensity_mmh": entry.precipitationIntensity
+                                .converted(to: .metersPerSecond).value * 3_600_000,
+                        ])
+                    }
+                    result["minute"] = [
+                        "available": true,
+                        "summary": minute.summary.description,
+                        "minutes": minutes,
+                    ] as [String: Any]
+                } else {
+                    result["minute"] = [
+                        "available": false,
+                        "reason": "WeatherKit has no minute-by-minute precipitation for this "
+                                + "location right now. Minute data covers only some regions "
+                                + "(not mainland China), and is also omitted when no "
+                                + "precipitation is expected. Use `hourly` for precipitation "
+                                + "chance by hour.",
+                        "minutes": [] as [[String: Any]],
+                    ] as [String: Any]
+                }
+
                 // Weather alerts
                 if let alerts = weather.weatherAlerts {
                     var alertList: [[String: Any]] = []

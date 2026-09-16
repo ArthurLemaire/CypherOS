@@ -28,7 +28,8 @@ static NSString *const HELP_TEXT =
      "\n"
      "OPTIONS:\n"
      "  --text <text>     Text to write (for 'set' command)\n"
-     "  --image <path>    Save clipboard image to <path> (for 'get' command)\n"
+     "  --image <path>    get: save clipboard image to <path>\n"
+     "                    set: copy the image file at <path> to the clipboard\n"
      "  --help, -h        Show this help message\n"
      "  --compact         Minimize JSON output\n"
      "  -q, --quiet       Output only data field\n"
@@ -37,6 +38,7 @@ static NSString *const HELP_TEXT =
      "  apple-clipboard                 (same as: apple-clipboard get)\n"
      "  apple-clipboard get --image /var/minis/attachments/clipboard_image.png\n"
      "  apple-clipboard set --text \"Hello World\"\n"
+     "  apple-clipboard set --image /var/minis/attachments/chart.png\n"
      "  echo \"piped text\" | apple-clipboard set\n"
      "  apple-clipboard clear\n"
      "  apple-clipboard status\n";
@@ -108,9 +110,104 @@ static int cmd_get(int argc, char **argv, int stdout_fd, BOOL compact, BOOL quie
     return NOFF_EXIT_SUCCESS;
 }
 
+/// Detect the pasteboard UTI for raw image bytes by magic number. Returns nil
+/// for formats we don't recognize (caller falls back to PNG re-encode).
+static NSString *noff_image_uti(NSData *data) {
+    if (data.length < 12) return nil;
+    const unsigned char *b = data.bytes;
+    if (b[0] == 0x89 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G') return @"public.png";
+    if (b[0] == 0xFF && b[1] == 0xD8 && b[2] == 0xFF) return @"public.jpeg";
+    if (memcmp(b, "GIF8", 4) == 0) return @"com.compuserve.gif";
+    return nil;
+}
+
+static int cmd_set_image(NSString *imagePath, NSString *text, int stdout_fd,
+                          BOOL compact, BOOL quiet) {
+    NSString *hostPath = noff_resolve_host_path(imagePath);
+    // Attempt the read directly instead of a fileExistsAtPath pre-check —
+    // this handler executes on an iSH emulation thread, and the read is the
+    // one operation verified to work there (same convention as cmd_get's
+    // write path, which never stats first).
+    NSError *readErr = nil;
+    NSData *raw = hostPath
+        ? [NSData dataWithContentsOfFile:hostPath options:0 error:&readErr]
+        : nil;
+    if (!raw) {
+        NSDictionary *err = noff_json_error(TOOL_NAME, @"set", NOFF_ERR_NO_DATA,
+            [NSString stringWithFormat:@"Cannot read image file %@ (%@)",
+             imagePath, readErr.localizedDescription ?: @"unresolvable path"]);
+        noff_emit_json(stdout_fd, err, compact, quiet);
+        return NOFF_EXIT_INVALID_ARGS;
+    }
+    if (raw.length == 0) {
+        NSDictionary *err = noff_json_error(TOOL_NAME, @"set", NOFF_ERR_NO_DATA,
+            [NSString stringWithFormat:@"Image file is empty: %@", imagePath]);
+        noff_emit_json(stdout_fd, err, compact, quiet);
+        return NOFF_EXIT_INVALID_ARGS;
+    }
+
+    UIImage *decoded = [UIImage imageWithData:raw];
+    NSString *uti = noff_image_uti(raw);
+    NSData *payload = raw;
+    if (!uti) {
+        // Unknown container (HEIC/WebP/BMP/...) — many paste targets only
+        // accept png/jpeg items, so normalize through UIImage → PNG. If even
+        // UIImage can't decode it, this is not an image we can copy.
+        if (!decoded) {
+            NSDictionary *err = noff_json_error(TOOL_NAME, @"set", NOFF_ERR_INVALID_ARGS,
+                [NSString stringWithFormat:@"Not a decodable image (PNG/JPEG/GIF/HEIC/...): %@", imagePath]);
+            noff_emit_json(stdout_fd, err, compact, quiet);
+            return NOFF_EXIT_INVALID_ARGS;
+        }
+        payload = UIImagePNGRepresentation(decoded);
+        if (payload.length == 0) {
+            NSDictionary *err = noff_json_error(TOOL_NAME, @"set", NOFF_ERR_INTERNAL_ERROR,
+                @"Failed to re-encode image as PNG");
+            noff_emit_json(stdout_fd, err, compact, quiet);
+            return NOFF_EXIT_ERROR;
+        }
+        uti = @"public.png";
+    }
+
+    // Single pasteboard item carrying the image bytes under their native UTI
+    // (raw PNG/JPEG/GIF preserved verbatim — GIF keeps animation for targets
+    // that accept com.compuserve.gif). Optional --text rides in the same item
+    // as an additional representation.
+    NSMutableDictionary *item = [NSMutableDictionary dictionary];
+    item[uti] = payload;
+    if (text.length > 0) {
+        item[@"public.utf8-plain-text"] = text;
+    }
+    noff_dispatch_main_sync(^id{
+        [UIPasteboard generalPasteboard].items = @[item];
+        return nil;
+    });
+
+    NSMutableDictionary *data = [NSMutableDictionary dictionary];
+    data[@"image"] = imagePath;
+    data[@"uti"] = uti;
+    data[@"bytes"] = @(payload.length);
+    if (decoded) {
+        data[@"width"] = @((NSInteger)decoded.size.width);
+        data[@"height"] = @((NSInteger)decoded.size.height);
+    }
+    if (text.length > 0) data[@"text"] = text;
+    NSDictionary *result = noff_json_envelope(TOOL_NAME, @"set", data);
+    noff_emit_json(stdout_fd, result, compact, quiet);
+    return NOFF_EXIT_SUCCESS;
+}
+
 static int cmd_set(int argc, char **argv, int stdin_fd, int stdout_fd,
                     int stderr_fd, BOOL compact, BOOL quiet) {
     NSString *text = noff_find_arg(argc, argv, "--text");
+
+    // set --image <path>: copy an image file to the clipboard. --text may
+    // accompany it (both land in one pasteboard item); stdin is NOT consumed
+    // in image mode.
+    NSString *imagePath = noff_find_arg(argc, argv, "--image");
+    if (imagePath) {
+        return cmd_set_image(imagePath, text, stdout_fd, compact, quiet);
+    }
 
     // If no --text, read from stdin
     if (!text) {

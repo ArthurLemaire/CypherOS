@@ -80,6 +80,30 @@ static NSDictionary *get_battery_data(void) {
     return data;
 }
 
+/// Report free space the way Settings → General → iPhone Storage does.
+///
+/// [T-ios-device-storage-purgeable #102] `NSFileSystemFreeSize` is statfs's
+/// `f_bavail`, which counts PURGEABLE space (caches, evictable Photos copies,
+/// re-downloadable content) as UNAVAILABLE. Settings counts it as available, so
+/// on a device with a large purgeable pool the two disagree badly — the reporter
+/// saw ~230 GiB missing.
+///
+/// `NSURLVolumeAvailableCapacityForImportantUsageKey` is Apple's answer: per the
+/// SDK header it is "total available capacity for 'Important' resources,
+/// INCLUDING space expected to be cleared by purging non-essential and cached
+/// resources" — i.e. the Settings number. iOS 11+, and our deployment target is
+/// far above that, so no availability guard is needed.
+///
+/// Deliberate choices:
+///   - `total_bytes` stays on statfs. `NSURLVolumeTotalCapacityKey` is
+///     documented as an `int`-backed NSNumber and overflows on large volumes;
+///     statfs's f_blocks*f_bsize does not.
+///   - The important-usage value is read as `long long` (its documented backing
+///     type), NOT `unsignedLongLongValue` — a negative/sentinel value would wrap
+///     to ~1.8e19 and report an absurd free size.
+///   - On ANY failure we fall back to the old statfs number rather than
+///     emitting 0. Reporting 0 free would read as "device is full" and could
+///     make an agent delete user data. [issue #102 review note]
 static NSDictionary *get_storage_data(void) {
     NSError *error = nil;
     NSDictionary *attrs = [[NSFileManager defaultManager]
@@ -90,8 +114,38 @@ static NSDictionary *get_storage_data(void) {
     }
 
     unsigned long long totalSpace = [attrs[NSFileSystemSize] unsignedLongLongValue];
-    unsigned long long freeSpace = [attrs[NSFileSystemFreeSize] unsignedLongLongValue];
-    unsigned long long usedSpace = totalSpace - freeSpace;
+    // statfs f_bavail — excludes purgeable. Kept as the fallback and reported
+    // alongside so callers can still see the conservative figure.
+    unsigned long long freeExcludingPurgeable = [attrs[NSFileSystemFreeSize] unsignedLongLongValue];
+
+    // Preferred figure: matches Settings.
+    unsigned long long freeSpace = freeExcludingPurgeable;
+    BOOL includesPurgeable = NO;
+    NSURL *homeURL = [NSURL fileURLWithPath:NSHomeDirectory() isDirectory:YES];
+    NSNumber *importantFree = nil;
+    NSError *volErr = nil;
+    if ([homeURL getResourceValue:&importantFree
+                           forKey:NSURLVolumeAvailableCapacityForImportantUsageKey
+                            error:&volErr]
+        && importantFree != nil) {
+        long long v = importantFree.longLongValue;
+        // Guard the documented failure shapes: the key is optional and may come
+        // back nil or non-positive on volumes that can't answer.
+        if (v > 0) {
+            freeSpace = (unsigned long long)v;
+            includesPurgeable = YES;
+        }
+    }
+
+    // used = total - (what the user can actually fill). Derived from the SAME
+    // figure as free_bytes so used/free/usage_percent stay self-consistent;
+    // otherwise usage_percent would keep the old inflated reading.
+    unsigned long long usedSpace = totalSpace > freeSpace ? totalSpace - freeSpace : 0;
+    // Purgeable is the gap between the two measurements. Only meaningful when
+    // the important-usage read succeeded.
+    unsigned long long purgeable = (includesPurgeable && freeSpace > freeExcludingPurgeable)
+        ? freeSpace - freeExcludingPurgeable
+        : 0;
 
     return @{
         @"total_bytes": @(totalSpace),
@@ -101,6 +155,11 @@ static NSDictionary *get_storage_data(void) {
         @"free_gb": @(freeSpace / (1024.0 * 1024.0 * 1024.0)),
         @"used_gb": @(usedSpace / (1024.0 * 1024.0 * 1024.0)),
         @"usage_percent": totalSpace > 0 ? @((double)usedSpace / totalSpace * 100.0) : @(0),
+        // Transparency fields: which measurement is in free_bytes, and the
+        // conservative statfs figure for callers that must not count on purging.
+        @"free_bytes_excluding_purgeable": @(freeExcludingPurgeable),
+        @"purgeable_bytes": @(purgeable),
+        @"free_includes_purgeable": @(includesPurgeable),
     };
 }
 

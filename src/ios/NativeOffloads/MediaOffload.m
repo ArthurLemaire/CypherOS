@@ -106,10 +106,21 @@ static NSDictionary *media_item_to_dict(MPMediaItem *item) {
     return d;
 }
 
-// Build a now-playing info dict from the current player state
+// Build a now-playing info dict from the current player state.
+//
+// [T-media-nowplaying-watchdog] Runs on the CALLING (offload) thread, not the
+// main queue. Reading `nowPlayingItem` deserializes an OPACK payload whose
+// MPMediaLibrary rebuild needs the account DSID, and that lookup does its own
+// dispatch_sync into iTunesCloud. Hopping to the main queue first meant a slow
+// DSID lookup held the main thread past the 10s scene-update watchdog and the
+// app was SIGKILLed (0x8BADF00D, incident 7FAE5E8E: app CPU ~0%, main thread
+// parked in __DISPATCH_WAIT_FOR_QUEUE__ under -[MPMusicPlayerController
+// nowPlayingItem]). MPMusicPlayerController is not a UIKit view and does not
+// require the main thread for these reads, so the hop bought nothing and cost
+// the app's liveness. Blocking here only stalls this one shell command.
 static NSDictionary *now_playing_dict(void) {
-    __block NSDictionary *result = nil;
-    noff_dispatch_main_sync(^id{
+    NSDictionary *result = nil;
+    {
         MPMusicPlayerController *player = [MPMusicPlayerController systemMusicPlayer];
         MPMediaItem *item = player.nowPlayingItem;
 
@@ -143,8 +154,7 @@ static NSDictionary *now_playing_dict(void) {
         d[@"playback_state"] = state;
 
         result = [d copy];
-        return nil;
-    });
+    }
     return result;
 }
 
@@ -155,28 +165,22 @@ static int cmd_now_playing(int argc, char **argv, int stdout_fd, BOOL compact, B
 }
 
 static int cmd_play(int argc, char **argv, int stdout_fd, BOOL compact, BOOL quiet) {
-    noff_dispatch_main_sync(^id{
-        [[MPMusicPlayerController systemMusicPlayer] play];
-        return nil;
-    });
+    [[MPMusicPlayerController systemMusicPlayer] play];
     NSDictionary *data = @{@"status": @"playing"};
     noff_emit_json(stdout_fd, noff_json_envelope(TOOL_NAME, @"play", data), compact, quiet);
     return NOFF_EXIT_SUCCESS;
 }
 
 static int cmd_pause(int argc, char **argv, int stdout_fd, BOOL compact, BOOL quiet) {
-    noff_dispatch_main_sync(^id{
-        [[MPMusicPlayerController systemMusicPlayer] pause];
-        return nil;
-    });
+    [[MPMusicPlayerController systemMusicPlayer] pause];
     NSDictionary *data = @{@"status": @"paused"};
     noff_emit_json(stdout_fd, noff_json_envelope(TOOL_NAME, @"pause", data), compact, quiet);
     return NOFF_EXIT_SUCCESS;
 }
 
 static int cmd_toggle(int argc, char **argv, int stdout_fd, BOOL compact, BOOL quiet) {
-    __block NSString *newState = nil;
-    noff_dispatch_main_sync(^id{
+    NSString *newState = nil;
+    {
         MPMusicPlayerController *player = [MPMusicPlayerController systemMusicPlayer];
         if (player.playbackState == MPMusicPlaybackStatePlaying) {
             [player pause];
@@ -185,23 +189,19 @@ static int cmd_toggle(int argc, char **argv, int stdout_fd, BOOL compact, BOOL q
             [player play];
             newState = @"playing";
         }
-        return nil;
-    });
+    }
     NSDictionary *data = @{@"status": newState};
     noff_emit_json(stdout_fd, noff_json_envelope(TOOL_NAME, @"toggle", data), compact, quiet);
     return NOFF_EXIT_SUCCESS;
 }
 
 static int cmd_next(int argc, char **argv, int stdout_fd, BOOL compact, BOOL quiet) {
-    noff_dispatch_main_sync(^id{
-        [[MPMusicPlayerController systemMusicPlayer] skipToNextItem];
-        return nil;
-    });
+    [[MPMusicPlayerController systemMusicPlayer] skipToNextItem];
     // Brief wait for track to change
     usleep(300000);
 
-    __block NSDictionary *np = nil;
-    noff_dispatch_main_sync(^id{
+    NSDictionary *np = nil;
+    {
         MPMediaItem *item = [MPMusicPlayerController systemMusicPlayer].nowPlayingItem;
         if (item) {
             np = @{
@@ -210,8 +210,7 @@ static int cmd_next(int argc, char **argv, int stdout_fd, BOOL compact, BOOL qui
                 @"album": item.albumTitle ?: [NSNull null],
             };
         }
-        return nil;
-    });
+    }
 
     NSDictionary *data = @{
         @"status": @"next",
@@ -222,15 +221,12 @@ static int cmd_next(int argc, char **argv, int stdout_fd, BOOL compact, BOOL qui
 }
 
 static int cmd_prev(int argc, char **argv, int stdout_fd, BOOL compact, BOOL quiet) {
-    noff_dispatch_main_sync(^id{
-        [[MPMusicPlayerController systemMusicPlayer] skipToPreviousItem];
-        return nil;
-    });
+    [[MPMusicPlayerController systemMusicPlayer] skipToPreviousItem];
     // Brief wait for track to change
     usleep(300000);
 
-    __block NSDictionary *np = nil;
-    noff_dispatch_main_sync(^id{
+    NSDictionary *np = nil;
+    {
         MPMediaItem *item = [MPMusicPlayerController systemMusicPlayer].nowPlayingItem;
         if (item) {
             np = @{
@@ -239,8 +235,7 @@ static int cmd_prev(int argc, char **argv, int stdout_fd, BOOL compact, BOOL qui
                 @"album": item.albumTitle ?: [NSNull null],
             };
         }
-        return nil;
-    });
+    }
 
     NSDictionary *data = @{
         @"status": @"previous",
@@ -258,7 +253,14 @@ static int cmd_volume(int argc, char **argv, int stdout_fd, BOOL compact, BOOL q
         if (newVolume < 0.0f) newVolume = 0.0f;
         if (newVolume > 1.0f) newVolume = 1.0f;
 
-        noff_dispatch_main_sync(^id{
+        // [T-media-nowplaying-watchdog] This is the ONE site in this tool that
+        // legitimately needs the main thread: MPVolumeView is a UIView and
+        // instantiating/walking it off-main is undefined. It is bounded anyway —
+        // building a detached view and poking its slider is pure UIKit with no
+        // IPC, so it cannot block the way nowPlayingItem's DSID lookup did, but
+        // the timeout keeps a wedged main queue from taking the process down.
+        BOOL volTimedOut = NO;
+        noff_dispatch_main_sync_timeout(3.0, &volTimedOut, ^id{
             MPVolumeView *volumeView = [[MPVolumeView alloc] initWithFrame:CGRectZero];
             UISlider *volumeSlider = nil;
             for (UIView *view in volumeView.subviews) {
@@ -273,6 +275,13 @@ static int cmd_volume(int argc, char **argv, int stdout_fd, BOOL compact, BOOL q
             }
             return nil;
         });
+        if (volTimedOut) {
+            NSDictionary *err = noff_json_error(TOOL_NAME, @"volume",
+                                                 NOFF_ERR_INTERNAL_ERROR,
+                                                 @"Timed out waiting for the main thread to apply the volume change.");
+            noff_emit_json(stdout_fd, err, compact, quiet);
+            return NOFF_EXIT_ERROR;
+        }
         // Brief wait for volume change to take effect
         usleep(100000);
     }
@@ -428,18 +437,17 @@ static int cmd_play_search(int argc, char **argv, int stdout_fd, int stderr_fd, 
         return NOFF_EXIT_ERROR;
     }
 
-    noff_dispatch_main_sync(^id{
+    {
         MPMusicPlayerController *player = [MPMusicPlayerController systemMusicPlayer];
         [player setQueueWithQuery:mediaQuery];
         [player play];
-        return nil;
-    });
+    }
 
     // Brief wait for playback to start
     usleep(300000);
 
-    __block NSDictionary *np = nil;
-    noff_dispatch_main_sync(^id{
+    NSDictionary *np = nil;
+    {
         MPMediaItem *item = [MPMusicPlayerController systemMusicPlayer].nowPlayingItem;
         if (item) {
             np = @{
@@ -448,8 +456,7 @@ static int cmd_play_search(int argc, char **argv, int stdout_fd, int stderr_fd, 
                 @"album": item.albumTitle ?: [NSNull null],
             };
         }
-        return nil;
-    });
+    }
 
     NSDictionary *data = @{
         @"status": @"playing",
