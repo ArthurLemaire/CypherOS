@@ -81,8 +81,24 @@
     <string name="bg_section_footer">Lang laufende Agent-Aufgaben brauchen die Erlaubnis, die CPU bei ausgeschaltetem Bildschirm wach zu halten. Ohne diese Einstellungen kann das System die Inferenz nach wenigen Minuten im Hintergrund pausieren.</string>
     <string name="bg_service_channel_name">Agent-Status</string>
     <string name="bg_service_channel_description">Zeigt den Status laufender Agent-Sitzungen an.</string>
+    <string name="a11y_repair_dialog_title">Bedienungshilfe deaktiviert</string>
+    <string name="a11y_repair_dialog_message_shizuku">Minis hat seine Berechtigung für Bedienungshilfen verloren – das passiert nach einem Beenden erzwingen. Shizuku ist verfügbar und kann sie sofort wiederherstellen, ohne die Einstellungen zu öffnen.</string>
+    <string name="a11y_repair_dialog_message_manual">Minis hat seine Berechtigung für Bedienungshilfen verloren – das passiert nach einem Beenden erzwingen. Aktiviere Minis erneut unter Einstellungen → Bedienungshilfen.</string>
+    <string name="a11y_repair_action_repair">Jetzt reparieren</string>
+    <string name="a11y_repair_action_open_settings">Einstellungen öffnen</string>
+    <string name="a11y_repair_cancel">Später</string>
+    <string name="a11y_repair_section_header">Aktion erforderlich</string>
+    <string name="a11y_repair_row_shizuku">Berechtigung reparieren</string>
+    <string name="a11y_repair_row_manual">Bedienungshilfe reaktivieren</string>
+    <string name="a11y_repair_row_sub">Die Berechtigung wurde entzogen, wahrscheinlich durch Beenden erzwingen</string>
+    <string name="a11y_repair_in_progress">Wird repariert…</string>
+    <string name="a11y_repair_failed">Reparatur fehlgeschlagen – bitte in den Einstellungen aktivieren</string>
+    <string name="a11y_repair_footer_shizuku">Android entfernt die Bedienungshilfen-Berechtigung, sobald eine App zwangsweise beendet wird, und stellt sie nicht automatisch wieder her. Shizuku kann sie direkt zurückschreiben.</string>
+    <string name="a11y_repair_footer_manual">Android entfernt die Bedienungshilfen-Berechtigung, sobald eine App zwangsweise beendet wird, und stellt sie nicht automatisch wieder her. Mit Shizuku geht das künftig mit einem Tipp.</string>
     <string name="bg_service_notification_title">Minis Agent aktiv</string>
     <string name="bg_service_notification_text">%1$s | %2$s | %3$s</string>
+    <string name="bg_service_notification_title_completed">Aufgabe abgeschlossen</string>
+    <string name="bg_service_notification_text_completed">%1$s | Abgeschlossen in %2$s</string>
     <string name="bg_service_stop_action">Stopp</string>
     <plurals name="bg_service_sessions">
         <item quantity="one">%d Sitzung</item>
@@ -554,6 +570,12 @@
     <string name="browser_reload">Neu laden</string>
     <string name="browser_minis_browsing">Minis surft</string>
     <string name="chat_typing_indicator">%1$s denkt nach</string>
+    <string name="read_aloud_unavailable">Vorlesen fehlgeschlagen: keine nutzbare Sprachausgabe. Prüfe die Sprachausgabe-Einstellungen oder installiere eine System-Sprachausgabe.</string>
+    <string name="voice_panel_no_engine_title">Keine Spracherkennung verfügbar</string>
+    <string name="voice_panel_no_engine_body">Für die Spracheingabe wird eine Erkennungs-Engine benötigt. Aktiviere den Sprachdienst deines Geräts oder richte in Minis einen Transkriptionsanbieter ein.</string>
+    <string name="voice_panel_no_engine_open_system">Geräteeinstellungen</string>
+    <string name="voice_panel_no_engine_open_providers">Minis-Anbieter</string>
+    <string name="chat_error_stream_dropped_partial">Die Verbindung wurde unterbrochen — diese Antwort ist möglicherweise unvollständig. Zum Fortfahren erneut versuchen.</string>
     <string name="chat_input_placeholder">Nachricht an %1$s (@ um Dateien zu erwähnen)</string>
     <string name="browser_takeover">Übernehmen</string>
     <string name="browser_settings_done">Fertig</string>
@@ -597,11 +619,13 @@
     <string name="provider_list_add_a_provider_to_get_started">Fügen Sie einen KI-Anbieter hinzu, um zu beginnen.</string>
     <string name="provider_list_import_provider">Import Provider</string>
     <string name="share_provider_json_title">Provider-Konfiguration erkannt</string>
+    <string name="share_expired_toast">Geteilter Inhalt ist abgelaufen. Bitte erneut teilen.</string>
     <string name="share_provider_json_message">Diese JSON-Datei sieht wie ein exportierter Provider aus. Was möchtest du tun?</string>
     <string name="share_provider_json_import">Provider importieren</string>
     <string name="share_provider_json_attach">Als Chat-Anhang hinzufügen</string>
     <string name="share_provider_json_imported">Provider \"%1$s\" importiert</string>
     <string name="share_provider_json_import_failed">Ungültige Provider-Konfigurationsdatei</string>
+    <string name="share_open_app_failed">Inhalt gespeichert. Minis konnte nicht automatisch geöffnet werden – bitte öffne die App, um fortzufahren.</string>
     <string name="provider_list_api_key">API Key</string>
     <string name="provider_list_disabled">Deaktiviert</string>
     <string name="provider_detail_export">Exportieren</string>
@@ -816,6 +840,9 @@
     <string name="settings_mount_external_folders_subtitle">Ausgewählte Ordner in /var/minis/mounts/ einbinden</string>
     <string name="mount_folders_title">Eingebundene Ordner</string>
     <string name="mount_folders_info_banner">Ausgewählte Ordner werden in /var/minis/mounts/&lt;name&gt; eingebunden. Es können bis zu 10 Ordner gleichzeitig eingebunden werden.</string>
+    <string name="mount_picker_intro_title">Ordner auswählen</string>
+    <string name="mount_picker_intro_message">Android erlaubt es nicht, den gesamten internen Speicher einzubinden — wählen Sie einen konkreten Ordner darin, etwa Dokumente oder Downloads.\n\nDie nun folgende Dateiauswahl gehört zum System. Zeigt ein Ordner „Ordner kann nicht verwendet werden“, öffnen Sie einen Unterordner oder kehren Sie mit der Zurück-Geste hierher zurück.</string>
+    <string name="mount_picker_intro_continue">Auswählen</string>
     <string name="mount_folders_empty_title">Keine eingebundenen Ordner</string>
     <string name="mount_folders_empty_subtitle">Tippe auf +, um einen Ordner auszuwählen</string>
     <string name="mount_folders_limit_reached">Einbindungslimit erreicht (10)</string>
@@ -935,6 +962,7 @@
     <string name="crash_freq_dialog_message">Minis ist in der letzten Stunde mehrfach abgestürzt. Absturzprotokolle teilen, um das Problem zu beheben?</string>
     <string name="crash_freq_dialog_share">Protokolle teilen</string>
     <string name="crash_freq_dialog_dismiss">Nicht jetzt</string>
+    <string name="crash_safe_mode_restart_needed">Minis muss neu gestartet werden, um die Wiederherstellung abzuschließen. Bitte tippe erneut auf das App-Symbol.</string>
     <string name="crash_freq_email_subject">Minis-Absturzbericht %1$s</string>
     <string name="crash_freq_share_chooser">Absturzprotokolle senden</string>
     <string name="overlay_completion_completed">Abgeschlossen</string>
@@ -1059,4 +1087,10 @@
     <string name="browser_downloads_cancel">Download abbrechen</string>
     <string name="browser_downloads_failed">Fehlgeschlagen</string>
     <string name="browser_downloads_open">Öffnen</string>
+    <string name="shizuku_install_btn_sui">Sui installieren</string>
+    <string name="shizuku_install_btn_sui_subtitle">RikkaApps · für gerootete Geräte (Magisk/KernelSU) · keine App, übersteht Neustarts</string>
+    <string name="shizuku_ready_subtitle_sui">Sui (Root) · Version=%1$d, uid=%2$d</string>
+    <string name="shizuku_grant_footer_sui">Sui läuft. Tippe auf „Minis autorisieren“, um Zugriff zu gewähren — Sui zeigt den Bestätigungsdialog selbst an. Es gibt keine separate Manager-App zum Öffnen.</string>
+    <string name="shizuku_install_footer">Installiere eines von Shizuku (RikkaApps), AXManager (Axeron) oder Sui (RikkaApps) — alle drei nutzen dasselbe Protokoll und sind austauschbar. Shizuku und AXManager sind normale Apps, die per drahtlosem ADB aktiviert werden. Sui ist für bereits gerootete Geräte: Es wird als Magisk/KernelSU-Modul installiert, braucht keine App und bleibt über Neustarts aktiv. Unter KernelSU oder APatch benötigt Sui zusätzlich eine Zygisk-Implementierung (Zygisk Next / ReZygisk / NeoZygisk) — ohne sie wird Sui nicht geladen. Installiere eines und kehre dann hierher zurück.</string>
+    <string name="shizuku_state_not_installed_subtitle">Installiere Shizuku, AXManager oder Sui — eines davon genügt.</string>
 </resources>

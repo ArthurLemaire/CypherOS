@@ -136,6 +136,20 @@ fun ModelGroupsScreen(
                 val newOrder = cur.toMutableList().apply { add(toIdx, removeAt(fromIdx)) }
                 providerRepository.reorderAgentLoopGroups(newOrder)
             }
+            // [T-android-modelgroup-reorder] Third zone: the user's Model
+            // Groups themselves ("日常/编程/翻译"…). NOTE the prefix check
+            // order is safe: "agent_group:" does not start with "group:", so
+            // the zones cannot cross-match.
+            fromKey.startsWith("group:") && toKey.startsWith("group:") -> {
+                val fromId = fromKey.removePrefix("group:")
+                val toId = toKey.removePrefix("group:")
+                val cur = providerRepository.config.value.modelGroups.map { it.id }
+                val fromIdx = cur.indexOf(fromId)
+                val toIdx = cur.indexOf(toId)
+                if (fromIdx < 0 || toIdx < 0) return@rememberReorderableLazyListState
+                val newOrder = cur.toMutableList().apply { add(toIdx, removeAt(fromIdx)) }
+                providerRepository.reorderModelGroups(newOrder)
+            }
         }
     }
 
@@ -197,33 +211,55 @@ fun ModelGroupsScreen(
                     }
                 }
             } else {
-                // T313 — Section 1 (Groups). One LazyColumn item wraps the
-                // whole card; SectionCard + SectionDivider compose normally
-                // because no reorder happens inside this section.
+                // T313 — Section 1 (Groups).
+                //
+                // [T-android-modelgroup-reorder] The section used to be ONE
+                // LazyColumn item wrapping a SectionCard with a forEach inside
+                // — which is exactly why the groups could not be reordered:
+                // ReorderableLazyListState only sees direct LazyColumn items.
+                // Rows are now individual items keyed "group:<id>" with the
+                // per-row cardRow(first/last) treatment, the same composition
+                // the agent-loop section below has used since T186. Swipe-to-
+                // delete and tap-to-open are unchanged; dragging lives on the
+                // explicit leading handle (consistent with AgentLoopRow, and
+                // it keeps clickable/swipe gestures conflict-free).
                 item("groups_section_header") {
                     SectionHeader(text = stringResource(R.string.agent_loop_models_groups))
                 }
-                item("groups_section_card") {
-                    SectionCard {
-                        groups.forEachIndexed { index, group ->
-                            val dismissState = rememberSwipeToDismissBoxState()
-                            LaunchedEffect(dismissState.currentValue) {
-                                if (dismissState.currentValue == SwipeToDismissBoxValue.EndToStart) {
-                                    providerRepository.removeGroup(group.id)
+                itemsIndexed(groups, key = { _, g -> "group:${g.id}" }) { index, group ->
+                    ReorderableItem(
+                        state = reorderState,
+                        key = "group:${group.id}",
+                    ) { _ ->
+                        val dismissState = rememberSwipeToDismissBoxState()
+                        LaunchedEffect(dismissState.currentValue) {
+                            if (dismissState.currentValue == SwipeToDismissBoxValue.EndToStart) {
+                                providerRepository.removeGroup(group.id)
+                            }
+                        }
+                        Column {
+                            if (index != 0) SectionDividerInsetCard()
+                            Box(
+                                modifier = Modifier.cardRow(
+                                    isFirst = index == 0,
+                                    isLast = index == groups.lastIndex,
+                                ),
+                            ) {
+                                SwipeToDismissBox(
+                                    state = dismissState,
+                                    backgroundContent = {},
+                                    enableDismissFromStartToEnd = false,
+                                ) {
+                                    GroupRow(
+                                        group = group,
+                                        config = config,
+                                        onClick = { onGroupClick(group.id) },
+                                        dragHandleModifier = with(this@ReorderableItem) {
+                                            Modifier.draggableHandle()
+                                        },
+                                    )
                                 }
                             }
-                            SwipeToDismissBox(
-                                state = dismissState,
-                                backgroundContent = {},
-                                enableDismissFromStartToEnd = false,
-                            ) {
-                                GroupRow(
-                                    group = group,
-                                    config = config,
-                                    onClick = { onGroupClick(group.id) },
-                                )
-                            }
-                            if (index != groups.lastIndex) SectionDivider()
                         }
                     }
                 }
@@ -266,6 +302,16 @@ fun ModelGroupsScreen(
                             groups = groups,
                             selectedId = config.voiceOutputGroupId,
                             onSelect = { providerRepository.voiceOutputGroupId = it },
+                        )
+                        // [T-android-vision-group / GH#182] Vision Group — the
+                        // group whose vision-capable members read images for a
+                        // main model that cannot natively see them.
+                        SectionDivider()
+                        GroupDropdown(
+                            label = stringResource(R.string.model_groups_vision),
+                            groups = groups,
+                            selectedId = config.visionGroupId,
+                            onSelect = { providerRepository.visionGroupId = it },
                         )
                     }
                 }
@@ -806,6 +852,14 @@ private fun GroupRow(
     group: ModelGroup,
     config: com.openminis.app.data.model.ProviderConfig,
     onClick: () -> Unit,
+    /**
+     * [T-android-modelgroup-reorder] When non-null, a leading drag handle is
+     * rendered carrying this modifier (ReorderableItem.draggableHandle).
+     * Explicit handle rather than long-press-anywhere: the row already owns
+     * tap (open detail) and horizontal swipe (delete), and this matches
+     * AgentLoopRow's affordance in the section below.
+     */
+    dragHandleModifier: Modifier? = null,
 ) {
     val memberNames = group.memberEntryIds.mapNotNull { entryId ->
         config.modelEntries.find { it.id == entryId }?.model?.displayName
@@ -843,6 +897,23 @@ private fun GroupRow(
             ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (dragHandleModifier != null) {
+            // T198 (same as AgentLoopRow): the handle must be an IconButton —
+            // a bare Icon has no pointer consumer, so draggableHandle() would
+            // never receive ACTION_DOWN/MOVE.
+            IconButton(
+                onClick = {},
+                modifier = dragHandleModifier.size(36.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.DragHandle,
+                    contentDescription = stringResource(R.string.model_group_detail_drag_to_reorder),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+            Spacer(modifier = Modifier.width(4.dp))
+        }
         Column(modifier = Modifier.weight(1f)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,

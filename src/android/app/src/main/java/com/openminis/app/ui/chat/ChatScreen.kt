@@ -34,8 +34,9 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.VerticalAlignTop
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.FolderZip
@@ -303,6 +304,7 @@ private const val ATTACHMENT_PICK_LIMIT = 50
  */
 private const val SEND_FOLLOW_GRACE_MS = 2_000L
 
+
 /**
  * [T-slash-picker-fixed-height port from iOS 73f1b94a] Locked popup
  * height for the slash and mention pickers: up to 4 rows are visible,
@@ -514,16 +516,22 @@ fun ChatScreen(
             "[Share] injecting ${pending.items.size} item(s) into chat session=$sessionId",
         )
         val sharedDir = com.openminis.app.share.SharedShareStore.sharedFileDirectory(context)
+        // [T-android-share-buffer-merge] Accumulate locally rather than
+        // reading `inputText` inside the loop. `inputText` is captured from
+        // composition and does NOT observe the setInputText calls made here,
+        // so every text item was appended to the same stale base and only the
+        // last one survived — a two-text share landed as just the second one
+        // even after the store-level merge delivered both.
+        var draft = inputText
         for (item in pending.items) {
             when (item.kind) {
                 com.openminis.app.share.PendingShare.Item.Kind.INLINE_TEXT -> {
-                    val sep = if (inputText.isNotEmpty()) "\n" else ""
+                    val sep = if (draft.isNotEmpty()) "\n" else ""
                     val needsTrailingSpace = item.value.startsWith("http://") ||
                         item.value.startsWith("https://")
-                    viewModel.setInputText(
-                        inputText + sep + item.value +
-                            if (needsTrailingSpace) " " else "",
-                    )
+                    draft = draft + sep + item.value +
+                        if (needsTrailingSpace) " " else ""
+                    viewModel.setInputText(draft)
                 }
                 com.openminis.app.share.PendingShare.Item.Kind.ATTACHMENT -> {
                     viewModel.addAttachmentFromStagedShare(java.io.File(sharedDir, item.value))
@@ -583,7 +591,9 @@ fun ChatScreen(
     // source ChatScreen stashed (inputText + attachments) into the global
     // ChatViewModelStore.pendingTransfer slot before navigating here.
     androidx.compose.runtime.LaunchedEffect(sessionId) {
-        val transfer = ChatViewModelStore.consumePendingTransfer() ?: return@LaunchedEffect
+        // [T-android-moveto-stash-binding] Pass this screen's session so the
+        // store only hands over a stash addressed to it (and drops stale ones).
+        val transfer = ChatViewModelStore.consumePendingTransfer(sessionId) ?: return@LaunchedEffect
         com.openminis.app.logging.AppLogger.info(
             "ChatScreen",
             "[MoveTo] draining transfer into session=$sessionId text=${transfer.inputText.length}ch attachments=${transfer.attachments.size}",
@@ -1079,32 +1089,14 @@ fun ChatScreen(
         }
     }
 
-    // [T-android-scroll-to-first-message] One-screen distance checks driving the
-    // floating scroll buttons, mirroring iOS (T-ios-scroll-to-first-message):
-    //   - down-button: shown whenever scrolled away from the bottom (existing
-    //     userScrolledAway gate below).
-    //   - up-button (scroll to first/oldest message): shown ONLY in the MIDDLE
-    //     region — more than one screen from BOTH ends (isFarFromTop &&
-    //     isFarFromBottom) — so it never clutters the at-bottom resting state
-    //     and never appears on short chats.
+    // [T-android-scrollbtn-turn-walk] Per-index observed item sizes. These once
+    // backed the up-button's isFarFromTop/isFarFromBottom gate (now removed in
+    // favour of the shared !isNearBottom condition); they are retained because
+    // the streaming-content glide still uses the running average to size its
+    // per-frame scroll steps.
+    //
     // The list is reverseLayout=true: index 0 is the NEWEST message (visual
-    // bottom), the highest index is the OLDEST (visual top). "Far from bottom" =
-    // scrolled up away from index 0 by > 1 viewport; "far from top" = the oldest
-    // item is still > 1 viewport below the viewport top.
-    // [T-android-scroll-to-first-message] "Far from an end" = that end's edge
-    // message has been scrolled entirely off-screen by MORE THAN one viewport.
-    // Anchoring on the edge item's actual pixel position (not "is it fully at
-    // the bottom") avoids the bug where the up-button appeared less than a
-    // screen from the bottom: it now requires the newest message to be a full
-    // viewport above the viewport bottom before the middle region begins.
-    // [T-android-scroll-to-first-message] Distance from each end, measured in
-    // viewports. Item heights vary wildly (a one-line bubble vs a screen-tall
-    // code block), so anchoring on a single edge item's pixel position breaks
-    // once it scrolls off (the earlier "index 0 not fully at bottom" check made
-    // the up-button appear less than a screen from the bottom). Instead estimate
-    // the scrolled distance: (whole items between the viewport and the end) ×
-    // average visible item height + the partial offset of the boundary item.
-    // The up-button shows only when BOTH ends are > one viewport away.
+    // bottom), the highest index is the OLDEST (visual top).
     // [T-android-scroll-to-first-message] Compose's LazyListLayoutInfo exposes
     // sizes of CURRENTLY visible items only — no contentSize / contentOffset
     // equivalent to iOS's UIScrollView. Earlier estimations (off-screen item
@@ -1150,59 +1142,13 @@ fun ChatScreen(
             if (sizes.isEmpty()) 0 else sizes.sum() / sizes.size
         }
     }
-    fun sizeAt(index: Int): Int = itemSizeByIndex[index] ?: avgItemSize.value
-    val isFarFromBottom = remember(listState, itemSizeByIndex, avgItemSize) {
-        derivedStateOf {
-            val info = listState.layoutInfo
-            val viewportH = info.viewportEndOffset - info.viewportStartOffset
-            val visible = info.visibleItemsInfo
-            if (viewportH <= 0 || visible.isEmpty()) return@derivedStateOf false
-            // [T-android-scroll-fab-reversed] At the very bottom the list cannot
-            // scroll forward; never report "far from bottom" there. This is the
-            // authoritative at-bottom signal under reverseLayout. (The earlier
-            // nearestBottomOverhang term wrongly reported far-from-bottom=true at
-            // rest when the newest message (index 0) was taller than the
-            // viewport — its content box extends below the fold so the overhang
-            // measured ~1938px > viewportH even though index 0's bottom IS pinned
-            // to the viewport bottom. Confirmed in ScrollFAB2 logs:
-            // nbIdx=0 nbOver=1938 belowSum=0 canFwd=false → falsely true.)
-            if (!listState.canScrollForward) return@derivedStateOf false
-            // reverseLayout: index 0 = newest = visual bottom.
-            val nearestBottom = visible.minByOrNull { it.index }!!
-            // Sum of (cached, else avg-estimated) sizes for the WHOLE items below
-            // the viewport: indices 0..nearestBottom.index-1. We intentionally do
-            // NOT add a partial-overhang term for nearestBottom — under
-            // reverseLayout a tall bottom item makes that term spuriously large.
-            // The whole-items sum is the scrolled-past distance we care about.
-            var belowSum = 0L
-            for (i in 0 until nearestBottom.index) {
-                belowSum += sizeAt(i)
-            }
-            belowSum > viewportH
-        }
-    }
-    val isFarFromTop = remember(listState, itemSizeByIndex, avgItemSize) {
-        derivedStateOf {
-            val info = listState.layoutInfo
-            val total = info.totalItemsCount
-            val viewportH = info.viewportEndOffset - info.viewportStartOffset
-            val visible = info.visibleItemsInfo
-            if (total == 0 || viewportH <= 0 || visible.isEmpty()) return@derivedStateOf false
-            // Symmetric to isFarFromBottom: at the top the list cannot scroll
-            // backward; never report "far from top" there.
-            if (!listState.canScrollBackward) return@derivedStateOf false
-            // reverseLayout: highest index = oldest = visual top.
-            val nearestTop = visible.maxByOrNull { it.index }!!
-            // Whole items above the viewport (older): nearestTop.index+1..total-1.
-            // Unmeasured on first entry (scrolled up from the bottom), so estimate
-            // via the running average. No partial-overhang term, mirroring above.
-            var aboveSum = 0L
-            for (i in (nearestTop.index + 1) until total) {
-                aboveSum += sizeAt(i)
-            }
-            aboveSum > viewportH
-        }
-    }
+    // [T-android-scrollbtn-turn-walk] The isFarFromTop / isFarFromBottom pair
+    // that used to live here is gone, mirroring iOS dcdec3c5: the up-button's
+    // visibility is now the shared `!isNearBottom` condition, so the separate
+    // one-viewport-from-both-ends estimation has no remaining consumer.
+    // `itemSizeByIndex` / `avgItemSize` above are deliberately KEPT — the
+    // streaming glide (LE(streaming-content)) still uses the running average to
+    // size its per-frame steps.
 
     // T138 phase 2 v3: separate "user scrolled away" intent from listState
     // position. isNearBottom flips false during the transient window where
@@ -1211,14 +1157,280 @@ fun ChatScreen(
     // `userScrolledAway` which only toggles on real user drags.
     var userScrolledAway by remember { mutableStateOf(false) }
 
+    // [T-android-scrollbtn-turn-walk] Up-button turn-walk state, mirroring iOS
+    // `lastJumpedUserId` (dcdec3c5). Holds the id of the user message the
+    // up-button last jumped to, so a REPEATED tap walks one turn further back
+    // instead of re-landing on the same turn. Reset to null whenever the
+    // anchoring context changes — manual drag, jump-to-bottom, message-list
+    // change, or session switch — so the next tap re-anchors to whatever the
+    // user is currently looking at rather than continuing a stale sequence.
+    var lastJumpedUserId by remember(sessionId) { mutableStateOf<String?>(null) }
+
+    // [T-android-scrollbtn-turn-walk] Content changed (new/removed messages) —
+    // the turn-walk anchor may no longer line up, so restart it on the next tap.
+    // iOS does this in its snapshot-apply path; on Android the equivalent
+    // trigger is the message list itself changing identity/size.
+    LaunchedEffect(messages.size) { lastJumpedUserId = null }
+
+    // [T-android-scrollbtn-turn-walk] Up-button action: walk backwards through
+    // the conversation one USER turn at a time (iOS `scrollToPreviousUserTurn`).
+    // Replaces the old "jump to the very first message":
+    //   - First tap: scroll to the user message of the turn the viewport is
+    //     currently in (nearest user message at or above the visual top).
+    //   - Repeated taps (no intervening drag / new message): each goes one
+    //     turn further back.
+    //   - Already at the first turn: stay put, no overscroll.
+    // A browse action — it must NOT clear `userScrolledAway`, so streaming
+    // doesn't yank the user back down after they jump up (same rationale as
+    // iOS leaving scrollMode untouched).
+    //
+    // Index resolution goes through the LazyColumn's stable item KEYS
+    // ("user:<id>", set in FlatChatItem.UserBubble) rather than arithmetic on
+    // message indices. Two things make raw arithmetic wrong here: one message
+    // flattens into MANY rows (header / markdown blocks / tool blocks), and a
+    // conditional resume-banner item sits at index 0 ahead of items(), shifting
+    // every subsequent index by one. Keys are immune to both.
+    val scrollToPreviousUserTurn: suspend () -> Unit = scrollToPreviousUserTurn@{
+        val info = listState.layoutInfo
+        val visible = info.visibleItemsInfo
+        if (visible.isEmpty()) return@scrollToPreviousUserTurn
+        // Ordered oldest → newest list of user-message ids, matching the order
+        // the user reads the conversation in.
+        val userIds = messages.filter { it.role == "user" }.map { it.id }
+        if (userIds.isEmpty()) {
+            // No user turns (rare) — fall back to the oldest item (the HIGHEST
+            // index; see the orientation note below) so the button is never a
+            // dead no-op.
+            tracedScrollToItem("FAB-UP/no-user-turns", (info.totalItemsCount - 1).coerceAtLeast(0), 0)
+            return@scrollToPreviousUserTurn
+        }
+        // Row-index orientation — measured on device, not inferred. Earlier
+        // rounds of this feature flip-flopped because "reverseLayout=true" was
+        // reasoned about instead of observed; the authoritative signal is each
+        // visible item's `offset` (its pixel position in the viewport).
+        //
+        // A real dump (7-turn session, viewport spanning rows 8..23):
+        //     idx  offset  kind      msg
+        //      11     122  user      c4061ef7  (TURN5)
+        //      15     461  user      4e2a5ad2  (TURN4)
+        //      19     800  user      bfa090b0  (TURN3)
+        //      23    1403  user      345b4a6c  (TURN2)
+        //
+        // Offset ASCENDS with index, so a HIGHER index sits LOWER on screen; and
+        // the turn numbers DESCEND, so a HIGHER index is also OLDER. Both facts
+        // hold at once because this list renders newest-at-top.
+        //
+        // Therefore:
+        //   • visual top      = LOWEST visible index   (used here)
+        //   • older / "back"  = HIGHER index           (used by the seek below)
+        // Conflating those two — assuming the visual top must also be the
+        // "back" direction — is what produced the wrong anchor in the previous
+        // implementation.
+        val topKey = visible.minByOrNull { it.index }?.key as? String
+        // Map the top row back to its position in `messages`. Row keys are
+        // "<kind>:<messageId>[:extra]", and some kinds append their own suffix
+        // after the id (e.g. "mdblock:<id>:text_<id>_0:1"), so the id is the
+        // segment between the FIRST and SECOND colon — not everything after the
+        // first one.
+        val topMessageId = topKey
+            ?.split(':')
+            ?.getOrNull(1)
+            ?.takeIf { it.isNotEmpty() }
+        // `messages` is a TAIL WINDOW (ChatViewModel.uiMessages + loadOlderMessages),
+        // so the visible top row can belong to a message that is not loaded yet.
+        // The top of the viewport is the OLDEST content on screen, so when it
+        // resolves to nothing the user is at/above the start of the window —
+        // anchor on the oldest loaded message (index 0) and let the walk proceed
+        // from there.
+        val topMsgIdx = topMessageId
+            ?.let { id -> messages.indexOfFirst { it.id == id } }
+            ?.takeIf { it >= 0 }
+            ?: 0
+        // The current turn's anchor = nearest user message AT OR ABOVE the top
+        // row (searching backwards through the conversation).
+        val currentAnchor = messages.take(topMsgIdx + 1).lastOrNull { it.role == "user" }?.id
+            ?: userIds.first()
+        // Decide the target — the rule from iOS `scrollToPreviousUserTurn`: if
+        // the viewport is already at the anchor we last jumped to (the user has
+        // seen this turn's start), step to the previous turn; otherwise land on
+        // the current turn's anchor first.
+        //
+        // Android cannot re-derive the walk position from the viewport the way
+        // iOS does, for two independent reasons — so once a walk has started we
+        // always continue from `lastJumpedUserId`:
+        //
+        //  1. A LazyColumn CLAMPS at the end of its content. Near the oldest rows
+        //     the target can't reach the top, `currentAnchor` recomputes to the
+        //     same turn every tap, and the walk oscillates (device: taps 6/7
+        //     flipping bfa090b0 <-> 345b4a6c).
+        //  2. Top-aligning the landing (below) deliberately anchors the viewport
+        //     on a NEWER row than the target, so the recomputed `currentAnchor`
+        //     reads a turn NEWER than the one we just jumped to — the walk then
+        //     bounced 9 -> 22 -> 9 -> 22 forever.
+        //
+        // `lastJumpedUserId` is cleared on drag / jump-to-bottom / new messages /
+        // session switch, so this only ever chains genuine repeated taps; the
+        // first tap after any of those still anchors off the viewport.
+        val walkFrom = lastJumpedUserId?.takeIf { it in userIds } ?: currentAnchor
+        val pos = userIds.indexOf(walkFrom)
+        val steppedTarget = if (lastJumpedUserId == walkFrom && pos > 0) {
+            userIds[pos - 1]
+        } else {
+            walkFrom
+        }
+        // [T-android-fab-up-skip-visible] Never "scroll" to a turn the user is
+        // already looking at.
+        //
+        // `currentAnchor` is the nearest user message AT OR ABOVE the viewport
+        // top, so when a user bubble is already on screen it IS the anchor —
+        // and on the first tap (lastJumpedUserId == null) the target is the
+        // anchor itself. The button then scrolls to a bubble that is already
+        // visible, which reads as a dead tap: the transcript barely moves and
+        // the user has to tap twice to go back one turn.
+        //
+        // Fix: treat every user turn currently rendered in the viewport as
+        // "already seen" and walk further back until we find one that is not.
+        // Only fully-visible bubbles count — a turn scrolled half off the top
+        // edge is one the user has NOT finished reading, and jumping to it to
+        // align its top edge is a genuine, useful move.
+        //
+        // Visibility is read from the pre-seek layout on purpose: the seek
+        // below mutates the viewport, so anything derived afterwards would
+        // describe where the search happened to stop, not where the user was.
+        val viewportTop = info.viewportStartOffset
+        val viewportBottom = info.viewportEndOffset
+        val fullyVisibleUserIds: Set<String> = visible
+            .asSequence()
+            .filter { item ->
+                val k = item.key as? String ?: return@filter false
+                k.startsWith("user:") &&
+                    item.offset >= viewportTop &&
+                    item.offset + item.size <= viewportBottom
+            }
+            .mapNotNull { (it.key as? String)?.removePrefix("user:")?.takeIf { id -> id.isNotEmpty() } }
+            .toSet()
+
+        val target = if (steppedTarget in fullyVisibleUserIds) {
+            // Walk back (toward older turns = LOWER index in `userIds`, which is
+            // ordered oldest → newest) past every turn already on screen. If all
+            // of them are visible we stop at the oldest — `scrollToItem` clamps,
+            // so this stays a harmless no-op at the start of the conversation
+            // rather than an overscroll.
+            var i = userIds.indexOf(steppedTarget)
+            while (i > 0 && userIds[i] in fullyVisibleUserIds) i--
+            userIds[i]
+        } else {
+            steppedTarget
+        }
+        // Resolve the target user bubble's row index by its stable key.
+        //
+        // The flat-item list is built inside the LazyColumn's own scope and is
+        // not reachable from here, so an off-screen target has to be found by
+        // walking the viewport toward it. Two things make that delicate, and
+        // both were observed failing on device before this shape:
+        //
+        //  1. The seek MUTATES the viewport. The anchor must therefore be
+        //     computed BEFORE any seeking (it is — `currentAnchor` above is
+        //     derived from the pre-seek layout), or every tap re-anchors to
+        //     wherever the previous tap's seek happened to stop and the walk
+        //     never advances.
+        //  2. A seek that overshoots to the oldest row leaves the list unable
+        //     to scroll further; if the target still isn't found we must
+        //     RESTORE the original position rather than strand the user at the
+        //     top of the transcript.
+        val targetKey = "user:$target"
+        fun indexOfTargetKey(): Int? =
+            listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == targetKey }?.index
+
+        val restoreIndex = listState.firstVisibleItemIndex
+        val restoreOffset = listState.firstVisibleItemScrollOffset
+        var targetIndex = indexOfTargetKey()
+        var guard = 0
+        // Scan every row until the target's key shows up.
+        //
+        // The previous seek walked only toward HIGHER indices in viewport-sized
+        // strides, and that produced the user's dead tap: opening the 读屏
+        // session and dragging slightly left the viewport on rows 0..8 with the
+        // target user bubble at row 9 — just BELOW it. The stride seek jumped
+        // 17 -> 41, straight past the target, found nothing, and fell into
+        // RESTORE (a visible no-op).
+        //
+        // Direction genuinely cannot be assumed: `currentAnchor` is the nearest
+        // user message at or above the viewport TOP, and how far its row sits
+        // from the current window depends entirely on how tall the intervening
+        // tool / thinking / shell-output blocks are — which in real
+        // conversations is wildly variable (one assistant message in this
+        // session spans rows 23..46). Sweeping the whole list from the top is
+        // direction-free and cannot step over the target; `scrollToItem` takes
+        // any index directly, so each step is just a layout pass.
+        if (targetIndex == null) {
+            val maxIdx = (info.totalItemsCount - 1).coerceAtLeast(0)
+            var probe = 0
+            while (targetIndex == null && probe <= maxIdx && guard++ < 200) {
+                tracedScrollToItem("FAB-UP/seek", probe, 0)
+                targetIndex = indexOfTargetKey()
+                // Advance past whatever is now on screen rather than one row at
+                // a time, but never skip ahead of the rows we have inspected.
+                val hi = listState.layoutInfo.visibleItemsInfo.maxByOrNull { it.index }?.index
+                probe = (hi ?: probe) + 1
+            }
+        }
+        if (targetIndex == null) {
+            // Target never materialised — undo the seek so the button is a
+            // no-op rather than a jump to the very top.
+            tracedScrollToItem("FAB-UP/restore", restoreIndex, restoreOffset)
+            return@scrollToPreviousUserTurn
+        }
+        lastJumpedUserId = target
+        val landIndex: Int = targetIndex
+        // Land the user bubble's TOP edge just under the header — iOS's
+        // `scrollToItem(at: .top)`.
+        //
+        // Uses the scrollOffset overload directly: it is defined against the
+        // layout direction, so no sign has to be inferred and no stepping /
+        // scrollBy feedback loop is needed (both were tried and failed — anchor
+        // granularity is ~130px, far coarser than the residual gap).
+        //
+        // Calibrated on device (Pixel 4a, 读屏 session, 148px row, 1646px
+        // viewport) by sweeping the parameter and reading the bubble's physical
+        // top-y from uiautomator:
+        //     scrollOffset  -400  ->  y=1254
+        //     scrollOffset  -800  ->  y= 854
+        //     scrollOffset -1200  ->  y= 454
+        // A clean line, slope +1: screen_y = scrollOffset + 1654. Solving for a
+        // top edge just under the header (header bottom y=304) gives -1324,
+        // which measured EXACTLY y=330 height=65 (unclipped), and -1300 measured
+        // y=354 — both matching the model.
+        //
+        // Rewritten against runtime quantities so nothing is device-specific:
+        // scrollOffset = rowSize - viewportHeight + beforeContentPadding, where
+        // beforeContentPadding is the space the list already reserves for the
+        // floating header.
+        val vpH = listState.layoutInfo.viewportSize.height
+        // Row height must come from the item itself: it varies per bubble, and
+        // the offset has to account for it. Position once to materialise the row,
+        // read its size, then place it precisely.
+        tracedScrollToItem("FAB-UP/turn-walk", landIndex, 0)
+        val rowSize = listState.layoutInfo.visibleItemsInfo
+            .firstOrNull { it.key == targetKey }?.size ?: 0
+        // The inset is the LazyColumn's own top content padding, which is exactly
+        // the space reserved for the floating header — so the bubble comes to
+        // rest just below it rather than behind it. Taken from layoutInfo rather
+        // than hardcoded, so it follows the header/status-bar height on any
+        // device.
+        val headerInset = listState.layoutInfo.beforeContentPadding
+        val topOffset = rowSize - vpH + headerInset
+        tracedScrollToItem("FAB-UP/turn-walk-top", landIndex, topOffset)
+    }
+
     // [T-android-scroll-fab-reversed] TEMP diagnostic — capture BOTH FABs'
     // gates so we can verify the matrix (bottom=none, middle=both, top=down
     // only) and why the down-FAB is missing at the top. Remove after fix.
     LaunchedEffect(listState) {
         snapshotFlow {
-            val up = isFarFromTop.value && isFarFromBottom.value && messages.isNotEmpty()
+            val up = !isNearBottom.value && messages.isNotEmpty()
             val down = userScrolledAway && contentOverflows.value && messages.isNotEmpty()
-            "FABs up=$up down=$down | farTop=${isFarFromTop.value} farBottom=${isFarFromBottom.value} scrolledAway=$userScrolledAway overflow=${contentOverflows.value} canFwd=${listState.canScrollForward} canBwd=${listState.canScrollBackward}"
+            "FABs up=$up down=$down | nearBottom=${isNearBottom.value} lastJumped=${lastJumpedUserId?.take(8)} scrolledAway=$userScrolledAway overflow=${contentOverflows.value} canFwd=${listState.canScrollForward} canBwd=${listState.canScrollBackward}"
         }.collect { AppLogger.debug("ScrollFAB2", it) }
     }
 
@@ -1238,6 +1450,20 @@ fun ChatScreen(
             return@handler
         }
         lastSendTimeMs = System.currentTimeMillis()
+        // [T-android-slash-send-keeps-text] A send always ends the slash session.
+        //
+        // Tapping the "/" button over existing text puts the composer into
+        // "over-content" mode: it prepends "/ " (so "hello" becomes "/ hello")
+        // and stashes the original in savedInputBeforeSlash so every exit path
+        // can restore it. But SEND was not one of those exit paths — it cleared
+        // the text while leaving the stash and the open menu behind, so the
+        // just-sent body was restored into the composer and the user saw their
+        // message both sent AND still sitting in the input.
+        //
+        // Clearing the session here, before the text is cleared, makes send a
+        // proper terminal exit: nothing is left to restore. The dismiss and
+        // command-row paths keep their own restore behaviour untouched.
+        viewModel.endSlashSessionForSend()
         viewModel.setInputText("")
         keyboardController?.hide()
         focusManager.clearFocus()
@@ -1278,8 +1504,13 @@ fun ChatScreen(
             // event during a scroll (Press / Cancel / Stop). String-building
             // logs here added measurable load. Gate behind a constant.
             when (interaction) {
-                is androidx.compose.foundation.interaction.DragInteraction.Start ->
+                is androidx.compose.foundation.interaction.DragInteraction.Start -> {
                     isUserDragging = true
+                    // [T-android-scrollbtn-turn-walk] A manual drag breaks the
+                    // up-button's turn-walk chain: the next tap should re-anchor
+                    // to wherever the user landed, not continue the old sequence.
+                    lastJumpedUserId = null
+                }
                 is androidx.compose.foundation.interaction.DragInteraction.Stop -> {
                     isUserDragging = false
                     lastInterruptMs = System.currentTimeMillis()
@@ -2386,6 +2617,26 @@ fun ChatScreen(
                                     },
                                 )
                             }
+                            // Auto Compact: app-level persisted toggle mirroring
+                            // iOS `autoCompactEnabled`. On → crossing the
+                            // compact threshold before a send compacts silently
+                            // and sends; off → the user is asked first. Lives
+                            // beside Fast Mode because both are model-invocation
+                            // controls the user flips mid-conversation.
+                            val autoCompactOn by viewModel.autoCompactEnabled.collectAsState()
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.chat_menu_auto_compact)) },
+                                onClick = { viewModel.setAutoCompactEnabled(!autoCompactOn) },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Compress, contentDescription = null)
+                                },
+                                trailingIcon = {
+                                    Switch(
+                                        checked = autoCompactOn,
+                                        onCheckedChange = { viewModel.setAutoCompactEnabled(it) },
+                                    )
+                                },
+                            )
                             // T287: debug-only crash trigger so the user can verify
                             // ACRA/native crash log generation (T283). Throws a
                             // RuntimeException from the click handler — the
@@ -3659,22 +3910,20 @@ fun ChatScreen(
                 // animation produces a synthetic drag-stop. iOS gets this
                 // for free via `maxOffset > 0`; Compose needs the explicit
                 // check.
-                // [T-android-scroll-to-first-message] Floating "scroll to first
-                // message" up-button. Mirrors iOS: shown ONLY in the middle
-                // region (isFarFromTop && isFarFromBottom — more than one screen
-                // from both ends) so it never lingers at the bottom or on short
-                // chats. Sits ABOVE the scroll-to-bottom button (same BottomEnd
+                // [T-android-scrollbtn-turn-walk] Floating up-button. Visibility
+                // is now the SHARED `!isNearBottom` condition (iOS dcdec3c5),
+                // replacing the separate isFarFromTop && isFarFromBottom
+                // middle-region gate: both floating buttons now appear together
+                // on the same signal, which is what the iOS refactor converged
+                // on. Sits ABOVE the scroll-to-bottom button (same BottomEnd
                 // anchor, extra bottom padding = down-button height 36dp + 10dp
-                // spacing). Scrolls to the OLDEST message (highest index under
-                // reverseLayout).
-                if (messages.isNotEmpty() && isFarFromTop.value && isFarFromBottom.value) {
+                // spacing). Tapping walks BACK one user turn at a time rather
+                // than jumping to the oldest message.
+                if (messages.isNotEmpty() && !isNearBottom.value) {
                     val upBaseBottom = if (lastToolBlocks.isNotEmpty()) 80.dp else 8.dp
                     androidx.compose.material3.FilledIconButton(
                         onClick = {
-                            coroutineScope.launch {
-                                val lastIndex = (listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
-                                tracedScrollToItem("FAB-UP", lastIndex, 0)
-                            }
+                            coroutineScope.launch { scrollToPreviousUserTurn() }
                         },
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
@@ -3687,8 +3936,12 @@ fun ChatScreen(
                         ),
                     ) {
                         Icon(
-                            imageVector = Icons.Default.KeyboardArrowUp,
-                            contentDescription = "Scroll to first message",
+                            // Matches iOS's `arrow.up.to.line` (AIChatView.swift:2501):
+                            // an arrow pointing at a top line reads as "jump to a top
+                            // anchor" for the turn-walk, and keeps this button visually
+                            // distinct from the down button's plain chevron.
+                            imageVector = Icons.Default.VerticalAlignTop,
+                            contentDescription = "Scroll to previous message",
                             modifier = Modifier.size(20.dp),
                         )
                     }
@@ -3711,6 +3964,10 @@ fun ChatScreen(
                             // stuck visible. The user tapped "go to bottom" — the
                             // intent is unambiguous, so reset directly.
                             userScrolledAway = false
+                            // [T-android-scrollbtn-turn-walk] Jumping to the
+                            // bottom resets the up-button's turn-walk (iOS does
+                            // the same in its forceScrollToBottom handler).
+                            lastJumpedUserId = null
                             coroutineScope.launch {
                                 tracedScrollToItem("FAB-DOWN", 0, 0)
                                 // Second pin after a frame: the first scroll may
@@ -5045,6 +5302,14 @@ fun ChatScreen(
                                 ComposerInputModePrefs.save(context, voice = false)
                                 voiceUsedSinceClear = false
                             } else {
+                                // [T-android-voice-entry-always-available]
+                                // Entering voice mode is an explicit retry — give
+                                // every engine a fresh start so a past transient
+                                // failure (mic was busy, permission since granted,
+                                // provider since configured) doesn't keep the
+                                // feature dead for the rest of the process.
+                                com.openminis.app.speech.SpeechRecognitionManager
+                                    .clearDegradationAndRefresh()
                                 voiceUsedSinceClear = true
                                 com.openminis.app.ui.chat.voice.VoiceModePrefs.enteredFromText = true
                                 com.openminis.app.ui.chat.voice.VoiceModePrefs.isVoiceActive = true
@@ -5055,8 +5320,21 @@ fun ChatScreen(
                         // `minis://action/voice_chat`, auto-fire the mic on
                         // first compose. Consumed exactly once so re-entering
                         // the chat later does NOT re-trigger.
-                        LaunchedEffect(sttAvailable) {
-                            if (!sttAvailable) return@LaunchedEffect
+                        //
+                        // [T-android-voice-entry-always-available] Gated on the
+                        // STRUCTURAL check, not the sttAvailable runtime probe.
+                        // The probe is false on ROMs without a system speech
+                        // service (ColorOS et al.), which made this shortcut a
+                        // silent no-op there — while the mic button itself had
+                        // already moved to hasMicrophoneHardware. Entering the
+                        // panel without a live engine is fine: the panel owns
+                        // the "no engine → here's how to configure one" story.
+                        LaunchedEffect(Unit) {
+                            if (!com.openminis.app.speech.SpeechRecognitionManager
+                                    .hasMicrophoneHardware
+                            ) {
+                                return@LaunchedEffect
+                            }
                             val pending = com.openminis.app.deeplink.DeepLinkCoordinator
                                 .pendingChatAction.value
                             if (pending == com.openminis.app.deeplink.DeepLinkCoordinator
@@ -5231,7 +5509,22 @@ fun ChatScreen(
                             Spacer(modifier = Modifier.weight(1f))
                         }
 
-                        if (sttAvailable) {
+                        // [T-android-voice-entry-always-available] The voice /
+                        // keyboard toggle is ALWAYS shown. It used to be gated on
+                        // `sttAvailable`, a runtime probe — so when the active
+                        // engine degraded mid-session the button disappeared while
+                        // `isVoiceActive` stayed true, leaving the user inside the
+                        // voice panel with no way back to the keyboard (the toggle
+                        // IS this button). Gating an escape hatch on the health of
+                        // the thing you're escaping from is the bug.
+                        //
+                        // Existence now depends only on a structural fact —
+                        // microphone hardware. "No speech service", "engine
+                        // degraded" and "no ASR provider configured" are all
+                        // RECOVERABLE states, explained inside the panel with a
+                        // link to the relevant settings rather than by silently
+                        // removing the control.
+                        if (com.openminis.app.speech.SpeechRecognitionManager.hasMicrophoneHardware) {
                             MicButton(
                                 isRecording = !com.openminis.app.ui.chat.voice.VoiceModePrefs.isVoiceActive &&
                                     (sttState == com.openminis.app.speech.RecognitionState.RECORDING ||
@@ -5344,6 +5637,9 @@ fun ChatScreen(
                             ChatViewModelStore.PendingTransfer(
                                 inputText = inputText,
                                 attachments = viewModel.attachments.value,
+                                // [T-android-moveto-stash-binding] Bind the stash to
+                                // the chosen target so no other session can drain it.
+                                targetId = targetId,
                             ),
                         )
                         viewModel.setInputText("")
@@ -5351,6 +5647,35 @@ fun ChatScreen(
                         viewModel.clearShareInjectedFlag()
                         showMoveSheet = false
                         onMoveToSession(targetId)
+                    },
+                )
+            }
+
+            // Pre-send context gate (iOS "Context Near Capacity" alert).
+            // Raised when the compact threshold is crossed and auto-compact is
+            // OFF; with it on the ViewModel compacts silently and never gets
+            // here. Three actions, matching iOS:
+            //   Send Anyway                  — skip compaction entirely
+            //   Compact & Send               — compact this once, pref untouched
+            //   Compact & Enable Auto-Compact— compact AND opt in, so the
+            //                                  threshold stops prompting from
+            //                                  now on (iOS T-chat-auto-compact-opt-in)
+            val showCompactBeforeSend by viewModel.showCompactBeforeSendPrompt.collectAsState()
+            if (showCompactBeforeSend) {
+                MinisAlertDialog(
+                    // Back-gesture / scrim dismissal must NOT silently drop the
+                    // user's text — cancelCompactBeforeSend puts it back in the
+                    // composer.
+                    onDismissRequest = { viewModel.cancelCompactBeforeSend() },
+                    title = stringResource(R.string.context_near_capacity_title),
+                    text = stringResource(R.string.context_near_capacity_message),
+                    confirmText = stringResource(R.string.context_compact_and_send),
+                    onConfirm = { viewModel.compactAndSendPending() },
+                    dismissText = stringResource(R.string.context_send_anyway),
+                    onDismiss = { viewModel.sendPendingWithoutCompacting() },
+                    neutralText = stringResource(R.string.context_compact_and_enable_auto),
+                    onNeutral = {
+                        viewModel.compactAndSendPending(alsoEnableAutoCompact = true)
                     },
                 )
             }

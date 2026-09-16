@@ -107,6 +107,42 @@ final class ChatMessage: Identifiable, ObservableObject {
         }
         return false
     }
+
+    /// [T-ios-typing-indicator-scope] Whether the typing indicator should be
+    /// drawn for this message, given it is the active (last, still-processing)
+    /// one. The single source of truth — the footer's render branch, its
+    /// `hasFooterContent` collapse test, the layout height seed, and the legacy
+    /// list view must all ask THIS, or they drift apart and the footer reserves
+    /// height for a row nobody draws (the "blank strip" bug).
+    ///
+    /// The indicator means "the request is out and nothing has come back yet".
+    /// That is a per-ROUND question, not a per-message one: inside an agent
+    /// loop, every tool round issues a fresh request, and the wait before its
+    /// first token deserves the same feedback as the very first wait. So:
+    ///
+    ///   * `blocks.isEmpty` — the opening wait, before any content exists.
+    ///   * `isAwaitingModelResponse && !hasRunningTool` — the wait between
+    ///     rounds. The view model sets `isAwaitingModelResponse` after each
+    ///     tool round completes and clears it on the next `contentBlockStart`
+    ///     (AIChatViewModel+SSEStream), so it brackets exactly the dead air.
+    ///
+    /// The `!hasRunningTool` half is what keeps this from regressing to the
+    /// original bug: while a tool is actually executing, its card is on screen
+    /// animating its own running state, and stacking a second "thinking…" row
+    /// under it was pure redundancy that reserved ~48pt of visually blank space.
+    /// Earlier blocks from previous rounds deliberately do NOT suppress the
+    /// indicator — content produced two rounds ago says nothing about whether
+    /// THIS round has started producing.
+    var shouldShowTypingIndicator: Bool {
+        if blocks.isEmpty { return true }
+        guard isAwaitingModelResponse else { return false }
+        return !blocks.contains { block in
+            switch block.toolStatus {
+            case .streaming, .running: return true
+            default: return false
+            }
+        }
+    }
 }
 
 /// A user prompt queued while the agent is processing.
@@ -190,30 +226,22 @@ final class AssistantBlock: Identifiable, ObservableObject {
     /// SwiftUI recomposition.
     var thinkingContentBuffer: String = ""
 
-    // [T-thinking-stream-jank] Perf instrumentation: 1s-windowed delta-rate
-    // summary + per-flush timing, category "ThinkPerf". Cheap (one Date +
-    // counters per delta, one log line per second) so it can stay on in
-    // debug builds while reproducing the long-thinking jank report.
-    private static let perfLogger = AppLogger(category: "ThinkPerf")
-    private var perfWindowStart = Date()
-    private var perfDeltaCount = 0
-    private var perfDeltaBytes = 0
+    // [T-thinkperf-release-displaylink] The ThinkPerf delta-rate instrumentation
+    // that used to live here has been removed outright, in Debug as well as
+    // Release. It ran on the hottest path in the app — `appendThinkingDelta`
+    // fires once per streamed reasoning token, measured at 60-105/s — and paid
+    // a `Date()` allocation plus two counter updates on every single one, to
+    // emit one line per second.
+    //
+    // It was written to diagnose T-thinking-stream-jank; that investigation
+    // concluded (see 7573e28b8: the per-delta body re-eval it was hunting was
+    // found and fixed by moving the follow trigger to flush pace). Keeping a
+    // permanent per-token probe to answer a question already answered is a
+    // standing tax on the exact path we now want to be cheap.
 
     func appendThinkingDelta(_ delta: String) {
         thinkingContentBuffer += delta
         contentUpdateSeq += 1
-        perfDeltaCount += 1
-        perfDeltaBytes += delta.utf8.count
-        let now = Date()
-        let dt = now.timeIntervalSince(perfWindowStart)
-        if dt >= 1.0 {
-            // [T-log-noise-privacy 2026-07-18] info → debug: fires once per
-            // second per streaming thinking block for the whole stream.
-            Self.perfLogger.debug("[ThinkPerf] deltas/s=\(self.perfDeltaCount) bytes/s=\(self.perfDeltaBytes) bufLen=\(self.thinkingContentBuffer.count) contentLen=\(self.content.count) window=\(String(format: "%.2f", dt))s block=\(self.id.uuidString.prefix(8))")
-            perfWindowStart = now
-            perfDeltaCount = 0
-            perfDeltaBytes = 0
-        }
     }
 
     // [T-thinking-stream-jank] Adaptive flush throttle for streaming thinking
@@ -246,17 +274,13 @@ final class AssistantBlock: Identifiable, ObservableObject {
 
     func flushThinkingBuffer() {
         guard kind == .thinking, thinkingContentBuffer.count > content.count else { return }
-        let t0 = CFAbsoluteTimeGetCurrent()
+        // [T-thinkperf-release-displaylink] Timing removed with the rest of the
+        // ThinkPerf probes. The comment it carried is worth keeping, because it
+        // records what was learned: the assign below is a string copy, but the
+        // real cost of a flush lands in the SwiftUI update it triggers, not
+        // here — so timing this line measured the cheap half and logged a line
+        // per flush to say so.
         content = thinkingContentBuffer
-        let ms = (CFAbsoluteTimeGetCurrent() - t0) * 1000
-        // The assign itself is a copy; the real cost lands in the SwiftUI
-        // update it triggers. Log both the copy time and the length so slow
-        // flushes can be correlated with hitches.
-        if ms > 4 {
-            Self.perfLogger.info("[ThinkPerf] flush SLOW len=\(self.content.count) copy=\(String(format: "%.1f", ms))ms block=\(self.id.uuidString.prefix(8))")
-        } else {
-            Self.perfLogger.debug("[ThinkPerf] flush len=\(self.content.count) copy=\(String(format: "%.1f", ms))ms")
-        }
     }
     /// Status for tool blocks (nil for text blocks).
     @Published var toolStatus: ToolBlockStatus?

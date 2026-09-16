@@ -81,8 +81,24 @@
     <string name="bg_section_footer">Les tâches longues de l\'agent ont besoin d\'autorisation pour garder le CPU réveillé pendant que l\'écran est éteint. Sans ces réglages, le système peut suspendre l\'inférence après quelques minutes en arrière-plan.</string>
     <string name="bg_service_channel_name">État de l\'agent</string>
     <string name="bg_service_channel_description">Affiche l\'état des sessions d\'agent en cours.</string>
+    <string name="a11y_repair_dialog_title">Accessibilité désactivée</string>
+    <string name="a11y_repair_dialog_message_shizuku">Minis a perdu son autorisation d’accessibilité — cela arrive après un arrêt forcé. Shizuku est disponible et peut la restaurer immédiatement, sans ouvrir les Réglages.</string>
+    <string name="a11y_repair_dialog_message_manual">Minis a perdu son autorisation d’accessibilité — cela arrive après un arrêt forcé. Réactivez Minis dans Réglages → Accessibilité pour continuer.</string>
+    <string name="a11y_repair_action_repair">Réparer maintenant</string>
+    <string name="a11y_repair_action_open_settings">Ouvrir les Réglages</string>
+    <string name="a11y_repair_cancel">Plus tard</string>
+    <string name="a11y_repair_section_header">Action requise</string>
+    <string name="a11y_repair_row_shizuku">Réparer l’autorisation d’accessibilité</string>
+    <string name="a11y_repair_row_manual">Réactiver l’accessibilité</string>
+    <string name="a11y_repair_row_sub">L’autorisation a été révoquée, probablement par un arrêt forcé</string>
+    <string name="a11y_repair_in_progress">Réparation…</string>
+    <string name="a11y_repair_failed">Échec de la réparation — activez-la dans les Réglages</string>
+    <string name="a11y_repair_footer_shizuku">Android supprime l’autorisation d’accessibilité chaque fois qu’une application est arrêtée de force, et ne la rétablit pas automatiquement. Shizuku peut la réécrire directement.</string>
+    <string name="a11y_repair_footer_manual">Android supprime l’autorisation d’accessibilité chaque fois qu’une application est arrêtée de force, et ne la rétablit pas automatiquement. Installez et autorisez Shizuku pour réparer en un geste à l’avenir.</string>
     <string name="bg_service_notification_title">Minis Agent actif</string>
     <string name="bg_service_notification_text">%1$s | %2$s | %3$s</string>
+    <string name="bg_service_notification_title_completed">Tâche terminée</string>
+    <string name="bg_service_notification_text_completed">%1$s | Terminé en %2$s</string>
     <string name="bg_service_stop_action">Arrêter</string>
     <plurals name="bg_service_sessions">
         <item quantity="one">%d session</item>
@@ -484,11 +500,13 @@
     <string name="provider_list_add_a_provider_to_get_started">Ajoutez un fournisseur AI pour commencer.</string>
     <string name="provider_list_import_provider">Import Provider</string>
     <string name="share_provider_json_title">Configuration de fournisseur détectée</string>
+    <string name="share_expired_toast">Le contenu partagé a expiré. Veuillez le partager à nouveau.</string>
     <string name="share_provider_json_message">Ce fichier JSON ressemble à un fournisseur exporté. Que souhaitez-vous faire ?</string>
     <string name="share_provider_json_import">Importer le fournisseur</string>
     <string name="share_provider_json_attach">Ajouter en pièce jointe</string>
     <string name="share_provider_json_imported">Fournisseur \"%1$s\" importé</string>
     <string name="share_provider_json_import_failed">Fichier de configuration de fournisseur invalide</string>
+    <string name="share_open_app_failed">Contenu enregistré. Impossible d\'ouvrir Minis automatiquement — ouvrez l\'application pour continuer.</string>
     <string name="provider_list_api_key">Clé API</string>
     <string name="provider_list_disabled">Désactivé</string>
     <string name="provider_detail_export">Exporter</string>
@@ -703,6 +721,9 @@
     <string name="settings_mount_external_folders_subtitle">Lier les dossiers choisis dans /var/minis/mounts/</string>
     <string name="mount_folders_title">Dossiers montés</string>
     <string name="mount_folders_info_banner">Les dossiers choisis sont liés à /var/minis/mounts/&lt;nom&gt;. Jusqu\'à 10 dossiers peuvent être montés simultanément.</string>
+    <string name="mount_picker_intro_title">Choisir un dossier</string>
+    <string name="mount_picker_intro_message">Android n\'autorise pas le montage de tout le stockage interne — choisissez un dossier précis à l\'intérieur, par exemple Documents ou Téléchargements.\n\nLe sélecteur qui s\'ouvre appartient au système. Si un dossier affiche « impossible d\'utiliser ce dossier », entrez dans un sous-dossier ou revenez ici avec le geste Retour.</string>
+    <string name="mount_picker_intro_continue">Choisir</string>
     <string name="mount_folders_empty_title">Aucun dossier monté</string>
     <string name="mount_folders_empty_subtitle">Touchez + pour choisir un dossier</string>
     <string name="mount_folders_limit_reached">Limite de montage atteinte (10)</string>
@@ -818,6 +839,12 @@
     <string name="composer_swipe_release_to_send">Relâcher pour envoyer</string>
     <string name="composer_swipe_release_to_queue">Relâcher pour mettre en file</string>
     <string name="chat_typing_indicator">%1$s réfléchit</string>
+    <string name="read_aloud_unavailable">Lecture à voix haute impossible : aucun moteur vocal disponible. Vérifiez les réglages de sortie vocale ou installez un moteur de synthèse système.</string>
+    <string name="voice_panel_no_engine_title">Aucune reconnaissance vocale disponible</string>
+    <string name="voice_panel_no_engine_body">La saisie vocale nécessite un moteur de reconnaissance. Activez le service vocal de votre appareil ou configurez un fournisseur de transcription dans Minis.</string>
+    <string name="voice_panel_no_engine_open_system">Réglages de l\'appareil</string>
+    <string name="voice_panel_no_engine_open_providers">Fournisseurs Minis</string>
+    <string name="chat_error_stream_dropped_partial">La connexion a été interrompue — cette réponse est peut-être incomplète. Appuyez sur Réessayer pour continuer.</string>
     <string name="chat_input_placeholder">Message à %1$s (@ pour mentionner des fichiers)</string>
     <!-- T-android-update-check-403-hint — friendly update-check failure hints -->
     <string name="update_error_network_unreachable">Impossible d\'atteindre le serveur de mise à jour. Vérifiez votre réseau et réessayez.</string>
@@ -828,6 +855,7 @@
     <string name="crash_freq_dialog_message">Minis a planté plusieurs fois durant la dernière heure. Partager les journaux de plantage pour aider à résoudre le problème ?</string>
     <string name="crash_freq_dialog_share">Partager les journaux</string>
     <string name="crash_freq_dialog_dismiss">Pas maintenant</string>
+    <string name="crash_safe_mode_restart_needed">Minis doit redémarrer pour terminer la récupération. Veuillez appuyer à nouveau sur l\'icône de l\'application.</string>
     <string name="crash_freq_email_subject">Rapport de plantage Minis %1$s</string>
     <string name="crash_freq_share_chooser">Envoyer les journaux de plantage</string>
     <string name="image_action_copy">Copier</string>
@@ -949,4 +977,10 @@
     <string name="browser_downloads_cancel">Annuler le téléchargement</string>
     <string name="browser_downloads_failed">Échec</string>
     <string name="browser_downloads_open">Ouvrir</string>
+    <string name="shizuku_install_btn_sui">Installer Sui</string>
+    <string name="shizuku_install_btn_sui_subtitle">RikkaApps · pour appareils rootés (Magisk/KernelSU) · sans app, survit aux redémarrages</string>
+    <string name="shizuku_ready_subtitle_sui">Sui (root) · version=%1$d, uid=%2$d</string>
+    <string name="shizuku_grant_footer_sui">Sui est actif. Touchez « Autoriser Minis » pour accorder l\'accès — Sui affichera lui-même la boîte de dialogue. Il n\'y a pas d\'app de gestion distincte à ouvrir.</string>
+    <string name="shizuku_install_footer">Installez au choix Shizuku (RikkaApps), AXManager (Axeron) ou Sui (RikkaApps) — les trois utilisent le même protocole et sont interchangeables. Shizuku et AXManager sont des applications activées via ADB sans fil. Sui s\'adresse aux appareils déjà rootés : il s\'installe comme module Magisk/KernelSU, ne nécessite aucune app et reste actif après redémarrage. Sur KernelSU ou APatch, Sui exige en plus une implémentation Zygisk (Zygisk Next / ReZygisk / NeoZygisk) — sans elle, Sui ne se charge pas. Installez-en un, puis revenez ici.</string>
+    <string name="shizuku_state_not_installed_subtitle">Installez Shizuku, AXManager ou Sui — l\'un des trois suffit.</string>
 </resources>

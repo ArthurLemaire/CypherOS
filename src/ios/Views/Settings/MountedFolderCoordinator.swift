@@ -36,21 +36,52 @@ enum MountedFolderCoordinator {
     /// pre-reject writes with a friendly message instead of failing deep in
     /// the call stack with EACCES.
     static func isUnderReadOnlyMount(_ url: URL) -> Bool {
-        let resolvedPath = url.resolvingSymlinksInPath().standardized.path
-        let entries: [(path: String, readOnly: Bool)]
-        if Thread.isMainThread {
-            entries = MainActor.assumeIsolated { Self.readOnlyMountSnapshot() }
-        } else {
-            var snapshot: [(String, Bool)] = []
-            DispatchQueue.main.sync { snapshot = Self.readOnlyMountSnapshot() }
-            entries = snapshot
-        }
+        let entries = mountSnapshot()
+        let candidates = comparablePaths(for: url)
         for entry in entries where entry.readOnly {
-            if resolvedPath == entry.path { return true }
-            let prefix = entry.path.hasSuffix("/") ? entry.path : entry.path + "/"
-            if resolvedPath.hasPrefix(prefix) { return true }
+            if candidates.contains(where: { pathIsAtOrUnder($0, root: entry.path) }) {
+                return true
+            }
         }
         return false
+    }
+
+    /// Candidate path spellings for `url` to compare against mount roots.
+    ///
+    /// Always includes the standardized path (pure string work). Adds the
+    /// symlink-resolved path **only off the main thread**:
+    /// `resolvingSymlinksInPath()` on a path inside a network- or
+    /// FileProvider-backed mount is a `getattrlist(2)` that traps into a
+    /// synchronous XPC call to the owning provider, and on a slow or
+    /// unreachable volume it parks the calling thread. On the main thread that
+    /// means a 10s scene-update watchdog SIGKILL, so there we accept the
+    /// slightly weaker string-only comparison. Mount roots on the other side of
+    /// the comparison are already canonical (resolved once at activation), and
+    /// callers reach these helpers with paths built from those same roots, so
+    /// the string form matches in practice.
+    private static func comparablePaths(for url: URL) -> [String] {
+        let standardized = url.standardized.path
+        guard !Thread.isMainThread else { return [standardized] }
+        let resolved = url.resolvingSymlinksInPath().standardized.path
+        return resolved == standardized ? [standardized] : [standardized, resolved]
+    }
+
+    /// True if `path` is the mount root itself or lives beneath it, with the
+    /// prefix test aligned to a directory boundary.
+    private static func pathIsAtOrUnder(_ path: String, root: String) -> Bool {
+        if path == root { return true }
+        let prefix = root.hasSuffix("/") ? root : root + "/"
+        return path.hasPrefix(prefix)
+    }
+
+    /// Fetch the mount snapshot, hopping to the main actor only when needed.
+    private static func mountSnapshot() -> [(path: String, readOnly: Bool)] {
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated { Self.readOnlyMountSnapshot() }
+        }
+        var snapshot: [(path: String, readOnly: Bool)] = []
+        DispatchQueue.main.sync { snapshot = Self.readOnlyMountSnapshot() }
+        return snapshot
     }
 
     /// Returns true if `linuxPath` (a `/var/minis/mounts/<name>/...` path from
@@ -82,8 +113,11 @@ enum MountedFolderCoordinator {
     private static func readOnlyMountSnapshot() -> [(path: String, readOnly: Bool)] {
         let manager = MountedFoldersManager.shared
         return manager.entries.compactMap { entry in
-            guard let url = manager.resolvedURL(for: entry.id) else { return nil }
-            let path = url.resolvingSymlinksInPath().standardized.path
+            // Use the canonical path memoized at activation rather than
+            // resolving here — this runs on the main actor, where
+            // `resolvingSymlinksInPath()` on a mount root can block on the
+            // backing volume (see MountedFoldersManager.canonicalMountPaths).
+            guard let path = manager.canonicalPath(for: entry.id) else { return nil }
             // A mount is effectively read-only if either the OS doesn't allow
             // writes OR the user has turned off allow-write in Settings.
             return (path: path, readOnly: !entry.effectiveWritable)
@@ -92,40 +126,42 @@ enum MountedFolderCoordinator {
 
     /// Returns the resolved host root URL of the mount containing `url`, or nil.
     static func mountRoot(for url: URL) -> URL? {
-        let resolved = url.resolvingSymlinksInPath().standardized
-        let resolvedPath = resolved.path
+        let candidates = comparablePaths(for: url)
 
-        // Gather all active mount host paths from the manager.
+        // Gather active mounts as (url, canonicalPath) pairs. The canonical
+        // path is memoized at activation, so nothing here resolves symlinks —
+        // doing that per root on the main thread is what blocked on
+        // unreachable network / FileProvider volumes.
         // We access MainActor state via assumeIsolated when on main, otherwise
         // fall back to a snapshot path — MountedFoldersManager entries rarely
         // change and resolution here only needs a point-in-time check.
-        let roots: [URL]
+        let roots: [(url: URL, path: String)]
         if Thread.isMainThread {
-            roots = MainActor.assumeIsolated {
-                MountedFoldersManager.shared.entries.compactMap {
-                    MountedFoldersManager.shared.resolvedURL(for: $0.id)
-                }
-            }
+            roots = MainActor.assumeIsolated { Self.activeMountRoots() }
         } else {
             // Dispatch sync to main is safe here because this runs on a
             // file-browser worker queue. Keep timeout small.
-            var snapshot: [URL] = []
-            DispatchQueue.main.sync {
-                snapshot = MountedFoldersManager.shared.entries.compactMap {
-                    MountedFoldersManager.shared.resolvedURL(for: $0.id)
-                }
-            }
+            var snapshot: [(url: URL, path: String)] = []
+            DispatchQueue.main.sync { snapshot = Self.activeMountRoots() }
             roots = snapshot
         }
 
         for root in roots {
-            let rootPath = root.resolvingSymlinksInPath().standardized.path
-            if resolvedPath == rootPath { return root }
-            // Ensure prefix is directory-boundary-aligned.
-            let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
-            if resolvedPath.hasPrefix(prefix) { return root }
+            if candidates.contains(where: { pathIsAtOrUnder($0, root: root.path) }) {
+                return root.url
+            }
         }
         return nil
+    }
+
+    @MainActor
+    private static func activeMountRoots() -> [(url: URL, path: String)] {
+        let manager = MountedFoldersManager.shared
+        return manager.entries.compactMap { entry in
+            guard let url = manager.resolvedURL(for: entry.id),
+                  let path = manager.canonicalPath(for: entry.id) else { return nil }
+            return (url: url, path: path)
+        }
     }
 
     // MARK: - iCloud download

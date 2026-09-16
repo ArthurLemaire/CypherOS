@@ -1294,6 +1294,55 @@ private data class TaskItem(val checked: Boolean, val text: String)
 
 // ─── Block parser ───────────────────────────────────────────────────────────
 
+/**
+ * [T-android-latex-code-mask] Find the line index that closes a multi-line
+ * `$$` display-math block opened just before [from], or null when no
+ * *plausible* closer exists.
+ *
+ * Mirrors the rules ported into MarkdownParser (521b2dc7 / iOS bce7e2ed):
+ *  - stop at a blank line — that is a paragraph break, so the `$$` was never
+ *    a formula opener;
+ *  - stop at a fence marker (``` / ~~~) and never look past it, so a `$$`
+ *    living inside a code block can never be mistaken for the closer;
+ *  - require at least one LaTeX-ish glyph in the body, so runs of plain prose
+ *    are not silently rendered as math.
+ *
+ * Returning null makes the caller emit the `$$` as literal text, which is what
+ * the user typed and what every other markdown renderer does.
+ */
+private fun findDisplayMathClose(lines: List<String>, from: Int): Int? {
+    var j = from
+    val body = StringBuilder()
+    while (j < lines.size) {
+        val l = lines[j]
+        val t = l.trimStart()
+        // A fence starts/ends a code region — a `$$` beyond it is not our closer.
+        if (t.startsWith("```") || t.startsWith("~~~")) return null
+        // Blank line = paragraph break; real display math has no interior blank.
+        if (t.isBlank()) return null
+        val close = l.indexOf("$$")
+        if (close >= 0) {
+            body.append(l.substring(0, close))
+            val text = body.toString()
+            // A closer sitting alone on its own line is the conventional
+            // `$$ … $$` block shape and is accepted unconditionally — that
+            // covers glyph-free but perfectly valid math like "1 + 2 = 3",
+            // which an "always require a LaTeX glyph" rule would wrongly
+            // demote to plain text.
+            if (t == "$$") return j
+            // Degenerate empty body is harmless.
+            if (text.isBlank()) return j
+            // Otherwise the closer is mid-line (e.g. "… foo $$ bar"), which is
+            // the shape a stray delimiter in prose produces. Only accept it
+            // when the body actually looks like a formula.
+            return if (text.any { it == '\\' || it == '^' || it == '_' || it == '{' || it == '}' }) j else null
+        }
+        body.append(l).append('\n')
+        j++
+    }
+    return null
+}
+
 private suspend fun parseMarkdownBlocks(content: String): List<MdBlock> {
     val blocks = mutableListOf<MdBlock>()
     val lines = content.lines()
@@ -1322,24 +1371,46 @@ private suspend fun parseMarkdownBlocks(content: String): List<MdBlock> {
                     blocks.add(MdBlock.MathDisplay(line, latex))
                     i++
                 } else {
-                    // Multi-line: scan forward until a line containing `$$`
-                    val rawLines = mutableListOf(line)
-                    val mathLines = mutableListOf<String>()
-                    if (rest.isNotEmpty()) mathLines.add(rest)
-                    i++
-                    while (i < lines.size) {
-                        rawLines.add(lines[i])
-                        val close = lines[i].indexOf("$$")
-                        if (close >= 0) {
-                            val pre = lines[i].substring(0, close)
-                            if (pre.isNotEmpty()) mathLines.add(pre)
-                            i++
-                            break
-                        }
-                        mathLines.add(lines[i])
+                    // [T-android-latex-code-mask] Multi-line: LOOK AHEAD for the
+                    // closing `$$` and validate it before committing. The old
+                    // loop scanned forward unconditionally, so an unclosed `$$`
+                    // (a model forgetting to close it, or prose explaining
+                    // LaTeX) paired with a `$$` inside a LATER ``` fence and
+                    // swallowed every paragraph in between plus the fence's own
+                    // opening line — leaving an orphaned closing fence. This is
+                    // issue #117 defect 3 on the streaming path; the same defect
+                    // was fixed in MarkdownParser (521b2dc7), but THIS is the
+                    // renderer the chat transcript actually uses.
+                    val closeIdx = findDisplayMathClose(lines, i + 1)
+                    if (closeIdx == null) {
+                        // No plausible closer — emit the `$$` as ordinary text
+                        // and let the following lines parse normally.
+                        blocks.add(MdBlock.Paragraph(line))
                         i++
+                    } else {
+                        val rawLines = mutableListOf(line)
+                        val mathLines = mutableListOf<String>()
+                        if (rest.isNotEmpty()) mathLines.add(rest)
+                        i++
+                        while (i <= closeIdx) {
+                            rawLines.add(lines[i])
+                            if (i == closeIdx) {
+                                val close = lines[i].indexOf("$$")
+                                val pre = lines[i].substring(0, close)
+                                if (pre.isNotEmpty()) mathLines.add(pre)
+                                i++
+                                break
+                            }
+                            mathLines.add(lines[i])
+                            i++
+                        }
+                        blocks.add(
+                            MdBlock.MathDisplay(
+                                rawLines.joinToString("\n"),
+                                mathLines.joinToString("\n").trim(),
+                            ),
+                        )
                     }
-                    blocks.add(MdBlock.MathDisplay(rawLines.joinToString("\n"), mathLines.joinToString("\n").trim()))
                 }
             }
             trimmed.startsWith("\\[") -> {

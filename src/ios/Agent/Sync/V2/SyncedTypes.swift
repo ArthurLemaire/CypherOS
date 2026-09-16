@@ -21,6 +21,7 @@ struct SyncedSession: Syncable {
     var memoryEnabled: Int          // 0/1
     var modelBinding: String?
     var pinnedAt: Date?
+    var folderId: String?
 
     static let syncMetadata: SyncTypeMetadata<SyncedSession> = {
         typealias F = FieldDescriptor<SyncedSession>
@@ -38,6 +39,10 @@ struct SyncedSession: Syncable {
                 F.int("memoryEnabled",       \SyncedSession.memoryEnabled),
                 F.optionalString("modelBinding", \SyncedSession.modelBinding),
                 F.optionalDate("pinnedAt",   \SyncedSession.pinnedAt),
+                // Optional field added the same way pinnedAt was (no version
+                // bump): old devices ignore the unknown CKRecord field on read
+                // and omit it on write, both of which decode as nil here.
+                F.optionalString("folderId", \SyncedSession.folderId),
             ],
             conflictPolicy: .lastWriteWinsByField(\SyncedSession.updatedAt),
             version: 1
@@ -54,7 +59,8 @@ struct SyncedSession: Syncable {
             updatedAt: s.updatedAt,
             memoryEnabled: memoryEnabled ? 1 : 0,
             modelBinding: modelBinding,
-            pinnedAt: s.pinnedAt
+            pinnedAt: s.pinnedAt,
+            folderId: s.folderId
         )
     }
 }
@@ -523,6 +529,56 @@ struct SyncedProviderModelGroupV3: Syncable {
     }()
 }
 
+/// [T-icloud-thinking-rules-sync] One USER-AUTHORED thinking rule.
+///
+/// Built-in rules are deliberately absent from this type. They are code constants
+/// recomputed per request on every device, are never persisted (`is_builtin = 0` is
+/// hardcoded on every write path), and must never travel over the wire — a built-in
+/// arriving as a record would become an undeletable duplicate on the receiver.
+///
+/// `wireFormatJson` is carried as an OPAQUE STRING, not a decoded enum. This is the
+/// forward-compatibility guarantee: a rule authored on a newer build using a
+/// `wire_format.kind` this build has never seen round-trips byte-for-byte instead of
+/// being dropped or coerced into a wrong shape. Decoding happens only at the point of
+/// use (`ProviderConfigDB.loadThinkingRules`), which already skips an unreadable row
+/// individually rather than failing the whole read.
+struct SyncedProviderThinkingRuleV3: Syncable {
+    var id: String                  // rule UUID (custom rules only)
+    var instanceId: String          // owning ProviderInstance UUID
+    var sortOrder: Int              // position = priority; first match wins
+    var scopeKind: String           // "allModels" | "modelPattern"
+    var scopePattern: String?       // non-nil only for .modelPattern
+    var wireFormatJson: String      // opaque {"kind":…} payload — see above
+    var echoField: String?          // ReasoningEchoPolicy.fieldName
+    var echoTiming: String?         // "everyTurn" | "afterToolUseOnly" | "never"
+    var label: String
+    var createdAt: Date
+    var updatedAt: Date
+
+    static let syncMetadata: SyncTypeMetadata<SyncedProviderThinkingRuleV3> = {
+        typealias F = FieldDescriptor<SyncedProviderThinkingRuleV3>
+        return SyncTypeMetadata<SyncedProviderThinkingRuleV3>(
+            recordType: "ProviderThinkingRuleV3",
+            idKeyPath: \SyncedProviderThinkingRuleV3.id,
+            scope: .global,
+            fields: [
+                F.string("instanceId",           \SyncedProviderThinkingRuleV3.instanceId),
+                F.int("sortOrder",               \SyncedProviderThinkingRuleV3.sortOrder),
+                F.string("scopeKind",            \SyncedProviderThinkingRuleV3.scopeKind),
+                F.optionalString("scopePattern", \SyncedProviderThinkingRuleV3.scopePattern),
+                F.string("wireFormatJson",       \SyncedProviderThinkingRuleV3.wireFormatJson),
+                F.optionalString("echoField",    \SyncedProviderThinkingRuleV3.echoField),
+                F.optionalString("echoTiming",   \SyncedProviderThinkingRuleV3.echoTiming),
+                F.string("label",                \SyncedProviderThinkingRuleV3.label),
+                F.date("createdAt",              \SyncedProviderThinkingRuleV3.createdAt),
+                F.date("updatedAt",              \SyncedProviderThinkingRuleV3.updatedAt),
+            ],
+            conflictPolicy: .lastWriteWinsByField(\SyncedProviderThinkingRuleV3.updatedAt),
+            version: 1
+        )
+    }()
+}
+
 // MARK: - SyncedEnvVars (legacy whole-file record)
 //
 // Kept for inbound compatibility ONLY. New devices push per-variable
@@ -720,12 +776,67 @@ struct SyncedMemoryDaily: Syncable {
     }()
 }
 
+// MARK: - SyncedFolder
+
+/// Home-list session folder (FolderV2). Identity is the locally generated
+/// UUID; `name` intentionally carries no uniqueness guarantee — two devices
+/// may each create "Work" offline and both records coexist after sync (no
+/// auto-merge). Rename is a single LWW field here precisely because members
+/// reference the UUID, so a rename never touches SessionV2 records.
+/// Deleting a folder propagates as a tombstone whose apply-side clears
+/// members' folderId — it never deletes sessions.
+struct SyncedFolder: Syncable {
+    var id: String
+    var name: String
+    var icon: String?
+    var color: String?
+    var origin: String
+    var sortIndex: Int
+    var pinnedAt: Date?
+    var desc: String?
+    var createdAt: Date
+    var updatedAt: Date
+
+    static let syncMetadata: SyncTypeMetadata<SyncedFolder> = {
+        typealias F = FieldDescriptor<SyncedFolder>
+        return SyncTypeMetadata<SyncedFolder>(
+            recordType: "FolderV2",
+            idKeyPath: \SyncedFolder.id,
+            scope: .global,
+            fields: [
+                F.string("folderId",        \SyncedFolder.id),
+                F.string("name",            \SyncedFolder.name),
+                F.optionalString("icon",    \SyncedFolder.icon),
+                F.optionalString("color",   \SyncedFolder.color),
+                F.string("origin",          \SyncedFolder.origin),
+                F.int("sortIndex",          \SyncedFolder.sortIndex),
+                F.optionalDate("pinnedAt",  \SyncedFolder.pinnedAt),
+                F.optionalString("desc",    \SyncedFolder.desc),
+                F.date("createdAt",         \SyncedFolder.createdAt),
+                F.date("updatedAt",         \SyncedFolder.updatedAt),
+            ],
+            conflictPolicy: .lastWriteWinsByField(\SyncedFolder.updatedAt),
+            version: 1
+        )
+    }()
+
+    static func from(_ f: ChatFolder) -> SyncedFolder {
+        SyncedFolder(
+            id: f.id, name: f.name, icon: f.icon, color: f.color,
+            origin: f.origin, sortIndex: f.sortIndex, pinnedAt: f.pinnedAt,
+            desc: f.desc,
+            createdAt: f.createdAt, updatedAt: f.updatedAt
+        )
+    }
+}
+
 enum SyncedTypesBootstrap {
     static func registerAll() {
         let r = SyncableTypeRegistry.shared
         r.register(SyncedSession.self)
         r.register(SyncedMessage.self)
         r.register(SyncedCompactMarker.self)
+        r.register(SyncedFolder.self)
         r.register(SyncedSessionFile.self)
         r.register(SyncedSkill.self)
         r.register(SyncedProviderConfig.self)
@@ -738,6 +849,7 @@ enum SyncedTypesBootstrap {
         r.register(SyncedProviderInstanceV3.self)
         r.register(SyncedProviderModelEntryV3.self)
         r.register(SyncedProviderModelGroupV3.self)
+        r.register(SyncedProviderThinkingRuleV3.self)
         r.register(SyncedEnvVars.self)   // legacy whole-file, inbound only
         r.register(SyncedEnvVar.self)    // per-variable, current schema
         r.register(SyncedDevice.self)

@@ -1496,7 +1496,37 @@ Do not create extraneous files: README.md, INSTALLATION_GUIDE.md, CHANGELOG.md, 
                     body = parsed.body
                     // Re-resolve name/description from disk when DB has stale values
                     let nameStale = (name == Self.defaultSkillName && parsed.name != Self.defaultSkillName)
-                    let descStale = (description == "|" || description == ">") && !parsed.description.isEmpty
+                    // [T-ios-skill-empty-description-never-refreshes] GH#215.
+                    // An EMPTY DB description is stale too, not just the literal
+                    // "|" / ">" block-scalar indicators the original check knew
+                    // about.
+                    //
+                    // How a skill gets stuck: the agent writes
+                    // /var/minis/skills/<name>/SKILL.md from the iSH shell, and
+                    // `discoverNewSkillsOnDisk` → `reconcileOrphanSkill` can
+                    // register it while the file is still being written and has
+                    // no `description:` line yet. "" is then persisted, and
+                    // because the stale test only matched "|" / ">", every later
+                    // load trusted that "" forever. The reporter confirmed
+                    // touch, rewriting the frontmatter, and even `rm -rf` +
+                    // recreate all failed — nothing re-parses, because the DB
+                    // row (keyed by directory name) survives. Only renaming the
+                    // skill worked, since that mints a new DB id.
+                    //
+                    // Safe by construction against the a720585db concern
+                    // (a mid-edit / malformed SKILL.md must never wipe good
+                    // metadata): the refresh requires `!parsed.description
+                    // .isEmpty`, and a parse failure yields exactly
+                    // name == defaultSkillName && description == "" (see
+                    // `parseFailed` in rescanFromDisk). So a failed parse can
+                    // never satisfy this condition — it can only ever REPLACE an
+                    // empty value with a real one, never the reverse.
+                    //
+                    // It also cannot overwrite a user's deliberate description:
+                    // the DB value must be empty for this to fire, and an empty
+                    // description is not something a user meaningfully "set".
+                    let descStale = (description == "|" || description == ">" || description.isEmpty)
+                        && !parsed.description.isEmpty
                     if nameStale { resolvedName = parsed.name }
                     if descStale { resolvedDesc = parsed.description }
                     if nameStale || descStale {

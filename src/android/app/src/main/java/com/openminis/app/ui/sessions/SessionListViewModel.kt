@@ -10,6 +10,7 @@ import com.openminis.app.data.model.LLMMessage
 import com.openminis.app.data.model.ThinkingLevel
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.ProviderRepository
+import com.openminis.app.logging.AppLogger
 import com.openminis.app.provider.ProviderFactory
 import com.openminis.app.ui.chat.ChatViewModelStore
 import kotlinx.coroutines.Dispatchers
@@ -36,6 +37,14 @@ class SessionListViewModel(
 
     companion object {
         private const val TAG = "SessionListVM"
+
+        /**
+         * [GH#210] The placeholder ChatViewModel writes for a session whose
+         * title has not been generated yet. The fallback path keys off this
+         * exact string (plus null/blank), which is what keeps a user-typed
+         * title from ever being overwritten.
+         */
+        private const val NEW_CHAT_TITLE = "New Chat"
 
         /**
          * Factory for use with `androidx.lifecycle.viewmodel.compose.viewModel`.
@@ -270,9 +279,35 @@ class SessionListViewModel(
                 regeneratingIds.value = regeneratingIds.value + id
             }
             try {
-                val session = chatRepository.getSession(id) ?: return@launch
+                generateTitleFromStore(id, origin = "manual")
+            } finally {
+                withContext(Dispatchers.Main) {
+                    regeneratingIds.value = regeneratingIds.value - id
+                }
+            }
+        }
+    }
+
+    /**
+     * [GH#210] Generate a title for [id] purely from what is in the DB.
+     *
+     * Takes no ViewModel state, so the same code serves any USER-INITIATED
+     * entry point. It is deliberately never called automatically: an implicit
+     * LLM request the user did not ask for — e.g. sweeping untitled sessions
+     * at list load — would mean a burst of hidden network calls at startup,
+     * which is not an acceptable trade for a cosmetic title.
+     *
+     * @param origin tags the log line so different entry points can be told
+     *   apart when reconciling dispatch against outcome.
+     * @return true when a title was written (LLM or fallback).
+     */
+    private suspend fun generateTitleFromStore(id: String, origin: String): Boolean {
+        val startedAt = System.currentTimeMillis()
+        var firstUserRaw: String? = null
+        try {
+                val session = chatRepository.getSession(id) ?: return false
                 val messages = chatRepository.loadMessages(id)
-                if (messages.isEmpty()) return@launch
+                if (messages.isEmpty()) return false
 
                 // [T-titlegen-context-first-last-pair] Summary = first user +
                 // first assistant, plus (when the session has more than one user
@@ -280,7 +315,9 @@ class SessionListViewModel(
                 // chars — so a regenerated title reflects a mid/late topic shift
                 // rather than only the opener.
                 val userMessages = messages.filter { it.role == "user" }
-                val userText = userMessages.firstOrNull()?.let { extractText(it.partsJson) }?.take(200) ?: return@launch
+                // Keep the untruncated first user message for the fallback path.
+                firstUserRaw = userMessages.firstOrNull()?.let { extractText(it.partsJson) }
+                val userText = firstUserRaw?.take(200) ?: return false
                 // First/last assistant *text* message — skip tool-only messages
                 // whose extracted text is blank so the summary carries real prose.
                 val assistantTexts = messages.filter { it.role == "assistant" }
@@ -360,7 +397,10 @@ class SessionListViewModel(
                         continue
                     }
 
-                    Log.i(TAG, "regenerateTitle: trying ${instance.label.ifEmpty { entry.model.provider }} / ${entry.model.displayName}")
+                    AppLogger.info(
+                        "TitleGen",
+                        "dispatch origin=$origin session=${id.take(8)} model=${entry.model.id}",
+                    )
 
                     try {
                         // T334: reasoning models burn the entire token budget on hidden thinking
@@ -397,8 +437,12 @@ class SessionListViewModel(
                         val (title, category) = parseTitleResponse(response.text)
                         if (title.isNotEmpty()) {
                             chatRepository.updateSessionTitleAndCategory(id, title, category)
-                            Log.i(TAG, "Regenerated title='$title' category='$category' via ${entry.model.displayName}")
-                            return@launch
+                            AppLogger.info(
+                                "TitleGen",
+                                "outcome=set origin=$origin session=${id.take(8)} " +
+                                    "model=${entry.model.id} elapsedMs=${System.currentTimeMillis() - startedAt}",
+                            )
+                            return true
                         }
                         // T334: previously this empty-result path was silent — only the *last*
                         // failing candidate's exception got reported, masking budget exhaustion
@@ -416,15 +460,83 @@ class SessionListViewModel(
                         continue
                     }
                 }
-                Log.w(TAG, "Title regeneration exhausted all providers. Last error: ${lastError?.message}")
-            } catch (e: Exception) {
-                Log.w(TAG, "Title regeneration failed: ${e.message}", e)
-            } finally {
-                withContext(Dispatchers.Main) {
-                    regeneratingIds.value = regeneratingIds.value - id
-                }
+            AppLogger.warning(
+                "TitleGen",
+                "outcome=no-title origin=$origin session=${id.take(8)} " +
+                    "reason=all-candidates-exhausted lastError=${lastError?.javaClass?.simpleName} " +
+                    "elapsedMs=${System.currentTimeMillis() - startedAt}",
+            )
+        } catch (e: Exception) {
+            AppLogger.warning(
+                "TitleGen",
+                "outcome=exception origin=$origin session=${id.take(8)} " +
+                    "${e.javaClass.simpleName}: ${e.message?.take(200)} " +
+                    "elapsedMs=${System.currentTimeMillis() - startedAt}",
+            )
+        }
+        // Every failure exit lands here. Mirrors iOS applyFallbackTitle: the
+        // session must never be left permanently untitled just because the LLM
+        // was unreachable.
+        return applyFallbackTitle(id, firstUserRaw, origin)
+    }
+
+    /**
+     * [GH#210] Write a title derived from the first user message.
+     *
+     * Mirrors iOS `applyFallbackTitle` — including its re-read of the session
+     * immediately before writing. That re-check is the guard that keeps this
+     * from clobbering a title the user typed (or a concurrent attempt set)
+     * while the LLM call was in flight, which can be tens of seconds.
+     */
+    private suspend fun applyFallbackTitle(id: String, firstUserRaw: String?, origin: String): Boolean {
+        val current = chatRepository.getSession(id)?.title?.trim()
+        if (!current.isNullOrEmpty() && current != NEW_CHAT_TITLE) {
+            AppLogger.info(
+                "TitleGen",
+                "outcome=fallback-skipped origin=$origin session=${id.take(8)} reason=already-titled",
+            )
+            return false
+        }
+        val cleaned = fallbackTitleFrom(firstUserRaw)
+        if (cleaned == null) {
+            AppLogger.warning(
+                "TitleGen",
+                "outcome=fallback-unavailable origin=$origin session=${id.take(8)} " +
+                    "reason=first-user-message-empty-after-cleanup",
+            )
+            return false
+        }
+        chatRepository.updateSessionTitle(id, cleaned)
+        // Length only — never the prompt text itself.
+        AppLogger.info(
+            "TitleGen",
+            "outcome=fallback origin=$origin session=${id.take(8)} titleLen=${cleaned.length}",
+        )
+        return true
+    }
+
+    /**
+     * Strip the composer's `<user-attached-files>` block, collapse whitespace
+     * and truncate to 30 chars. Same shape as iOS `fallbackTitle(fromFirst‑
+     * UserMessage:)` and ChatViewModel.applyFallbackTitleFromFirstMessage, so
+     * a title recovered here is indistinguishable from one written by the auto
+     * path. Returns null when nothing usable remains.
+     */
+    private fun fallbackTitleFrom(raw: String?): String? {
+        var text = raw ?: return null
+        val startIdx = text.indexOf("<user-attached-files>")
+        if (startIdx >= 0) {
+            val endTag = "</user-attached-files>"
+            val endIdx = text.indexOf(endTag, startIdx)
+            text = if (endIdx >= 0) {
+                text.substring(0, startIdx) + text.substring(endIdx + endTag.length)
+            } else {
+                text.substring(0, startIdx)
             }
         }
+        val cleaned = text.replace(Regex("\\s+"), " ").trim()
+        if (cleaned.isEmpty()) return null
+        return if (cleaned.length > 30) cleaned.take(30).trimEnd() + "…" else cleaned
     }
 
     private fun extractText(partsJson: String): String {

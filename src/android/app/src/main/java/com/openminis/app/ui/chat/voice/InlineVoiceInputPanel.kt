@@ -440,6 +440,22 @@ fun InlineVoiceInputPanel(
     val screenH = LocalConfiguration.current.screenHeightDp.dp
     val maxPanel = screenH * 0.6f
 
+    // [T-android-voice-entry-always-available] No usable ASR engine. The mic
+    // button no longer hides in this case (hiding it stranded users inside
+    // voice mode), so the panel owns the explanation: say WHY nothing will be
+    // transcribed and link to the two things that fix it — the system speech
+    // service, or an ASR provider configured in Minis. The composer's toggle
+    // stays visible throughout, so leaving is always one tap away.
+    val engineAvailable by SpeechRecognitionManager.isAvailable.collectAsState()
+    if (!engineAvailable) {
+        VoiceEngineUnavailableNotice(
+            expanded = expanded,
+            onToggleExpanded = { persistExpanded(!expanded) },
+            modifier = modifier,
+        )
+        return
+    }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -1070,4 +1086,127 @@ private fun statusLabel(
         return tips[resultTipIndex % tips.size]
     }
     return stringResource(R.string.voice_panel_tap_to_speak)
+}
+
+/**
+ * [T-android-voice-entry-always-available] Shown in place of the recording UI
+ * when no speech engine can transcribe right now.
+ *
+ * This exists because the composer's mic/keyboard toggle is no longer hidden
+ * when speech is unavailable — hiding it was what stranded users inside voice
+ * mode. The control stays, so this panel has to answer "why is nothing
+ * happening?" and offer the two real fixes:
+ *
+ *  - the device's speech service (Google app / OEM equivalent) is missing or
+ *    disabled → open system voice-input settings;
+ *  - no ASR provider is configured in Minis → open Provider settings.
+ *
+ * Leaving is always available: the toggle in the composer is untouched.
+ */
+@Composable
+private fun VoiceEngineUnavailableNotice(
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = if (expanded) ExpandedBase else CompactHeight)
+            .animateContentSize(animationSpec = tween(280))
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+    ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            CircleIconButton(
+                icon = if (expanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                contentDescription = stringResource(
+                    if (expanded) R.string.voice_panel_collapse else R.string.voice_panel_expand,
+                ),
+                modifier = Modifier.align(Alignment.TopStart),
+            ) { onToggleExpanded() }
+
+            Text(
+                text = stringResource(R.string.voice_panel_no_engine_title),
+                style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(horizontal = 44.dp),
+            )
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        Text(
+            text = stringResource(R.string.voice_panel_no_engine_body),
+            style = TextStyle(fontSize = 12.sp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            NoticeActionButton(stringResource(R.string.voice_panel_no_engine_open_system)) {
+                // Best-effort: the exact voice-input screen varies by OEM, so
+                // fall back to the app's own settings page rather than crashing
+                // on a device that doesn't expose the specific action.
+                val opened = runCatching {
+                    ctx.startActivity(
+                        android.content.Intent("android.settings.VOICE_INPUT_SETTINGS")
+                            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                    true
+                }.getOrDefault(false)
+                if (!opened) {
+                    runCatching {
+                        ctx.startActivity(
+                            android.content.Intent(android.provider.Settings.ACTION_SETTINGS)
+                                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            NoticeActionButton(stringResource(R.string.voice_panel_no_engine_open_providers)) {
+                runCatching {
+                    ctx.startActivity(
+                        android.content.Intent(
+                            android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse("minis://settings/providers"),
+                        ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Small pill button used by [VoiceEngineUnavailableNotice]. */
+@Composable
+private fun NoticeActionButton(label: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .background(ChatColors.inputIconBg, RoundedCornerShape(14.dp))
+            .border(0.5.dp, ChatColors.inputIconBorder, RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onClick() }
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            style = TextStyle(fontSize = 12.sp),
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+    }
 }

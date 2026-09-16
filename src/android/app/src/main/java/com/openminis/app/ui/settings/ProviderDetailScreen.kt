@@ -512,6 +512,9 @@ fun ProviderDetailScreen(
             }
         }
 
+        // ─── Thinking Rules [T-android-thinking-rules-phase2 §3] ─────
+        ThinkingRulesSection(instance = instance, providerRepository = providerRepository)
+
         // ─── Models ─────────────────────────────────────────────────
         SettingsSection(
             header = stringResource(R.string.provider_detail_models_count_header, entries.size),

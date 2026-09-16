@@ -24,6 +24,9 @@ struct RetryRunIntent: AppIntent {
     @Parameter(title: "Wait for Result", description: "When enabled, waits for the AI to finish and returns the full response for use in subsequent actions.", default: false)
     var waitForResult: Bool
 
+    @Parameter(title: "Send Notifications", description: "When enabled, posts a system notification when the task starts and again when it finishes. Turn this off for automations that run silently. The app's global task-notification setting still applies.", default: true)
+    var sendCompletionNotification: Bool
+
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<SendPromptResult> & ProvidesDialog {
         BackgroundKeepAliveManager.shared.setup()
@@ -51,6 +54,11 @@ struct RetryRunIntent: AppIntent {
         )
 
         let (vm, isNew) = ViewModelCache.shared.getOrCreate(for: session.id)
+        // [T-shortcut-duplicate-completion-notification] See SendPromptIntent.
+        // Note this deliberately does NOT set `sessionSource = "shortcut"`: this
+        // session may have been created by hand in the app, and that tag also
+        // drives near-capacity auto-compaction.
+        vm.suppressGeneralCompletionNotification = true
         if isNew {
             await vm.loadSession()
         }
@@ -82,7 +90,7 @@ struct RetryRunIntent: AppIntent {
             }
             return .result(
                 value: SendPromptResult(sessionId: session.id, modelName: "N/A", status: "Error", isNewSession: false),
-                dialog: "No user messages found in this session."
+                dialog: IntentDialog(stringLiteral: String(localized: "No user messages found in this session."))
             )
         }
 
@@ -159,12 +167,15 @@ struct RetryRunIntent: AppIntent {
             }
         }
 
-        ShortcutNotification.post(
-            id: "shortcut-retry-\(sid)",
-            title: "Minis: Retrying",
-            body: "\(modelName): \(promptPreview)\(targetMessage.content.count > 50 ? "…" : "")",
-            sessionId: sid
-        )
+        // Notification: retry started. See the note in SendPromptIntent.
+        if sendCompletionNotification {
+            ShortcutNotification.post(
+                id: "shortcut-retry-\(sid)",
+                title: String(localized: "Minis: Retrying"),
+                body: "\(modelName): \(promptPreview)\(targetMessage.content.count > 50 ? "…" : "")",
+                sessionId: sid
+            )
+        }
 
         if waitForResult {
             for await processing in vm.$isProcessing.values {
@@ -176,12 +187,16 @@ struct RetryRunIntent: AppIntent {
 
             let responseText = SendPromptIntent.extractResponseText(from: vm)
 
-            ShortcutNotification.post(
-                id: "shortcut-retry-done-\(sid)",
-                title: "Minis: Retry Done",
-                body: "\(modelName): \(String(responseText.prefix(200)))",
-                sessionId: sid
-            )
+            // Per-run opt-out. ANDs with the app-wide toggle, which
+            // ShortcutNotification.post checks internally — do not duplicate it here.
+            if sendCompletionNotification {
+                ShortcutNotification.post(
+                    id: "shortcut-retry-done-\(sid)",
+                    title: String(localized: "Minis: Retry Done"),
+                    body: "\(modelName): \(String(responseText.prefix(200)))",
+                    sessionId: sid
+                )
+            }
 
             let result = SendPromptResult(
                 sessionId: sid,
@@ -198,6 +213,7 @@ struct RetryRunIntent: AppIntent {
         let capturedModelName = modelName
         let capturedSid = sid
         let capturedPendingId = pendingId
+        let capturedSendCompletionNotification = sendCompletionNotification
         Task { @MainActor in
             for await processing in vm.$isProcessing.values {
                 if !processing { break }
@@ -208,12 +224,14 @@ struct RetryRunIntent: AppIntent {
 
             let summary = String(SendPromptIntent.extractResponseText(from: vm).prefix(200))
 
-            ShortcutNotification.post(
-                id: "shortcut-retry-done-\(capturedSid)",
-                title: "Minis: Retry Done",
-                body: "\(capturedModelName): \(summary)",
-                sessionId: capturedSid
-            )
+            if capturedSendCompletionNotification {
+                ShortcutNotification.post(
+                    id: "shortcut-retry-done-\(capturedSid)",
+                    title: String(localized: "Minis: Retry Done"),
+                    body: "\(capturedModelName): \(summary)",
+                    sessionId: capturedSid
+                )
+            }
         }
 
         let result = SendPromptResult(
@@ -224,10 +242,22 @@ struct RetryRunIntent: AppIntent {
             prompt: targetMessage.content
         )
 
-        return .result(value: result, dialog: "Retrying from message: \(promptPreview)\(targetMessage.content.count > 50 ? "…" : "")")
+        // Build the elided preview BEFORE interpolating so the localization key
+        // has exactly one placeholder. Inlining the ternary would bake a second
+        // one into the key and make it fragile to translate.
+        let elidedPreview = promptPreview + (targetMessage.content.count > 50 ? "…" : "")
+        return .result(value: result, dialog: IntentDialog(stringLiteral: String(localized: "Retrying from message: \(elidedPreview)")))
     }
 
     static var parameterSummary: some ParameterSummary {
-        Summary("Retry \(\.$session) from \(\.$message)")
+        // The summary had no trailing closure, so it declared no "Show More"
+        // section and NEITHER `waitForResult` nor `sendCompletionNotification`
+        // was reachable on the action card. Both are optional refinements, so
+        // they belong there rather than on the Summary line.
+        Summary("Retry \(\.$session) from \(\.$message)") {
+            \.$files
+            \.$waitForResult
+            \.$sendCompletionNotification
+        }
     }
 }

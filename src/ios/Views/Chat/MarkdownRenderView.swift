@@ -181,8 +181,11 @@ final class MarkdownRenderView: UIView, UIGestureRecognizerDelegate {
             guard let view = self.attachmentViewMap[attachId] else { return }
             let glyphRange = self.textLayoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
             let boundingRect = self.textLayoutManager.boundingRect(forGlyphRange: glyphRange, in: self.textContainer)
-            if view.frame.origin != boundingRect.origin {
-                view.frame.origin = boundingRect.origin
+            // [issue #117-4] Inline formulas position from the glyph origin.
+            let target = self.inlineAttachmentOrigin(
+                for: attachment, characterRange: range, glyphRange: glyphRange) ?? boundingRect.origin
+            if view.frame.origin != target {
+                view.frame.origin = target
             }
         }
     }
@@ -263,6 +266,44 @@ final class MarkdownRenderView: UIView, UIGestureRecognizerDelegate {
         codeBlockViewCache.removeAll()
     }
 
+    /// [issue #117-4] Glyph-derived origin for an inline formula overlay —
+    /// same rationale and geometry as SelectableMarkdownView's namesake
+    /// (boundingRect reports the LINE rect vertically, which floats small
+    /// inline formulas above where TextKit typeset them). Both views drive a
+    /// TextKit-1 `MinisLayoutManager`, so the computation is identical; nil
+    /// for every non-inline-math attachment.
+    private func inlineAttachmentOrigin(
+        for attachment: NSTextAttachment,
+        characterRange range: NSRange,
+        glyphRange: NSRange
+    ) -> CGPoint? {
+        guard let mathAttach = attachment as? MathAttachment, !mathAttach.isBlock else { return nil }
+        guard glyphRange.length > 0 else { return nil }
+        let glyphIndex = glyphRange.location
+        let lineFragment = textLayoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+        guard lineFragment.height > 0 else { return nil }
+        let glyphLocation = textLayoutManager.location(forGlyphAt: glyphIndex)
+        let bounds = mathAttach.attachmentBounds(
+            for: textContainer,
+            proposedLineFragment: lineFragment,
+            glyphPosition: glyphLocation,
+            characterIndex: range.location
+        )
+        guard bounds.height > 0 else { return nil }
+        // `location(forGlyphAt:)` returns an ATTACHMENT glyph's top-of-ascent
+        // (= baseline − bounds.origin.y), not the baseline, so the top edge is
+        // simply glyphLoc.y − height. Verified on-device; see the fuller note
+        // on SelectableMarkdownView.inlineAttachmentOrigin.
+        //
+        // No textContainerInset term (unlike SelectableMarkdownView): this is a
+        // plain UIView drawing its glyphs at origin .zero, so container and
+        // view coordinates coincide.
+        return CGPoint(
+            x: lineFragment.minX + glyphLocation.x + bounds.origin.x,
+            y: lineFragment.minY + glyphLocation.y - bounds.height
+        )
+    }
+
     func updateAttachmentViews() {
         let previousViewMap = attachmentViewMap
         var newViews: [UIView] = []
@@ -281,6 +322,9 @@ final class MarkdownRenderView: UIView, UIGestureRecognizerDelegate {
             if boundingRect.width < 1 || boundingRect.width > containerWidth {
                 boundingRect.size.width = containerWidth
             }
+            // [issue #117-4] Inline formulas position from the glyph origin.
+            let inlineOrigin = self.inlineAttachmentOrigin(
+                for: attachment, characterRange: range, glyphRange: glyphRange)
 
             let attachId = ObjectIdentifier(attachment)
             let view: UIView
@@ -330,7 +374,7 @@ final class MarkdownRenderView: UIView, UIGestureRecognizerDelegate {
                     view = existingView
                 }
                 reusedIds.insert(attachId)
-                view.frame = CGRect(origin: boundingRect.origin, size: view.frame.size)
+                view.frame = CGRect(origin: inlineOrigin ?? boundingRect.origin, size: view.frame.size)
             } else if let codeBlock = attachment as? CodeBlockAttachment {
                 if let previousView = self.codeBlockViewCache[codeBlock.blockIndex] {
                     codeBlock.updateExistingView(previousView)
@@ -370,7 +414,7 @@ final class MarkdownRenderView: UIView, UIGestureRecognizerDelegate {
                 view = UIView(frame: CGRect(origin: .zero, size: CGSize(width: boundingRect.width, height: boundingRect.height)))
             }
 
-            view.frame.origin = boundingRect.origin
+            view.frame.origin = inlineOrigin ?? boundingRect.origin
             if view.superview !== self {
                 self.addSubview(view)
             }
@@ -433,40 +477,32 @@ final class MarkdownRenderView: UIView, UIGestureRecognizerDelegate {
 
         guard !spans.isEmpty else { return }
 
-        // Collect attachment view rects to avoid drawing bars through them.
-        let attachRects = attachmentViews.map(\.frame)
-
+        // Draw each bar as one continuous run.
+        //
+        // This used to punch holes wherever an attachment view's frame
+        // overlapped the span *on the Y axis only* — it never checked whether
+        // the attachment actually intersected the bar in X (x=1, width 3).
+        // That broke the bar for every attachment kind: code blocks indent by
+        // `quoteDepth * 13` and never cover the bar at all, yet still cut it;
+        // inline math/images punched a line-height gap nowhere near the bar;
+        // a quote holding only a code block lost its bar entirely.
+        // No clipping is needed: attachments are subviews and therefore
+        // composite above `draw(_:)`, so wherever one is actually opaque over
+        // the bar it hides it exactly as the punch-out did.
         for span in spans {
             guard span.maxY > span.minY else { continue }
             let barWidth: CGFloat = 3
             let barSpacing: CGFloat = 13
 
+            context.saveGState()
+            context.setFillColor(theme.blockquoteBarColor.cgColor)
             for d in 0..<span.depth {
                 let x = barSpacing * CGFloat(d) + 1
-                var segments: [(CGFloat, CGFloat)] = [(span.minY, span.maxY)]
-
-                for aRect in attachRects {
-                    guard aRect.minY < span.maxY, aRect.maxY > span.minY else { continue }
-                    segments = segments.flatMap { seg -> [(CGFloat, CGFloat)] in
-                        let (sMin, sMax) = seg
-                        if aRect.maxY <= sMin || aRect.minY >= sMax { return [(sMin, sMax)] }
-                        var result: [(CGFloat, CGFloat)] = []
-                        if aRect.minY > sMin { result.append((sMin, aRect.minY)) }
-                        if aRect.maxY < sMax { result.append((aRect.maxY, sMax)) }
-                        return result
-                    }
-                }
-
-                context.saveGState()
-                context.setFillColor(theme.blockquoteBarColor.cgColor)
-                for (sMin, sMax) in segments {
-                    let barRect = CGRect(x: x, y: sMin, width: barWidth, height: sMax - sMin)
-                    let barPath = UIBezierPath(roundedRect: barRect, cornerRadius: 2)
-                    context.addPath(barPath.cgPath)
-                }
-                context.fillPath()
-                context.restoreGState()
+                let barRect = CGRect(x: x, y: span.minY, width: barWidth, height: span.maxY - span.minY)
+                context.addPath(UIBezierPath(roundedRect: barRect, cornerRadius: 2).cgPath)
             }
+            context.fillPath()
+            context.restoreGState()
         }
     }
 

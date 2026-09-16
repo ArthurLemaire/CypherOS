@@ -40,6 +40,12 @@ enum ChatStoreSyncHydrators {
             deletionApplier: { id in await deleteCompactMarker(id: id) }
         )
         h.register(
+            recordType: "FolderV2",
+            builder: { id in await buildFolder(id: id) },
+            merger: { record in await mergeFolder(record: record) },
+            deletionApplier: { id in await applyFolderDeletion(id: id) }
+        )
+        h.register(
             recordType: "SessionFileV2",
             builder: { id in await buildSessionFile(id: id) },
             merger: { record in await mergeSessionFile(record: record) }
@@ -96,6 +102,12 @@ enum ChatStoreSyncHydrators {
             builder: { id in await buildProviderModelGroupV3(id: id) },
             merger: { record in await mergeProviderModelGroupV3(record: record) },
             deletionApplier: { id in await deleteProviderModelGroupV3(id: id) }
+        )
+        h.register(
+            recordType: "ProviderThinkingRuleV3",
+            builder: { id in await buildProviderThinkingRuleV3(id: id) },
+            merger: { record in await mergeProviderThinkingRuleV3(record: record) },
+            deletionApplier: { id in await deleteProviderThinkingRuleV3(id: id) }
         )
         // Legacy whole-file env-vars record. New devices NEVER emit it
         // (builder returns nil — caller treats nil as "this builder
@@ -171,6 +183,11 @@ enum ChatStoreSyncHydrators {
         let memoryEnabled = (intField(record, "memoryEnabled") ?? 1) == 1
         let modelBinding = optionalStringField(record, "modelBinding")
         let pinnedAt = dateField(record, "pinnedAt")
+        // Presence of the key (even as explicit null) distinguishes a
+        // new-build peer saying "ungrouped" from an old-build peer that
+        // doesn't know the field exists — only the former may clear local.
+        let folderFieldPresent = record.fields["folderId"] != nil
+        let folderId = optionalStringField(record, "folderId")
 
         var session = ChatSession(
             id: id, title: title, category: category, modelId: modelId,
@@ -183,7 +200,9 @@ enum ChatStoreSyncHydrators {
             session, fromDeviceId: "",
             memoryEnabled: memoryEnabled,
             modelBinding: modelBinding,
-            remotePinnedAtRaw: pinnedAt
+            remotePinnedAtRaw: pinnedAt,
+            remoteFolderId: folderId,
+            remoteHasFolderField: folderFieldPresent
         )
     }
 
@@ -191,6 +210,50 @@ enum ChatStoreSyncHydrators {
         // Per §3.3.2: SessionV2 deletions are NOT propagated as hard
         // deletes — they soft-tombstone instead.
         _ = await TombstoneManager.shared.applyRemoteSessionDeletion(sessionId: id)
+    }
+
+    // MARK: - Folder
+
+    private static func buildFolder(id: String) async -> PortableRecord? {
+        guard let folder = await ChatStore.shared.getFolder(id) else { return nil }
+        let synced = SyncedFolder.from(folder)
+        return SyncableTypeRegistry.shared
+            .metadata(for: "FolderV2")?
+            .buildPortable(synced)
+    }
+
+    private static func mergeFolder(record: PortableRecord) async {
+        guard let id = stringField(record, "folderId") else { return }
+        let updatedAt = dateField(record, "updatedAt") ?? record.updatedAt
+        // [T-icloud-record-delete-resurrection] Same guard as mergeSkill: a
+        // folder dissolved locally moments ago can be re-pulled by
+        // fetchRecentV2 before the cloud delete lands.
+        if await ChatStore.shared.isRecentlyDeletedRecord(type: "Folder", id: id, remoteUpdatedAt: updatedAt) {
+            logger.info("[SyncCore] mergeFolder SKIP (recently deleted locally): id=\(id.prefix(8))")
+            return
+        }
+        let folder = ChatFolder(
+            id: id,
+            name: stringField(record, "name") ?? "",
+            icon: optionalStringField(record, "icon"),
+            color: optionalStringField(record, "color"),
+            origin: stringField(record, "origin") ?? "manual",
+            sortIndex: intField(record, "sortIndex") ?? 0,
+            pinnedAt: dateField(record, "pinnedAt"),
+            desc: optionalStringField(record, "desc"),
+            createdAt: dateField(record, "createdAt") ?? Date(),
+            updatedAt: updatedAt
+        )
+        guard !folder.name.isEmpty else { return }
+        await ChatStore.shared.applyRemoteFolder(folder)
+    }
+
+    /// Inbound op=delete on FolderV2: members' folder_id cleared, folder row
+    /// dropped, NO session deleted, no re-queue (delete-loop guard — the
+    /// deleting peer already pushed the tombstone and its members' updates).
+    private static func applyFolderDeletion(id: String) async {
+        await ChatStore.shared.applyRemoteFolderDeletion(id: id)
+        logger.info("[SyncCore] applied FolderV2 deletion: id=\(id.prefix(8))")
     }
 
     // MARK: - Message
@@ -1433,6 +1496,39 @@ enum ChatStoreSyncHydrators {
     }
 
     /// Split the wire envelope back into (added, removed) timestamp maps.
+    /// [T-icloud-modelgroup-orphan-members] Report group members that resolve to
+    /// no local model entry.
+    ///
+    /// Member ids are composite (`<providerInstanceUUID>/<modelId>`), so an id
+    /// minted on another device points at THAT device's instance UUID. With no
+    /// cross-device instance remapping on inbound, those members are permanently
+    /// unresolvable here. The UI drops them silently (`compactMap`), which is
+    /// what made OpenMinis#98 hard to characterise — the group just looked
+    /// short. This logs what was dropped and the distinct peer instance ids
+    /// involved, which is the signal that identifies a remap gap vs. a genuine
+    /// user deletion.
+    private static func logOrphanGroupMembers(groupId: String, source: String) async {
+        guard let db = ProviderConfigStore.shared.db,
+              let json = await db.groupRow(id: groupId)?["member_entry_ids_json"] as? String,
+              let members = (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String],
+              !members.isEmpty else { return }
+
+        let known = Set(await MainActor.run { ProviderConfigStore.shared.config.modelEntries.map(\.id) })
+        let orphans = members.filter { !known.contains($0) }
+        guard !orphans.isEmpty else { return }
+
+        // The instance UUID prefix identifies WHICH device minted the id — the
+        // most useful field for telling "peer instance never synced/remapped"
+        // apart from "entry deleted locally".
+        let peerInstances = Set(orphans.compactMap { $0.split(separator: "/").first.map(String.init) })
+        logger.warning("""
+            [OrphanMembers] group=\(groupId.prefix(8)) source=\(source) \
+            orphans=\(orphans.count)/\(members.count) \
+            peerInstances=\(peerInstances.map { String($0.prefix(8)) }.sorted()) \
+            sample=\(orphans.prefix(3).map { String($0.prefix(50)) })
+            """)
+    }
+
     private static func decodeGroupMemberTombstones(_ json: String?) -> (added: [String: Date], removed: [String: Date]) {
         guard let json, !json.isEmpty, json != "{}",
               let data = json.data(using: .utf8),
@@ -1491,6 +1587,19 @@ enum ChatStoreSyncHydrators {
             inboundRemovedMembers: inboundRemoved
         )
         if applied {
+            // [T-icloud-modelgroup-orphan-members] Orphan diagnostic
+            // (OpenMinis#98 defect 1). A group references model ENTRIES, and an
+            // entry id embeds the minting device's provider-instance UUID
+            // (`<instanceUUID>/<modelId>`, see ModelEntry.compositeKey). Nothing
+            // remaps that on inbound, so a group synced from a peer can land
+            // holding member ids no local entry will ever satisfy — the UI then
+            // silently `compactMap`s them away and the group looks half-empty
+            // for no visible reason.
+            //
+            // Log the unresolvable members (and which peer instance they point
+            // at) so a recurrence is diagnosable from a Release log instead of
+            // needing a two-device repro.
+            await logOrphanGroupMembers(groupId: id, source: "v3-inbound")
             // Recompute post-merge member count for the union-merge log.
             let mergedCount = (await db.groupRow(id: id)?["member_entry_ids_json"] as? String)
                 .flatMap { ((try? JSONSerialization.jsonObject(with: Data($0.utf8))) as? [Any])?.count } ?? -1
@@ -1499,6 +1608,94 @@ enum ChatStoreSyncHydrators {
         } else {
             logger.info("[v3] skipped ProviderModelGroupV3 \(id.prefix(8)) (no scalar/member change) members(local=\(localCount) inbound=\(inboundCount))")
         }
+    }
+
+    // MARK: - ProviderThinkingRuleV3 (T-icloud-thinking-rules-sync)
+
+    /// Outbound. Returns nil when the rule no longer exists locally (deleted between
+    /// the markDirty and the push) — the caller treats nil as "nothing to upload" and
+    /// drops the dirty row, which is the same contract the group builder relies on.
+    private static func buildProviderThinkingRuleV3(id: String) async -> PortableRecord? {
+        guard let db = ProviderConfigStore.shared.db else { return nil }
+        guard let row = await db.thinkingRuleRow(id: id) else { return nil }
+        let synced = SyncedProviderThinkingRuleV3(
+            id: id,
+            instanceId: (row["instance_id"] as? String) ?? "",
+            sortOrder: (row["sort_order"] as? Int) ?? 0,
+            scopeKind: (row["scope_kind"] as? String) ?? "allModels",
+            scopePattern: row["scope_pattern"] as? String,
+            // Opaque passthrough — see SyncedProviderThinkingRuleV3's doc comment.
+            wireFormatJson: (row["wire_format_json"] as? String) ?? "{}",
+            echoField: row["echo_field"] as? String,
+            echoTiming: row["echo_timing"] as? String,
+            label: (row["label"] as? String) ?? "",
+            createdAt: Date(timeIntervalSince1970: (row["created_at"] as? Double) ?? 0),
+            updatedAt: Date(timeIntervalSince1970: (row["updated_at"] as? Double) ?? 0)
+        )
+        return SyncableTypeRegistry.shared
+            .metadata(for: "ProviderThinkingRuleV3")?
+            .buildPortable(synced)
+    }
+
+    /// Inbound upsert. LWW by `updatedAt` is enforced inside the DB call.
+    private static func mergeProviderThinkingRuleV3(record: PortableRecord) async {
+        guard let db = ProviderConfigStore.shared.db else {
+            logger.warning("[v3] mergeProviderThinkingRuleV3 DROPPED (DB not open yet) id=\(record.id.id.prefix(8)) — will re-pull")
+            return
+        }
+        let id = record.id.id
+        // [T-icloud-record-delete-resurrection] Same resurrection guard the other
+        // provider mergers use: a rule just deleted here must not be re-inserted by a
+        // fetchRecentV2 that raced ahead of the op=delete reaching the cloud.
+        if await ChatStore.shared.isRecentlyDeletedRecord(
+            type: "ProviderThinkingRuleV3", id: id,
+            remoteUpdatedAt: dateField(record, "updatedAt") ?? Date()) {
+            logger.info("[v3] mergeProviderThinkingRuleV3 SKIP (recently deleted locally): id=\(id.prefix(8))")
+            return
+        }
+        guard let instanceId = stringField(record, "instanceId"), !instanceId.isEmpty else {
+            logger.warning("[v3] mergeProviderThinkingRuleV3 SKIP (no instanceId) id=\(id.prefix(8))")
+            return
+        }
+        // A rule whose owning instance does not exist here would be invisible and
+        // un-deletable in the UI (the provider page is the only place it renders), so
+        // keep it out of the DB. The instance record syncs independently; when it
+        // arrives, a later push of this rule re-delivers it.
+        guard ProviderConfigStore.shared.config.instances.contains(where: { $0.id == instanceId }) else {
+            logger.info("[v3] mergeProviderThinkingRuleV3 SKIP (unknown instance \(instanceId.prefix(8))) id=\(id.prefix(8))")
+            return
+        }
+        let applied = await db.upsertThinkingRuleFromInbound(
+            id: id,
+            instanceId: instanceId,
+            sortOrder: intField(record, "sortOrder") ?? 0,
+            scopeKind: stringField(record, "scopeKind") ?? "allModels",
+            scopePattern: optionalStringField(record, "scopePattern"),
+            wireFormatJson: stringField(record, "wireFormatJson") ?? "{}",
+            echoField: optionalStringField(record, "echoField"),
+            echoTiming: optionalStringField(record, "echoTiming"),
+            label: stringField(record, "label") ?? "",
+            createdAt: (dateField(record, "createdAt") ?? Date()).timeIntervalSince1970,
+            updatedAt: (dateField(record, "updatedAt") ?? Date()).timeIntervalSince1970
+        )
+        logger.info("[v3] mergeProviderThinkingRuleV3 \(applied ? "APPLIED" : "SKIPPED (local newer)") id=\(id.prefix(8))")
+        if applied {
+            // The resolver reads a synchronous in-memory cache, so an inbound change is
+            // invisible to the request path until the cache is reloaded.
+            await ProviderConfigStore.shared.reloadThinkingRuleCache()
+        }
+    }
+
+    /// Inbound delete. The local row really is removed — the tombstone written by the
+    /// ORIGINATING device is what stops the resurrection race; this side just applies.
+    private static func deleteProviderThinkingRuleV3(id: String) async {
+        guard let db = ProviderConfigStore.shared.db else {
+            logger.warning("[v3] deleteProviderThinkingRuleV3 DROPPED (DB not open yet) id=\(id.prefix(8))")
+            return
+        }
+        await db.deleteThinkingRule(id: id)
+        logger.info("[v3] deleted ProviderThinkingRuleV3 \(id.prefix(8))")
+        await ProviderConfigStore.shared.reloadThinkingRuleCache()
     }
 
     private static func deleteProviderModelGroupV3(id: String) async {

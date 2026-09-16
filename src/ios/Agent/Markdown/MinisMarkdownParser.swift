@@ -143,6 +143,18 @@ enum MarkdownMathExtractor {
         let count = chars.count
         var i = 0
 
+        // [issue #117-3] Positions that live inside a fenced block or an inline
+        // code span. The main loop below already refuses to *open* a formula
+        // inside code, but the closing-delimiter searches used to be blind
+        // scans: one bare `$$` in prose would happily pair with a `$$` sitting
+        // inside a later ``` fence and swallow every paragraph in between —
+        // including the fence's own opening line, which then left the closing
+        // ``` to start a *new* fence and turn the rest of the document into a
+        // code block. Precomputing the mask once keeps the searches O(n) and
+        // lets every finder reject a closer that isn't in the same plain-text
+        // region as its opener.
+        let codeMask = buildCodeMask(chars: chars)
+
         // Track code fences and inline code to skip them
         var inFencedCode = false
         var fenceChar: Character = "`"
@@ -228,8 +240,8 @@ enum MarkdownMathExtractor {
 
             // Check for \[ ... \] (display math)
             if chars[i] == "\\" && i + 1 < count && chars[i + 1] == "[" {
-                if let end = findClosingBracket(chars: chars, from: i + 2, close: "\\]") {
-                    let latex = String(chars[(i + 2)..<end])
+                if let end = findClosingBracket(chars: chars, from: i + 2, close: "\\]", codeMask: codeMask) {
+                    let latex = stripBlockquoteMarkers(String(chars[(i + 2)..<end]))
                     let placeholder = "\u{FFFC}MATH\(spans.count)\u{FFFC}"
                     spans.append(MathSpan(placeholder: placeholder, latex: latex, isBlock: true))
                     result.append(placeholder)
@@ -240,7 +252,7 @@ enum MarkdownMathExtractor {
 
             // Check for \( ... \) (inline math)
             if chars[i] == "\\" && i + 1 < count && chars[i + 1] == "(" {
-                if let end = findClosingBracket(chars: chars, from: i + 2, close: "\\)") {
+                if let end = findClosingBracket(chars: chars, from: i + 2, close: "\\)", codeMask: codeMask) {
                     let latex = String(chars[(i + 2)..<end])
                     let placeholder = "\u{FFFC}MATH\(spans.count)\u{FFFC}"
                     spans.append(MathSpan(placeholder: placeholder, latex: latex, isBlock: false))
@@ -252,19 +264,28 @@ enum MarkdownMathExtractor {
 
             // Check for $$ ... $$ (display math)
             if chars[i] == "$" && i + 1 < count && chars[i + 1] == "$" {
-                if let end = findDoubleDollar(chars: chars, from: i + 2) {
-                    let latex = String(chars[(i + 2)..<end])
-                    let placeholder = "\u{FFFC}MATH\(spans.count)\u{FFFC}"
-                    spans.append(MathSpan(placeholder: placeholder, latex: latex, isBlock: true))
-                    result.append(placeholder)
-                    i = end + 2
-                    continue
+                if let end = findDoubleDollar(chars: chars, from: i + 2, codeMask: codeMask) {
+                    let latex = stripBlockquoteMarkers(String(chars[(i + 2)..<end]))
+                    // [issue #117-3] A model that forgets to close `$$`, or prose
+                    // that merely mentions `$$`, used to pair with whatever `$$`
+                    // came next and swallow the paragraphs in between into one
+                    // giant "formula" that fails to parse and renders as an
+                    // unbounded wall of text. Display math is legitimately
+                    // multi-line, so we can't just ban newlines — instead
+                    // require the captured body to still look like a formula.
+                    if isPlausibleDisplayMath(latex) {
+                        let placeholder = "\u{FFFC}MATH\(spans.count)\u{FFFC}"
+                        spans.append(MathSpan(placeholder: placeholder, latex: latex, isBlock: true))
+                        result.append(placeholder)
+                        i = end + 2
+                        continue
+                    }
                 }
             }
 
             // Check for $ ... $ (inline math)
             if chars[i] == "$" && i + 1 < count && chars[i + 1] != "$" && chars[i + 1] != " " {
-                if let end = findSingleDollar(chars: chars, from: i + 1) {
+                if let end = findSingleDollar(chars: chars, from: i + 1, codeMask: codeMask) {
                     let latex = String(chars[(i + 1)..<end])
                     // Heuristic: skip plain currency like $5, $10.
                     // [T-ios-table-cell-katex-false-positive] Also skip a span
@@ -300,7 +321,132 @@ enum MarkdownMathExtractor {
 
     // MARK: - Private Helpers
 
-    private static func findClosingBracket(chars: [Character], from start: Int, close: String) -> Int? {
+    /// Strip blockquote markers from a multi-line math body.
+    ///
+    /// Math is extracted before block-level parsing, so a display formula
+    /// written inside a blockquote carries the continuation lines' `> `
+    /// markers straight into the LaTeX string:
+    ///
+    ///     > $$
+    ///     > E = mc^2
+    ///     > $$
+    ///
+    /// used to yield latex `"\n> E = mc^2\n> "` and render a literal `>`.
+    /// Only strip when *every* non-blank line after the first carries a
+    /// `^ {0,3}> ?` marker — that proves the whole span really sits inside a
+    /// quote, and protects legitimate formula content that merely starts a
+    /// line with `>` (comparison / matrix rows).
+    /// Single-line spans contain no newline and return untouched.
+    static func stripBlockquoteMarkers(_ latex: String) -> String {
+        guard latex.contains("\n") else { return latex }
+
+        // The opening `$$`/`\[` is consumed by the caller, so the first
+        // segment is the remainder of the marker line and never carries a
+        // marker of its own — validate and strip only lines 2…n.
+        var lines = latex.components(separatedBy: "\n")
+        var sawMarker = false
+        for idx in 1..<lines.count {
+            let line = lines[idx]
+            var cursor = line.startIndex
+            var spaces = 0
+            while cursor < line.endIndex, line[cursor] == " ", spaces < 3 {
+                cursor = line.index(after: cursor)
+                spaces += 1
+            }
+            guard cursor < line.endIndex else { continue } // blank line: neutral
+            guard line[cursor] == ">" else { return latex } // a bare line — not a quote
+            sawMarker = true
+            cursor = line.index(after: cursor)
+            if cursor < line.endIndex, line[cursor] == " " { cursor = line.index(after: cursor) }
+            lines[idx] = String(line[cursor...])
+        }
+        guard sawMarker else { return latex }
+        return lines.joined(separator: "\n")
+    }
+
+    /// [issue #117-3] Mark every character that sits inside a fenced code block
+    /// or an inline code span, so closing-delimiter searches can refuse to pair
+    /// across a code boundary.
+    ///
+    /// The scan mirrors the fence / backtick handling in `extract` exactly —
+    /// same "fence must start a line and be >= 3 chars" rule, same
+    /// "closing run must be at least as long as the opening run" rule, same
+    /// backtick-run matching for inline spans — so a delimiter the main loop
+    /// considers "inside code" is precisely the one this mask marks. Fence
+    /// lines and the backticks themselves are marked too: a `$$` fused to a
+    /// fence marker belongs to the code region either way.
+    private static func buildCodeMask(chars: [Character]) -> [Bool] {
+        let count = chars.count
+        var mask = [Bool](repeating: false, count: count)
+        var i = 0
+        var inFencedCode = false
+        var fenceChar: Character = "`"
+        var fenceLen = 0
+
+        while i < count {
+            let atLineStart = (i == 0 || chars[i - 1] == "\n" || chars[i - 1] == "\r")
+
+            if !inFencedCode && atLineStart && (chars[i] == "`" || chars[i] == "~") {
+                let fc = chars[i]
+                var fl = 0
+                var j = i
+                while j < count && chars[j] == fc { fl += 1; j += 1 }
+                if fl >= 3 {
+                    inFencedCode = true
+                    fenceChar = fc
+                    fenceLen = fl
+                    while i < count && chars[i] != "\n" { mask[i] = true; i += 1 }
+                    if i < count { mask[i] = true; i += 1 }
+                    continue
+                }
+            }
+
+            if inFencedCode {
+                if atLineStart && chars[i] == fenceChar {
+                    var fl = 0
+                    var j = i
+                    while j < count && chars[j] == fenceChar { fl += 1; j += 1 }
+                    if fl >= fenceLen {
+                        inFencedCode = false
+                        while i < count && chars[i] != "\n" { mask[i] = true; i += 1 }
+                        if i < count { mask[i] = true; i += 1 }
+                        continue
+                    }
+                }
+                mask[i] = true
+                i += 1
+                continue
+            }
+
+            if chars[i] == "`" {
+                var backtickLen = 0
+                var j = i
+                while j < count && chars[j] == "`" { backtickLen += 1; j += 1 }
+                var found = false
+                var k = j
+                while k <= count - backtickLen {
+                    var matchLen = 0
+                    while k + matchLen < count && chars[k + matchLen] == "`" { matchLen += 1 }
+                    if matchLen == backtickLen {
+                        for idx in i..<(k + matchLen) { mask[idx] = true }
+                        i = k + matchLen
+                        found = true
+                        break
+                    }
+                    if matchLen > 0 { k += matchLen } else { k += 1 }
+                }
+                if found { continue }
+                // Unmatched backtick run: not a code span, leave it unmasked.
+                i = j
+                continue
+            }
+
+            i += 1
+        }
+        return mask
+    }
+
+    private static func findClosingBracket(chars: [Character], from start: Int, close: String, codeMask: [Bool]) -> Int? {
         let closeChars = Array(close)
         var i = start
         while i <= chars.count - closeChars.count {
@@ -308,40 +454,81 @@ enum MarkdownMathExtractor {
             for j in 0..<closeChars.count {
                 if chars[i + j] != closeChars[j] { match = false; break }
             }
-            if match { return i }
+            if match && !codeMask[i] { return i }
             i += 1
         }
         return nil
     }
 
-    private static func findDoubleDollar(chars: [Character], from start: Int) -> Int? {
+    private static func findDoubleDollar(chars: [Character], from start: Int, codeMask: [Bool]) -> Int? {
         var i = start
         while i < chars.count - 1 {
-            if chars[i] == "$" && chars[i + 1] == "$" { return i }
+            if chars[i] == "$" && chars[i + 1] == "$" && !codeMask[i] { return i }
             i += 1
         }
         return nil
     }
 
-    private static func findSingleDollar(chars: [Character], from start: Int) -> Int? {
+    private static func findSingleDollar(chars: [Character], from start: Int, codeMask: [Bool]) -> Int? {
         var i = start
         while i < chars.count {
             if chars[i] == "\\" && i + 1 < chars.count { i += 2; continue } // skip escaped
-            if chars[i] == "$" && (i == 0 || chars[i - 1] != " ") { return i }
+            if chars[i] == "$" && (i == 0 || chars[i - 1] != " ") && !codeMask[i] { return i }
             if chars[i] == "\n" { return nil } // single-line only
             i += 1
         }
         return nil
     }
 
-    /// Heuristic: content looks like LaTeX if it contains special chars or is long enough.
+    /// [issue #117-3] Guard against a `$$` opener pairing with a far-away `$$`
+    /// and capturing prose. Only applied to the multi-line case: a single-line
+    /// `$$…$$` is unambiguous and always accepted, so ordinary formulas — the
+    /// overwhelming majority — are untouched by this rule.
+    ///
+    /// A real multi-line display formula is dense with LaTeX machinery
+    /// (`\frac`, `\begin{aligned}`, `^`, `_`, `&`, `\\`), while a runaway
+    /// capture is mostly sentences and blank lines. Two cheap signals separate
+    /// them: a blank line means a paragraph break (never valid *inside* one
+    /// formula), and the body must carry at least one LaTeX glyph.
+    private static func isPlausibleDisplayMath(_ content: String) -> Bool {
+        guard content.contains("\n") else { return true } // single-line: always fine
+
+        // An *interior* blank line is a paragraph break — a formula never spans
+        // one. The newlines hugging the delimiters in the conventional
+        //     $$
+        //     E = mc^2
+        //     $$
+        // layout are not blank lines in this sense, so trim the edges first.
+        let body = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        if body.isEmpty { return false }
+        let hasBlankLine = body
+            .components(separatedBy: "\n")
+            .contains { $0.trimmingCharacters(in: .whitespaces).isEmpty }
+        if hasBlankLine { return false }
+
+        let latexGlyphs: Set<Character> = ["\\", "^", "_", "{", "}", "&", "=", "∫", "∑", "∏", "√"]
+        return content.contains { latexGlyphs.contains($0) }
+    }
+
+    /// Heuristic: content looks like LaTeX rather than prose or currency.
+    ///
+    /// [issue #117-1] The old rule was "has a math glyph, or is longer than 2
+    /// characters", which rejected the single- and double-letter variables that
+    /// dominate real math (`$x$`, `$n$`, `$xy$`) — the literal dollar-wrapped
+    /// text then leaked into the rendered output. Ported from the Android
+    /// T208 fix (`MarkdownParser.kt`) so both platforms accept the same spans.
     private static func looksLikeMath(_ content: String) -> Bool {
         if content.isEmpty { return false }
-        let mathChars: Set<Character> = ["\\", "^", "_", "{", "}", "∫", "∑", "∏", "√"]
+        let mathChars: Set<Character> = ["\\", "^", "_", "{", "}", "∫", "∑", "∏", "√", "+", "-", "=", "<", ">"]
         for ch in content {
             if mathChars.contains(ch) { return true }
         }
-        // Length > 2 also qualifies (e.g., "x+y")
+        // Currency heuristic: `$5`, `$5.99`, `$1,000` lead with a digit. Skip.
+        guard let first = content.first, let last = content.last else { return false }
+        if first.isNumber { return false }
+        if first.isWhitespace || last.isWhitespace { return false }
+        // Short, unbroken alphanumeric runs are variables: `x`, `n`, `xy`, `R_0`.
+        if content.count <= 30 && content.allSatisfy({ $0.isLetter || $0.isNumber }) { return true }
         return content.count > 2
     }
 

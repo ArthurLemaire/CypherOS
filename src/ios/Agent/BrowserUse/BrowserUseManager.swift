@@ -1557,29 +1557,34 @@ final class BrowserUseManager: NSObject, ObservableObject {
 
         logger.info("Fetching resource: \(urlString)")
 
+        // Top-level script body — NO manual async-IIFE wrapper.
+        // callAsyncJavaScript already wraps the script in an async function,
+        // resolves a returned Promise, and supports top-level `return` (see the
+        // executeJS notes above). The old `(async function(){…})()` wrapper
+        // returned its Promise to a wrapper expression that itself returned
+        // nothing, so the call always resolved to undefined and every fetch
+        // failed with "Failed to parse fetch result".
         let js = """
-        (async function() {
-            try {
-                const resp = await fetch(\(Self.jsStringLiteral(urlString)));
-                const buf = await resp.arrayBuffer();
-                const bytes = new Uint8Array(buf);
-                let binary = '';
-                for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-                const b64 = btoa(binary);
-                const ct = resp.headers.get('content-type') || '';
-                const cd = resp.headers.get('content-disposition') || '';
-                return JSON.stringify({
-                    base64: b64,
-                    contentType: ct,
-                    contentDisposition: cd,
-                    status: resp.status,
-                    url: resp.url,
-                    size: bytes.length
-                });
-            } catch(e) {
-                return JSON.stringify({error: e.message});
-            }
-        })()
+        try {
+            const resp = await fetch(\(Self.jsStringLiteral(urlString)));
+            const buf = await resp.arrayBuffer();
+            const bytes = new Uint8Array(buf);
+            let binary = '';
+            for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+            const b64 = btoa(binary);
+            const ct = resp.headers.get('content-type') || '';
+            const cd = resp.headers.get('content-disposition') || '';
+            return JSON.stringify({
+                base64: b64,
+                contentType: ct,
+                contentDisposition: cd,
+                status: resp.status,
+                url: resp.url,
+                size: bytes.length
+            });
+        } catch(e) {
+            return JSON.stringify({error: e.message});
+        }
         """
 
         let rawResult: Any?

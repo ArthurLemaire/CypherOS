@@ -1,5 +1,7 @@
 import Foundation
 
+private let logger = AppLogger(category: "UploadPolicy")
+
 /// Per-device user preference: which v2 record types this device is
 /// allowed to push to iCloud, and the per-file size cap on SessionFile
 /// asset content.
@@ -27,13 +29,25 @@ enum UploadPolicy {
         var recordTypes: Set<String> {
             switch self {
             case .chatSessions:
-                return ["Session", "SessionV2", "Message", "MessageV2", "CompactMarker", "CompactMarkerV2"]
+                return ["Session", "SessionV2", "Message", "MessageV2", "CompactMarker", "CompactMarkerV2",
+                        // Folders organize sessions; the chat-sessions toggle governs them.
+                        "Folder", "FolderV2"]
             case .sessionFiles:
                 return ["SessionFile", "SessionFileV2"]
             case .skills:
                 return ["Skill", "SkillV2"]
             case .providers:
-                return ["ProviderConfig", "ProviderConfigV2"]
+                // [T-icloud-uploadpolicy-v3-gap] The three V3 types MUST be
+                // listed here. They are the AUTHORITATIVE provider sync path
+                // (v2 is dropped on inbound), and they were wired into the zone
+                // map, the whitelist and the fetch list — but not into this
+                // policy. Combined with the permissive `return true` fallthrough
+                // in `allowsRecordType`, that meant turning `sync.providers` OFF
+                // still uploaded every provider record: the user's switch did
+                // nothing. (OpenMinis#98, found while investigating that issue.)
+                return ["ProviderConfig", "ProviderConfigV2",
+                        "ProviderInstanceV3", "ProviderModelEntryV3", "ProviderModelGroupV3",
+                        "ProviderThinkingRuleV3"]
             case .envVars:
                 return ["EnvVar", "EnvVarV2"]
             case .memory:
@@ -80,7 +94,13 @@ enum UploadPolicy {
         for cat in Category.allCases where cat.recordTypes.contains(recordType) {
             return isEnabled(cat)
         }
-        return true   // unknown types pass through (forward-compat)
+        // Unknown types still pass through for forward-compat, but LOUDLY:
+        // silence here is what let the V3 provider types bypass the providers
+        // toggle unnoticed. A new record type that forgets its category now
+        // leaves a trace in the log instead of quietly ignoring the user's
+        // switch. [T-icloud-uploadpolicy-v3-gap]
+        logger.warning("[UploadPolicy] recordType '\(recordType)' matches NO category — allowing by default; add it to UploadPolicy.Category.recordTypes")
+        return true
     }
 
     // MARK: - Per-file cap

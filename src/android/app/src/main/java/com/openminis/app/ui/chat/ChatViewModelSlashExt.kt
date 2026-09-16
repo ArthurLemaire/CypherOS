@@ -274,6 +274,26 @@ internal fun ChatViewModel.dismissSlashMenu(currentInput: String): String {
     return if (currentInput.startsWith("/") || currentInput.startsWith("／")) "" else currentInput
 }
 
+/**
+ * [T-android-slash-send-keeps-text] End the slash session because the composer
+ * was SENT.
+ *
+ * Unlike [dismissSlashMenu] this restores nothing and returns nothing: the body
+ * text has just been sent as a message, so the stashed original must be dropped
+ * rather than written back into the (now cleared) composer. Without this, the
+ * "/" button's over-content mode survived the send and the just-sent text
+ * reappeared in the input — reported on Android only.
+ *
+ * Safe to call unconditionally: when no slash session is open every assignment
+ * below is already its own value.
+ */
+internal fun ChatViewModel.endSlashSessionForSend() {
+    savedInputBeforeSlash = null
+    _showSlashMenu.value = false
+    _slashMenuSelectedIndex.value = -1
+    _slashFilter.value = ""
+}
+
 internal fun ChatViewModel.slashMenuSetSelectedIndex(index: Int) {
     _slashMenuSelectedIndex.value = index
 }

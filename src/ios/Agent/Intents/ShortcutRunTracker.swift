@@ -141,8 +141,22 @@ enum ShortcutRunTracker {
     /// foreground scan reached `markCompleted`. Records older than
     /// `staleAge` are dropped silently; newer records where the user hadn't
     /// enabled keep-alive get a one-shot guidance notification.
+    ///
+    /// [T-shortcut-orphan-false-positive] "Orphaned" only means the completion
+    /// SIGNAL was lost — not that the task failed. In async mode markCompleted
+    /// runs inside a detached `Task { for await … }` living in the short-lived
+    /// AppIntent process; if that process is suspended or reaped after perform()
+    /// returns, the Task never resumes and the record is stranded even though the
+    /// agent answered normally. There is also a plain race: on foreground return
+    /// this scan runs immediately while a resuming agent loop only flips
+    /// isProcessing (→ markCompleted) a moment later.
+    ///
+    /// So before warning the user, verify against the DATABASE whether the
+    /// session actually produced a completed reply after the run began. Async
+    /// because ChatStore is an actor and the orphan's VM is usually gone from
+    /// memory by now — the persisted messages are the only reliable source.
     @MainActor
-    static func checkPendingOnForeground() {
+    static func checkPendingOnForeground() async {
         var records = loadRecords()
         guard !records.isEmpty else { return }
         var notified = loadNotifiedIds()
@@ -171,6 +185,20 @@ enum ShortcutRunTracker {
         // (`notifiedIds` set), then clear the record so we don't loop on the
         // same one next foreground.
         for record in orphaned {
+            // [T-shortcut-orphan-false-positive] Empirical completion check
+            // BEFORE any guidance decision. If the session demonstrably answered,
+            // this is a lost signal rather than a stalled task — clear silently.
+            if await sessionDidComplete(record: record) {
+                logger.info(
+                    "[ShortcutDiag] pending completion-verified silent clear id=\(record.id.prefix(8)) " +
+                    "intent=\(record.intent) session=\(record.sessionId.prefix(8)) — session has a completed " +
+                    "assistant reply after startedAt; markCompleted signal was lost, task itself was fine"
+                )
+                records.removeValue(forKey: record.id)
+                notified.remove(record.id)
+                continue
+            }
+
             let category = classify(record)
             let alreadyNotified = notified.contains(record.id)
             logger.info(
@@ -193,6 +221,79 @@ enum ShortcutRunTracker {
 
         saveRecords(records)
         saveNotifiedIds(notified)
+    }
+
+    // MARK: - Completion verification
+
+    /// Whether `record`'s session demonstrably finished the run this record was
+    /// tracking. Returns `false` whenever it cannot prove completion.
+    ///
+    /// [T-shortcut-orphan-false-positive] Deliberately biased toward
+    /// false-negatives: a wrong `true` swallows a genuine "your automation
+    /// didn't finish" warning, which is the failure this whole tracker exists to
+    /// surface. A wrong `false` only costs one redundant notification. So every
+    /// uncertain path — lookup failure, empty session, still-running — answers
+    /// `false` and lets the original classification run.
+    @MainActor
+    private static func sessionDidComplete(record: PendingRecord) async -> Bool {
+        // A session still actively processing has not finished. This also covers
+        // the foreground race: a resuming agent loop is mid-run, will flip
+        // isProcessing shortly, and markCompleted will clear the record itself.
+        if SessionActivityTracker.shared.activeSessions.contains(record.sessionId) {
+            logger.info("[ShortcutDiag] completion-check id=\(record.id.prefix(8)) → still active, not verified")
+            return false
+        }
+
+        // A placeholder id ("intent-eager:<UUID>") never became a real session
+        // row, so there is nothing to look up. Fall through to the old logic.
+        guard !record.sessionId.isEmpty, !record.sessionId.hasPrefix("intent-eager:") else {
+            logger.info("[ShortcutDiag] completion-check id=\(record.id.prefix(8)) → placeholder/empty sessionId, not verified")
+            return false
+        }
+
+        let messages = await ChatStore.shared.loadMessages(sessionId: record.sessionId)
+        guard !messages.isEmpty else {
+            logger.info("[ShortcutDiag] completion-check id=\(record.id.prefix(8)) → no persisted messages, not verified")
+            return false
+        }
+
+        // Look for an assistant reply persisted AFTER this run started. Ordering
+        // by createdAt is what ties the evidence to THIS run rather than to an
+        // older turn in a long-lived session (RetryRun/FollowUp both operate on
+        // sessions that already have history).
+        //
+        // A small tolerance absorbs clock skew between the record's timestamp and
+        // the DB write: `startedAt` is stamped in the AppIntent process before the
+        // send, so a reply belonging to this run can never legitimately predate it
+        // by more than a moment.
+        let cutoff = record.startedAt.addingTimeInterval(-2)
+        let repliesAfterStart = messages.filter {
+            $0.role == .assistant && $0.createdAt >= cutoff
+        }
+        guard !repliesAfterStart.isEmpty else {
+            logger.info("[ShortcutDiag] completion-check id=\(record.id.prefix(8)) → no assistant reply after startedAt, not verified")
+            return false
+        }
+
+        // The reply must be a real answer: not an errored turn, and not the
+        // internal bridge row inserted when a queued message interrupts a tool
+        // loop (that one means the run was interrupted, not that it completed).
+        let usableReply = repliesAfterStart.contains { msg in
+            guard msg.errorInfo == nil else { return false }
+            guard !msg.isInternalBridge else { return false }
+            let hasText = msg.parts.contains { part in
+                if case .text(let t) = part {
+                    return !t.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                }
+                return false
+            }
+            return hasText
+        }
+        if !usableReply {
+            logger.info("[ShortcutDiag] completion-check id=\(record.id.prefix(8)) → replies present but all errored/empty/bridge, not verified")
+            return false
+        }
+        return true
     }
 
     // MARK: - Classification
