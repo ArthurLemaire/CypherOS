@@ -258,6 +258,26 @@ final class LastAPIRequestBody: @unchecked Sendable {
     /// sticky entry stays consistent with the wire result even as it
     /// gets pushed off the ring.
     private var _sticky: [String: CapturedAPIRequest] = [:]
+    /// [T-debug-trace-pause-clear] When true, `set(...)` stops capturing new
+    /// requests. `set` is the single entry point for every provider (the
+    /// truncation choke point noted below), so gating it here covers all ~10
+    /// call sites at once. Returning nil also disables the follow-up writes:
+    /// the `on:`-targeted variants take the returned token, so with no entry
+    /// there is nothing for the response body / usage to accumulate onto.
+    private var _paused = false
+
+    /// Stop/resume capturing new LLM requests. Idempotent.
+    func setPaused(_ paused: Bool) {
+        lock.lock()
+        _paused = paused
+        lock.unlock()
+    }
+
+    var isPaused: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return _paused
+    }
 
     /// Append a new request. Keeps only the most recent `maxEntries`.
     /// Pass `tag` to also pin a copy in the per-tag sticky slot.
@@ -280,6 +300,12 @@ final class LastAPIRequestBody: @unchecked Sendable {
                 + "\n... [truncated: \(body.utf8.count) bytes total]"
         }
         lock.lock()
+        // [T-debug-trace-pause-clear] Checked INSIDE the lock so a concurrent
+        // setPaused can't be straddled by an in-flight capture.
+        guard !_paused else {
+            lock.unlock()
+            return nil
+        }
         let entry = CapturedAPIRequest(provider: provider, timestamp: Date(), requestBody: body)
         entry.tag = tag
         _entries.append(entry)
@@ -296,7 +322,9 @@ final class LastAPIRequestBody: @unchecked Sendable {
     /// Update the most recent entry with response usage and duration.
     func updateLatest(usage: CapturedUsage, durationMs: Int? = nil) {
         lock.lock()
-        if let last = _entries.last {
+        // [T-debug-trace-pause-clear] While paused, don't mutate the last
+        // PRE-pause entry — that snapshot is what the user paused to capture.
+        if !_paused, let last = _entries.last {
             last.usage = usage
             last.durationMs = durationMs
         }
@@ -320,7 +348,8 @@ final class LastAPIRequestBody: @unchecked Sendable {
     /// Record HTTP response metadata on the most recent entry (called from URLProtocol).
     func setHTTPResponse(statusCode: Int, headers: [String: String]?) {
         lock.lock()
-        if let last = _entries.last {
+        // [T-debug-trace-pause-clear] See updateLatest.
+        if !_paused, let last = _entries.last {
             last.responseStatusCode = statusCode
             last.responseHeaders = headers
         }
@@ -338,7 +367,8 @@ final class LastAPIRequestBody: @unchecked Sendable {
     /// Record request metadata on the most recent entry (called from URLProtocol).
     func setRequestMeta(url: String?, method: String?, headers: [String: String]?) {
         lock.lock()
-        if let last = _entries.last {
+        // [T-debug-trace-pause-clear] See updateLatest.
+        if !_paused, let last = _entries.last {
             last.requestURL = url
             last.requestMethod = method
             last.requestHeaders = headers
@@ -358,7 +388,11 @@ final class LastAPIRequestBody: @unchecked Sendable {
     /// Append a chunk of response body to the most recent entry (SSE streaming).
     func appendResponseBody(_ chunk: String) {
         lock.lock()
-        _entries.last?.appendResponseBody(chunk)
+        // [T-debug-trace-pause-clear] Most important of the untargeted writers
+        // to gate: a streamed SSE body accumulates chunk by chunk, so leaving
+        // this open would keep growing the last pre-pause entry for the whole
+        // duration of an in-flight response.
+        if !_paused { _entries.last?.appendResponseBody(chunk) }
         lock.unlock()
     }
 

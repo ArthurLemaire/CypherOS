@@ -4,6 +4,7 @@ import com.openminis.app.data.model.LLMError
 import com.openminis.app.data.model.LLMMessage
 import com.openminis.app.data.model.LLMModel
 import com.openminis.app.data.model.LLMStreamChunk
+import com.openminis.app.data.model.ThinkingLevel
 import com.openminis.app.provider.openai.OpenAIProvider
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
@@ -348,5 +349,92 @@ class OpenAIProviderTest {
     fun `provider model can be changed`() {
         provider.model = LLMModel.gpt4o
         assertEquals(LLMModel.gpt4o, provider.model)
+    }
+
+    // -- [T-reasoning-effort-data-driven] reasoning_effort on the wire --
+    //
+    // Regression guard for the GLM-via-relay report: a model whose id contains
+    // "glm" used to hit a hardcoded deepseek/glm/kimi/minimax skip list and get
+    // NO thinking field at all, while an otherwise identical non-matching id
+    // (Hermes) got reasoning_effort. These assert the ACTUAL request body
+    // captured off MockWebServer, not the injector in isolation.
+
+    /** Drive one request through the real stack and return the parsed body. */
+    private fun captureBody(model: LLMModel, level: ThinkingLevel): JSONObject {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"choices":[{"message":{"role":"assistant","content":"ok"},
+                   "finish_reason":"stop"}]}""".trimIndent(),
+            ),
+        )
+        provider.model = model
+        runBlocking {
+            provider.sendMessageClamped(
+                messages = listOf(LLMMessage(LLMMessage.Role.USER, "Hi")),
+                systemPrompt = null,
+                maxTokens = 1024,
+                temperature = null,
+                imageParts = emptyList(),
+                tools = emptyList(),
+                thinkingLevel = level,
+            )
+        }
+        return JSONObject(server.takeRequest().body.readUtf8())
+    }
+
+    @Test
+    fun `glm with declared effort tiers sends reasoning_effort`() {
+        // zhipuai's real catalog declaration for glm-5.2.
+        val glm = LLMModel(
+            id = "glm-5.2", displayName = "GLM 5.2", provider = "CPA",
+            supportsReasoning = true,
+            reasoningEffortValues = listOf("high", "max"),
+        )
+        val body = captureBody(glm, ThinkingLevel.XHIGH)
+        // Was absent entirely before the fix.
+        assertTrue(
+            "reasoning_effort missing for GLM: $body",
+            body.has("reasoning_effort"),
+        )
+        // xhigh is NOT in ["high","max"] — must clamp DOWN to high, not 400.
+        assertEquals("high", body.getString("reasoning_effort"))
+    }
+
+    @Test
+    fun `glm without declared effort tiers keeps the legacy skip`() {
+        val glm = LLMModel(
+            id = "glm-4.5", displayName = "GLM 4.5", provider = "CPA",
+            supportsReasoning = true,
+            reasoningEffortValues = null,
+        )
+        val body = captureBody(glm, ThinkingLevel.XHIGH)
+        assertTrue(
+            "undeclared GLM should stay on the native self-reasoning path: $body",
+            !body.has("reasoning_effort"),
+        )
+    }
+
+    @Test
+    fun `hermes on the same relay still sends reasoning_effort`() {
+        val hermes = LLMModel(
+            id = "hermes-4-405b", displayName = "Hermes 4", provider = "CPA",
+            supportsReasoning = true,
+        )
+        val body = captureBody(hermes, ThinkingLevel.XHIGH)
+        assertEquals("xhigh", body.getString("reasoning_effort"))
+    }
+
+    @Test
+    fun `clampEffort snaps onto declared tiers`() {
+        // Down to the nearest declared tier at or below the request.
+        assertEquals("high", provider.clampEffort("xhigh", listOf("high", "max")))
+        assertEquals("high", provider.clampEffort("xhigh", listOf("low", "medium", "high")))
+        // Exact matches pass through.
+        assertEquals("xhigh", provider.clampEffort("xhigh", listOf("high", "xhigh")))
+        // Nothing at-or-below: step up to the lowest declared tier.
+        assertEquals("high", provider.clampEffort("low", listOf("high", "max")))
+        // No declaration: untouched (pre-existing behavior).
+        assertEquals("xhigh", provider.clampEffort("xhigh", null))
+        assertEquals("xhigh", provider.clampEffort("xhigh", emptyList()))
     }
 }

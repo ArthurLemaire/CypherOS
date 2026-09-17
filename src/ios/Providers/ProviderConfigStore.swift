@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import UIKit
 import os.log
 
 private let logger = AppLogger(category: "ProviderConfigStore")
@@ -35,6 +36,13 @@ struct ProviderConfig: Codable, Equatable {
     var voiceInputGroupId: String?
     /// Model group used for voice OUTPUT (text-to-speech). Same semantics.
     var voiceOutputGroupId: String?
+    /// [T-ios-vision-group #182] Model group used for IMAGE UNDERSTANDING when the
+    /// session's own model has no native vision. Same per-device, local-only
+    /// semantics as the voice group selectors — a plain pointer at an ordinary
+    /// ModelGroup, so the existing fallback/loadBalance routing is reused as-is
+    /// and `ModelGroup` needs no purpose/kind field. nil = feature off (a
+    /// non-vision model simply doesn't get the `read_image` tool, as before).
+    var visionGroupId: String?
     /// Per-session inference settings (thinking toggle, etc.).
     var sessionInferenceConfigs: [String: SessionInferenceConfig]
     /// Soft-delete tombstones. Required to make deletes survive
@@ -50,6 +58,7 @@ struct ProviderConfig: Codable, Equatable {
          sessionBindings: [String: SessionModelBinding],
          agentLoopModelEntryIds: [String] = [], agentLoopGroupIds: [String] = [],
          voiceInputGroupId: String? = nil, voiceOutputGroupId: String? = nil,
+         visionGroupId: String? = nil,
          sessionInferenceConfigs: [String: SessionInferenceConfig] = [:],
          deletedInstances: [ProviderConfigTombstone] = [],
          deletedModelEntries: [ProviderConfigTombstone] = [],
@@ -64,6 +73,7 @@ struct ProviderConfig: Codable, Equatable {
         self.agentLoopGroupIds = agentLoopGroupIds
         self.voiceInputGroupId = voiceInputGroupId
         self.voiceOutputGroupId = voiceOutputGroupId
+        self.visionGroupId = visionGroupId
         self.sessionInferenceConfigs = sessionInferenceConfigs
         self.deletedInstances = deletedInstances
         self.deletedModelEntries = deletedModelEntries
@@ -87,6 +97,7 @@ struct ProviderConfig: Codable, Equatable {
         agentLoopGroupIds = try container.decodeIfPresent([String].self, forKey: .agentLoopGroupIds) ?? []
         voiceInputGroupId = try container.decodeIfPresent(String.self, forKey: .voiceInputGroupId)
         voiceOutputGroupId = try container.decodeIfPresent(String.self, forKey: .voiceOutputGroupId)
+        visionGroupId = try container.decodeIfPresent(String.self, forKey: .visionGroupId)
         sessionInferenceConfigs = try container.decodeIfPresent([String: SessionInferenceConfig].self, forKey: .sessionInferenceConfigs) ?? [:]
         deletedInstances = try container.decodeIfPresent([ProviderConfigTombstone].self, forKey: .deletedInstances) ?? []
         deletedModelEntries = try container.decodeIfPresent([ProviderConfigTombstone].self, forKey: .deletedModelEntries) ?? []
@@ -96,7 +107,7 @@ struct ProviderConfig: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case instances, modelEntries, modelGroups, defaultPrimaryGroupId, defaultSubGroupId
         case sessionBindings, agentLoopModelEntryIds, agentLoopGroupIds, sessionInferenceConfigs
-        case voiceInputGroupId, voiceOutputGroupId
+        case voiceInputGroupId, voiceOutputGroupId, visionGroupId
         case deletedInstances, deletedModelEntries, deletedModelGroups
     }
 
@@ -191,14 +202,52 @@ final class ProviderConfigStore: ObservableObject {
         // group members verbatim — so the JSON's (potentially member-truncated
         // from an older build) snapshot never becomes the persisted/pushed
         // source of truth. [T-icloud-modelgroup-member-loss]
-        self.config = Self.load(from: fileURL)
+        // [T-ios-reboot-config-loss] Load with missing-vs-unreadable
+        // discrimination. After a device reboot iOS can relaunch the app in
+        // the background BEFORE first unlock (BGTask / CloudKit push /
+        // location session); the default file-protection class
+        // (completeUntilFirstUserAuthentication) makes provider-config.json
+        // unreadable then, and the old silent `.empty` fallback plus any
+        // later save() overwrote the real JSON, bulk-replaced the V3 DB from
+        // the empty snapshot, and pushed the wipe to iCloud — the "blank app
+        // after reboot" field report.
+        let loaded = Self.loadGuarded(from: fileURL)
+        self.config = loaded.config
+        self.loadDegradation = loaded.degradation
         self.lastSavedSnapshot = self.config
-        ensureVoiceTemplateModels()
+        if loaded.degradation == .none {
+            ensureVoiceTemplateModels()
+        } else {
+            registerDegradedRecovery()
+        }
         Self.setupDBAndMigrate(jsonURL: fileURL) { [weak self] db in
             Task { @MainActor in
-                guard let self else { return }
+                await self?.adoptDB(db)
+            }
+        }
+        registerKeychainSyncObserver()
+        // [T-provider-sync-apply-interaction-defer] Timestamp foreground
+        // activations so applyMergedConfigFromSync can hold its whole-store
+        // publish out of the fragile post-foreground rebuild window.
+        syncApplyForegroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.lastDidBecomeActiveAt = Date() }
+        }
+    }
+
+    /// [T-ios-reboot-config-loss] Adopt the opened V3 DB and, when it is
+    /// authoritative, replace the JSON-seeded config with its dump. Extracted
+    /// verbatim from init's completion closure so degraded-load recovery can
+    /// re-run the same adoption after protected data becomes available.
+    private func adoptDB(_ db: ProviderConfigDB?) async {
                 self.db = db
                 guard let db else { return }
+                // [T-thinking-rules-phase2] Prime the synchronous thinking-rule cache the
+                // resolver reads during request assembly. Done here because this is the
+                // first point where the DB is known-open; before this the cache is empty,
+                // which resolves to built-in behaviour rather than anything wrong.
+                await self.reloadThinkingRuleCache()
                 // [T-provider-entry-composite-key] Load the persisted
                 // legacyUuid→compositeKey map (normalization runs AFTER the
                 // authoritative config is loaded below, so it operates on the
@@ -281,14 +330,14 @@ final class ProviderConfigStore: ObservableObject {
                         Task { await ChatStore.shared.markDirty(recordType: "ProviderModelEntryV3", recordId: eid, operation: "delete") }
                     }
                 }
-            }
-        }
+    }
 
-        // [T-new-session-hang-credential-cache] L2 invalidation hook #3: iCloud
-        // Keychain sync. A `-25300` (item-not-synced) miss cached as `false` on
-        // THIS device must be dropped once the sibling device's credential syncs
-        // in, or routing would keep skipping a now-credentialed provider until
-        // the 15s TTL. The sync event carries no instanceId, so clear all.
+    /// [T-new-session-hang-credential-cache] L2 invalidation hook #3: iCloud
+    /// Keychain sync. A `-25300` (item-not-synced) miss cached as `false` on
+    /// THIS device must be dropped once the sibling device's credential syncs
+    /// in, or routing would keep skipping a now-credentialed provider until
+    /// the 15s TTL. The sync event carries no instanceId, so clear all.
+    private func registerKeychainSyncObserver() {
         CFNotificationCenterAddObserver(
             CFNotificationCenterGetDarwinNotifyCenter(),
             Unmanaged.passUnretained(self).toOpaque(),
@@ -299,6 +348,88 @@ final class ProviderConfigStore: ObservableObject {
             nil,
             .deliverImmediately
         )
+    }
+
+    // MARK: - [T-ios-reboot-config-loss] Degraded-load guard
+
+    /// Why the load was degraded. `.unreadable` = the file exists but Data(contentsOf:)
+    /// failed — the classic pre-first-unlock file-protection state after a device
+    /// reboot (or a transient I/O error). `.undecodable` = bytes were readable but
+    /// JSON decoding failed (corrupt file). In both cases the on-disk state must
+    /// not be overwritten by the empty in-memory seed.
+    private enum ConfigLoadDegradation { case none, unreadable, undecodable }
+    private var loadDegradation: ConfigLoadDegradation = .none
+    private var degradedRecoveryObservers: [NSObjectProtocol] = []
+
+    /// Load wrapper distinguishing "no file" (fresh install → empty is correct)
+    /// from "file present but unreadable/undecodable" (must NOT clobber disk).
+    private static func loadGuarded(from url: URL) -> (config: ProviderConfig, degradation: ConfigLoadDegradation) {
+        guard FileManager.default.fileExists(atPath: url.path) else { return (.empty, .none) }
+        guard let data = try? Data(contentsOf: url) else {
+            logger.error("[RebootGuard] provider-config.json exists but is UNREADABLE (protected data locked before first unlock, or I/O error) — degraded mode, save() suppressed")
+            return (.empty, .unreadable)
+        }
+        guard (try? JSONDecoder().decode(ProviderConfig.self, from: data)) != nil else {
+            logger.error("[RebootGuard] provider-config.json exists but FAILED TO DECODE — degraded mode, not overwriting the on-disk bytes")
+            return (.empty, .undecodable)
+        }
+        return (load(from: url), .none)
+    }
+
+    /// Arm one-shot recovery: retry the load when protected data becomes
+    /// available (post-unlock) and again on every foreground activation
+    /// (covers the race where unlock happened between load and registration).
+    private func registerDegradedRecovery() {
+        let names: [Notification.Name] = [
+            UIApplication.protectedDataDidBecomeAvailableNotification,
+            UIApplication.didBecomeActiveNotification,
+        ]
+        for name in names {
+            degradedRecoveryObservers.append(NotificationCenter.default.addObserver(
+                forName: name, object: nil, queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in self?.recoverFromDegradedLoad() }
+            })
+        }
+    }
+
+    private func recoverFromDegradedLoad() {
+        guard loadDegradation != .none else { return }
+        let reloaded = Self.loadGuarded(from: fileURL)
+        switch reloaded.degradation {
+        case .none:
+            loadDegradation = .none
+            config = reloaded.config
+            lastSavedSnapshot = reloaded.config
+            ensureVoiceTemplateModels()
+            objectWillChange.send()
+            logger.info("[RebootGuard] recovered provider config after unlock — instances=\(reloaded.config.instances.count) entries=\(reloaded.config.modelEntries.count) groups=\(reloaded.config.modelGroups.count)")
+        case .unreadable:
+            // Still locked (e.g. didBecomeActive raced the unlock) — keep waiting.
+            return
+        case .undecodable:
+            // Bytes readable but corrupt while the device is unlocked: the JSON
+            // itself is unrecoverable. Exit degraded mode so the app is usable
+            // again and rely on the V3 DB's authoritative dump (adoptDB below)
+            // to restore the real config; the corrupt JSON gets rewritten by
+            // the next legitimate save().
+            guard UIApplication.shared.isProtectedDataAvailable else { return }
+            loadDegradation = .none
+            logger.error("[RebootGuard] provider-config.json is corrupt (readable but undecodable while unlocked) — exiting degraded mode; V3 DB dump will restore state if present")
+        }
+        for o in degradedRecoveryObservers { NotificationCenter.default.removeObserver(o) }
+        degradedRecoveryObservers.removeAll()
+        // Re-run DB adoption: if the DB never opened (pre-unlock open failure)
+        // this establishes it now; if it is open and non-empty, its dump
+        // becomes authoritative again on top of the reloaded JSON seed.
+        if self.db == nil {
+            Self.setupDBAndMigrate(jsonURL: fileURL) { [weak self] db in
+                Task { @MainActor in await self?.adoptDB(db) }
+            }
+        } else {
+            let existing = self.db
+            Task { @MainActor in await self.adoptDB(existing) }
+        }
     }
 
     /// Test-only initializer.
@@ -440,6 +571,16 @@ final class ProviderConfigStore: ObservableObject {
     }
 
     private func save() {
+        // [T-ios-reboot-config-loss] HARD STOP while the on-disk config could
+        // not be read (pre-first-unlock launch after a device reboot, or a
+        // corrupt file pending DB restore). Persisting now would overwrite
+        // the real provider-config.json with the empty in-memory seed,
+        // bulk-replace the V3 SQLite store from it, AND markDirty-push the
+        // wipe to iCloud — propagating the loss to every synced device.
+        guard loadDegradation == .none else {
+            logger.error("[RebootGuard] save() suppressed — config load was degraded (\(String(describing: self.loadDegradation))); awaiting post-unlock recovery")
+            return
+        }
         // Any config mutation funnels through here — bump the L1 cache epoch so
         // resolveCurrentEntry re-resolves. [T-new-session-hang-credential-cache]
         configRevision &+= 1
@@ -1222,16 +1363,47 @@ final class ProviderConfigStore: ObservableObject {
         sortedEntries(config.modelEntries)
     }
 
+    /// All entries for one instance (hidden included), newest/most capable
+    /// first. [T-model-release-ranking] Shares `visibleEntries`' ordering so the
+    /// provider-detail list and the pickers can't disagree about which model is
+    /// "first" — see that method for why alphabetical was actively harmful.
     func entries(for instanceId: String) -> [ModelEntry] {
         config.modelEntries
             .filter { $0.providerInstanceId == instanceId }
-            .sorted { $0.baseModel.id < $1.baseModel.id }
+            .sorted(by: Self.releaseRankOrder)
     }
 
+    /// Entries a picker should show for one instance, newest/most capable first.
+    ///
+    /// [T-model-release-ranking] Deliberately NOT alphabetical. Sorting by
+    /// `baseModel.id` puts `gpt-5` above `gpt-5.6-sol` — i.e. it surfaces the
+    /// oldest model first, and in the Codex OAuth case the top of the list was
+    /// a model the account cannot even call (OpenMinis#83: the 400 renders as an
+    /// empty reply, so a new user reads it as "the app is broken"). Ranking by
+    /// release date, then output price, then context window puts the six
+    /// callable Codex models in the top six with no hand-maintained order.
+    /// Undated models keep their alphabetical order and sit at the end — they
+    /// are custom/local/relay entries, so they must stay visible.
     func visibleEntries(for instanceId: String) -> [ModelEntry] {
         config.modelEntries
             .filter { $0.providerInstanceId == instanceId && !$0.isHidden }
-            .sorted { $0.baseModel.id < $1.baseModel.id }
+            .sorted(by: Self.releaseRankOrder)
+    }
+
+    /// [T-model-release-ranking] The shared comparator. Falls back to the model
+    /// id so the order is total and stable when two entries rank identically
+    /// (both undated, same price, same context) — otherwise `sorted` could
+    /// reshuffle equal elements between reads and the list would visibly jitter.
+    static func releaseRankOrder(_ a: ModelEntry, _ b: ModelEntry) -> Bool {
+        let ra = ModelReleaseIndex.rank(modelId: a.baseModel.id,
+                                        displayName: a.baseModel.displayName,
+                                        contextWindow: a.baseModel.contextWindow)
+        let rb = ModelReleaseIndex.rank(modelId: b.baseModel.id,
+                                        displayName: b.baseModel.displayName,
+                                        contextWindow: b.baseModel.contextWindow)
+        if ra < rb { return true }
+        if rb < ra { return false }
+        return a.baseModel.id < b.baseModel.id
     }
 
     /// Shared sort used by the flat-list getter. Clusters entries by provider
@@ -1579,6 +1751,12 @@ final class ProviderConfigStore: ObservableObject {
         config.modelGroups.removeAll { $0.id == groupId }
         if config.defaultPrimaryGroupId == groupId { config.defaultPrimaryGroupId = nil }
         if config.defaultSubGroupId == groupId { config.defaultSubGroupId = nil }
+        // [T-ios-vision-group #182] Clear the vision pointer too, so deleting the
+        // group turns the feature off cleanly instead of leaving a dangling id
+        // that would keep `read_image` exposed to a non-vision model with no
+        // describer behind it. (The resolver also guards, but the tool-exposure
+        // gate reads the pointer directly.)
+        if config.visionGroupId == groupId { config.visionGroupId = nil }
         config.agentLoopGroupIds.removeAll { $0 == groupId }
         Self.recordTombstone(in: &config.deletedModelGroups, ids: [groupId])
         save()
@@ -1644,6 +1822,17 @@ final class ProviderConfigStore: ObservableObject {
     var voiceOutputGroupId: String? {
         get { config.voiceOutputGroupId }
         set { config.voiceOutputGroupId = newValue; save() }
+    }
+
+    // MARK: - Vision group selector (image understanding fallback)
+    //
+    // [T-ios-vision-group #182] Same shape as the voice selectors: a pointer at
+    // an ordinary ModelGroup whose image-capable members describe images for a
+    // main model that can't see them. Local-only (per-device), not synced.
+
+    var visionGroupId: String? {
+        get { config.visionGroupId }
+        set { config.visionGroupId = newValue; save() }
     }
 
     /// Ensure a default Voice INPUT group exists and is bound when the user hasn't
@@ -1769,6 +1958,49 @@ final class ProviderConfigStore: ObservableObject {
     /// writes it to disk, and publishes the change, but does NOT schedule a re-upload.
     /// The caller decides separately whether the merge produced data that needs to be
     /// pushed back to iCloud (via the existing "localHasUnique" re-upload path).
+    // [T-provider-sync-apply-interaction-defer] Deferral plumbing for
+    // applyMergedConfigFromSync — see the gate comment inside it.
+    private var pendingSyncApply: ProviderConfig?
+    private var syncApplyRetryTimer: Timer?
+    var syncApplyForegroundObserver: NSObjectProtocol?
+    private var lastDidBecomeActiveAt: Date = .distantPast
+    private static let postForegroundSettleSeconds: TimeInterval = 1.5
+
+    private func shouldDeferSyncApply() -> Bool {
+        // Backgrounded: apply immediately as before. Rendering is suspended
+        // (no async-render race), and a long-running background agent must
+        // keep reading fresh provider config for routing.
+        guard UIApplication.shared.applicationState == .active else { return false }
+        if Date().timeIntervalSince(lastDidBecomeActiveAt) < Self.postForegroundSettleSeconds {
+            return true
+        }
+        // Any UIKit scroll drag/deceleration puts the main runloop into
+        // tracking mode — a global signal that covers every scrollable
+        // surface, including the provider instance and model picker lists.
+        if RunLoop.main.currentMode == .tracking { return true }
+        return false
+    }
+
+    private func armSyncApplyRetry() {
+        guard syncApplyRetryTimer == nil else { return }
+        logger.info("[v3sync] applyMergedConfigFromSync DEFERRED (settleWindow=\(Date().timeIntervalSince(self.lastDidBecomeActiveAt) < Self.postForegroundSettleSeconds) tracking=\(RunLoop.main.currentMode == .tracking)) — will retry on quiet")
+        // .default runloop mode only: while a scroll keeps the runloop in
+        // tracking mode the timer stays parked, and it fires on the first
+        // idle frame after the interaction ends — exactly the quiet moment
+        // the deferral is waiting for.
+        let timer = Timer(timeInterval: 0.3, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.syncApplyRetryTimer = nil
+                guard let pending = self.pendingSyncApply else { return }
+                self.pendingSyncApply = nil
+                self.applyMergedConfigFromSync(pending)
+            }
+        }
+        syncApplyRetryTimer = timer
+        RunLoop.main.add(timer, forMode: .default)
+    }
+
     func applyMergedConfigFromSync(_ newConfig: ProviderConfig) {
         // Compute the set of instances that ended up with zero model
         // entries after the merge. The remote ProviderConfig snapshot
@@ -1820,6 +2052,28 @@ final class ProviderConfigStore: ObservableObject {
             return
         }
 
+        // [T-provider-sync-apply-interaction-defer] Hold the whole-store
+        // publish out of the two windows where it has raced the async
+        // renderer into an AttributeGraph SIGSEGV (field pair 2026-08-01,
+        // 1.12(2) iOS 27: both crashes = foreground return + large inbound
+        // provider merge, one mid-scroll — ViewGraph.updateOutputsAsync /
+        // AGGraphWithMainThreadHandler, the FB13213926 async-render family):
+        //   1. the first seconds after didBecomeActive, while SwiftUI is
+        //      rebuilding the hosting graph for the returning scene — and
+        //      exactly when the foreground sync fetch delivers its burst;
+        //   2. any live scroll (RunLoop.main in UITracking mode — global,
+        //      covers the provider/model pickers, not just the chat list).
+        // Assigning `config` invalidates EVERY observer of the shared store
+        // at once; deferring it a few hundred ms to the next quiet moment is
+        // invisible to the user and keeps the giant graph update out of the
+        // fragile frames. Latest snapshot wins while deferred; DB/disk
+        // mirrors move with the apply, so state stays consistent.
+        if shouldDeferSyncApply() {
+            pendingSyncApply = newConfig
+            armSyncApplyRetry()
+            return
+        }
+
         config = deduped
         // [T-icloud-fresh-restore-provider-groups] Summary of what this device
         // holds after an inbound merge — the single most useful triage line for
@@ -1857,7 +2111,15 @@ final class ProviderConfigStore: ObservableObject {
             let snapshot = config
             let toDelete = prunedEntryIds
             Task.detached {
-                await db.bulkReplace(from: snapshot)
+                // [T-icloud-agentloop-wipe] INBOUND path — turn on the
+                // local-only preserve guard. agentLoopModelEntryIds is
+                // per-device state that a peer's config knows nothing about, so
+                // an inbound snapshot legitimately carries `[]` for it; without
+                // this the replace below would erase the user's agent-loop
+                // selection on every merge (OpenMinis#98 defect 2). The
+                // user-initiated save() path deliberately does NOT set this —
+                // there, an empty list really does mean "clear it".
+                await db.bulkReplace(from: snapshot, preserveLocalOnlyStateIfEmpty: true)
                 // Physically remove the pruned duplicate entry rows so they
                 // don't reappear from the DB, and tombstone them so the
                 // deletion propagates instead of resurrecting from a peer.
@@ -2633,6 +2895,84 @@ final class ProviderConfigStore: ObservableObject {
         case .unsupported: return nil // synced from newer build
         }
     }
+
+    // MARK: - Thinking rules (Phase 2 §2)
+
+    /// Reload every instance's user-authored thinking rules into the synchronous cache
+    /// the resolver reads. Call after any mutation, and once at DB adoption.
+    func reloadThinkingRuleCache() async {
+        guard let db else { return }
+        var map: [String: [ThinkingRule]] = [:]
+        for inst in config.instances {
+            let rules = await db.loadThinkingRules(instanceId: inst.id)
+            if !rules.isEmpty { map[inst.id] = rules }
+        }
+        ThinkingRuleCache.shared.replaceAll(map)
+        logger.info("[ThinkingRules] cache primed: \(map.count) instance(s) with custom rules")
+    }
+
+    /// Rules for one instance, for the UI.
+    func thinkingRules(for instanceId: String) async -> [ThinkingRule] {
+        guard let db else { return [] }
+        return await db.loadThinkingRules(instanceId: instanceId)
+    }
+
+    /// Create or update one rule, then refresh the cache so the next request sees it.
+    ///
+    /// [T-icloud-thinking-rules-sync] Emits a per-record markDirty so the rule reaches
+    /// peer devices, exactly as instances / entries / groups do.
+    @discardableResult
+    func saveThinkingRule(_ rule: ThinkingRule, instanceId: String, sortOrder: Int) async -> Bool {
+        guard let db else { return false }
+        let ok = await db.upsertThinkingRule(rule, instanceId: instanceId, sortOrder: sortOrder)
+        await reloadThinkingRuleCache()
+        if ok {
+            await ChatStore.shared.markDirty(recordType: "ProviderThinkingRuleV3",
+                                             recordId: rule.id, operation: "upsert")
+        }
+        return ok
+    }
+
+    /// Delete one rule locally and propagate the deletion.
+    ///
+    /// [T-icloud-thinking-rules-sync] The row is really removed (no soft-delete column):
+    /// the anti-resurrection guarantee comes from the tombstone that `markDirty(op:
+    /// "delete")` writes into `deleted_record_tombstones`, which is the same generic
+    /// mechanism Skill / EnvVarItem / Folder / the other provider V3 types use. Without
+    /// it, a `fetchRecentV2` that races ahead of the cloud delete would re-pull the
+    /// still-live record and the merger would happily re-insert it.
+    ///
+    /// markDirty is emitted BEFORE the row is gone is NOT required — the tombstone is
+    /// keyed by id and the builder returning nil for a missing row is an accepted
+    /// outcome — but the delete op must be emitted regardless of whether the local row
+    /// still existed, so a peer's copy is removed even if ours was already gone.
+    @discardableResult
+    func deleteThinkingRule(id: String, instanceId: String) async -> Bool {
+        guard let db else { return false }
+        let ok = await db.deleteThinkingRule(id: id)
+        await reloadThinkingRuleCache()
+        await ChatStore.shared.markDirty(recordType: "ProviderThinkingRuleV3",
+                                         recordId: id, operation: "delete")
+        return ok
+    }
+
+    /// Reordering changes each affected rule's `sort_order`, and order IS priority
+    /// (first match wins), so every id in the list needs its own upsert — a single
+    /// record cannot express "the list moved".
+    @discardableResult
+    func reorderThinkingRules(instanceId: String, orderedIds: [String]) async -> Bool {
+        guard let db else { return false }
+        let ok = await db.reorderThinkingRules(instanceId: instanceId, orderedIds: orderedIds)
+        await reloadThinkingRuleCache()
+        if ok {
+            for rid in orderedIds {
+                await ChatStore.shared.markDirty(recordType: "ProviderThinkingRuleV3",
+                                                 recordId: rid, operation: "upsert")
+            }
+        }
+        return ok
+    }
+
 }
 
 // MARK: - Model Refresh Error

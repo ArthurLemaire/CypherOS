@@ -174,6 +174,8 @@ struct AddProviderView: View {
     @State private var importMessage: String?
     @State private var showImportResult = false
     @State private var importSucceeded = false
+    // [T-add-provider-unsaved-exit-confirm]
+    @State private var showUnsavedExitDialog = false
 
     /// Whether the data-sharing consent has been accepted (persisted in UserDefaults).
     private var consentAccepted: Bool {
@@ -205,6 +207,50 @@ struct AddProviderView: View {
         .id(currentStep)
     }
 
+    // [T-add-provider-unsaved-exit-confirm] Whether the user has typed /
+    // authorized anything that would be silently lost on exit. Prefilled
+    // defaults don't count: the label only counts once the user edited it,
+    // and appendV1Suffix / Responses-API toggles alone carry no secret.
+    private var hasUnsavedInput: Bool {
+        if pendingOAuthDone { return true }
+        if !apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
+        if !manualOAuthTokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
+        if labelEdited && !labelInput.trimmingCharacters(in: .whitespaces).isEmpty { return true }
+        if !customBaseURLInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
+        return false
+    }
+
+    /// Whether the current input is complete enough that "Save & Exit" can
+    /// perform a real save (mirrors the enabled conditions of the visible
+    /// save buttons for the three credential paths).
+    private var canSaveCurrentInput: Bool {
+        if pendingOAuthDone { return true }
+        if selectedCredential == .apiKey,
+           !apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
+        if !manualOAuthTokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
+        return false
+    }
+
+    private func saveCurrentInputAndExit() {
+        if pendingOAuthDone {
+            saveOAuthInstance()
+        } else if selectedCredential == .apiKey,
+                  !apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            saveApiKeyInstance()
+        } else if !manualOAuthTokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            saveManualOAuthInstance()
+        }
+    }
+
+    /// Exit intent chokepoint: confirm when input would be lost, else leave.
+    private func requestExit() {
+        if hasUnsavedInput {
+            showUnsavedExitDialog = true
+        } else {
+            cleanupAndDismiss()
+        }
+    }
+
     var body: some View {
         List {
             steppedContent
@@ -217,9 +263,43 @@ struct AddProviderView: View {
                 if selectedType != nil {
                     Button("Back") { goBack() }
                 } else {
-                    Button("Cancel") { cleanupAndDismiss() }
+                    Button("Cancel") { requestExit() }
                 }
             }
+            // [T-add-provider-unsaved-exit-confirm] Explicit close affordance
+            // on the in-flow steps (the leading slot is taken by Back there).
+            // Paired with interactiveDismissDisabled below: the pull-down
+            // gesture bounces instead of silently discarding, and this button
+            // is the visible path to the save/discard choice — the same
+            // pattern as Mail's compose sheet.
+            ToolbarItem(placement: .topBarTrailing) {
+                if selectedType != nil {
+                    Button {
+                        requestExit()
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .accessibilityLabel(Text("Cancel"))
+                }
+            }
+        }
+        // Block the interactive pull-down while input would be lost; exits
+        // then go through requestExit()'s confirmation.
+        .interactiveDismissDisabled(hasUnsavedInput)
+        .confirmationDialog(
+            String(localized: "You have unsaved provider settings."),
+            isPresented: $showUnsavedExitDialog,
+            titleVisibility: .visible
+        ) {
+            if canSaveCurrentInput {
+                Button(String(localized: "Save & Exit")) {
+                    saveCurrentInputAndExit()
+                }
+            }
+            Button(String(localized: "Discard Changes"), role: .destructive) {
+                cleanupAndDismiss()
+            }
+            Button(String(localized: "Keep Editing"), role: .cancel) {}
         }
         .sheet(isPresented: $showDataSharingConsent) {
             AIDataSharingConsentView(
@@ -494,7 +574,28 @@ struct AddProviderView: View {
         Group {
             Section("Label") {
                 TextField("Provider label", text: $labelInput)
+                    // [T-provider-label-keyboard] Declare the keyboard EXPLICITLY.
+                    // A TextField that sets no keyboardType does not get a
+                    // guaranteed default — UIKit reuses the type from the input
+                    // session that was active a moment ago, so arriving here right
+                    // after a numeric field (Context Window / Max Output Tokens,
+                    // both `.numberPad`) or a credential field could raise a number
+                    // pad on what is plain prose. Saying `.default` costs nothing
+                    // and removes the dependence on whatever was focused before.
+                    .keyboardType(.default)
+                    // [T-provider-label-keyboard] `.none` alone did NOT fix the
+                    // reported "Label opens the password keyboard": AutoFill
+                    // decides the username/password pairing from the PASSWORD
+                    // field, so the real opt-out lives on the SecureField in
+                    // `apiKeySection` (and the Bearer Token one). Kept here as
+                    // the matching half — the field genuinely has no content
+                    // type — and paired with `.username` being explicitly NOT
+                    // used, so nothing re-associates it.
                     .textContentType(.none)
+                    // A label is a proper noun the user is naming, and AutoFill
+                    // must never offer to save it as a credential.
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.words)
                     .onChange(of: labelInput) { _ in
                         // Mark the field as user-edited so subsequent
                         // provider-type taps no longer clobber it.
@@ -526,8 +627,39 @@ struct AddProviderView: View {
                         if showApiKeyPlaintext {
                             TextField(keyPlaceholder, text: $apiKeyInput)
                                 .font(.system(.body, design: .monospaced))
+                                // [T-provider-label-keyboard] Same opt-out as the
+                                // SecureField below — the plaintext branch is the
+                                // SAME field, so leaving it undeclared would let
+                                // AutoFill re-attach the moment the user taps the
+                                // eye toggle.
+                                .textContentType(.oneTimeCode)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
                         } else {
                             SecureField(keyPlaceholder, text: $apiKeyInput)
+                                // [T-provider-label-keyboard] Opt the credential
+                                // field OUT of AutoFill's password association.
+                                //
+                                // An undeclared SecureField carries `.password`
+                                // semantics, which makes iOS treat the enclosing
+                                // form as a login form and go looking for the
+                                // matching USERNAME field. It picks the nearest
+                                // preceding text field — here that is "Label" —
+                                // and hangs the "密码 / Password" AutoFill bar on
+                                // it, which is what the user sees and reports as
+                                // "the Label field opens a password keyboard".
+                                //
+                                // The earlier attempt at this fixed the wrong end:
+                                // `.textContentType(.none)` on the Label field does
+                                // NOT opt out of being chosen as the username half
+                                // of a pair — the association is driven by the
+                                // password field, so the declaration has to go
+                                // here. `.oneTimeCode` is the reliable "this is a
+                                // credential, but not a saveable account password"
+                                // marker: it suppresses the strong-password /
+                                // save-to-Keychain flow and the username pairing,
+                                // while SecureField keeps doing the masking.
+                                .textContentType(.oneTimeCode)
                         }
                         Button {
                             showApiKeyPlaintext.toggle()
@@ -652,6 +784,11 @@ struct AddProviderView: View {
 
                 SecureField("Bearer Token", text: $manualOAuthTokenInput)
                     .font(.system(.body, design: .monospaced))
+                    // [T-provider-label-keyboard] Same AutoFill opt-out as the
+                    // API Key field — this SecureField is in the same form as
+                    // the Label field and would otherwise trigger the identical
+                    // username/password pairing.
+                    .textContentType(.oneTimeCode)
 
                 Button {
                     saveManualOAuthInstance()

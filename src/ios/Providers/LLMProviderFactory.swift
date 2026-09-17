@@ -147,6 +147,10 @@ enum LLMProviderFactory {
                 p.useOpenRouterCompat = true
                 p.isMistral = true
             }
+            // [T-thinking-rules-phase2] Carry the instance id so the thinking resolver can
+            // load this provider's user-authored rules. Set for every OpenAI-family
+            // provider, not just Mistral.
+            p.providerInstanceId = instance.id
             return p
         }
         switch instance.credentialType {

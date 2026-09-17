@@ -31,7 +31,7 @@ object ProviderFactory {
         // completions endpoint suffix at OpenAIProvider.kt:710 then
         // produces a single-slash join.
         val basePath = instance.effectiveBaseURL
-        return when (instance.providerType) {
+        val provider: LLMProvider = when (instance.providerType) {
             ProviderType.anthropic -> {
                 val isOAuth = instance.credentialType == ProviderCredential.oauth
                 // [T-provider-custom-user-agent] Only meaningful for custom-base
@@ -172,5 +172,12 @@ object ProviderFactory {
                 }
             }
         }
+        // [T-android-thinking-rules-phase2] Tag OpenAI-family providers with their
+        // owning instance id so the thinking resolver can look up this instance's
+        // user-authored custom rules. Only OpenAIProvider consults the resolver's
+        // custom-rule path (Gemini/Anthropic use their own emitters), so this is the
+        // only type that needs it.
+        (provider as? OpenAIProvider)?.thinkingRuleInstanceId = instance.id
+        return provider
     }
 }

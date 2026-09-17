@@ -47,6 +47,28 @@ struct ModelGroupDetailView: View {
         return levels.max() ?? .xhigh
     }
 
+    /// [T-thinking-levels-data-driven] The levels the group's Intensity picker
+    /// offers: the UNION of every reasoning member's selectable tiers, matching
+    /// the `.max()` ceiling policy above (offer what ANY member supports; the
+    /// per-model clamp at request time narrows it for the others).
+    ///
+    /// Each member contributes what IT can offer: its declared tiers, or — when
+    /// it declares none — the full ladder up to its own ceiling. Contributing
+    /// the ladder is load-bearing for MIXED groups: taking only declared tiers
+    /// would let one sparse member (glm-5.2, `["high","max"]`) erase Low/Med for
+    /// an un-catalogued member that genuinely supports them, since the
+    /// un-catalogued model contributes nothing to the union.
+    private func groupThinkingLevels(_ group: ModelGroup) -> [ThinkingLevel] {
+        let ceiling = groupMaxThinkingLevel(group)
+        let union = Set(group.memberEntryIds.compactMap { store.entry(for: $0) }
+            .filter { $0.effectiveMaxThinkingLevel != .off }
+            .flatMap { $0.selectableThinkingLevels })
+        guard !union.isEmpty else {
+            return ThinkingLevel.allCases.filter { $0 != .off && $0 <= ceiling }
+        }
+        return union.filter { $0 <= ceiling }.sorted()
+    }
+
     var body: some View {
         Group {
             if let group = group {
@@ -243,15 +265,28 @@ struct ModelGroupDetailView: View {
 
                 if group.defaultThinkingLevel != nil {
                     let maxLevel = groupMaxThinkingLevel(group)
+                    let levels = groupThinkingLevels(group)
                     Picker("Intensity", selection: Binding(
-                        get: { group.defaultThinkingLevel ?? .medium },
+                        get: {
+                            // [T-thinking-levels-data-driven] A stored level may
+                            // no longer be offered (the catalog now declares a
+                            // sparse set, or membership changed). A segmented
+                            // picker whose selection matches no tag renders with
+                            // NOTHING highlighted, so snap the displayed value
+                            // onto the nearest offered tier at or below it.
+                            let current = group.defaultThinkingLevel ?? .medium
+                            if levels.contains(current) { return current }
+                            return levels.last(where: { $0 <= current })
+                                ?? levels.first
+                                ?? current
+                        },
                         set: { level in
                             var updated = group
                             updated.defaultThinkingLevel = min(level, maxLevel)
                             store.updateGroup(updated)
                         }
                     )) {
-                        ForEach(ThinkingLevel.allCases.filter { $0 != .off && $0 <= maxLevel }, id: \.self) { level in
+                        ForEach(levels, id: \.self) { level in
                             Text(level.displayName).tag(level)
                         }
                     }
@@ -339,6 +374,9 @@ struct ModelGroupDetailView: View {
             if store.voiceOutputGroupId == gid {
                 return String(localized: "This group drives Voice Output — only models that can output audio are listed.", comment: "Add-models filter note for the bound voice output group")
             }
+            if store.visionGroupId == gid {
+                return String(localized: "This group describes images for models that cannot see them — only models that accept image input are listed.", comment: "Add-models filter note for the bound vision group")
+            }
             return nil
         }()
         return ModelPickerConfig(
@@ -385,7 +423,18 @@ struct ModelGroupDetailView: View {
 
             Spacer()
 
-            Text(entry.model.provider)
+            // Same reasoning as ModelEntryDetailSheet.providerDisplayName:
+            // `model.provider` is a denormalized display string whose content
+            // depends on which path created the model (vendor name / protocol
+            // type / instance UUID), so prefer the owning instance's label.
+            // `instance` is already resolved above for the disabled check.
+            Text({
+                if let instance {
+                    let label = instance.label.trimmingCharacters(in: .whitespacesAndNewlines)
+                    return label.isEmpty ? instance.providerType.displayName : label
+                }
+                return entry.model.provider
+            }())
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .opacity(providerDisabled ? 0.5 : 1)

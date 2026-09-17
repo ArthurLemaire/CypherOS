@@ -109,6 +109,12 @@ final class OpenAIProvider: LLMProvider {
     /// We treat this as a strict subset of OpenRouter compat so the agent
     /// loop doesn't auto-inject thinking params.
     var isMistral: Bool = false
+
+    /// [T-thinking-rules-phase2] The provider instance this was built from, so the
+    /// thinking resolver can load user-authored rules for it. nil for providers built
+    /// outside the instance factory (title-gen references, tests) — those simply resolve
+    /// against the built-in registry, which is the pre-Phase-2 behaviour.
+    var providerInstanceId: String?
     /// When true, always use the Responses API format (/v1/responses) regardless of auth mode.
     /// Used by the "Responses API" provider type for third-party Responses-compatible endpoints.
     var forceResponsesAPI: Bool = false
@@ -128,13 +134,45 @@ final class OpenAIProvider: LLMProvider {
         return base.contains("dashscope")
     }
 
+    /// Whether this provider actually talks to OpenRouter.
+    ///
+    /// Deliberately NOT `useOpenRouterCompat`: that flag only means "use the
+    /// legacy `max_tokens` / no-`stream_options` body shape", and Mistral sets it
+    /// too (see `isMistral`, documented as "a strict subset of OpenRouter
+    /// compat"). Anything gated on being genuinely OpenRouter has to match the
+    /// host, the same way `isDashScope` does.
+    ///
+    /// Carries the same caveat as `isMistral` / `usesUnifiedReasoningEffort`: a
+    /// relay or vanity domain that doesn't carry `openrouter.ai` in its URL is
+    /// not recognised, which fails safe — the request simply goes out unchanged.
+    var isOpenRouter: Bool {
+        guard let base = customBaseURL?.lowercased() else { return false }
+        return base.contains("openrouter.ai")
+    }
+
+    /// [GH#191] OpenRouter does NOT enable Anthropic prompt caching automatically
+    /// (unlike the OpenAI / Grok / Moonshot / Groq models it hosts, which cache
+    /// with no opt-in). Per OpenRouter's prompt-caching guide, Claude requests
+    /// must carry an explicit `cache_control` breakpoint or nothing is cached at
+    /// all — which is why the reporter measured `cache_read_input_tokens` and
+    /// `cache_write_tokens` pinned at 0 and a 3–6x cost overrun.
+    ///
+    /// Matched on the `anthropic/` model-id prefix, which is OpenRouter's
+    /// namespace for the Claude family (`anthropic/claude-sonnet-4`,
+    /// `anthropic/claude-opus-4.1`, …). Scoped to OpenRouter AND that prefix so
+    /// every other model on the gateway — and every non-OpenRouter provider that
+    /// happens to share `useOpenRouterCompat` — keeps a byte-identical body.
+    var needsOpenRouterAnthropicCacheControl: Bool {
+        isOpenRouter && model.id.lowercased().hasPrefix("anthropic/")
+    }
+
     /// [T-unified-reasoning-effort] Whether this endpoint applies OpenAI's
     /// `reasoning_effort` (Chat) / `reasoning.effort` (Responses) uniformly to
     /// EVERY model it hosts — including third-party families (GLM / Kimi /
     /// DeepSeek / MiniMax) that, when hit at their vendor-native endpoint, would
     /// instead use a `thinking:{}` object or self-reason with no toggle.
     ///
-    /// Two known such gateways:
+    /// Three known such gateways:
     ///   • Volcengine Ark (`ark.` / `volces` in the base URL) — the platform
     ///     re-exposes doubao/deepseek/glm/kimi through a single OpenAI-compatible
     ///     surface where thinking is controlled ONLY by `reasoning_effort`
@@ -142,14 +180,46 @@ final class OpenAIProvider: LLMProvider {
     ///     honored, so a GLM/DeepSeek id must NOT take its native branch here.
     ///   • Azure OpenAI (`isAzure`) — reasoning is `reasoning_effort` for every
     ///     model surfaced through the deployment.
+    ///   • Venice.ai (`api.venice.ai`) — [OpenMinis#86] resells deepseek /
+    ///     claude / aion behind one OpenAI-compatible surface. Its
+    ///     `ChatCompletionRequest` schema is `additionalProperties: false`, so an
+    ///     unknown root key is rejected at validation time — BEFORE model
+    ///     dispatch — with `400 Unrecognized key(s) in object: 'thinking'`. That
+    ///     is why the reporter saw every model fail and why turning thinking OFF
+    ///     did not help: the `{"type":"disabled"}` branch still sends the key.
+    ///     Venice natively accepts root `reasoning_effort`
+    ///     (none/minimal/low/medium/high/xhigh/max), a superset of the tiers the
+    ///     generic path emits, so no value mapping is needed.
     ///
     /// Gated tightly so official direct endpoints (DeepSeek/GLM/Kimi native,
     /// which DO want their own thinking shape) are never mis-routed: it requires
-    /// an explicit Ark base-URL match or the Azure flag, and nothing else.
+    /// an explicit Ark/Venice base-URL match or the Azure flag, and nothing else.
+    /// Caveat (same class as `isMistral`): a relay or vanity domain that does not
+    /// carry these hosts in its URL is still exposed.
     var usesUnifiedReasoningEffort: Bool {
         if isAzure { return true }
         guard let base = customBaseURL?.lowercased() else { return false }
         return base.contains("volces") || base.contains("ark.")
+            || base.contains("api.venice.ai")
+    }
+
+    /// [OpenMinis#163] Talking to xAI's own API (api.x.ai), as opposed to a
+    /// relay that merely serves grok-named models.
+    ///
+    /// Scopes the "catalog declares no effort tiers → omit `reasoning_effort`"
+    /// skip to first-party xAI. The catalog marks 1292 models across many
+    /// vendors with the same empty-tier shape (relay-hosted Claude, GPT-5,
+    /// Qwen …), and while omitting the field for those is arguably more
+    /// correct too, none of those routes has been verified — so the skip stays
+    /// where the 400 was actually observed.
+    ///
+    /// URL-matching alone is sufficient: `makeXAIProvider` always populates
+    /// `customBaseURL`, defaulting to `https://api.x.ai/v1` when the user set
+    /// no override (LLMProviderFactory:254), so a first-party xAI provider is
+    /// never seen here with a nil base.
+    var isXAI: Bool {
+        guard let base = customBaseURL?.lowercased() else { return false }
+        return base.contains("api.x.ai") || base.contains("//x.ai")
     }
 
     var isOAuth: Bool {
@@ -488,6 +558,24 @@ final class OpenAIProvider: LLMProvider {
             if let accountId = codexAccountId {
                 request.setValue(accountId, forHTTPHeaderField: "Chatgpt-Account-Id")
             }
+            // [T-codex-prompt-cache-headers] The ChatGPT backend keys prompt
+            // cache on the conversation identity carried in these HEADERS, not
+            // on the `prompt_cache_key` body field alone. Sending the body
+            // field by itself produced a measured 0% cache-hit rate across
+            // every multi-turn test on device (see /tmp/gpt56_cache_findings.md
+            // — 0% even for two byte-identical 8.7k-token requests sent
+            // back-to-back), which is what motivated this change.
+            //
+            // Mirrors CLIProxyAPI's codex_executor.go `cacheHelper`, which sets
+            // both headers to the same id it writes into `prompt_cache_key`
+            // (its `applyCodexHeaders` only falls back to a random Session_id
+            // when no cache id exists — EnsureHeader preserves an already-set
+            // value). Reusing our derived key keeps one stable id per
+            // conversation, which is the property the backend needs.
+            if let cacheKey = body["prompt_cache_key"] as? String, !cacheKey.isEmpty {
+                request.setValue(cacheKey, forHTTPHeaderField: "Session_id")
+                request.setValue(cacheKey, forHTTPHeaderField: "Conversation_id")
+            }
         } else if isResponsesAPI {
             // forceResponsesAPI or custom base — /v1/responses on configured base.
             // [T-ios-azure-openai] Azure: build from the Azure endpoint (preserving
@@ -651,6 +739,12 @@ final class OpenAIProvider: LLMProvider {
             if stream {
                 body["stream_options"] = ["include_usage": true]
             }
+        }
+        // [GH#191] See the matching block in OpenAIAgentProvider — OpenRouter
+        // requires an explicit cache_control breakpoint for Claude or nothing is
+        // cached. Same host + `anthropic/` gate, so no other model is affected.
+        if needsOpenRouterAnthropicCacheControl {
+            body["cache_control"] = ["type": "ephemeral"]
         }
         if let tools, !tools.isEmpty {
             body["tools"] = tools

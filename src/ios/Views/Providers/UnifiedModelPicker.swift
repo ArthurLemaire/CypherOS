@@ -126,6 +126,10 @@ struct ModelPickerConfig {
         let store = ProviderConfigStore.shared
         if gid == store.voiceInputGroupId  { return [.audioInput] }
         if gid == store.voiceOutputGroupId { return [.audioOutput] }
+        // [T-ios-vision-group #182] Adding models to the Vision Group surfaces
+        // image-capable models first — a text-only member there would be dead
+        // weight the resolver silently filters out.
+        if gid == store.visionGroupId      { return [.imageInput] }
         return nil
     }
 
@@ -321,11 +325,53 @@ struct UnifiedModelPicker: View {
         }
         let grouped = Dictionary(grouping: regularEntries, by: { $0.providerInstanceId })
         var seen = Set<String>()
-        for instance in store.instances where instance.isEnabled {
-            guard !seen.contains(instance.id) else { continue }
-            seen.insert(instance.id)
-            if let entries = grouped[instance.id], !entries.isEmpty {
-                result.append((instance, entries))
+        // [T-ios-model-picker-provider-order] Walk providerType-major, exactly
+        // like ProviderInstancesView's section list, then `store.instances`
+        // order WITHIN each type.
+        //
+        // Both screens already read the same `store.instances` array in the
+        // same order — the bug was never a different sort key. The management
+        // page renders `ForEach(ProviderType.allCases) { type in
+        // store.instances.filter { $0.providerType == type } }`, i.e. it is
+        // grouped by protocol ("OpenAI", "Responses API (v3)", …), so the
+        // global array's type-interleaving is invisible there. This picker
+        // walked the same array FLAT, which exposed that interleaving and made
+        // the two orders disagree (user report: management shows
+        // 球球 → 球球图片 → 球球Grok …, picker shows DeepSeek → 球球 → Codex CPA
+        // → 球球图片 …).
+        //
+        // Reordering cannot fix this from the data side: `moveInstances`
+        // deliberately permutes only WITHIN a type section and pins every other
+        // instance to its existing global slot, so an OpenAI provider can never
+        // be dragged past a Responses-API one. Type-major iteration here is
+        // what makes the picker reproduce what the user actually arranged.
+        for type in ProviderType.allCases {
+            for instance in store.instances
+            where instance.isEnabled && instance.providerType == type {
+                guard !seen.contains(instance.id) else { continue }
+                seen.insert(instance.id)
+                if let entries = grouped[instance.id], !entries.isEmpty {
+                    // [T-model-release-ranking] Order models WITHIN the section
+                    // newest-first. This is a different axis from the provider
+                    // ordering above and must not be confused with it: provider
+                    // sections follow the user's arrangement, models inside a
+                    // section follow release date.
+                    //
+                    // `candidateEntries` comes from `store.modelEntries`, whose
+                    // getter applies `sortedEntries` — instance cluster, then
+                    // `baseModel.id` ALPHABETICALLY. It does NOT apply
+                    // `releaseRankOrder`, so this picker was showing models
+                    // alphabetically and silently losing the release ranking
+                    // that `visibleEntries(for:)` gives the provider-detail
+                    // list. That matters most in the COLLAPSED state, where the
+                    // section renders `entries.prefix(1)`: the one model on
+                    // screen was the alphabetically-first, which is exactly the
+                    // "first entry is a stale/dead model" hazard
+                    // T-model-release-ranking exists to prevent (OpenMinis#83 —
+                    // the unusable model's 400 renders as an empty reply and
+                    // reads as "the app is broken").
+                    result.append((instance, entries.sorted(by: ProviderConfigStore.releaseRankOrder)))
+                }
             }
         }
         return result

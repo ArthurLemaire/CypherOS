@@ -37,12 +37,22 @@ object OpenAIModelsApi {
         LLMModel("gpt-5.6-luna", "GPT-5.6 Luna", "OpenAI", supportsReasoning = true),
         LLMModel("gpt-5.5", "GPT-5.5", "OpenAI", supportsReasoning = true),
         LLMModel("gpt-5.4", "GPT-5.4", "OpenAI", supportsReasoning = true),
-        LLMModel("gpt-5.3-codex", "GPT-5.3 Codex", "OpenAI", supportsReasoning = true),
-        LLMModel("gpt-5.3-codex-spark", "GPT-5.3 Codex Spark", "OpenAI", supportsReasoning = true),
-        LLMModel("gpt-5-codex-mini", "GPT-5 Codex Mini", "OpenAI", supportsReasoning = true),
-        LLMModel("gpt-5.2", "GPT-5.2", "OpenAI", supportsReasoning = true),
-        LLMModel("gpt-5.3", "GPT-5.3", "OpenAI", supportsReasoning = true),
-        LLMModel("gpt-5", "GPT-5", "OpenAI", supportsReasoning = true),
+        // [T-codex-oauth-model-prune] Verified callable on a live
+        // ChatGPT-account token (2026-08-01); we had never listed it.
+        LLMModel("gpt-5.4-mini", "GPT-5.4 Mini", "OpenAI", supportsReasoning = true),
+        // [T-codex-oauth-model-prune] gpt-5.3-codex, gpt-5.3-codex-spark,
+        // gpt-5-codex-mini, gpt-5.3, gpt-5.2 and gpt-5 were removed here.
+        // The Codex backend answers each with
+        //   HTTP 400 {"detail":"The '<id>' model is not supported when using
+        //   Codex with a ChatGPT account."}
+        // and that error renders as an EMPTY assistant turn, so leaving them in
+        // the picker reads to the user as "tool calls are broken" rather than
+        // "wrong model". Verified on-device 2026-08-01 against a real Codex
+        // OAuth token; the survivors match the set CLIProxyAPI ships for its
+        // Codex client (internal/registry/models/codex_client_models.json).
+        // Availability is tier-dependent — re-probe before restoring any id,
+        // do not add one back from documentation alone. Mirrors iOS
+        // LLMModel.allOpenAICodexOAuth.
     ).let {
         AppLogger.info(TAG, "Codex OAuth model list (${it.size} models): ${it.joinToString { m -> m.id }}")
         ModelsDevApi.enrichModels(it)

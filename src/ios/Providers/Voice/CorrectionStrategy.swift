@@ -116,8 +116,24 @@ struct LLMCorrectionStrategy: CorrectionStrategy {
         var blocks: [String] = []
         var vocabChars = 0, confusionChars = 0, digestChars = 0, contextChars = 0
 
+        // Hoisted above the vocab block: the vocab filter below needs to know
+        // which phonetic keys a confusion record already covers.
+        let confusion = candidates.filter { $0.sourceIdentifier == "confusion_dictionary" }
+
         // Typed vocabulary — clamped to its char budget, not just a term count.
-        let vocab = candidates.filter { $0.sourceIdentifier == "typed_vocabulary" }
+        //
+        // [T-correction-low-freq-evidence] Terms whose phonetic key is already
+        // answered by a confusion record are dropped here. Listing "Linux" as a
+        // high-frequency typed term (56×) alongside "Linux→minis（用户已手动纠正1次）"
+        // put the two signals in direct competition and the model kept Linux —
+        // frequency read as authority. The confusion record is strictly
+        // higher-quality evidence (explicit user correction vs. a typing count),
+        // so the vocab echo is pure noise for exactly those keys. Terms with no
+        // confusion record are unaffected.
+        let confusionKeys = Set(confusion.map(\.phoneticKey))
+        let vocab = candidates
+            .filter { $0.sourceIdentifier == "typed_vocabulary" }
+            .filter { !confusionKeys.contains($0.phoneticKey) }
         if !vocab.isEmpty {
             var kept: [String] = []
             var used = 0
@@ -133,7 +149,6 @@ struct LLMCorrectionStrategy: CorrectionStrategy {
         }
 
         // Confusion history — line-clamped to its char budget.
-        let confusion = candidates.filter { $0.sourceIdentifier == "confusion_dictionary" }
         if !confusion.isEmpty {
             var kept: [String] = []
             var used = 0
@@ -145,7 +160,7 @@ struct LLMCorrectionStrategy: CorrectionStrategy {
             }
             if !kept.isEmpty {
                 confusionChars = used
-                blocks.append("以下是该用户过去的语音识别纠错记录（原文→修正，按可信度排序）：\n\(kept.joined(separator: "\n"))")
+                blocks.append("以下是该用户过去亲手纠正的语音识别错误（高置信度，ASR 将目标词误识为下方原文，用户主动修改）：\n\(kept.joined(separator: "\n"))")
             }
         }
 
@@ -170,9 +185,27 @@ struct LLMCorrectionStrategy: CorrectionStrategy {
         }
 
         let evidence = blocks.isEmpty ? "" : blocks.joined(separator: "\n\n") + "\n\n"
+        // [T-correction-low-freq-evidence] The closing instruction branches on
+        // whether any confusion evidence actually made it into the prompt. The
+        // single conservative closing ("已经正确…请不要修改") was being applied
+        // even when a user-confirmed correction was listed right above it, and a
+        // transcript like "去远程Linux开发环境" reads as perfectly valid text — so
+        // the model had explicit license to leave it alone. When we DO have a
+        // manual-correction record, say plainly that surface validity is not a
+        // reason to skip it, since ASR substitutes real look-alike words rather
+        // than producing obvious nonsense.
+        let closing: String
+        if confusionChars > 0 {
+            closing = "如果上方纠错记录中的原文出现在转录里，请按记录修正"
+                + "（即使转录在字面上语义合法，也可能是 ASR 将目标词误识为了形近词）。"
+                + "其他无把握的地方不要修改。只输出修正后的文本，不要输出任何解释。"
+        } else {
+            closing = "如果转录内容本身已经正确、或者是无法用参考信息判断的正常表达，请不要修改。"
+                + "只输出修正后的文本，不要输出任何解释。"
+        }
         let prompt = """
         \(evidence)请结合以上参考信息和对话上下文，判断并修正下面这段语音转录文本中可能的同音字/识别错误。\
-        如果转录内容本身已经正确、或者是无法用参考信息判断的正常表达，请不要修改。只输出修正后的文本，不要输出任何解释。
+        \(closing)
 
         原文：\(transcript)
         """
