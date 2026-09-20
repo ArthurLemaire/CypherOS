@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<link rel="stylesheet" href="katex.min.css">
+<script src="katex.min.js"></script>
+<script src="mhchem.min.js"></script>
+<style>
+  /* T208 Layer A: lock font scale so the formula bitmap matches its
+     reported CSS-px size on devices where the user has enlarged system
+     font scale. WebView normally honours the system font scale (the
+     same way Compose `sp` does), but the bitmap reporter assumes 1px =
+     1dp via initial-scale=1.0; if the WebView applies an extra
+     accessibility multiplier the formula renders larger than the
+     reported width/height and Image displays it at that inflated size.
+     `text-size-adjust: 100%` neutralises the accessibility multiplier;
+     `font: 16px/1.2 sans-serif !important` forces a known baseline. */
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    background: transparent;
+    overflow: hidden;
+  }
+  #math {
+    display: inline-block;
+    padding: 2px 4px;
+  }
+  body.dark #math { color: #fff; }
+  body.light #math { color: #000; }
+</style>
+</head>
+<body>
+<span id="math"></span>
+<script>
+function renderMath(latex, displayMode, fontSize, isDark) {
+  try {
+    document.body.className = isDark ? 'dark' : 'light';
+    var el = document.getElementById('math');
+    el.style.fontSize = fontSize + 'px';
+    katex.render(latex, el, {
+      // T208 Layer C: throwOnError=true so render failures land in the
+      // catch block and report as errors to the bridge — the Kotlin side
+      // then falls through to the small-monospace text fallback. With
+      // throwOnError=false, KaTeX rendered the raw source as `\large` red
+      // text inside the bitmap, which displayed at the bitmap's natural
+      // dp size = visually huge.
+      displayMode: displayMode,
+      throwOnError: true,
+      strict: false,
+      trust: true,
+      output: 'html'
+    });
+    document.fonts.ready.then(function() {
+      // T208-6: Wait for one paint cycle after the DOM update so the
+      // WebView's display list reflects the new formula before Android
+      // calls wv.draw(canvas). Without rAF, the bridge fired immediately
+      // after layout, but the next render's snapshot then captured the
+      // PREVIOUS frame's pixels — every cell ended up showing the
+      // formula from the cell above it. requestAnimationFrame schedules
+      // a callback after the next paint commit.
+      requestAnimationFrame(function() {
+        requestAnimationFrame(function() {
+          var rect = el.getBoundingClientRect();
+          AndroidBridge.onRendered(Math.ceil(rect.width), Math.ceil(rect.height), '');
+        });
+      });
+    });
+  } catch (e) {
+    AndroidBridge.onRendered(0, 0, e.message || 'render error');
+  }
+}
+</script>
+</body>
+</html>
