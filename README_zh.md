@@ -28,7 +28,7 @@
   <img src="docs/screenshots/chat-approval.png" width="24%" alt="带审批卡片的聊天">
   <img src="docs/screenshots/goal-detail.png" width="24%" alt="目标与计划">
   <img src="docs/screenshots/ideas.png" width="24%" alt="Ideas 页签">
-  <img src="docs/screenshots/settings.png" width="24%" alt="Sentinel 设置">
+  <img src="docs/screenshots/settings.png" width="24%" alt="Sentinel 设置与沙箱">
 </p>
 
 ## 从这里开始
