@@ -15,7 +15,7 @@
 
 ---
 
-**OpenMuse 之于 Meta Muse，正如 OpenManus 之于 Manus**：对一个闭源产品背后*理念*的社区复现。Muse 的卖点是一个真正替你做事的 Agent——读邮件、上网、跑代码、记住你的偏好、跨越数天推进目标——同时保持安全：每个动作都要经过守门人，凭据永远不进模型。OpenMuse 用约 5k 行带类型标注的 Python 实现了这套架构，一个下午就能读完，并且可以接 **任何 OpenAI 兼容模型**：DeepSeek、OpenAI、Anthropic、OpenRouter、Ollama、vLLM 或公司内部网关。
+**OpenMuse 是 [Meta Muse](https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/) 的开源复刻**——Muse 是 Meta 于 2026 年 9 月 8 日发布的个人 AI Agent。Muse 的卖点是一个真正*替你做事*的 Agent：读邮件、上网、跑代码、记住你的偏好、跨越数天推进目标——同时保持安全：每个动作都要经过守门人（Meta 称之为 *Sentinel*），凭据永远不进模型。OpenMuse 用约 5k 行带类型标注的 Python 复刻了这套架构，一个下午就能读完，并且可以接 **任何 OpenAI 兼容模型**：DeepSeek、OpenAI、Anthropic、OpenRouter、Ollama、vLLM 或公司内部网关。
 
 > 状态：**v0.1.0 — alpha**。核心循环、Sentinel、保险库、记忆、目标、工具和 CLI 已可端到端运行；API 仍可能变动。
 
@@ -267,6 +267,7 @@ OPENMUSE_LIVE=1 python -m pytest -q -m live   # 对已配置模型做冒烟测�
 
 ## Roadmap
 
+- [ ] **移动端优先的聊天 App（高优先级）**——复现 Meta Muse 发布页的手机端 showcase：消息式对话、后台任务、审批卡片、Goals 页签
 - [ ] Web UI（在手机上审批）与 Telegram / Slack 前端
 - [ ] 目标的定时触发（cron、webhook、新邮件事件）
 - [ ] 日历与联系人连接器（通过 MCP）
@@ -277,7 +278,6 @@ OPENMUSE_LIVE=1 python -m pytest -q -m live   # 对已配置模型做冒烟测�
 
 ## 致谢
 
-* [OpenManus](https://github.com/FoundationAgents/OpenManus) —— 展示了热门闭源 Agent 的开源复现该是什么样；这里的 agent/tool 循环沿用了它的形态。
 * [browser-use](https://github.com/browser-use/browser-use) —— 浏览器工具元素标注的灵感来源。
 * [Model Context Protocol](https://modelcontextprotocol.io) —— 让我们不必亲手写每个连接器。
 * Meta 的 Muse —— OpenMuse 在开源世界中复现的 Sentinel / 保险库 / Secure VM 架构的来源。

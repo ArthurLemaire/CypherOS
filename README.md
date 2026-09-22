@@ -15,7 +15,7 @@
 
 ---
 
-**OpenMuse is to Meta Muse what OpenManus is to Manus**: a community reimplementation of the *ideas* behind a closed product. Muse's pitch is an agent that does real things for you — reads your mail, browses, runs code, remembers you and pursues goals over days — while staying safe because every action passes through a gatekeeper and your credentials never touch the model. OpenMuse implements that architecture in ~5k lines of typed Python you can read in an afternoon, and runs against **any OpenAI-compatible model**: DeepSeek, OpenAI, Anthropic, OpenRouter, Ollama, vLLM or your company's internal gateway.
+**OpenMuse is an open-source replica of [Meta Muse](https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/)**, the personal AI agent Meta introduced on September 8, 2026. Muse's pitch is an agent that actually *does things for you* — reads your mail, browses, runs code, remembers you and pursues goals over days — while staying safe because every action passes through a gatekeeper (Meta calls it *Sentinel*) and your credentials never touch the model. OpenMuse re-creates that architecture in ~5k lines of typed Python you can read in an afternoon, and runs against **any OpenAI-compatible model**: DeepSeek, OpenAI, Anthropic, OpenRouter, Ollama, vLLM or your company's internal gateway.
 
 > Status: **v0.1.0 — alpha**. The core loop, Sentinel, vault, memory, goals, tools and CLI work end-to-end; APIs may still change.
 
@@ -267,6 +267,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Roadmap
 
+- [ ] **Mobile-first chat app (high priority)** — replicate the phone showcase from Meta's Muse launch: message-style conversation, tasks running in the background, approval cards, a Goals tab
 - [ ] Web UI (approvals on your phone) and Telegram / Slack front-ends
 - [ ] Scheduled triggers for goals (cron, webhooks, new-mail events)
 - [ ] Calendar and contacts connectors (via MCP)
@@ -277,7 +278,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Acknowledgements
 
-* [OpenManus](https://github.com/FoundationAgents/OpenManus) – for showing what an open reimplementation of a hot closed agent can look like; the agent/tool loop here follows its shape.
 * [browser-use](https://github.com/browser-use/browser-use) – inspiration for the browser tool's element annotation.
 * [Model Context Protocol](https://modelcontextprotocol.io) – so we don't have to write every connector ourselves.
 * Meta's Muse – for the Sentinel / vault / secure-VM architecture that OpenMuse re-creates in the open.
