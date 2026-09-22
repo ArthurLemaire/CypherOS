@@ -84,6 +84,7 @@ class Policy:
             return PolicyResult(Decision.DENY, [f"'{tool}' is in sentinel.deny_tools"])
 
         decision: Decision | None = None
+        from_rule = False
 
         # 2. explicit rules
         for rule in s.rules:
@@ -92,6 +93,7 @@ class Policy:
                 if rule.action == "deny":
                     return PolicyResult(Decision.DENY, [reason])
                 decision = Decision(rule.action)
+                from_rule = True
                 reasons.append(reason)
                 break
 
@@ -129,7 +131,13 @@ class Policy:
                 f"{target}, which is not on sentinel.egress_allowlist"
             )
 
+        # 6. a call that looks dangerous (``rm -rf``, ``curl | sh``, code that reads the
+        # environment or deletes files) is never waved through by mode or by
+        # always_allow_tools — only an explicit rule can do that. In ``auto`` mode this is
+        # what stops an unattended background pass from running it.
         if assessment.warnings:
+            if decision == Decision.ALLOW and not from_rule:
+                decision = Decision.ASK
             reasons.extend(assessment.warnings)
         return PolicyResult(decision, reasons)
 

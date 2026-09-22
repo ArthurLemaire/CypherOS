@@ -29,7 +29,7 @@ def host_of(url: str) -> str | None:
 
 def _is_private_host(host: str) -> bool:
     """SSRF guard: refuse loopback / link-local / private ranges."""
-    if host in ("localhost",) or host.endswith(".local") or host.endswith(".internal"):
+    if host in ("localhost",) or host.endswith((".local", ".internal", ".localhost")):
         return True
     try:
         infos = socket.getaddrinfo(host, None)
@@ -37,9 +37,48 @@ def _is_private_host(host: str) -> bool:
         return False  # let httpx report the DNS error
     for info in infos:
         ip = ipaddress.ip_address(info[4][0])
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+            or ip.is_unspecified
+        ):
             return True
     return False
+
+
+MAX_REDIRECTS = 5
+
+
+async def fetch_public(
+    url: str,
+    timeout: float,
+    headers: dict[str, str] | None = None,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> httpx.Response:
+    """GET ``url`` following at most :data:`MAX_REDIRECTS` redirects, checking every hop
+    against the private-host guard. A redirect to ``http://169.254.169.254/`` or to
+    ``localhost`` is refused instead of followed.
+
+    Raises :class:`PermissionError` for a private destination, :class:`httpx.HTTPError`
+    for transport problems.
+    """
+    async with httpx.AsyncClient(
+        follow_redirects=False, timeout=timeout, headers=headers, transport=transport
+    ) as c:
+        for _ in range(MAX_REDIRECTS + 1):
+            host = host_of(url)
+            if not host:
+                raise PermissionError("invalid url")
+            if await asyncio.to_thread(_is_private_host, host):
+                raise PermissionError(f"refusing to fetch private/internal host '{host}'")
+            resp = await c.get(url)
+            if not resp.is_redirect or "location" not in resp.headers:
+                return resp
+            url = str(resp.next_request.url) if resp.next_request else resp.headers["location"]
+        raise PermissionError(f"more than {MAX_REDIRECTS} redirects")
 
 
 class WebSearch(BaseTool):
@@ -133,19 +172,17 @@ class WebFetch(BaseTool):
             return ToolResult.fail("empty url")
         if not url.lower().startswith(("http://", "https://")):
             url = "https://" + url
-        host = host_of(url)
-        if not host:
+        if not host_of(url):
             return ToolResult.fail("invalid url")
-        if await asyncio.to_thread(_is_private_host, host):
-            return ToolResult.fail(f"refusing to fetch private/internal host '{host}'")
         max_chars = max(500, min(int(max_chars or 8_000), 60_000))
         try:
-            async with httpx.AsyncClient(
-                follow_redirects=True,
+            resp = await fetch_public(
+                url,
                 timeout=self.timeout,
                 headers={"User-Agent": USER_AGENT, "Accept-Language": "en,zh;q=0.8"},
-            ) as client:
-                resp = await client.get(url)
+            )
+        except PermissionError as exc:
+            return ToolResult.fail(str(exc))
         except httpx.HTTPError as exc:
             return ToolResult.fail(f"request failed: {exc}")
         ctype = resp.headers.get("content-type", "")
@@ -193,4 +230,4 @@ def html_to_markdown(html: str) -> str:
     return f"# {title}\n\n{body}" if title else body
 
 
-__all__ = ["WebFetch", "WebSearch", "host_of", "html_to_markdown"]
+__all__ = ["MAX_REDIRECTS", "WebFetch", "WebSearch", "fetch_public", "host_of", "html_to_markdown"]

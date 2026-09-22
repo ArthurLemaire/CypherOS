@@ -19,7 +19,9 @@ Every tool declares a static `risk`:
 | `moderate` | reaches outside or changes state | `web_fetch`, `python_execute`, `read_emails`, `browser`, `forget` |
 | `sensitive` | hard to undo or externally visible | `shell`, `send_email` |
 
-A tool can raise the level for a particular call in `assess()`: `shell` escalates on patterns such as `rm -rf`, `sudo`, `curl | sh`; `web_fetch` refuses private and loopback addresses outright. Tools also declare `reads_private_data` (taints the session) and `egress` with an optional `egress_target` (the host a call sends data to; unknown for `shell` and `python_execute`), used by taint tracking.
+A tool can raise the level for a particular call in `assess()`: `shell` attaches a warning on patterns such as `rm -rf`, `sudo`, `curl | sh`; `python_execute` is `moderate` for plain computation and files in the workspace but `sensitive` — with the reason on the card — when the code reaches the network, starts other programs, reads environment variables, deletes files or touches paths outside the workspace; `web_fetch` refuses private and loopback addresses outright, on every redirect hop. Tools also declare `reads_private_data` (taints the session) and `egress` with an optional `egress_target` (the host a call sends data to; unknown for `shell` and `python_execute`), used by taint tracking.
+
+Subprocesses started by `shell` and `python_execute` get a scrubbed environment: variables whose names look like credentials (`*KEY*`, `*TOKEN*`, `*SECRET*`, `*PASSW*`, `*CREDENTIAL*`, `*AUTH*`, `*COOKIE*`, `*SESSION*`), everything under `OPENMUSE_`, `AWS_`, `AZURE_`, `GOOGLE_`, `GH_`, `GITHUB_`, `NPM_`, plus `SSH_AUTH_SOCK`, are removed before the child starts, so code the model wrote cannot read the model's own API key or the vault key out of `os.environ`. A command that needs a secret gets it as a `{{vault:NAME}}` argument instead.
 
 ## Decision order
 
@@ -37,7 +39,9 @@ For each call, the first matching step decides:
 | `strict` | allow | ask | ask |
 | `auto` | allow | allow | allow |
 
-`auto` still honours `deny_tools` and deny rules. It is what `openmuse daemon`, `--auto` and the app's "Hands-off" setting use.
+6. **Warnings**: a call that carries a warning (`rm -rf`, `sudo`, `curl | sh`, code that reads the environment or deletes files) is never waved through by the mode or by `always_allow_tools`; it asks. Only an explicit `allow` rule can override this.
+
+`auto` still honours `deny_tools`, deny rules and step 6. It is what `openmuse daemon`, `--auto` and the app's "Hands-off" setting use — and background goal passes, which is why a dangerous command in an unattended run turns into a card in the Feed instead of just running.
 
 ## Approvals
 
@@ -84,6 +88,28 @@ openmuse audit --json         # raw lines
 ```
 
 The app's activity sheet (tap the avatar) reads the same file.
+
+## What this does and does not protect against
+
+Muse runs each user's agent in its own cloud VM with the Sentinel outside it. OpenMuse runs on your machine, as your user, and its Sentinel is a module in the same process. That changes what the safeguards can promise. Honest summary:
+
+**Covered**
+
+- *The model acting beyond what you asked.* Every tool call goes through the policy; sensitive and dangerous calls stop for a decision; permissions are scoped to a tool and a target and can be revoked.
+- *Prompt injection that tries to exfiltrate.* Once private data has been read, egress to any host not on the allowlist asks first, with the destination on the card. `web_fetch` cannot be pointed at loopback, link-local, private or cloud-metadata addresses, including through redirects.
+- *The model seeing your secrets.* Keys and passwords live in the encrypted vault and enter tool calls as placeholders; they are substituted after approval and redacted from results. Subprocesses do not inherit credential-looking environment variables. The model never sees the access token of the app.
+- *Not knowing what happened.* Everything is in `audit.jsonl` and the Activity view.
+
+**Not covered — know this before you run it**
+
+- *OS-level isolation.* `shell` and `python_execute` run as you. A command you approve can do anything you can. The pattern checks are a tripwire, not a sandbox; an adversarial script can evade them. Run OpenMuse in a container or a dedicated user account if the workspace touches anything you would miss (the Docker image is one such setup).
+- *The vault key on disk.* By default the Fernet key sits next to the vault (`vault.key`, mode 600). Anyone who can read your data directory can decrypt the vault. Set `OPENMUSE_VAULT_KEY` from a secret manager if that matters to you.
+- *DNS rebinding.* `web_fetch` checks the resolved address before the request; a hostile DNS server answering differently a moment later can still point the request at an internal address. The taint rule and the allowlist limit what such a fetch could be combined with.
+- *Bad grants.* "Always allow `shell:curl`" is exactly as strong as it sounds. Warnings still ask, but the destination of a `curl` is not inspected.
+- *The network the app is on.* The API is protected by a bearer token over plain HTTP by default. Do not expose the port to the internet; use Tailscale or a TLS reverse proxy. Secrets typed into the Connections screen travel over that connection.
+- *Approval fatigue.* If cards are approved without reading them, none of this helps.
+
+Report anything that contradicts the "covered" list — see [SECURITY.md](../SECURITY.md).
 
 ## Writing a safe tool
 

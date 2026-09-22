@@ -62,6 +62,9 @@ pass_reasoning = false
 name = "Muse"
 max_steps = 30
 workspace = "./workspace"       # the agent's files live here
+# Directories outside the workspace the files tool may use. Reads there count as
+# private data (taint tracking); writes there ask for approval.
+extra_roots = []                # e.g. ["~/Documents/notes"]
 language = "auto"               # "auto" | "zh" | "en" | ...
 max_context_messages = 80
 show_thinking = false

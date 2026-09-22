@@ -118,13 +118,14 @@ The app talks to a small REST + WebSocket API, documented in [docs/app.md](docs/
 
 ## Sentinel
 
-Every tool call goes through `Sentinel` before it runs. Tools declare a risk level (`safe` / `moderate` / `sensitive`) and can escalate a specific call (`shell` on `rm -rf`, `web_fetch` on a private IP). Evaluation order, first match wins:
+Every tool call goes through `Sentinel` before it runs. Tools declare a risk level (`safe` / `moderate` / `sensitive`) and can escalate a specific call (`shell` on `rm -rf`, `python_execute` when the code reaches the network or the environment, `web_fetch` on a private IP — including through redirects). Evaluation order, first match wins:
 
 1. `deny_tools` → deny
 2. `[[sentinel.rules]]` matching glob patterns on the arguments → the rule's action
 3. `always_allow_tools` / `always_ask_tools`
 4. Taint: the session has read private data (email, memories, files outside the workspace) **and** this call sends data to a host outside `egress_allowlist` → ask
 5. Risk × mode: `ask` asks for sensitive calls, `strict` also for moderate ones, `auto` allows everything not denied
+6. A call with a warning (`sudo`, `curl | sh`, code that deletes files) asks regardless of mode; only an explicit rule can allow it
 
 ```toml
 [sentinel]
@@ -138,7 +139,7 @@ match  = { command = "*rm -rf*" }
 action = "deny"
 ```
 
-Secrets live in a Fernet-encrypted vault (`openmuse vault set EMAIL_PASSWORD`). Config and tool arguments reference them as `{{vault:EMAIL_PASSWORD}}`; Sentinel substitutes the value right before execution and redacts it from tool output, so the model never sees it. Every decision is appended to `~/.openmuse/audit.jsonl`. Details in [docs/sentinel.md](docs/sentinel.md).
+Secrets live in a Fernet-encrypted vault (`openmuse vault set EMAIL_PASSWORD`, or the Connections screen). Config and tool arguments reference them as `{{vault:EMAIL_PASSWORD}}`; Sentinel substitutes the value right before execution and redacts it from tool output, so the model never sees it. Shell commands and Python scripts run with credential-looking environment variables stripped. Every decision is appended to `~/.openmuse/audit.jsonl`. Details, and an honest list of what is *not* covered, in [docs/sentinel.md](docs/sentinel.md); reporting in [SECURITY.md](SECURITY.md).
 
 ## Models
 

@@ -63,6 +63,8 @@ class AgentSettings(BaseModel):
     name: str = "Muse"
     max_steps: int = 30
     workspace: Path = Path("./workspace")
+    # Directories outside the workspace the files tool may read and write (e.g. "~/Documents").
+    extra_roots: list[Path] = Field(default_factory=list)
     # "auto" → answer in the user's language; or force e.g. "zh" / "en".
     language: str = "auto"
     max_context_messages: int = 80
@@ -343,6 +345,7 @@ def load_settings(path: str | Path | None = None) -> Settings:
     settings.source = str(config_file) if config_file else "defaults+env"
     settings.data_dir = settings.data_dir.expanduser()
     settings.agent.workspace = settings.agent.workspace.expanduser()
+    settings.agent.extra_roots = [p.expanduser() for p in settings.agent.extra_roots]
     apply_app_settings(settings, load_app_settings(settings.data_dir))
     return settings
 

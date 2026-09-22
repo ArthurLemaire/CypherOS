@@ -3,10 +3,14 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import httpx
+import pytest
+
 from openmuse.schema import RiskLevel
 from openmuse.tools import Files, PythonExecute, Shell, Terminate
 from openmuse.tools.email_tool import scrub_email_secrets
-from openmuse.tools.web import host_of, html_to_markdown
+from openmuse.tools.shell import code_reach, scrubbed_env
+from openmuse.tools.web import fetch_public, host_of, html_to_markdown
 
 
 async def test_files_workspace_scoping(tmp_path: Path):
@@ -51,6 +55,93 @@ async def test_shell_and_python(tmp_path: Path):
     r = await py.execute(code="import sys; print(sys.version_info.major)")
     assert r.ok and r.output.startswith(str(sys.version_info.major))
     assert not list(tmp_path.glob("openmuse_*.py"))  # temp script cleaned up
+
+
+def test_subprocess_env_is_scrubbed_of_credentials():
+    env = scrubbed_env(
+        {
+            "PATH": "/usr/bin",
+            "HOME": "/home/me",
+            "LANG": "C.UTF-8",
+            "OPENAI_API_KEY": "sk-1",
+            "WQ_API_KEY": "x",
+            "DEEPSEEK_API_KEY": "x",
+            "OPENMUSE_VAULT_KEY": "x",
+            "OPENMUSE_SERVER_TOKEN": "x",
+            "GITHUB_TOKEN": "x",
+            "AWS_SECRET_ACCESS_KEY": "x",
+            "DB_PASSWORD": "x",
+            "SSH_AUTH_SOCK": "/run/ssh",
+            "HTTP_PROXY": "http://proxy:3128",
+        }
+    )
+    assert set(env) == {"PATH", "HOME", "LANG", "HTTP_PROXY", "OPENMUSE_SANDBOX"}
+
+
+async def test_python_and_shell_children_cannot_read_secrets(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("MY_SECRET_TOKEN", "hunter2")
+    monkeypatch.setenv("OPENMUSE_VAULT_KEY", "k")
+    monkeypatch.setenv("PLAIN_SETTING", "yes")
+    py = PythonExecute(workspace=tmp_path)
+    r = await py.execute(
+        code="import os; print(os.environ.get('MY_SECRET_TOKEN'), "
+        "os.environ.get('OPENMUSE_VAULT_KEY'), os.environ.get('PLAIN_SETTING'))"
+    )
+    assert r.ok and r.output.startswith("None None yes")
+    r = await Shell(workspace=tmp_path).execute(command="echo [$MY_SECRET_TOKEN] [$PLAIN_SETTING]")
+    assert r.ok and r.output.startswith("[] [yes]")
+
+
+def test_python_reach_decides_the_risk(tmp_path: Path):
+    py = PythonExecute(workspace=tmp_path)
+    plain = py.assess({"code": "import csv\nrows = [1, 2]\nopen('out.csv', 'w').write('a,b')"})
+    assert plain.risk == RiskLevel.MODERATE and not plain.warnings and not plain.egress
+    net = py.assess({"code": "import requests\nrequests.get('https://x')"})
+    assert (
+        net.risk == RiskLevel.SENSITIVE and net.egress and "reaches the network" in net.warnings[0]
+    )
+    env = py.assess({"code": "import os\nprint(os.environ['HOME'])"})
+    assert env.risk == RiskLevel.SENSITIVE and "environment" in env.warnings[0]
+    outside = py.assess({"code": "open('/etc/passwd').read()"})
+    assert outside.risk == RiskLevel.SENSITIVE and "outside the workspace" in outside.warnings[0]
+    proc = py.assess({"code": "import subprocess\nsubprocess.run(['ls'])"})
+    assert proc.risk == RiskLevel.SENSITIVE and proc.egress
+    assert set(code_reach("import shutil\nshutil.rmtree('x')")) == {"deletion"}
+
+
+async def test_web_fetch_refuses_redirects_into_private_networks():
+    hops: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        hops.append(str(request.url))
+        if request.url.host == "public.example":
+            return httpx.Response(
+                302, headers={"location": "http://169.254.169.254/latest/meta-data"}
+            )
+        return httpx.Response(200, text="should never be reached")
+
+    transport = httpx.MockTransport(handler)
+    with pytest.raises(PermissionError, match="private/internal host '169.254.169.254'"):
+        await fetch_public("http://public.example/start", timeout=5, transport=transport)
+    assert hops == ["http://public.example/start"]
+
+    def loop(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(302, headers={"location": str(request.url) + "x"})
+
+    with pytest.raises(PermissionError, match="redirects"):
+        await fetch_public(
+            "http://public.example/a", timeout=5, transport=httpx.MockTransport(loop)
+        )
+
+    def fine(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/old":
+            return httpx.Response(301, headers={"location": "/new"})
+        return httpx.Response(200, text="moved here")
+
+    resp = await fetch_public(
+        "http://public.example/old", timeout=5, transport=httpx.MockTransport(fine)
+    )
+    assert resp.status_code == 200 and resp.text == "moved here"
 
 
 async def test_terminate_stops():
