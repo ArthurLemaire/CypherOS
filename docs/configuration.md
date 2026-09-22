@@ -138,6 +138,17 @@ enabled    = true
 max_inject = 20        # memories injected into the system prompt per turn (keyword-ranked)
 ```
 
+## `[skills]`
+
+```toml
+[skills]
+enabled  = true
+dir      = ""                        # your skills; empty → <data_dir>/skills
+disabled = ["inbox-triage"]          # built-in ones to leave out of the model's list
+```
+
+A skill is a folder with a `SKILL.md` — YAML front matter with `name` and `description`, then the steps in Markdown — in the [Agent Skills](https://agentskills.io) format, so skills written for other agents work here. Five are built in (`weekly-review`, `trip-plan`, `inbox-triage`, `compare-options`, `meeting-prep`); a folder in `dir` with the same name as a built-in replaces it. The model gets the index (name and description of every enabled skill) in its system prompt and reads a skill's steps with the `skills` tool when a request fits; `/name` at the start of a chat message runs one directly. Saving or removing a skill from chat is a sensitive call — it asks first, whatever the Sentinel mode. Skills switched off in the app are remembered in `app-settings.json`; the list here and that one are merged. Inside the [sandbox](sentinel.md#the-sandbox) a skill's folder (its scripts and reference files) is visible read-only. See [the app → Skills](app.md#skills) and `openmuse skills` in the [CLI](cli.md#skills).
+
 ## Connectors
 
 ### Email
@@ -261,5 +272,6 @@ cors_origins     = []            # only for the Vite dev server, e.g. ["http://l
 | `approvals.json` | permissions you granted for 24 hours or always (tool + target, scope, expiry) |
 | `app-settings.json` | what was changed in the app's Connections screen, layered over `config.toml` (no secrets, only `{{vault:NAME}}` references) |
 | `sessions/` | CLI conversation history |
+| `skills/<name>/SKILL.md` | your skills (the Agent Skills format); a name that matches a built-in replaces it |
 | `threads/`, `profile.json`, `ideas.json`, `server_token`, `logs/` | app state |
 | `./workspace` (`agent.workspace`) | files the agent reads and writes |

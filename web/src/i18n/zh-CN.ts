@@ -718,6 +718,35 @@ const zhCN: Record<string, string> = {
   "Reminders from {name}": "来自 {name} 的提醒",
   Once: "一次",
   Plan: "计划",
+
+  // skills
+  Skills: "技能",
+  Yours: "你的",
+  "Built in": "内置",
+  Fetch: "获取",
+  "Use in chat": "在聊天中使用",
+  "Make your own copy": "复制一份改成你的",
+  "Edit skill": "编辑技能",
+  "New skill": "新建技能",
+  "From a link": "从链接导入",
+  "Files that come with it": "随附文件",
+  "Folders that could not be read": "无法读取的文件夹",
+  "Nothing of your own yet": "还没有你自己的技能",
+  "How {name} does a job, written down once": "把 {name} 做某件事的方法写下来，一次就够",
+  "How {name} does a job, written down once. Start one in chat with /name, or just ask — it picks the skill that fits.":
+    "把 {name} 做某件事的方法写下来，一次就够。在聊天里输入 /名称 直接开始，或者直接提要求——它会自己挑合适的技能。",
+  "After a job went well, tell {name} “save this as a skill” — it writes the steps down and asks you first. Or write one here, or paste a link to a SKILL.md.":
+    "一件事做得顺利之后，对 {name} 说“把这个存成技能”——它会把步骤写下来，并先征求你的同意。也可以在这里手写一个，或粘贴一个 SKILL.md 的链接。",
+  "Switch one off to keep it out of {name}'s list. A skill of yours with the same name replaces it.":
+    "关掉某一项，它就不会出现在 {name} 的清单里。你的同名技能会替代内置的那一个。",
+  "Yours live in {dir}, one folder each with a SKILL.md — the Agent Skills format, so recipes written for other agents work here too.":
+    "你的技能保存在 {dir}，每个一个文件夹，里面是一份 SKILL.md——这是 Agent Skills 通用格式，为其他智能体写的技能在这里同样可用。",
+  "Delete the skill “{name}”? Its folder goes with it.": "删除技能“{name}”？它的文件夹会一并删除。",
+  "Saving makes a copy of yours with the same name; it replaces the built-in one.": "保存后会生成一份你的同名技能，替代内置的那一个。",
+  "A SKILL.md: a name and a one-line description up top, then the steps in Markdown.": "一份 SKILL.md：开头是名称和一行说明，下面用 Markdown 写步骤。",
+  "A raw SKILL.md link, or a GitHub folder or file page.": "SKILL.md 的原始文件链接，或 GitHub 上的文件夹/文件页面。",
+  "Pick a name first; a template appears here.": "先起个名字，这里会出现一份模板。",
+  "{n} ways of doing a job, {yours} of them yours": "{n} 项技能，其中 {yours} 项是你的",
 };
 
 export default zhCN;

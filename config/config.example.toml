@@ -148,6 +148,14 @@ enabled = true
 # name = "Google"
 # url = "~/Downloads/contacts.vcf"     # or a link: "{{vault:CONTACTS_GOOGLE}}"
 
+[skills]
+# How a job is done, written down once: folders with a SKILL.md (the Agent Skills format).
+# Five are built in; yours go in <data_dir>/skills (or `dir`), and a folder with the same
+# name as a built-in replaces it. In chat, "/trip-plan Kyoto in November" runs one.
+enabled = true
+# dir = "~/my-skills"
+# disabled = ["inbox-triage"]        # built-in skills to leave out of the model's list
+
 [sandbox]
 # Linux + bubblewrap (apt install bubblewrap): every shell / python_execute call runs in its
 # own namespace — only the workspace is writable, your home directory is not there, and

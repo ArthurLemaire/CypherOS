@@ -142,10 +142,14 @@ class Sandbox:
         extra_roots: list[Path] | None = None,
         data_dir: Path | None = None,
         probe: bool = True,
+        ro_roots: list[Path] | None = None,
     ):
         self.settings = settings
         self.workspace = workspace.resolve()
         self.extra_roots = [p.resolve() for p in (extra_roots or [])]
+        # read-only inside the box (skills' scripts and references); bound after the
+        # data-dir mask so a folder under the data dir is still there
+        self.ro_roots = [p.resolve() for p in (ro_roots or [])]
         self.data_dir = data_dir.resolve() if data_dir else None
         self.bwrap = shutil.which("bwrap")
         self.version = ""
@@ -286,9 +290,14 @@ class Sandbox:
         roots = [self.workspace, *self.extra_roots]
         for root in roots:
             args += ["--bind-try", str(root), str(root)]
-        if self.data_dir and any(self.data_dir.is_relative_to(r) for r in roots):
+        masked = self.data_dir and any(self.data_dir.is_relative_to(r) for r in roots)
+        if masked:
             # the data dir (vault, sessions, tokens) inside a bound root: mask it
             args += ["--tmpfs", str(self.data_dir)]
+        for root in self.ro_roots:
+            under_mask = bool(masked and self.data_dir and root.is_relative_to(self.data_dir))
+            if root.is_dir() and (under_mask or not any(root.is_relative_to(r) for r in roots)):
+                args += ["--ro-bind-try", str(root), str(root)]
         home = "/tmp/home"
         args += [
             "--dir",

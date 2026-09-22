@@ -1,4 +1,4 @@
-import { ArrowUp, ChevronDown, MessageSquarePlus, Moon, MoreHorizontal, Plus, Trash2, X } from "lucide-react";
+import { ArrowUp, ChevronDown, MessageSquarePlus, Moon, MoreHorizontal, Plus, Trash2, Wand2, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { api } from "../api";
 import { Avatar } from "../components/Avatar";
@@ -8,7 +8,7 @@ import { Markdown } from "../components/Markdown";
 import { Sheet } from "../components/Sheet";
 import { localLabel, useT } from "../i18n";
 import { useStore } from "../store";
-import type { ThreadMeta, TimelineEvent, UserEvent } from "../types";
+import type { SkillInfo, ThreadMeta, TimelineEvent, UserEvent } from "../types";
 import { cx, timeShort } from "../util";
 import { MuseSheet } from "./MuseSheet";
 
@@ -387,7 +387,9 @@ function Composer({
   waiting: boolean;
   onSend: (text: string) => void;
 }) {
+  const { state, draft } = useStore();
   const [text, setText] = useState("");
+  const [skills, setSkills] = useState<SkillInfo[]>([]);
   const ref = useRef<HTMLTextAreaElement>(null);
   const t = useT();
 
@@ -397,6 +399,34 @@ function Composer({
     el.style.height = "0px";
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }, [text]);
+
+  // text handed over from another screen (a skill's "Use" button)
+  useEffect(() => {
+    if (state.draft === null) return;
+    setText(state.draft);
+    draft(null);
+    const el = ref.current;
+    if (el) {
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.draft]);
+
+  // "/" at the start of the message offers the skills; the list is small and cached
+  const skillsOn = state.settings?.skills?.enabled !== false;
+  useEffect(() => {
+    if (!skillsOn) return;
+    api.skills()
+      .then((d) => setSkills(d.skills.filter((sk) => sk.enabled)))
+      .catch(() => setSkills([]));
+  }, [skillsOn, state.skillsVersion]);
+  const slash = /^\/([a-z0-9-]*)$/i.exec(text);
+  const matches = slash ? skills.filter((sk) => sk.name.startsWith(slash[1].toLowerCase())).slice(0, 6) : [];
+  const pick = (sk: SkillInfo) => {
+    setText(`/${sk.name} `);
+    ref.current?.focus();
+  };
 
   const submit = (e?: FormEvent) => {
     e?.preventDefault();
@@ -412,12 +442,32 @@ function Composer({
       {busy && !waiting && (
         <div className="px-2 pb-1 text-[12px] text-muted">{t("{name} is working — anything you send now is picked up right away.", { name })}</div>
       )}
+      {matches.length > 0 && (
+        <ul className="mb-2 max-h-56 overflow-y-auto rounded-3xl border border-border/70 bg-surface shadow-lg divide-y divide-border/70" role="listbox" aria-label={t("Skills")}>
+          {matches.map((sk) => (
+            <li key={sk.name}>
+              <button type="button" onClick={() => pick(sk)} className="flex w-full items-start gap-3 px-4 py-2.5 text-left hover:bg-surface-2/70 active:bg-surface-2">
+                <Wand2 size={16} className="mt-0.5 shrink-0 text-accent" />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[14px] font-medium">/{sk.name}</span>
+                  <span className="text-[12.5px] text-muted line-clamp-2">{sk.description}</span>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="flex items-end gap-2">
         <textarea
           ref={ref}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
+            if (e.key === "Tab" && matches.length > 0 && matches[0]) {
+              e.preventDefault();
+              pick(matches[0]);
+              return;
+            }
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               submit();

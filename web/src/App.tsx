@@ -11,6 +11,7 @@ import { LibraryScreen } from "./screens/LibraryScreen";
 import { MemoryScreen } from "./screens/MemoryScreen";
 import { Onboarding } from "./screens/Onboarding";
 import { SettingsScreen } from "./screens/SettingsScreen";
+import { SkillsScreen } from "./screens/SkillsScreen";
 import { useStore, type Tab } from "./store";
 import { useT } from "./i18n";
 import { cx } from "./util";
@@ -65,6 +66,7 @@ export default function App() {
         {state.tab === "goals" && <GoalsScreen />}
         {state.tab === "library" && <LibraryScreen />}
         {state.tab === "memory" && <MemoryScreen />}
+        {state.tab === "skills" && <SkillsScreen />}
         {state.tab === "connections" && <ConnectionsScreen />}
         {state.tab === "you" && <SettingsScreen />}
       </main>

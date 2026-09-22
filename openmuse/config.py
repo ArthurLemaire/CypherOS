@@ -173,6 +173,22 @@ class ConnectorSettings(BaseModel):
     contacts: ContactsSettings = Field(default_factory=ContactsSettings)
 
 
+class SkillsSettings(BaseModel):
+    """Skills: recipes for jobs, as ``SKILL.md`` folders (the Agent Skills format)."""
+
+    enabled: bool = True
+    # Where your own skills live; one folder per skill with a SKILL.md inside. Empty →
+    # <data_dir>/skills. A skill here with the same name as a built-in one replaces it.
+    dir: Path | None = None
+    # Built-in skills to leave out (by name).
+    disabled: list[str] = Field(default_factory=list)
+
+    @field_validator("dir", mode="before")
+    @classmethod
+    def _empty_is_unset(cls, v: Any) -> Any:
+        return None if isinstance(v, str) and not v.strip() else v
+
+
 class SandboxSettings(BaseModel):
     """Each ``shell`` / ``python_execute`` call in its own bubblewrap namespace (Linux)."""
 
@@ -234,6 +250,7 @@ class Settings(BaseModel):
     memory: MemorySettings = Field(default_factory=MemorySettings)
     connectors: ConnectorSettings = Field(default_factory=ConnectorSettings)
     triggers: TriggerSettings = Field(default_factory=TriggerSettings)
+    skills: SkillsSettings = Field(default_factory=SkillsSettings)
     sandbox: SandboxSettings = Field(default_factory=SandboxSettings)
     browser: BrowserSettings = Field(default_factory=BrowserSettings)
     mcp: MCPSettings = Field(default_factory=MCPSettings)
@@ -278,6 +295,11 @@ class Settings(BaseModel):
     def contacts_dir(self) -> Path:
         """Where ``.vcf`` files uploaded in the app are kept."""
         return self.data_dir / "contacts"
+
+    @property
+    def skills_dir(self) -> Path:
+        """Your own skills, one folder each."""
+        return (self.skills.dir or (self.data_dir / "skills")).expanduser()
 
     @property
     def vault_file(self) -> Path:
@@ -435,6 +457,10 @@ def apply_app_settings(settings: Settings, data: dict[str, Any]) -> None:
                     continue
             names = {c.name for c in sources}
             book.sources = [c for c in book.sources if c.name not in names] + sources
+    if skills := data.get("skills"):
+        if isinstance(skills.get("disabled"), list):
+            off = {str(n) for n in skills["disabled"]}
+            settings.skills.disabled = sorted(set(settings.skills.disabled) | off)
     if browser := data.get("browser"):
         if "enabled" in browser:
             settings.browser.enabled = bool(browser["enabled"])
@@ -480,10 +506,13 @@ __all__ = [
     "MCPServerSettings",
     "MCPSettings",
     "MemorySettings",
+    "SandboxSettings",
     "SentinelRule",
     "SentinelSettings",
     "ServerSettings",
     "Settings",
+    "SkillsSettings",
+    "TriggerSettings",
     "apply_app_settings",
     "find_config_file",
     "load_app_settings",
