@@ -588,10 +588,49 @@ class MuseService:
         whenever the level, the interval or the quiet hours change."""
         self.next_goal_pass_at = datetime.now(UTC) + timedelta(seconds=self._next_pass_delay())
 
+    def check_in(self, goal_id: str) -> Goal:
+        """Send the reminder for a goal now: a short message from the agent, no work done."""
+        goal = self.app.goals.get(goal_id)
+        if goal is None:
+            raise KeyError(goal_id)
+        if goal.status != "active":
+            raise ValueError(f"goal is {goal.status}")
+        self.send(
+            MAIN_THREAD,
+            prompts.CHECK_IN_PROMPT.format(
+                goal=goal.render(),
+                today=datetime.now().astimezone().strftime("%A, %Y-%m-%d"),
+                quiet=prompts.QUIET_MARKER,
+            ),
+            source="goal",
+            label=f"Check-in: {goal.title}",
+        )
+        self.app.goals.mark_checked_in(goal.id)
+        return goal
+
+    def _run_due_check_ins(self) -> None:
+        """Reminders the user asked for fire at any proactivity level, but not in quiet hours
+        (they wait for the window to end) and not over a conversation in progress."""
+        if self.profile.in_quiet_hours():
+            return
+        main = self.threads.get(MAIN_THREAD)
+        if main is None or main.busy or not main.inbox.empty():
+            return
+        for goal in self.app.goals.due_check_ins():
+            self.check_in(goal.id)
+            break  # one at a time; the next tick picks up the rest
+
+    def _pick_goal_for_pass(self) -> Goal | None:
+        """Overdue first, then the one that has waited longest."""
+        candidates = [g for g in self.app.goals.list("active") if g.next_step is not None]
+        candidates.sort(key=lambda g: (not g.overdue, g.updated_at))
+        return candidates[0] if candidates else None
+
     async def _goal_scheduler(self) -> None:
         self.schedule_next_pass()
         while True:
             try:
+                self._run_due_check_ins()
                 due = self.next_goal_pass_at or datetime.now(UTC)
                 remaining = (due - datetime.now(UTC)).total_seconds()
                 if remaining > 0:
@@ -604,10 +643,9 @@ class MuseService:
                 main = self.threads.get(MAIN_THREAD)
                 if main is None or main.busy or not main.inbox.empty():
                     continue
-                for goal in self.app.goals.list("active"):
-                    if goal.next_step is not None:
-                        self.advance_goal(goal.id)
-                        break  # one goal per tick keeps the chat readable
+                goal = self._pick_goal_for_pass()
+                if goal is not None:
+                    self.advance_goal(goal.id)  # one goal per tick keeps the chat readable
             except asyncio.CancelledError:
                 return
             except Exception as exc:  # noqa: BLE001  pragma: no cover
@@ -799,10 +837,14 @@ class MuseService:
     def upcoming(self) -> dict[str, Any]:
         """What is scheduled: the next background pass and the goals it would work on."""
         active = [g for g in self.app.goals.list("active") if g.next_step is not None]
+        active.sort(key=lambda g: (not g.overdue, g.updated_at))
         queue = [
             {
                 "goal_id": g.id,
                 "title": g.title,
+                "category": g.category,
+                "due": g.due or None,
+                "overdue": g.overdue,
                 "next_step": g.next_step.title if g.next_step else None,
                 "progress": {
                     "done": sum(1 for s in g.steps if s.status in ("done", "skipped")),
@@ -811,8 +853,17 @@ class MuseService:
             }
             for g in active
         ]
+        check_ins = sorted(
+            (
+                {"goal_id": g.id, "title": g.title, "at": g.next_check_in, "cadence": g.check_in}
+                for g in self.app.goals.list("active")
+                if g.next_check_in
+            ),
+            key=lambda c: c["at"],
+        )
         quiet_until = self.profile.quiet_hours_end()
         return {
+            "check_ins": check_ins,
             "proactive": self.profile.proactive,
             "proactivity": self.profile.proactivity,
             "interval_minutes": self.profile.goal_interval_minutes,
@@ -917,6 +968,12 @@ def goal_to_dict(g: Goal) -> dict[str, Any]:
         "description": g.description,
         "status": g.status,
         "notes": g.notes,
+        "category": g.category,
+        "due": g.due,
+        "overdue": g.overdue,
+        "check_in": g.check_in,
+        "next_check_in": g.next_check_in or None,
+        "proposal": g.proposal,
         "created_at": g.created_at,
         "updated_at": g.updated_at,
         "progress": {"done": done, "total": len(g.steps)},

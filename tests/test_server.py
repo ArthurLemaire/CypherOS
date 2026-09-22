@@ -278,6 +278,138 @@ def test_goals_api(server):
     assert client.get("/api/goals").json() == []
 
 
+def test_goal_categories_check_ins_and_proposals_api(server):
+    client, service, llm = server
+    g = client.post(
+        "/api/goals",
+        json={
+            "title": "Call mum weekly",
+            "category": "family",
+            "due": "2026-12-31",
+            "check_in": "weekly sun 18:00",
+            "steps": ["Pick a time", "Call"],
+        },
+    ).json()
+    assert g["category"] == "family" and g["due"] == "2026-12-31" and g["overdue"] is False
+    assert g["check_in"] == "weekly sun 18:00" and g["next_check_in"]
+    assert client.get("/api/goals?category=family").json()[0]["id"] == g["id"]
+    assert client.get("/api/goals?category=health").json() == []
+    up = client.get("/api/upcoming").json()
+    assert up["check_ins"][0]["goal_id"] == g["id"] and up["queue"][0]["category"] == "family"
+    assert client.post("/api/goals", json={"title": "x", "check_in": "whenever"}).status_code == 400
+    # the goal's own fields can be edited; "" clears
+    g = client.patch(
+        f"/api/goals/{g['id']}", json={"category": "relationships", "due": "", "check_in": ""}
+    ).json()
+    assert g["category"] == "relationships" and g["due"] == "" and g["next_check_in"] is None
+
+    # a check-in is a message from the agent, delivered whatever the proactivity level
+    client.put("/api/settings", json={"profile": {"proactivity": "off"}})
+    llm.script.append(LLMResponse(content="How did the call go on Sunday? Want to pick a slot?"))
+    assert client.post(f"/api/goals/{g['id']}/check-in").status_code == 200
+    said = wait_for(lambda: events_of(client, kind="assistant"))
+    assert said[-1]["about"] == "Call mum weekly" or "Call mum weekly" in said[-1]["about"]
+    assert not said[-1].get("quiet")
+    sent = llm.calls[-1]["messages"][-1].content
+    assert "check-in time" in sent and "Call mum weekly" in sent
+
+    # the agent proposes a plan change; the user accepts it in the app
+    llm.script.append(
+        LLMResponse(
+            tool_calls=[
+                tc(
+                    "goals",
+                    action="propose",
+                    goal_id=g["id"],
+                    note="Sundays never work; evenings do",
+                    steps=["Pick a weekday evening", "Call"],
+                ),
+                tc("terminate", status="success", summary="I suggested a change to the plan."),
+            ]
+        )
+    )
+    client.post("/api/threads/main/send", json={"text": "the plan isn't working"})
+    wait_for(lambda: len(events_of(client, kind="assistant")) >= 2)
+    g = client.get(f"/api/goals/{g['id']}").json()
+    assert g["proposal"]["reason"] == "Sundays never work; evenings do"
+    assert [s["title"] for s in g["steps"]] == ["Pick a time", "Call"]  # untouched until accepted
+    assert client.delete(f"/api/goals/{g['id']}/proposal").status_code == 200
+    assert client.delete(f"/api/goals/{g['id']}/proposal").status_code == 409
+    llm.script.append(
+        LLMResponse(
+            tool_calls=[
+                tc("goals", action="propose", goal_id=g["id"], note="evenings", steps=["Call Tue"]),
+                tc("terminate", status="success", summary="Proposed."),
+            ]
+        )
+    )
+    client.post("/api/threads/main/send", json={"text": "try again"})
+    wait_for(lambda: client.get(f"/api/goals/{g['id']}").json()["proposal"] is not None)
+    g = client.post(f"/api/goals/{g['id']}/proposal/accept").json()
+    assert g["proposal"] is None and [s["title"] for s in g["steps"]] == ["Call Tue"]
+    assert "plan adjusted" in g["notes"]
+
+
+def test_goal_check_ins_and_proposals_api(server):
+    client, service, llm = server
+    g = client.post(
+        "/api/goals",
+        json={
+            "title": "Walk every morning",
+            "steps": ["Walk 20 min"],
+            "category": "health",
+            "due": "2030-06-01",
+            "check_in": "daily 07:00",
+        },
+    ).json()
+    assert g["category"] == "health" and g["due"] == "2030-06-01" and not g["overdue"]
+    assert g["check_in"] == "daily 07:00" and g["next_check_in"]
+    assert client.get("/api/goals", params={"category": "finance"}).json() == []
+    assert client.get("/api/goals", params={"category": "health"}).json()[0]["id"] == g["id"]
+    up = client.get("/api/upcoming").json()
+    assert (
+        up["check_ins"][0]["goal_id"] == g["id"] and up["check_ins"][0]["cadence"] == "daily 07:00"
+    )
+    assert (
+        client.post("/api/goals", json={"title": "x", "check_in": "sometimes"}).status_code == 400
+    )
+
+    # a check-in is a message from the agent, delivered whatever the proactivity level says
+    client.put("/api/settings", json={"profile": {"proactivity": "off"}})
+    llm.script.append(LLMResponse(content="Morning! Did the walk happen today?"))
+    assert client.post(f"/api/goals/{g['id']}/check-in").status_code == 200
+    said = wait_for(lambda: events_of(client, kind="assistant"))[0]
+    assert said["about"] == "Check-in: Walk every morning" and not said.get("quiet")
+    sent = llm.calls[-1]["messages"][-1].content
+    assert "check-in time" in sent and "Walk every morning" in sent
+    # the reminder moved on to its next occurrence
+    nxt = client.get(f"/api/goals/{g['id']}").json()["next_check_in"]
+    assert nxt > g["next_check_in"]
+    # the scheduler only fires reminders whose time has come
+    service._run_due_check_ins()
+    assert len(events_of(client, kind="notice")) == 1
+
+    # the agent proposes a plan change; the user accepts it in the app
+    assert client.post(f"/api/goals/{g['id']}/proposal/accept").status_code == 409
+    service.app.goals.propose(
+        g["id"], "knee hurts — swap to cycling", ["Cycle 20 min", "See a physio"]
+    )
+    g2 = client.get(f"/api/goals/{g['id']}").json()
+    assert g2["proposal"]["reason"].startswith("knee hurts")
+    g3 = client.post(f"/api/goals/{g['id']}/proposal/accept").json()
+    assert [s["title"] for s in g3["steps"]] == ["Cycle 20 min", "See a physio"] and g3[
+        "proposal"
+    ] is None
+    service.app.goals.propose(g["id"], "again", ["Nothing"])
+    assert client.delete(f"/api/goals/{g['id']}/proposal").json()["proposal"] is None
+    # editing the goal's own fields
+    g4 = client.patch(
+        f"/api/goals/{g['id']}", json={"category": "learning", "due": "", "check_in": ""}
+    ).json()
+    assert g4["category"] == "learning" and g4["due"] == "" and g4["next_check_in"] is None
+    assert client.get("/api/upcoming").json()["check_ins"] == []
+
+
 def test_memory_api(server):
     client, _, _ = server
     m = client.post(
@@ -502,10 +634,14 @@ def test_feed_and_upcoming(server):
         {
             "goal_id": g["id"],
             "title": "Learn Spanish",
+            "category": "",
+            "due": None,
+            "overdue": False,
             "next_step": "Pick an app",
             "progress": {"done": 0, "total": 1},
         }
     ]
+    assert up["check_ins"] == []
 
     # a pending approval is something the Feed shows, whatever thread it belongs to
     side = client.post("/api/threads", json={"title": "Side"}).json()

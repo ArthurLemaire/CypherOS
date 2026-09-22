@@ -7,7 +7,8 @@
     POST /api/approvals/{id} {approved, scope, reason}
     DELETE /api/approvals                 forget every granted permission
     DELETE /api/approvals/grants/{key}    revoke one (key = "tool" or "tool:target")
-    GET  /api/goals  POST /api/goals  GET|PATCH|DELETE /api/goals/{id}  POST /api/goals/{id}/advance|steps
+    GET  /api/goals  POST /api/goals  GET|PATCH|DELETE /api/goals/{id}  POST /api/goals/{id}/advance|steps|check-in
+    POST /api/goals/{id}/proposal/accept  DELETE /api/goals/{id}/proposal   the agent's plan change
     GET  /api/memory  POST /api/memory  DELETE /api/memory/{id}
     GET  /api/ideas (?refresh=1)
     GET  /api/activity                   audit tail + approvals granted
@@ -68,6 +69,9 @@ class GoalBody(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     description: str = ""
     steps: list[str] = Field(default_factory=list)
+    category: str = ""
+    due: str = ""
+    check_in: str = ""
 
 
 class GoalPatch(BaseModel):
@@ -76,6 +80,12 @@ class GoalPatch(BaseModel):
     step_index: int | None = None
     step_status: str | None = None
     step_note: str | None = None
+    # the goal's own fields; "" clears due / check_in
+    title: str | None = Field(default=None, max_length=200)
+    description: str | None = None
+    category: str | None = None
+    due: str | None = None
+    check_in: str | None = None
 
 
 class StepBody(BaseModel):
@@ -273,14 +283,24 @@ def create_app(settings: Settings, service: MuseService | None = None) -> FastAP
 
     # ------------------------------------------------------------------ goals
     @app.get("/api/goals", dependencies=dep)
-    async def list_goals(status: str | None = None) -> list[dict[str, Any]]:
-        return [goal_to_dict(g) for g in svc.app.goals.list(status)]
+    async def list_goals(
+        status: str | None = None, category: str | None = None
+    ) -> list[dict[str, Any]]:
+        return [goal_to_dict(g) for g in svc.app.goals.list(status, category)]
 
     @app.post("/api/goals", dependencies=dep)
     async def create_goal(body: GoalBody) -> dict[str, Any]:
-        goal = svc.app.goals.create(
-            body.title, body.description, [s for s in body.steps if s.strip()]
-        )
+        try:
+            goal = svc.app.goals.create(
+                body.title,
+                body.description,
+                [s for s in body.steps if s.strip()],
+                category=body.category,
+                due=body.due,
+                check_in=body.check_in,
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
         svc.bus.publish({"kind": "goals"})
         return goal_to_dict(goal)
 
@@ -299,8 +319,49 @@ def create_app(settings: Settings, service: MuseService | None = None) -> FastAP
                 store.append_note(goal_id, body.note)
             if body.step_index is not None and (body.step_status or body.step_note is not None):
                 store.update_step(goal_id, body.step_index, body.step_status, body.step_note)
+            if any(
+                v is not None
+                for v in (body.title, body.description, body.category, body.due, body.check_in)
+            ):
+                store.update(
+                    goal_id,
+                    title=body.title,
+                    description=body.description,
+                    category=body.category,
+                    due=body.due,
+                    check_in=body.check_in,
+                )
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
+        svc.bus.publish({"kind": "goals"})
+        return goal_to_dict(_goal_or_404(goal_id))
+
+    @app.post("/api/goals/{goal_id}/check-in", dependencies=dep)
+    async def check_in_goal(goal_id: str) -> dict[str, Any]:
+        """Send this goal's reminder now."""
+        try:
+            goal = svc.check_in(goal_id)
+        except KeyError as exc:
+            raise HTTPException(404, "no such goal") from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return goal_to_dict(goal)
+
+    @app.post("/api/goals/{goal_id}/proposal/accept", dependencies=dep)
+    async def accept_proposal(goal_id: str) -> dict[str, Any]:
+        goal = _goal_or_404(goal_id)
+        if not goal.proposal:
+            raise HTTPException(409, "nothing proposed")
+        svc.app.goals.accept_proposal(goal_id)
+        svc.bus.publish({"kind": "goals"})
+        return goal_to_dict(_goal_or_404(goal_id))
+
+    @app.delete("/api/goals/{goal_id}/proposal", dependencies=dep)
+    async def dismiss_proposal(goal_id: str) -> dict[str, Any]:
+        goal = _goal_or_404(goal_id)
+        if not goal.proposal:
+            raise HTTPException(409, "nothing proposed")
+        svc.app.goals.dismiss_proposal(goal_id)
         svc.bus.publish({"kind": "goals"})
         return goal_to_dict(_goal_or_404(goal_id))
 

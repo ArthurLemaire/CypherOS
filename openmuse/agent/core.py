@@ -86,11 +86,16 @@ class MuseAgent:
                 lines = []
                 for g in active:
                     nxt = g.next_step
-                    lines.append(
-                        f"- {g.id}: {g.title} (progress {g.progress}"
-                        + (f", next: {nxt.idx}. {nxt.title}" if nxt else "")
-                        + ")"
-                    )
+                    bits = [f"progress {g.progress}"]
+                    if g.category:
+                        bits.append(g.category)
+                    if g.due:
+                        bits.append(f"due {g.due}" + (" — overdue" if g.overdue else ""))
+                    if nxt:
+                        bits.append(f"next: {nxt.idx}. {nxt.title}")
+                    if g.proposal:
+                        bits.append("a plan change is awaiting the user's answer")
+                    lines.append(f"- {g.id}: {g.title} ({', '.join(bits)})")
                 goals = prompts.GOALS_SECTION.format(items="\n".join(lines))
         profile = (
             prompts.USER_PROFILE_SECTION.format(profile=a.user_profile.strip())

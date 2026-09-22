@@ -277,24 +277,34 @@ def _print_goals(goals) -> None:  # noqa: ANN001
     table = Table(title="Goals")
     table.add_column("id", style="cyan")
     table.add_column("title")
+    table.add_column("category")
     table.add_column("status")
     table.add_column("progress")
+    table.add_column("due")
     table.add_column("next step")
     for g in goals:
         nxt = g.next_step
         table.add_row(
-            g.id, g.title, g.status, g.progress, f"{nxt.idx}. {nxt.title}" if nxt else "-"
+            g.id,
+            g.title,
+            g.category or "-",
+            g.status,
+            g.progress,
+            (g.due + (" [red]overdue[/red]" if g.overdue else "")) if g.due else "-",
+            f"{nxt.idx}. {nxt.title}" if nxt else "-",
         )
     console.print(table)
 
 
 @goals_app.command("list")
-def goals_list(config: ConfigOpt = None, status: str | None = None) -> None:
+def goals_list(
+    config: ConfigOpt = None, status: str | None = None, category: str | None = None
+) -> None:
     """List goals."""
     from openmuse.goals import GoalStore
 
     s = _settings(config)
-    _print_goals(GoalStore(s.goals_db).list(status))
+    _print_goals(GoalStore(s.goals_db).list(status, category))
 
 
 @goals_app.command("show")
@@ -318,12 +328,25 @@ def goals_add(
     step: Annotated[
         list[str] | None, typer.Option("--step", "-s", help="Plan step (repeatable)")
     ] = None,
+    category: Annotated[
+        str, typer.Option(help="health, finance, career, learning, relationships, family, …")
+    ] = "",
+    due: Annotated[str, typer.Option(help="Target date, YYYY-MM-DD")] = "",
+    check_in: Annotated[
+        str, typer.Option(help="Reminder cadence, e.g. 'daily 08:00' or 'weekly mon 09:00'")
+    ] = "",
 ) -> None:
     """Create a goal manually."""
     from openmuse.goals import GoalStore
 
     s = _settings(config)
-    goal = GoalStore(s.goals_db).create(title, description, step or [])
+    try:
+        goal = GoalStore(s.goals_db).create(
+            title, description, step or [], category=category, due=due, check_in=check_in
+        )
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from None
     console.print(goal.render())
 
 
