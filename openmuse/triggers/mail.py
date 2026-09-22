@@ -14,7 +14,6 @@ import imaplib
 from dataclasses import dataclass
 
 from openmuse.config import EmailSettings
-from openmuse.tools.email_tool import _body_of, _decode, scrub_email_secrets
 from openmuse.vault import CredentialVault
 
 MAX_PER_LOOK = 20
@@ -63,6 +62,9 @@ class MailWatcher:
         ``last_uid == 0`` means "first look": nothing is returned, the mark is set to the
         newest UID in the inbox. Raises ``RuntimeError`` / ``OSError`` when IMAP fails.
         """
+        # here, not at the top: openmuse.tools imports the triggers tool, which imports us
+        from openmuse.tools.email_tool import _body_of, _decode, scrub_email_secrets
+
         address, password = self._creds()
         settings = self.settings
 

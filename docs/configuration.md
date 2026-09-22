@@ -170,6 +170,18 @@ url  = "~/family.ics"
 
 The `calendar` tool reads (agenda, search, free time) and *drafts*: an event it proposes is written as `calendar/<date>-<title>.ics` in the workspace, and the app shows it as a card with an *Add to calendar* button. It never writes to your calendar itself. Today's and tomorrow's events are in the system prompt; the Feed shows them under *Today*. `openmuse calendar add NAME URL` does the same as the Connections screen.
 
+## `[triggers]`
+
+Triggers are standing instructions that start work when something happens — a mail arrives, a calendar event is about to start, a program calls a webhook (see [the app](app.md#triggers)). They are set in chat or under *Upcoming*, not in the config file; this section only tunes how they are watched.
+
+```toml
+[triggers]
+mail_poll_minutes = 5    # how often the inbox is looked at while a mail trigger is active
+hook_min_seconds  = 10   # deliveries to one webhook closer together than this get HTTP 429
+```
+
+Mail triggers need the [email connector](#email); event triggers need a [calendar](#calendar). Triggers live in `<data_dir>/triggers.db`.
+
 ### Browser
 
 ```toml

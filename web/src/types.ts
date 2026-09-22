@@ -438,7 +438,42 @@ export interface UpcomingData {
   check_ins: Array<{ goal_id: string; title: string; at: string; cadence: string }>;
   /** Reminders and routines: active ones soonest first, then recently finished. */
   reminders: Reminder[];
+  /** Triggers: work that starts when something happens. */
+  triggers: TriggersData;
   busy: boolean;
+}
+
+export type TriggerKind = "mail" | "event" | "hook";
+export type TriggerStatus = "active" | "cancelled";
+
+export interface Trigger {
+  id: string;
+  kind: TriggerKind;
+  /** Words that must all appear in the sender/subject (mail) or title/place (event); a hook's name. */
+  match: string;
+  /** What to do when it fires. */
+  text: string;
+  thread: string;
+  status: TriggerStatus;
+  /** event: how long before the start. */
+  lead_minutes: number;
+  /** hook: the key in the URL ("" for other kinds). */
+  secret: string;
+  /** hook: the full URL to call ("" once cancelled). */
+  url?: string;
+  created_at: string;
+  last_fired_at: string | null;
+  fired: number;
+}
+
+export interface TriggersData {
+  items: Trigger[];
+  /** Which kinds have their connector: mail needs the mailbox, event the calendar. */
+  available: Record<TriggerKind, boolean>;
+  /** When the inbox was last looked at for mail triggers (ISO), and the last error if any. */
+  mail_checked_at: string | null;
+  mail_error: string;
+  mail_poll_minutes: number;
 }
 
 export type ReminderKind = "remind" | "task";
@@ -489,6 +524,7 @@ export type WsMessage =
   | { kind: "goals" }
   | { kind: "memory" }
   | { kind: "reminders" }
+  | { kind: "triggers" }
   | { kind: "calendar"; calendar: CalendarData }
   | { kind: "ideas"; ideas: IdeasData }
   | { kind: "profile"; profile: Profile }

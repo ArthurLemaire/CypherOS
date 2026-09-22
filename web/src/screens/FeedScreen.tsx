@@ -1,4 +1,4 @@
-import { ArrowRight, Bell, CalendarDays, FileText, MapPin, MessageCircleQuestion, Moon, ShieldAlert, Sparkles } from "lucide-react";
+import { ArrowRight, Bell, CalendarClock, CalendarDays, FileText, Mail, MapPin, MessageCircleQuestion, Moon, ShieldAlert, Sparkles, Webhook } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { intlLocale, localLabel, t, useLocale, useT } from "../i18n";
@@ -232,6 +232,12 @@ function FeedRow({ item, unseen, onOpen }: { item: FeedItem; unseen: boolean; on
       <FileText size={18} />
     ) : item.quiet ? (
       <Moon size={18} />
+    ) : item.title.startsWith("New mail: ") ? (
+      <Mail size={18} />
+    ) : item.title.startsWith("Coming up: ") ? (
+      <CalendarClock size={18} />
+    ) : item.title.startsWith("Webhook: ") ? (
+      <Webhook size={18} />
     ) : (
       <Sparkles size={18} />
     );

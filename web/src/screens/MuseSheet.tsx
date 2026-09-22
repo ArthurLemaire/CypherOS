@@ -3,11 +3,14 @@ import {
   Ban,
   Bell,
   Brain,
+  CalendarClock,
   Check,
   ChevronLeft,
   ChevronRight,
   ClipboardList,
+  Copy,
   Loader2,
+  Mail,
   Play,
   Plug,
   Repeat,
@@ -15,6 +18,7 @@ import {
   ShieldCheck,
   ShieldOff,
   SlidersHorizontal,
+  Webhook,
   X,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
@@ -24,7 +28,18 @@ import { ApprovalCard, RiskBadge, grantSubject, scopeLabel, toolIcon } from "../
 import { Sheet } from "../components/Sheet";
 import { intlLocale, useT } from "../i18n";
 import { useStore } from "../store";
-import type { ActivityData, AuditEntry, Grant, Reminder, ReminderKind, RiskLevel, UpcomingData } from "../types";
+import type {
+  ActivityData,
+  AuditEntry,
+  Grant,
+  Reminder,
+  ReminderKind,
+  RiskLevel,
+  Trigger,
+  TriggerKind,
+  TriggersData,
+  UpcomingData,
+} from "../types";
 import { cx, relativeTime, timeShort } from "../util";
 import { describeCadence } from "./GoalsScreen";
 
@@ -336,6 +351,7 @@ function UpcomingView({ onSettings }: { onSettings: () => void }) {
       )}
 
       <RemindersSection items={data.reminders} name={name} onChange={() => void load()} />
+      <TriggersSection data={data.triggers} name={name} onChange={() => void load()} />
     </div>
   );
 }
@@ -540,6 +556,247 @@ function ReminderForm({ onDone, onCancel }: { onDone: () => void; onCancel: () =
           className="rounded-full bg-accent px-3.5 py-1.5 text-[13px] font-medium text-accent-fg disabled:opacity-50"
         >
           {saving ? t("Saving…") : mode === "once" ? t("Set reminder") : t("Set routine")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ triggers
+const TRIGGER_ICON: Record<TriggerKind, typeof Mail> = { mail: Mail, event: CalendarClock, hook: Webhook };
+
+/** The condition in words, for the list and the confirmation line of the form. */
+export function describeTrigger(tr: Pick<Trigger, "kind" | "match" | "lead_minutes">, t: (k: string, v?: Record<string, string | number>) => string): string {
+  if (tr.kind === "mail") return tr.match ? t("mail matching “{match}”", { match: tr.match }) : t("any new mail");
+  if (tr.kind === "event") {
+    const what = tr.match ? t("events matching “{match}”", { match: tr.match }) : t("any event");
+    return t("{n} min before {what}", { n: tr.lead_minutes, what });
+  }
+  return tr.match ? t("webhook “{match}”", { match: tr.match }) : t("webhook");
+}
+
+function TriggersSection({ data, name, onChange }: { data: TriggersData; name: string; onChange: () => void }) {
+  const { toast } = useStore();
+  const t = useT();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const active = data.items.filter((r) => r.status === "active");
+  const watching = active.some((r) => r.kind === "mail");
+
+  const cancel = async (r: Trigger) => {
+    setBusy(r.id);
+    try {
+      await api.cancelTrigger(r.id);
+      onChange();
+    } catch (e) {
+      toast((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+  const fireNow = async (r: Trigger) => {
+    setBusy(r.id);
+    try {
+      await api.fireTrigger(r.id);
+      toast(t("{name} is on it", { name }));
+      onChange();
+    } catch (e) {
+      toast((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+  const copy = async (r: Trigger) => {
+    if (!r.url) return;
+    try {
+      await navigator.clipboard.writeText(r.url);
+      toast(t("Webhook URL copied"));
+    } catch {
+      toast(r.url);
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <div className="text-[12px] uppercase tracking-wide text-muted font-semibold">{t("When something happens")}</div>
+        {!adding && (
+          <button type="button" onClick={() => setAdding(true)} className="text-[12.5px] text-accent font-medium">
+            {t("+ Add")}
+          </button>
+        )}
+      </div>
+      {adding && (
+        <TriggerForm
+          available={data.available}
+          onDone={() => {
+            setAdding(false);
+            onChange();
+          }}
+          onCancel={() => setAdding(false)}
+        />
+      )}
+      {active.length === 0 && !adding ? (
+        <div className="text-[13px] text-muted">
+          {t("Nothing yet. Tell {name} “when the landlord writes back, summarise it and draft a reply” or “half an hour before any review, brief me”.", { name })}
+        </div>
+      ) : (
+        <ul className="space-y-1.5">
+          {active.map((r) => {
+            const Icon = TRIGGER_ICON[r.kind];
+            return (
+              <li key={r.id} className="flex items-start gap-2.5 rounded-2xl bg-surface-2/60 px-3 py-2">
+                <Icon size={15} className="text-muted shrink-0 mt-[3px]" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[13.5px] font-medium">{describeTrigger(r, t)}</div>
+                  <div className="text-[12px] leading-snug text-fg/80 line-clamp-2">{r.text}</div>
+                  <div className="text-[11.5px] text-muted flex flex-wrap items-center gap-x-1.5">
+                    {r.fired > 0 ? (
+                      <span>
+                        {t("fired {n}×", { n: r.fired })}
+                        {r.last_fired_at && ` · ${relativeTime(r.last_fired_at)}`}
+                      </span>
+                    ) : (
+                      <span>{t("not fired yet")}</span>
+                    )}
+                    {r.kind === "hook" && r.url && (
+                      <button type="button" onClick={() => void copy(r)} className="inline-flex items-center gap-1 text-accent font-medium">
+                        <Copy size={11} /> {t("Copy URL")}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void fireNow(r)}
+                  disabled={busy !== null}
+                  aria-label={t("Run now: {text}", { text: r.text })}
+                  className="rounded-full bg-accent/12 p-2 text-accent disabled:opacity-50"
+                >
+                  {busy === r.id ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void cancel(r)}
+                  disabled={busy !== null}
+                  aria-label={t("Cancel: {text}", { text: r.text })}
+                  className="rounded-full p-2 text-muted hover:text-fg disabled:opacity-50"
+                >
+                  <X size={15} />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {watching && (
+        <div className={cx("mt-1.5 text-[12px]", data.mail_error ? "text-rose-500" : "text-muted")}>
+          {data.mail_error
+            ? t("The inbox could not be read: {error}", { error: data.mail_error })
+            : data.mail_checked_at
+              ? t("Inbox checked {when}; {name} looks every {n} min.", { when: relativeTime(data.mail_checked_at), name, n: data.mail_poll_minutes })
+              : t("{name} will look at the inbox shortly, then every {n} min.", { name, n: data.mail_poll_minutes })}
+        </div>
+      )}
+      <div className="mt-1.5 text-[12px] text-muted">
+        {t("Each time it happens {name} does the work in the chat it was set from and reports in the Feed. A mail or a request is treated as data, never as instructions.", { name })}
+      </div>
+    </div>
+  );
+}
+
+function TriggerForm({ available, onDone, onCancel }: { available: Record<TriggerKind, boolean>; onDone: () => void; onCancel: () => void }) {
+  const { toast } = useStore();
+  const t = useT();
+  const firstKind = (["mail", "event", "hook"] as TriggerKind[]).find((k) => available[k]) ?? "hook";
+  const [kind, setKind] = useState<TriggerKind>(firstKind);
+  const [match, setMatch] = useState("");
+  const [lead, setLead] = useState("30");
+  const [text, setText] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [made, setMade] = useState<Trigger | null>(null);
+
+  const submit = async () => {
+    if (!text.trim()) return;
+    setSaving(true);
+    try {
+      const tr = await api.createTrigger({ kind, text: text.trim(), match: match.trim(), lead_minutes: Number(lead) || 30 });
+      if (tr.kind === "hook" && tr.url) setMade(tr);
+      else onDone();
+    } catch (e) {
+      toast((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const field = "h-9 rounded-xl bg-surface border border-border px-3 text-[13px] outline-none focus:border-accent";
+  if (made) {
+    return (
+      <div className="mb-2 rounded-2xl border border-border p-3 space-y-2">
+        <div className="text-[13.5px] font-medium">{t("Webhook ready")}</div>
+        <div className="text-[12.5px] text-muted">{t("POST anything to this URL and the work starts. The key is in the URL — share it only with the program that will call it.")}</div>
+        <code className="block break-all rounded-xl bg-surface-2 px-3 py-2 text-[12px]">{made.url}</code>
+        <div className="flex justify-end gap-2 pt-0.5">
+          <button
+            type="button"
+            onClick={() => void navigator.clipboard.writeText(made.url ?? "").then(() => toast(t("Webhook URL copied")), () => toast(made.url ?? ""))}
+            className="rounded-full px-3 py-1.5 text-[13px] text-accent font-medium"
+          >
+            {t("Copy")}
+          </button>
+          <button type="button" onClick={onDone} className="rounded-full bg-accent px-3.5 py-1.5 text-[13px] font-medium text-accent-fg">
+            {t("Done")}
+          </button>
+        </div>
+      </div>
+    );
+  }
+  const kinds: Array<[TriggerKind, string]> = [
+    ["mail", t("New mail")],
+    ["event", t("Before an event")],
+    ["hook", t("Webhook")],
+  ];
+  return (
+    <div className="mb-2 rounded-2xl border border-border p-3 space-y-2">
+      <Segment options={kinds} value={kind} onChange={(v) => setKind(v as TriggerKind)} />
+      {!available[kind] && (
+        <div className="text-[12.5px] text-rose-500">
+          {kind === "mail" ? t("Connect a mailbox under Connections first.") : t("Add a calendar under Connections first.")}
+        </div>
+      )}
+      <div className="flex gap-1.5">
+        <input
+          value={match}
+          onChange={(e) => setMatch(e.target.value)}
+          placeholder={kind === "mail" ? t("Words in the sender or subject (empty: any mail)") : kind === "event" ? t("Words in the title or place (empty: any event)") : t("A name for this hook")}
+          className={cx(field, "min-w-0 flex-1")}
+        />
+        {kind === "event" && (
+          <label className="flex items-center gap-1 text-[12.5px] text-muted">
+            <input type="number" min={0} max={1440} value={lead} onChange={(e) => setLead(e.target.value)} className={cx(field, "w-[64px] px-2")} aria-label={t("Minutes before")} />
+            {t("min before")}
+          </label>
+        )}
+      </div>
+      <input
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder={t("What should be done each time…")}
+        className={cx(field, "w-full h-10 text-[14px]")}
+      />
+      <div className="text-[12px] text-muted">{t("When {condition}", { condition: describeTrigger({ kind, match: match.trim(), lead_minutes: Number(lead) || 30 }, t) })}</div>
+      <div className="flex justify-end gap-2 pt-0.5">
+        <button type="button" onClick={onCancel} className="rounded-full px-3 py-1.5 text-[13px] text-muted">
+          {t("Cancel")}
+        </button>
+        <button
+          type="button"
+          onClick={() => void submit()}
+          disabled={saving || !text.trim() || !available[kind]}
+          className="rounded-full bg-accent px-3.5 py-1.5 text-[13px] font-medium text-accent-fg disabled:opacity-50"
+        >
+          {saving ? t("Saving…") : t("Set trigger")}
         </button>
       </div>
     </div>

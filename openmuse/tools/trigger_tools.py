@@ -7,7 +7,7 @@ from typing import Any
 
 from openmuse.schema import RiskLevel, ToolResult
 from openmuse.tools.base import BaseTool, CallAssessment
-from openmuse.triggers import TriggerStore
+from openmuse.triggers.store import TriggerStore
 
 
 class Triggers(BaseTool):
@@ -110,6 +110,16 @@ class Triggers(BaseTool):
                     out += (
                         f"\nWebhook URL (POST, any body; keep the key private): {url}\n"
                         "The user can copy it from the app under Upcoming."
+                    )
+                elif item.kind == "event":
+                    out += (
+                        "\nChecked every half minute; a matching event that is already inside "
+                        "the lead window fires on the next check, so do not do that work here."
+                    )
+                else:
+                    out += (
+                        "\nThe inbox is looked at every few minutes from now on; mail that "
+                        "arrived before now is not replayed."
                     )
                 return ToolResult(output=out)
             if action == "list":
