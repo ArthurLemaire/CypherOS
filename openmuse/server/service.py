@@ -1408,6 +1408,11 @@ class MuseService:
                 "taint_tracking": s.sentinel.taint_tracking,
                 "egress_allowlist": s.sentinel.egress_allowlist,
             },
+            "sandbox": {
+                "mode": s.sandbox.mode,
+                "active": self.app.sandbox.active,
+                "status": self.app.sandbox.status,
+            },
             "llm": {"provider": s.llm.provider, "model": s.llm.model, "stream": s.llm.stream},
             "agent": {
                 "language": s.agent.language,

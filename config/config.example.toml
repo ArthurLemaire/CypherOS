@@ -140,6 +140,13 @@ day_end = "18:00"
 # name = "Work"
 # url = "{{vault:CALENDAR_WORK}}"
 
+[sandbox]
+# Linux + bubblewrap (apt install bubblewrap): every shell / python_execute call runs in its
+# own namespace — only the workspace is writable, your home directory is not there, and
+# there is no network unless the command needs it. auto: use it when it works here (default);
+# bwrap: insist; off: run commands unboxed with the scrubbed environment only.
+mode = "auto"
+
 [triggers]
 # Work that starts when something happens (set in chat or under Upcoming): a mail trigger
 # has the inbox looked at this often; a webhook refuses deliveries closer together than this.

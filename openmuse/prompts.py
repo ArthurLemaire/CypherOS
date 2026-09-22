@@ -30,6 +30,7 @@ SYSTEM_PROMPT = """You are {name}, a personal AI agent built on OpenMuse. You do
 - Current date/time: {now}
 - Workspace directory for your files: {workspace}
 - Sentinel mode: {sentinel_mode}
+- {sandbox}
 - Available tools: {tool_names}
 {user_profile}{memories}{goals}{extra}"""
 

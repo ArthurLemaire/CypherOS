@@ -41,6 +41,13 @@ jobs:
           uv venv --python ${{ matrix.python-version }}
           uv pip install -e ".[dev]"
 
+      - name: Install bubblewrap (the sandbox tests run for real on Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq bubblewrap
+          bwrap --version
+          bwrap --unshare-all --ro-bind / / -- /bin/true && echo "bubblewrap works here" || echo "bubblewrap cannot create a namespace here; the boxed tests will skip"
+
       - name: Ruff lint
         run: uv run ruff check openmuse tests scripts
 
