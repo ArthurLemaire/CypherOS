@@ -45,6 +45,17 @@ def wait_for(pred, timeout: float = 5.0, interval: float = 0.05):  # noqa: ANN00
     raise AssertionError("condition not met in time")
 
 
+def wait_idle(service: MuseService, thread: str = "main") -> None:
+    """Until the thread has worked off everything queued for it.
+
+    ``busy`` alone is not enough: ``send()`` queues the text and *schedules* the
+    worker, which flips ``busy`` only once it runs — a poll right after the POST can
+    see an idle thread with a full inbox (it does, on macOS).
+    """
+    t = service.threads[thread]
+    wait_for(lambda: not t.busy and t.inbox.empty(), timeout=10)
+
+
 def events_of(
     client: TestClient, thread: str = "main", kind: str | None = None
 ) -> list[dict[str, Any]]:
@@ -878,7 +889,7 @@ def test_cards_and_background_results_reach_the_phone(server, monkeypatch):
     assert pushed[-1]["title"].endswith("needs your approval") and pushed[-1]["badge"] == 1
     assert pushed[-1]["tag"] == f"approval-{card['id']}" and pushed[-1]["url"] == "/"
     client.post(f"/api/approvals/{card['id']}", json={"approved": True})
-    wait_for(lambda: not service.threads["main"].busy)
+    wait_idle(service)
     # the user's own turn ending is not pushed: only background results are
     assert [p["kind"] for p in pushed] == ["approval"]
 
@@ -895,7 +906,7 @@ def test_cards_and_background_results_reach_the_phone(server, monkeypatch):
         ]
     )
     client.post(f"/api/goals/{g['id']}/advance")
-    wait_for(lambda: not service.threads["main"].busy)
+    wait_idle(service)
     assert [p["kind"] for p in pushed] == ["approval", "background"]
     assert pushed[-1]["title"] == "Learn Rust" and pushed[-1]["url"] == "/"
     assert pushed[-1]["body"] == "Chapter 3 is done — notes are in the library."
@@ -906,7 +917,7 @@ def test_cards_and_background_results_reach_the_phone(server, monkeypatch):
     # a quiet pass stays in the app
     llm.script.append(LLMResponse(content="[quiet] Nothing new since this morning."))
     client.post(f"/api/goals/{g['id']}/advance")
-    wait_for(lambda: not service.threads["main"].busy)
+    wait_idle(service)
     assert [p["kind"] for p in pushed] == ["approval", "background"]
     last = events_of(client, kind="assistant")[-1]
     assert last["quiet"] is True and last["final"] is True
