@@ -9,18 +9,22 @@ openmuse serve --port 9000 --no-qr
 ```
 
 <p align="center">
-  <img src="screenshots/chat-research.png" width="19%" alt="Research">
-  <img src="screenshots/chat-approval.png" width="19%" alt="Approval">
-  <img src="screenshots/feed.png" width="19%" alt="Feed with today's calendar">
-  <img src="screenshots/goal-detail.png" width="19%" alt="Goal">
-  <img src="screenshots/ideas.png" width="19%" alt="Ideas">
+  <img src="screenshots/chat-research.png" width="24%" alt="Research">
+  <img src="screenshots/chat-approval.png" width="24%" alt="Approval">
+  <img src="screenshots/feed.png" width="24%" alt="Feed with today's calendar">
+  <img src="screenshots/goal-detail.png" width="24%" alt="Goal">
 </p>
 <p align="center">
-  <img src="screenshots/calendar-event.png" width="19%" alt="A drafted event">
-  <img src="screenshots/connections.png" width="19%" alt="Connections: the address book">
-  <img src="screenshots/memory.png" width="19%" alt="Memory">
-  <img src="screenshots/settings.png" width="19%" alt="Settings: Sentinel and the sandbox">
-  <img src="screenshots/upcoming-triggers.png" width="19%" alt="Upcoming: triggers">
+  <img src="screenshots/ideas.png" width="24%" alt="Ideas">
+  <img src="screenshots/calendar-event.png" width="24%" alt="A drafted event">
+  <img src="screenshots/skills.png" width="24%" alt="Skills: built in and yours">
+  <img src="screenshots/skill-picker.png" width="24%" alt="Typing / in the chat offers the skills">
+</p>
+<p align="center">
+  <img src="screenshots/connections.png" width="24%" alt="Connections: the address book">
+  <img src="screenshots/memory.png" width="24%" alt="Memory">
+  <img src="screenshots/settings.png" width="24%" alt="Settings: Sentinel and the sandbox">
+  <img src="screenshots/upcoming-triggers.png" width="24%" alt="Upcoming: triggers">
 </p>
 
 ## Getting it onto your phone
