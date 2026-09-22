@@ -1,4 +1,4 @@
-import { ArrowUp, ChevronDown, MessageSquarePlus, MoreHorizontal, Plus, Trash2, X } from "lucide-react";
+import { ArrowUp, ChevronDown, MessageSquarePlus, Moon, MoreHorizontal, Plus, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { api } from "../api";
 import { Avatar } from "../components/Avatar";
@@ -212,6 +212,7 @@ function EventView({
     case "user":
       return <UserBubble event={event} showTime={!prev || prev.type !== "user"} />;
     case "assistant":
+      if (event.quiet) return <QuietLine text={event.text} about={event.about} ts={event.ts} />;
       return <AssistantBubble text={event.text} reasoning={event.reasoning} ts={event.ts} continued={prev?.type === "assistant"} />;
     case "tool":
       return <ToolChip event={event} />;
@@ -273,6 +274,22 @@ function AssistantBubble({
         </div>
         {ts && <div className="mt-1 ml-1 text-[11px] text-muted">{timeShort(ts)}</div>}
       </div>
+    </div>
+  );
+}
+
+/** A background pass that found nothing worth interrupting you for: one muted line, not a bubble. */
+function QuietLine({ text, about, ts }: { text: string; about?: string; ts?: string }) {
+  const [open, setOpen] = useState(false);
+  const label = about?.replace(/^Working on your goal: /, "") ?? "background check";
+  return (
+    <div className="rise flex justify-center px-6">
+      <button type="button" onClick={() => setOpen((o) => !o)} className="max-w-full rounded-2xl px-3 py-1.5 text-[12px] text-muted text-center leading-snug">
+        <span className="inline-flex items-center gap-1.5">
+          <Moon size={12} /> Checked on {label} — nothing new{ts ? ` · ${timeShort(ts)}` : ""}
+        </span>
+        {open && <span className="block mt-1 text-left whitespace-pre-wrap text-[12.5px]">{text}</span>}
+      </button>
     </div>
   );
 }

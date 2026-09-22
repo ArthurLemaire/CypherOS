@@ -249,7 +249,9 @@ function UpcomingView({ onSettings }: { onSettings: () => void }) {
             <div className="font-medium">Background work</div>
             <div className="text-[12.5px] text-muted">
               {data.proactive
-                ? `Every ${data.interval_minutes} min ${name} picks one active goal and works on its next step.${data.next_pass_at ? ` Next around ${timeShort(data.next_pass_at)}.` : ""}`
+                ? `${data.proactivity[0].toUpperCase()}${data.proactivity.slice(1)} · every ${data.effective_interval_minutes} min ${name} picks one active goal and works on its next step.${
+                    data.quiet_until ? ` Quiet hours until ${timeShort(data.quiet_until)}.` : data.next_pass_at ? ` Next around ${timeShort(data.next_pass_at)}.` : ""
+                  }`
                 : `Off. ${name} only works when you ask.`}
             </div>
           </div>
@@ -264,7 +266,7 @@ function UpcomingView({ onSettings }: { onSettings: () => void }) {
           </button>
         </div>
         <button type="button" onClick={onSettings} className="mt-2 text-[12.5px] text-accent font-medium">
-          Change how often in Settings
+          Level, interval and quiet hours in Settings
         </button>
       </div>
 

@@ -111,13 +111,31 @@ function NextUp({
         </div>
       ) : (
         <div className="mt-1.5 text-[14px] leading-snug">
-          {data.busy ? "Working now" : data.next_pass_at ? `Around ${timeShort(data.next_pass_at)}` : "Soon"}: <span className="font-medium">{next.title}</span>
+          {data.busy
+            ? "Working now"
+            : data.quiet_until
+              ? `Quiet hours — after ${timeShort(data.quiet_until)}`
+              : data.next_pass_at
+                ? `Around ${timeShort(data.next_pass_at)}`
+                : "Soon"}
+          : <span className="font-medium">{next.title}</span>
           {next.next_step && <span className="text-muted"> — {next.next_step}</span>}
           {data.queue.length > 1 && <span className="text-muted"> · {data.queue.length - 1} more in line</span>}
         </div>
       )}
     </div>
   );
+}
+
+/** Markdown down to its words for a three-line preview. */
+function plain(md: string): string {
+  return md
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/(\*\*|__|`)/g, "")
+    .replace(/^\s*[-*+]\s+/gm, "• ")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .trim();
 }
 
 function FeedRow({ item, unseen, onOpen }: { item: FeedItem; unseen: boolean; onOpen: () => void }) {
@@ -128,6 +146,8 @@ function FeedRow({ item, unseen, onOpen }: { item: FeedItem; unseen: boolean; on
       <MessageCircleQuestion size={18} />
     ) : item.kind === "artifact" ? (
       <FileText size={18} />
+    ) : item.quiet ? (
+      <Moon size={18} />
     ) : (
       <Sparkles size={18} />
     );
@@ -137,6 +157,18 @@ function FeedRow({ item, unseen, onOpen }: { item: FeedItem; unseen: boolean; on
       : item.kind === "question"
         ? "bg-accent/12 text-accent"
         : "bg-surface-2 text-muted";
+  if (item.quiet) {
+    // a pass that found nothing worth interrupting you for: one line, no card
+    return (
+      <button type="button" onClick={onOpen} className="w-full text-left px-2 py-1.5 flex items-center gap-2 text-[12.5px] text-muted">
+        <Moon size={13} className="shrink-0" />
+        <span className="truncate">
+          {item.title.replace(/^Working on your goal: /, "")} — nothing new{item.text ? `: ${item.text}` : ""}
+        </span>
+        <span className="ml-auto shrink-0">{relativeTime(item.ts)}</span>
+      </button>
+    );
+  }
   return (
     <button
       type="button"
@@ -153,7 +185,7 @@ function FeedRow({ item, unseen, onOpen }: { item: FeedItem; unseen: boolean; on
             <div className="font-semibold text-[14.5px] leading-snug truncate">{item.title}</div>
             {unseen && <span className="h-2 w-2 rounded-full bg-accent shrink-0" />}
           </div>
-          {item.text && <div className="mt-0.5 text-[13.5px] text-muted leading-snug line-clamp-3 whitespace-pre-wrap">{item.text}</div>}
+          {item.text && <div className="mt-0.5 text-[13.5px] text-muted leading-snug line-clamp-3 whitespace-pre-wrap">{plain(item.text)}</div>}
           <div className="mt-1.5 flex items-center gap-2 text-[12px] text-muted">
             <span>{relativeTime(item.ts)}</span>
             <span>·</span>

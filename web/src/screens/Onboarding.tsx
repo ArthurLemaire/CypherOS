@@ -77,7 +77,17 @@ export function Onboarding() {
     if (firstAsk) void send("main", firstAsk);
   };
 
-  const preview = { name, emoji, color, style, user_name: userName, proactive: false, goal_interval_minutes: 60 };
+  const preview = {
+    name,
+    emoji,
+    color,
+    style,
+    user_name: userName,
+    proactivity: "default" as const,
+    proactive: true,
+    goal_interval_minutes: 60,
+    quiet_hours: "",
+  };
   const modelReady = conn ? conn.llm.key_source === "vault" || conn.llm.key_source === "config" || !!conn.providers[presetOf(conn)]?.no_key : false;
 
   return (

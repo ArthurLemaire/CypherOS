@@ -105,7 +105,36 @@ Instructions:
 - Work on the next pending or in-progress step(s) using your tools. Mark a step `in_progress` when you start and `done` when finished (`goals` action=update_step), adding a short note with the outcome.
 - If a step is blocked (needs the user, credentials, or a decision), mark it `blocked` with a note explaining why, and move on if other steps are independent.
 - Do not invent results. When you have done what can be done in this session, call `terminate` with a progress summary for the user.
+- {surfacing}
 """
+
+# The marker a background pass puts in front of its summary when there is nothing the user
+# needs to hear. The pass is kept in the Feed; the chat is not interrupted.
+QUIET_MARKER = "[quiet]"
+
+# How eagerly background work reaches out, by proactivity level. Phrased as the last
+# instruction of a goal pass; "off" never runs one.
+SURFACING = {
+    "low": (
+        "Reach out only if a step got finished or you need the user — a decision, credentials, "
+        f"something blocked. Otherwise begin the summary with {QUIET_MARKER}."
+    ),
+    "default": (
+        "Reach out if there is real progress or something the user would want to know. If "
+        "nothing changed — you were only checking, waiting, or found nothing new — begin the "
+        f"summary with {QUIET_MARKER} so the user is not interrupted."
+    ),
+    "high": "Always report, briefly, including 'still on track' updates.",
+}
+
+
+def split_quiet(text: str) -> tuple[bool, str]:
+    """``("[quiet] all set", …)`` → ``(True, "all set")``. Anything else → ``(False, text)``."""
+    stripped = text.lstrip()
+    if stripped[: len(QUIET_MARKER)].lower() == QUIET_MARKER:
+        return True, stripped[len(QUIET_MARKER) :].lstrip(" :,-—\n")
+    return False, text
+
 
 __all__ = [
     "ADVANCE_GOAL_PROMPT",
@@ -114,8 +143,11 @@ __all__ = [
     "LANGUAGE_FIXED",
     "MAX_STEPS_PROMPT",
     "MEMORY_SECTION",
+    "QUIET_MARKER",
     "STUCK_PROMPT",
+    "SURFACING",
     "SYSTEM_PROMPT",
     "USER_PROFILE_SECTION",
     "detect_language",
+    "split_quiet",
 ]
