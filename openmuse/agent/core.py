@@ -16,11 +16,21 @@ from openmuse.goals import GoalStore
 from openmuse.llm.base import BaseLLM
 from openmuse.logger import logger
 from openmuse.memory import MemoryItem, MemoryStore
-from openmuse.schema import AgentState, Message, Role, ToolResult
+from openmuse.schema import AgentState, Attachment, Message, Role, ToolResult
 from openmuse.sentinel import AuditLog, Sentinel
 from openmuse.skills import SkillLibrary
 from openmuse.tools.base import ToolCollection
 from openmuse.ui import UI
+
+
+class Incoming:
+    """A user message on its way to the agent: the text and what was attached to it."""
+
+    __slots__ = ("files", "text")
+
+    def __init__(self, text: str, files: list[Attachment] | None = None):
+        self.text = text
+        self.files = files or []
 
 
 class MuseAgent:
@@ -57,7 +67,8 @@ class MuseAgent:
         # Optional queue of user messages that arrive *while* a run is in progress (the app
         # lets you interrupt or pile on requests). They are folded into the conversation
         # before the next model call instead of waiting for the current run to finish.
-        self.inbox: asyncio.Queue[str] | None = None
+        self.inbox: asyncio.Queue[str | Incoming] | None = None
+        self._told_no_vision = False
 
     def _drain_inbox(self) -> int:
         if self.inbox is None:
@@ -65,13 +76,28 @@ class MuseAgent:
         count = 0
         while not self.inbox.empty():
             try:
-                text = self.inbox.get_nowait()
+                item = self.inbox.get_nowait()
             except asyncio.QueueEmpty:  # pragma: no cover
                 break
-            self.messages.append(Message.user(text))
-            self.audit.record("user_message", content=text, interjected=True)
+            incoming = item if isinstance(item, Incoming) else Incoming(item)
+            self.messages.append(self.user_message(incoming.text, incoming.files))
+            self.audit.record("user_message", content=incoming.text, interjected=True)
             count += 1
         return count
+
+    def user_message(self, text: str, files: list[Attachment] | None = None) -> Message:
+        """The user's message as the model gets it: the text, a line per attached file
+        (path and what it is), and the pictures as images when the model takes them."""
+        if not files:
+            return Message.user(text)
+        lines = [f"- {a.path} ({a.describe()})" for a in files]
+        note = "[Attached files]\n" + "\n".join(lines)
+        if any(a.kind != "image" for a in files):
+            note += "\nRead them with `files` action=read."
+        content = f"{text}\n\n{note}" if text.strip() else note
+        workspace = Path(self.settings.agent.workspace).expanduser()
+        images = [str(workspace / a.path) for a in files if a.kind == "image"]
+        return Message.user(content, images=images or None)
 
     # ------------------------------------------------------------------ prompt
     def sandbox_note(self) -> str:
@@ -222,11 +248,17 @@ class MuseAgent:
         return len({sig(m) for m in assistants}) == 1
 
     # ------------------------------------------------------------------ main loop
-    async def run(self, user_input: str, purpose: str | None = None) -> str:
+    async def run(
+        self,
+        user_input: str,
+        purpose: str | None = None,
+        files: list[Attachment] | None = None,
+    ) -> str:
         """One task: a user message (or a background prompt) worked to completion.
 
         ``purpose`` is what approval cards show as the reason for an action; it defaults
-        to the message itself. Task-scoped approvals end when this call returns.
+        to the message itself. ``files`` are the attachments that came with the message.
+        Task-scoped approvals end when this call returns.
         """
         if self.state == AgentState.RUNNING:
             raise RuntimeError("agent is already running")
@@ -235,8 +267,9 @@ class MuseAgent:
         if self.skills is not None and "skills" in self.tools:
             # "/weekly-review …" — the skill's instructions ride along with the message
             user_input = self.skills.expand(user_input)
-        self.messages.append(Message.user(user_input))
-        self.audit.record("user_message", content=user_input)
+        self.messages.append(self.user_message(user_input, files))
+        attached = {"files": [a.path for a in files]} if files else {}
+        self.audit.record("user_message", content=user_input, **attached)
         system_prompt = self.build_system_prompt(user_input, await self.recall_for(user_input))
         tool_params = self.tools.to_params()
         final: str | None = None
@@ -269,6 +302,14 @@ class MuseAgent:
                         on_delta=self.ui.on_text_delta,
                         max_tokens=self.llm.roomier_max_tokens(),
                     )
+                if self.llm.vision_available is False and not self._told_no_vision:
+                    if any(m.images for m in self.messages if m.role == Role.USER):
+                        self._told_no_vision = True
+                        self.ui.warn(
+                            "This model does not take images, so the picture was described to "
+                            "it by name only. It stays in the workspace; a model with vision "
+                            "(Settings → Connections) would see it."
+                        )
                 assistant = response.to_message()
                 assistant.meta.update({"step": step, "usage": response.usage})
                 self.messages.append(assistant)

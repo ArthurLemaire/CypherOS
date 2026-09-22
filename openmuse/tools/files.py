@@ -30,11 +30,44 @@ def unescape_flat(content: str) -> tuple[str, bool]:
     return content.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\t", "\t"), True
 
 
+def pdf_text(path: Path, max_pages: int = 60) -> str:
+    """The text of a PDF, page by page — what the model reads when the user attaches one.
+    Scanned PDFs have no text layer; the result says so instead of coming back empty."""
+    from pypdf import PdfReader
+
+    try:
+        reader = PdfReader(str(path))
+        if reader.is_encrypted:
+            try:
+                reader.decrypt("")
+            except Exception:  # noqa: BLE001
+                return "(this PDF is encrypted — the text cannot be read without its password)"
+        pages = len(reader.pages)
+    except Exception as exc:  # noqa: BLE001 — a damaged file is a result, not a crash
+        return f"(this PDF could not be read: {type(exc).__name__}: {str(exc)[:200]})"
+    parts: list[str] = []
+    for i, page in enumerate(reader.pages[:max_pages], start=1):
+        try:
+            content = (page.extract_text() or "").strip()
+        except Exception as exc:  # noqa: BLE001
+            content = f"(page could not be read: {exc})"
+        parts.append(f"--- page {i} of {pages} ---\n{content}")
+    if pages > max_pages:
+        parts.append(f"... [{pages - max_pages} more pages not shown]")
+    text = "\n\n".join(parts)
+    if not any(p.split("---\n", 1)[-1].strip() for p in parts):
+        return (
+            f"(this PDF has {pages} page{'s' if pages != 1 else ''} but no text layer — it is "
+            "probably scanned images; the text cannot be extracted here)"
+        )
+    return text
+
+
 class Files(BaseTool):
     name: str = "files"
     description: str = (
         "Work with files in the workspace. Actions: "
-        "`read` (path), `write` (path, content – overwrites), `append` (path, content), "
+        "`read` (path; PDFs come back as text, page by page), `write` (path, content – overwrites), `append` (path, content), "
         "`list` (path, optional), `search` (pattern glob such as '**/*.md'). "
         "Paths are relative to the workspace unless they start with '/' or '~'."
     )
@@ -113,7 +146,11 @@ class Files(BaseTool):
                 target = self._resolve(path, must_exist=True)
                 if target.is_dir():
                     return await self.execute(action="list", path=path)
-                text = target.read_text("utf-8", errors="replace")
+                text = (
+                    pdf_text(target)
+                    if target.suffix.lower() == ".pdf"
+                    else target.read_text("utf-8", errors="replace")
+                )
                 if len(text) > MAX_READ_CHARS:
                     text = text[:MAX_READ_CHARS] + f"\n... [truncated, {len(text)} chars total]"
                 return ToolResult(output=text or "(empty file)")

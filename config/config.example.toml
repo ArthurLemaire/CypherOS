@@ -54,6 +54,10 @@ stream = true
 # the prompt when the endpoint rejects `tools` (Ollama without a tool template).
 # "native" never falls back; "prompt" is for endpoints that silently ignore `tools`.
 tool_mode = "auto"
+# Pictures attached in chat go to the model as images. "auto": send them and, if the
+# endpoint refuses (DeepSeek, text-only models), send text only from then on and say so
+# once. "on": always. "off": never — the model gets the file names.
+vision = "auto"
 # Some DeepSeek thinking endpoints want reasoning_content echoed back with tool calls.
 pass_reasoning = false
 # extra_body = { "thinking" = { "type" = "enabled" } }
@@ -206,3 +210,4 @@ port = 8787
 auth = true              # access token in the link / QR code; keep it on
 token = ""               # empty → generated once, kept in <data_dir>/server_token
 approval_timeout = 3600  # seconds an approval card waits before it counts as "deny"
+max_upload_mb = 25       # largest file the app may attach to a message

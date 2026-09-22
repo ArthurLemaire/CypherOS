@@ -1,5 +1,6 @@
 import type {
   ActivityData,
+  AttachmentInfo,
   CalendarData,
   ConnectionsData,
   Contact,
@@ -114,8 +115,15 @@ export const api = {
     request<{ thread: ThreadMeta; events: TimelineEvent[]; has_more: boolean }>(
       `/api/threads/${thread}/events?limit=${limit}${before ? `&before=${before}` : ""}`,
     ),
-  send: (thread: string, text: string) =>
-    request<{ event: TimelineEvent; thread: ThreadMeta }>(`/api/threads/${thread}/send`, json({ text })),
+  send: (thread: string, text: string, files: string[] = []) =>
+    request<{ event: TimelineEvent; thread: ThreadMeta }>(`/api/threads/${thread}/send`, json({ text, files })),
+  /** A file to attach: the bytes as the body, the name in the query. */
+  upload: (file: File) =>
+    request<AttachmentInfo>(`/api/files/upload?name=${encodeURIComponent(file.name || "photo.jpg")}`, {
+      method: "POST",
+      headers: { "Content-Type": file.type || "application/octet-stream" },
+      body: file,
+    }),
   decide: (id: string, approved: boolean, scope = "once", reason = "") =>
     request<{ ok: boolean }>(`/api/approvals/${id}`, json({ approved, scope, reason })),
   resetApprovals: () => request<{ ok: boolean }>("/api/approvals", { method: "DELETE" }),

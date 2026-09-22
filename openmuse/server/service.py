@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import mimetypes
 import re
 import secrets
 import time
@@ -21,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from openmuse import __version__, prompts
-from openmuse.agent import MuseAgent
+from openmuse.agent import Incoming, MuseAgent
 from openmuse.app import OpenMuseApp
 from openmuse.config import Settings
 from openmuse.goals import Goal
@@ -29,7 +30,7 @@ from openmuse.llm import BaseLLM
 from openmuse.logger import logger
 from openmuse.memory.consolidate import TidyReport, tidy
 from openmuse.reminders import Reminder
-from openmuse.schema import Message
+from openmuse.schema import Attachment, Message
 from openmuse.sentinel.grants import SCOPES
 from openmuse.server.connections import Connections
 from openmuse.server.events import MAIN_THREAD, EventBus, Timeline, new_id, now_iso
@@ -180,7 +181,7 @@ class Thread:
     updated_at: str
     timeline: Timeline
     agent: MuseAgent
-    inbox: asyncio.Queue[str] = field(default_factory=asyncio.Queue)
+    inbox: asyncio.Queue[str | Incoming] = field(default_factory=asyncio.Queue)
     worker: asyncio.Task[None] | None = None
     busy: bool = False
     # background prompts (goal work, ideas) → the short label shown as the approval purpose
@@ -477,18 +478,30 @@ class MuseService:
 
     # ------------------------------------------------------------------ messaging
     def send(
-        self, thread_id: str, text: str, source: str = "user", label: str = ""
+        self,
+        thread_id: str,
+        text: str,
+        source: str = "user",
+        label: str = "",
+        files: list[str] | None = None,
     ) -> dict[str, Any]:
-        """Queue a message for a thread. Returns the timeline event that was created."""
+        """Queue a message for a thread. Returns the timeline event that was created.
+
+        ``files`` are workspace paths of attachments (uploaded first with ``save_upload``);
+        a message may be attachments alone."""
         text = text.strip()
-        if not text:
+        attachments = [self.attachment(path) for path in files or []]
+        if not text and not attachments:
             raise ValueError("empty message")
         thread = self.threads.get(thread_id) or self._make_thread(thread_id, thread_id)
         thread.updated_at = now_iso()
         if source == "user":
-            event = self.ui.emit({"type": "user", "text": text, "thread": thread_id})
+            event_data: dict[str, Any] = {"type": "user", "text": text, "thread": thread_id}
+            if attachments:
+                event_data["files"] = [a.model_dump() for a in attachments]
+            event = self.ui.emit(event_data)
             self.bus.publish({"kind": "thread", "thread": thread.meta()})
-            if self.ui.answer_question(thread_id, text):
+            if not attachments and self.ui.answer_question(thread_id, text):
                 return event
         else:
             event = self.ui.emit(
@@ -502,9 +515,45 @@ class MuseService:
             )
             if label:
                 thread.purposes[text] = label
-        thread.inbox.put_nowait(text)
+        thread.inbox.put_nowait(Incoming(text, attachments) if attachments else text)
         self._ensure_worker(thread)
         return event
+
+    # ------------------------------------------------------------------ attachments
+    def attachment(self, rel: str) -> Attachment:
+        """An attachment record for a file in the workspace (the path as the app has it)."""
+        target = self.resolve_workspace_path(rel)
+        if not target.is_file():
+            raise ValueError(f"no such file: {rel}")
+        path = target.relative_to(self.workspace()).as_posix()
+        return Attachment(
+            path=path,
+            name=target.name,
+            size=target.stat().st_size,
+            kind=Attachment.kind_of(target.name),
+            mime=mimetypes.guess_type(target.name)[0] or "",
+        )
+
+    def save_upload(self, name: str, data: bytes) -> Attachment:
+        """A file from the phone into ``attachments/<date>/`` in the workspace, under a
+        safe version of its name (a second file with the same name gets a suffix)."""
+        limit = self.settings.server.max_upload_mb * 1024 * 1024
+        if len(data) > limit:
+            raise ValueError(f"file is larger than {self.settings.server.max_upload_mb} MB")
+        safe = re.sub(
+            r"[^\w.\- ()\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]+", "_", Path(name).name
+        ).strip(" ._")
+        safe = safe[:120] or "file"
+        folder = self.workspace() / "attachments" / datetime.now().strftime("%Y-%m-%d")
+        folder.mkdir(parents=True, exist_ok=True)
+        target = folder / safe
+        stem, suffix = target.stem, target.suffix
+        n = 2
+        while target.exists():
+            target = folder / f"{stem} ({n}){suffix}"
+            n += 1
+        target.write_bytes(data)
+        return self.attachment(target.relative_to(self.workspace()).as_posix())
 
     def _ensure_worker(self, thread: Thread) -> None:
         if thread.worker is None or thread.worker.done():
@@ -514,7 +563,9 @@ class MuseService:
         token = current_thread.set(thread.id)
         try:
             while not thread.inbox.empty():
-                text = thread.inbox.get_nowait()
+                item = thread.inbox.get_nowait()
+                incoming = item if isinstance(item, Incoming) else Incoming(item)
+                text = incoming.text
                 thread.busy = True
                 thread.agent.inbox = thread.inbox
                 self.bus.publish({"kind": "thread", "thread": thread.meta()})
@@ -522,7 +573,7 @@ class MuseService:
                 try:
                     purpose = thread.purposes.pop(text, None)
                     self.ui.begin_run(thread.id, background=purpose)
-                    final = await thread.agent.run(text, purpose=purpose)
+                    final = await thread.agent.run(text, purpose=purpose, files=incoming.files)
                     quiet, final = (
                         prompts.split_quiet(final or "") if purpose else (False, final or "")
                     )

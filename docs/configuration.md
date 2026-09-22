@@ -42,6 +42,7 @@ timeout       = 180                # seconds per request
 max_retries   = 5                  # exponential back-off on 429 / 5xx / timeouts
 stream        = true
 tool_mode     = "auto"             # "auto" | "native" | "prompt" — see below
+vision        = "auto"             # pictures attached in chat go to the model: "auto" | "on" | "off"
 pass_reasoning = false             # send reasoning_content back with assistant turns (some DeepSeek endpoints)
 extra_headers = {}                 # e.g. { "X-End-User-Id" = "openmuse" }
 extra_body    = {}                 # e.g. { "thinking" = { "type" = "enabled" } }
@@ -65,6 +66,10 @@ Provider recipes:
 | `auto` (default) | The API's function calling. If the endpoint *rejects* the `tools` field — Ollama for a model without a tool template ("does not support tools"), vLLM started without a tool parser — OpenMuse logs one warning and describes the tools in the prompt for the rest of the run. |
 | `native` | Always the function-calling API; a rejection is an error. |
 | `prompt` | Tools are described in the system prompt and calls are parsed from `<tool_call>` blocks. The only mode that works with endpoints that silently *ignore* `tools` (no error, the model just never calls anything) — some "agent app" gateways do this. |
+
+### Pictures
+
+Pictures the user attaches in chat are sent to the model as image content (Chat Completions `image_url` parts, Responses `input_image`), scaled to 1568 px on the long side first. `vision = "auto"` (the default) sends them and, when the endpoint refuses a request with images — DeepSeek, Ollama for a model without vision ("model does not support multimodal requests") — sends the same request with the text only, drops pictures for the rest of the run, and the app tells the user once; the message the model gets then says which pictures it cannot see, so it does not describe what it never saw. `on` sends them always and a refusal is an error. `off` never sends them — the model gets the file names, and text files, PDFs and spreadsheets it reads with `files` either way. Vision models that work here: GPT-4o and later, Claude through an OpenAI-compatible gateway, Gemini, Qwen-VL, `gemma3` and `llava` on Ollama.
 
 ### Local models
 
@@ -267,6 +272,7 @@ auth             = true          # access token required (in the QR code / link)
 token            = ""            # empty → generated once, stored in <data_dir>/server_token
 approval_timeout = 3600          # seconds an approval card waits before counting as "deny"
 cors_origins     = []            # only for the Vite dev server, e.g. ["http://localhost:5173"]
+max_upload_mb    = 25            # largest file the app may attach to a message
 ```
 
 ## Where things live

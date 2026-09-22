@@ -11,9 +11,19 @@ interface BaseEvent {
   about?: string;
 }
 
+/** A file attached to a message: in the workspace under attachments/. */
+export interface AttachmentInfo {
+  path: string;
+  name: string;
+  size: number;
+  kind: "image" | "pdf" | "data" | "text" | "other";
+  mime: string;
+}
+
 export interface UserEvent extends BaseEvent {
   type: "user";
   text: string;
+  files?: AttachmentInfo[];
 }
 
 export interface AssistantEvent extends BaseEvent {

@@ -748,6 +748,12 @@ const zhCN: Record<string, string> = {
   "Pick a name first; a template appears here.": "先起个名字，这里会出现一份模板。",
   "{n} ways of doing a job, {yours} of them yours": "{n} 项技能，其中 {yours} 项是你的",
 
+  // attachments
+  "Attach a file": "添加附件",
+  Attachments: "附件",
+  "Say what to do with it…": "说说要拿它做什么……",
+  "Upload failed": "上传失败",
+
   // recall by meaning (embeddings)
   "Recall by meaning": "按含义召回",
   "Keyword recall only": "仅按关键词召回",

@@ -27,6 +27,7 @@ from openmuse.llm.base import (
     says_no_tools,
     split_think,
 )
+from openmuse.llm.vision import content_parts, has_images, without_images
 from openmuse.logger import logger
 from openmuse.schema import Function, LLMResponse, Message, ToolCall, new_id
 
@@ -61,11 +62,13 @@ class OpenAIChatLLM(BaseLLM):
         on_delta: DeltaCallback | None = None,
         max_tokens: int | None = None,
     ) -> LLMResponse:
+        pictures = has_images(messages)
+        with_images = (
+            pictures and self.settings.vision != "off" and self.vision_available is not False
+        )
         params: dict[str, Any] = {
             "model": self.settings.model,
-            "messages": [
-                m.to_openai(include_reasoning=self.settings.pass_reasoning) for m in messages
-            ],
+            "messages": self._wire_messages(messages, with_images),
             "temperature": self.settings.temperature,
             "max_tokens": max_tokens or self.settings.max_tokens,
         }
@@ -74,7 +77,38 @@ class OpenAIChatLLM(BaseLLM):
             params["tool_choice"] = tool_choice
         if self.settings.extra_body:
             params["extra_body"] = self.settings.extra_body
+        try:
+            resp = await self._send(params, on_delta)
+        except openai.BadRequestError as e:
+            if tools and says_no_tools(str(e)):
+                raise ToolsUnsupported(str(e)) from e
+            if with_images and self.settings.vision == "auto":
+                # the endpoint refused the request with pictures in it: the same request
+                # with the text only, and no pictures for the rest of this run
+                logger.warning(
+                    "the endpoint rejected a message with images ({}); sending text only "
+                    'from now on — set llm.vision = "off" to skip the attempt',
+                    str(e).splitlines()[0][:200],
+                )
+                self.vision_available = False
+                params["messages"] = self._wire_messages(messages, False)
+                return await self._send(params, on_delta)
+            raise
+        if with_images and self.vision_available is None:
+            self.vision_available = True
+        return resp
 
+    def _wire_messages(self, messages: list[Message], with_images: bool) -> list[dict[str, Any]]:
+        wire = messages if with_images or not has_images(messages) else without_images(messages)
+        out = []
+        for m in wire:
+            d = m.to_openai(include_reasoning=self.settings.pass_reasoning)
+            if with_images and m.images:
+                d["content"] = content_parts(m)
+            out.append(d)
+        return out
+
+    async def _send(self, params: dict[str, Any], on_delta: DeltaCallback | None) -> LLMResponse:
         async for attempt in AsyncRetrying(
             retry=retry_if_exception_type(_RETRYABLE),
             stop=stop_after_attempt(max(1, self.settings.max_retries + 1)),
@@ -88,14 +122,9 @@ class OpenAIChatLLM(BaseLLM):
                         attempt.retry_state.attempt_number - 1,
                         self.settings.max_retries,
                     )
-                try:
-                    if self.settings.stream:
-                        return await self._ask_stream(params, on_delta)
-                    return await self._ask_once(params)
-                except openai.BadRequestError as e:
-                    if tools and says_no_tools(str(e)):
-                        raise ToolsUnsupported(str(e)) from e
-                    raise
+                if self.settings.stream:
+                    return await self._ask_stream(params, on_delta)
+                return await self._ask_once(params)
         raise RuntimeError("unreachable")  # pragma: no cover
 
     async def close(self) -> None:
