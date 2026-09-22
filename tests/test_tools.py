@@ -116,6 +116,15 @@ def test_python_reach_decides_the_risk(tmp_path: Path):
     proc = py.assess({"code": "import subprocess\nsubprocess.run(['ls'])"})
     assert proc.risk == RiskLevel.SENSITIVE and proc.egress
     assert set(code_reach("import shutil\nshutil.rmtree('x')")) == {"deletion"}
+    # a workspace under /tmp or /home: absolute paths inside it are not "outside"
+    inside = py.assess({"code": f"open('{tmp_path.as_posix()}/list.html', 'w').write('<p>')"})
+    assert inside.risk == RiskLevel.MODERATE and not inside.warnings
+    mixed = py.assess({"code": f"open('{tmp_path.as_posix()}/a').read(); open('/etc/hosts')"})
+    assert mixed.risk == RiskLevel.SENSITIVE
+    home = py.assess(
+        {"code": f"import os\nopen(os.path.expanduser('~/x'))  # {tmp_path.as_posix()}"}
+    )
+    assert home.risk == RiskLevel.SENSITIVE
 
 
 async def test_web_fetch_refuses_redirects_into_private_networks():
