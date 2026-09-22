@@ -31,8 +31,9 @@ shell around the real OpenMuse web app:
   `openmuse serve` prints (it carries the access token). The token is checked by opening the
   server's WebSocket once, so the server needs no CORS configuration.
 
-For the lighter variant — OpenMuse opened in the simulator's Browser app, nothing installed —
-see [docs/demo-mobilegym.md](../../docs/demo-mobilegym.md).
+The lighter variant needs nothing installed: open the simulator's own Browser app and go to the
+link `openmuse serve` prints. That is the web app as any phone browser gets it — full screen, tab
+bar, approval cards — minus the notifications, which is what this module adds.
 
 ## Run it
 

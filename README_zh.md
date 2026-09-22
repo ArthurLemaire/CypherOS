@@ -18,6 +18,13 @@
 </p>
 
 <p align="center">
+  <img src="docs/demo.gif" width="300" alt="手机上的 OpenMuse：一个任务从提出到做完，中途只审批一次">
+</p>
+<p align="center">
+  <sub>一个任务从头到尾：<em>“给我做一份京都 4 天的行李清单……然后提交到我的 kyoto-notes 仓库。”</em> Agent 先在工作区里找到仓库，在第一条 <code>git</code> 命令前停下来问一次——选“本次任务内允许”，后面的提交就不用再点——写出一页可以在手机上逐项打勾的清单，提交，回复里直接链到这个文件。DeepSeek V4.1 Flash 上的真实运行，共 52 秒，剪掉了中间等待的部分。</sub>
+</p>
+
+<p align="center">
   <img src="docs/screenshots/chat-approval.png" width="24%" alt="带审批卡片的聊天">
   <img src="docs/screenshots/goal-detail.png" width="24%" alt="目标与计划">
   <img src="docs/screenshots/ideas.png" width="24%" alt="Ideas 页签">
@@ -35,6 +42,7 @@
 | 接邮箱、浏览器或 MCP 服务器 | [配置 → Connectors](docs/configuration.md#connectors) |
 | 读代码 | [架构](#架构) · [docs/architecture.md](docs/architecture.md) |
 | 用 Docker 跑 | [部署](docs/deployment.md) |
+| 在（模拟）手机上把它当成一个 App 用，通知也有 | [demo/mobilegym](demo/mobilegym/README.md) |
 
 ## 它能做什么
 
@@ -117,6 +125,8 @@ openmuse serve --host 0.0.0.0        # 打印链接和二维码
 把它添加到主屏幕并在设置里打开通知：agent 需要审批、有问题要问、后台做完了一件事或者到了打卡时间，手机就会响——走浏览器标准的 Web Push，不用在任何地方注册账号——图标上还会显示有几张卡片在等你。需要 `https://` 或 `localhost`，见 [部署说明](docs/deployment.md)。
 
 App 走一套很小的 REST + WebSocket API，见 [docs/app.md](docs/app.md)，其他前端可以基于同一个服务端构建。
+
+想看 Muse 本来该有的样子——手机上众多 App 里的一个，需要你时从通知栏冒出来——[demo/mobilegym](demo/mobilegym/README.md) 把 OpenMuse 作为原生 App 装进 [MobileGym](https://github.com/Purewhiter/mobilegym)（一个跑在浏览器里的 Android 模拟器）。一个浏览器标签页，不需要设备。
 
 ## Sentinel
 

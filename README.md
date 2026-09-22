@@ -18,6 +18,13 @@
 </p>
 
 <p align="center">
+  <img src="docs/demo.gif" width="300" alt="OpenMuse on a phone: one task from the request to the finished page, with one scoped approval on the way">
+</p>
+<p align="center">
+  <sub>One task, start to finish: <em>"Make me a packing list for 4 days in Kyoto… then commit it to my kyoto-notes repo."</em> The agent finds the repo, stops once before its first <code>git</code> command — approved <em>for this task</em>, so the commit later needs no second tap — writes a page you can tick off, commits it, and the reply links the file. A real run on DeepSeek V4.1 Flash, 52 s; the wait in the middle is cut.</sub>
+</p>
+
+<p align="center">
   <img src="docs/screenshots/chat-approval.png" width="24%" alt="Chat with an approval card">
   <img src="docs/screenshots/goal-detail.png" width="24%" alt="A goal with its plan">
   <img src="docs/screenshots/ideas.png" width="24%" alt="Ideas tab">
@@ -35,6 +42,7 @@
 | Connect email, a browser, or MCP servers | [Configuration → Connectors](docs/configuration.md#connectors) |
 | Read the code | [Architecture](#architecture) · [docs/architecture.md](docs/architecture.md) |
 | Run it in Docker | [Deployment](docs/deployment.md) |
+| See it as an app on a (simulated) phone, notifications included | [demo/mobilegym](demo/mobilegym/README.md) |
 
 ## What it does
 
@@ -118,6 +126,8 @@ The first time you open it, a short setup runs instead: your name, your Muse's n
 Add it to the home screen and turn on notifications (Settings): the phone buzzes when the agent needs an approval, has a question, finished something in the background, or a reminder or check-in is due — standard Web Push through the browser, no account with anyone — and the icon shows how many cards are waiting. Needs `https://` or `localhost`; see [deployment](docs/deployment.md).
 
 The app talks to a small REST + WebSocket API, documented in [docs/app.md](docs/app.md), so other front-ends can be built on the same server.
+
+To see it the way Muse is meant to be seen — an app among other apps, coming through the notification shade when it needs you — [demo/mobilegym](demo/mobilegym/README.md) installs OpenMuse as a native app on [MobileGym](https://github.com/Purewhiter/mobilegym), a browser-hosted Android simulator. One browser tab, no device.
 
 ## Sentinel
 
