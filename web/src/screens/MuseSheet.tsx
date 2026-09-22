@@ -118,7 +118,7 @@ function Menu({
   const t = useT();
   const mode = state.settings?.sentinel.mode;
   const c = state.settings?.connectors;
-  const connected = [c?.email && t("email"), c?.browser && t("browser"), c?.mcp.length ? `${c.mcp.length} MCP` : null].filter(Boolean);
+  const connected = [c?.email && t("email"), c?.calendar && t("calendar"), c?.browser && t("browser"), c?.mcp.length ? `${c.mcp.length} MCP` : null].filter(Boolean);
   return (
     <div className="pb-2">
       <div className="flex items-center gap-3 rounded-3xl bg-surface-2/70 px-4 py-3">
@@ -141,7 +141,7 @@ function Menu({
         <MenuRow
           icon={<Plug size={19} />}
           label={t("Connections")}
-          hint={connected.length ? t("Model, {list}", { list: connected.join(", ") }) : t("Model, email, browser, MCP servers")}
+          hint={connected.length ? t("Model, {list}", { list: connected.join(", ") }) : t("Model, email, calendar, browser, MCP servers")}
           onClick={onConnections}
         />
         <MenuRow icon={<SlidersHorizontal size={19} />} label={t("Settings")} hint={t("Name, style, how careful it is")} onClick={onSettings} />

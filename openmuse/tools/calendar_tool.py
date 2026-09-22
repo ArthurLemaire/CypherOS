@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -149,7 +150,9 @@ class Calendar(BaseTool):
         return "\n(feed problems: " + "; ".join(f"{s.name}: {s.error}" for s in broken) + ")"
 
     def _draft(self, args: dict[str, Any]) -> ToolResult:
-        title = str(args.get("title") or "").strip()
+        # Some models HTML-escape their arguments ("Alex &amp; Alice"); nothing on a calendar
+        # is meant to carry entities, so they are undone here.
+        title = html.unescape(str(args.get("title") or "")).strip()
         if not title or not args.get("start"):
             return ToolResult.fail("draft needs a title and a start")
         tz = self.feeds.tz
@@ -169,8 +172,8 @@ class Calendar(BaseTool):
             start,
             end,
             all_day=all_day,
-            location=str(args.get("location") or ""),
-            description=str(args.get("notes") or ""),
+            location=html.unescape(str(args.get("location") or "")),
+            description=html.unescape(str(args.get("notes") or "")),
         )
         folder = self.workspace / "calendar"
         folder.mkdir(parents=True, exist_ok=True)

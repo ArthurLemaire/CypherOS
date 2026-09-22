@@ -128,6 +128,18 @@ address = "{{vault:EMAIL_ADDRESS}}"
 password = "{{vault:EMAIL_PASSWORD}}"
 scrub_secrets = true     # strip one-time codes / reset links before the model reads mail
 
+[connectors.calendar]
+enabled = false
+refresh_minutes = 30
+day_start = "09:00"      # working hours, for "when am I free"
+day_end = "18:00"
+# Private .ics links (Google: Settings → Integrate calendar → Secret address in iCal format;
+# Outlook: Shared calendars → Publish; iCloud: Share Calendar → Public Calendar) or .ics files.
+# The link is the secret: openmuse vault set CALENDAR_WORK
+# [[connectors.calendar.feeds]]
+# name = "Work"
+# url = "{{vault:CALENDAR_WORK}}"
+
 [browser]
 enabled = false          # pip install "openmuse[browser]" && playwright install chromium
 headless = true

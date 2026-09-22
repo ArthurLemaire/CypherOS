@@ -414,7 +414,8 @@ export function BrowserCard({ event, onOpen }: { event: BrowserEvent; onOpen: (i
 export function ArtifactCard({ event, onOpen }: { event: ArtifactEvent; onOpen: (path: string) => void }) {
   const t = useT();
   const kind = fileKind(event.name);
-  const what = kind === "html" ? t("Page") : kind === "image" ? t("Image") : kind === "data" ? t("Data") : kind === "code" ? t("Code") : t("Document");
+  const what =
+    kind === "html" ? t("Page") : kind === "image" ? t("Image") : kind === "data" ? t("Data") : kind === "code" ? t("Code") : kind === "event" ? t("Event") : t("Document");
   const label = event.action === "update" ? `${what} · ${t("updated")}` : what;
   return (
     <div className="rise flex justify-start pl-11 pr-8">

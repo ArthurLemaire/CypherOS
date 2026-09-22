@@ -1,9 +1,9 @@
-import { ArrowRight, Bell, FileText, MessageCircleQuestion, Moon, ShieldAlert, Sparkles } from "lucide-react";
+import { ArrowRight, Bell, CalendarDays, FileText, MapPin, MessageCircleQuestion, Moon, ShieldAlert, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { intlLocale, localLabel, t, useLocale, useT } from "../i18n";
 import { useStore } from "../store";
-import type { FeedItem, UpcomingData } from "../types";
+import type { CalendarData, CalendarEvent, FeedItem, UpcomingData } from "../types";
 import { cx, relativeTime, timeShort } from "../util";
 
 /**
@@ -15,6 +15,7 @@ export function FeedScreen() {
   const { state, openThread, openFile, markFeedSeen, setTab, toast } = useStore();
   const [items, setItems] = useState<FeedItem[] | null>(null);
   const [upcoming, setUpcoming] = useState<UpcomingData | null>(null);
+  const [calendar, setCalendar] = useState<CalendarData | null>(null);
   const name = state.profile?.name ?? "Muse";
   const t = useT();
   const locale = useLocale();
@@ -33,6 +34,17 @@ export function FeedScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.feedVersion, state.remindersVersion]);
 
+  // the day's events, when a calendar is connected (a feed refresh pushes a new version)
+  useEffect(() => {
+    let alive = true;
+    api.calendar()
+      .then((d) => alive && setCalendar(d))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [state.calendarVersion, state.connectionsVersion]);
+
   // Looking at the feed marks it read — the newest item's time is the watermark.
   useEffect(() => {
     if (items && items.length && items[0].ts > state.feedSeenAt) markFeedSeen(items[0].ts);
@@ -50,6 +62,7 @@ export function FeedScreen() {
 
       <div className="flex-1 overflow-y-auto px-4 pb-6 space-y-4">
         {upcoming && <NextUp data={upcoming} name={name} onSettings={() => setTab("you")} onGoals={() => setTab("goals")} />}
+        {calendar?.configured && <TodayBlock data={calendar} onAsk={() => openThread("main")} />}
 
         {items && items.length === 0 && (
           <div className="py-10 text-center text-muted text-[14px] px-6">
@@ -145,6 +158,54 @@ function NextUp({
           {activeReminders > 1 && ` · ${t("{n} more", { n: activeReminders - 1 })}`}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Today's events (and tomorrow's, when today is done) from the connected calendars. */
+function TodayBlock({ data, onAsk }: { data: CalendarData; onAsk: () => void }) {
+  const t = useT();
+  // the server sends what overlaps today and tomorrow; what began by today is today's
+  const isToday = (e: CalendarEvent) => e.start.slice(0, 10) <= data.today;
+  const todays = data.events.filter(isToday);
+  const later = data.events.filter((e) => !isToday(e));
+  const now = new Date();
+  const over = (e: CalendarEvent) => !e.all_day && new Date(e.end) < now;
+  const broken = data.feeds.filter((f) => f.error);
+  const showTomorrow = todays.every(over) && later.length > 0;
+  const list = showTomorrow ? later : todays;
+  return (
+    <div className="rounded-3xl border border-border/70 bg-surface shadow-sm px-4 py-3.5">
+      <div className="flex items-center gap-2 text-[12px] uppercase tracking-wide text-muted font-semibold">
+        <CalendarDays size={13} /> {showTomorrow ? t("Tomorrow") : t("Today")}
+        {list.length > 0 && <span className="ml-auto normal-case tracking-normal font-normal">{t("{n} scheduled", { n: list.length })}</span>}
+      </div>
+      {list.length === 0 ? (
+        <div className="mt-1.5 text-[14px] leading-snug text-muted">{t("Nothing on the calendar today.")}</div>
+      ) : (
+        <ul className="mt-1.5 space-y-1">
+          {list.map((e) => (
+            <li key={`${e.uid}-${e.start}`} className={cx("flex items-baseline gap-2.5 text-[14px] leading-snug", !showTomorrow && over(e) && "opacity-50")}>
+              <span className="w-[86px] shrink-0 tabular-nums text-[12.5px] text-muted">
+                {e.all_day ? t("all day") : `${e.start.slice(11, 16)}–${e.end.slice(11, 16)}`}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="font-medium">{e.summary}</span>
+                {e.location && (
+                  <span className="text-muted text-[12.5px]">
+                    {" "}
+                    <MapPin size={11} className="inline -mt-0.5" /> {e.location}
+                  </span>
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {broken.length > 0 && <div className="mt-1.5 text-[12px] text-rose-500">{t("{name} could not be read", { name: broken.map((f) => f.name).join(", ") })}</div>}
+      <button type="button" onClick={onAsk} className="mt-2 text-[12.5px] text-accent font-medium">
+        {t("Ask about your week")}
+      </button>
     </div>
   );
 }

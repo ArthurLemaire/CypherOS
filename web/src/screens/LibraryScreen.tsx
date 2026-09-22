@@ -1,4 +1,4 @@
-import { Code2, FileImage, FileSpreadsheet, FileText, Globe, Loader2, Search } from "lucide-react";
+import { CalendarDays, Code2, FileImage, FileSpreadsheet, FileText, Globe, Loader2, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { useT } from "../i18n";
@@ -111,7 +111,19 @@ export function LibraryScreen() {
 function FileRow({ file, onOpen }: { file: FileInfo; onOpen: () => void }) {
   const kind = fileKind(file.name);
   const icon =
-    kind === "html" ? <Globe size={19} /> : kind === "image" ? <FileImage size={19} /> : kind === "data" ? <FileSpreadsheet size={19} /> : kind === "code" ? <Code2 size={19} /> : <FileText size={19} />;
+    kind === "html" ? (
+      <Globe size={19} />
+    ) : kind === "image" ? (
+      <FileImage size={19} />
+    ) : kind === "data" ? (
+      <FileSpreadsheet size={19} />
+    ) : kind === "code" ? (
+      <Code2 size={19} />
+    ) : kind === "event" ? (
+      <CalendarDays size={19} />
+    ) : (
+      <FileText size={19} />
+    );
   const dir = file.path.includes("/") ? file.path.slice(0, file.path.lastIndexOf("/")) : "";
   return (
     <button
