@@ -25,6 +25,7 @@ from openmuse.config import Settings
 from openmuse.goals import Goal
 from openmuse.llm import BaseLLM
 from openmuse.logger import logger
+from openmuse.memory.consolidate import TidyReport, tidy
 from openmuse.reminders import Reminder
 from openmuse.schema import Message
 from openmuse.sentinel.grants import SCOPES
@@ -222,6 +223,7 @@ class MuseService:
         self.connections = Connections(self)
         self.token = self._load_token()
         self._scheduler: asyncio.Task[None] | None = None
+        self._tidying = False
         self._started = False
         self.started_at = now_iso()
         self.next_goal_pass_at: datetime | None = None
@@ -814,6 +816,10 @@ class MuseService:
                 main = self.threads.get(MAIN_THREAD)
                 if main is None or main.busy or not main.inbox.empty():
                     continue
+                if self.memory_tidy_due():
+                    # housekeeping takes this tick; the goal pass is next time
+                    await self.tidy_memory()
+                    continue
                 goal = self._pick_goal_for_pass()
                 if goal is not None:
                     self.advance_goal(goal.id)  # one goal per tick keeps the chat readable
@@ -822,6 +828,75 @@ class MuseService:
             except Exception as exc:  # noqa: BLE001  pragma: no cover
                 logger.warning("goal scheduler error: {}", exc)
                 await asyncio.sleep(30)
+
+    # ------------------------------------------------------------------ memory tidy-up
+    TIDY_MIN_LINES = 12  # nothing to tidy below this
+    TIDY_EVERY_NEW = 8  # lines added since the last pass…
+    TIDY_EVERY = timedelta(days=7)  # …or this long, whichever comes first
+
+    def memory_tidy_due(self) -> bool:
+        """A tidy-up is due when the store grew by a handful of lines since the last one,
+        or a week went by — and never while one is running."""
+        store = self.app.memory
+        if store is None or self._tidying:
+            return False
+        count = store.count()
+        if count < self.TIDY_MIN_LINES:
+            return False
+        last_at = store.get_meta("tidied_at")
+        if not last_at or store.get_meta("tidy_more") == "1":
+            return True
+        if count - int(store.get_meta("tidied_count", "0") or 0) >= self.TIDY_EVERY_NEW:
+            return True
+        try:
+            return datetime.now(UTC) - datetime.fromisoformat(last_at) >= self.TIDY_EVERY
+        except ValueError:
+            return True
+
+    async def tidy_memory(self, dry_run: bool = False) -> dict[str, Any]:
+        """One pass of ``memory.tidy``: merge duplicates, keep the newer fact, drop what
+        was never a fact about the user. What changed goes to the Feed and to the log
+        behind *Memory → Recent changes*, where each change can be undone."""
+        store = self.app.memory
+        if store is None:
+            raise ValueError("memory is disabled")
+        if self._tidying:
+            raise ValueError("a tidy-up is already running")
+        self._tidying = True
+        try:
+            report = await tidy(store, self.app.llm, dry_run=dry_run)
+        finally:
+            self._tidying = False
+        if dry_run:
+            return report.to_dict()
+        store.set_meta("tidied_at", datetime.now(UTC).isoformat(timespec="seconds"))
+        store.set_meta("tidied_count", str(store.count()))
+        store.set_meta("tidy_more", "1" if report.more else "0")  # continue next tick
+        self.bus.publish({"kind": "memory"})
+        if report.changed:
+            label = "Tidied memory"
+            self.ui.emit(
+                {
+                    "type": "notice",
+                    "level": "info",
+                    "text": label,
+                    "source": "memory",
+                    "thread": MAIN_THREAD,
+                }
+            )
+            summary = _tidy_summary(report)
+            self.ui.emit(
+                {
+                    "type": "assistant",
+                    "text": summary,
+                    "thread": MAIN_THREAD,
+                    "source": "background",
+                    "about": label,
+                    "final": True,
+                }
+            )
+            self.threads[MAIN_THREAD].updated_at = now_iso()
+        return report.to_dict()
 
     # ------------------------------------------------------------------ ideas
     def _ideas_file(self) -> Path:
@@ -870,7 +945,7 @@ class MuseService:
             if language in ("", "auto")
             else language,
         )
-        response = await self.app.llm.ask([Message.user(prompt)], tools=None)
+        response = await self.app.llm.ask_complete([Message.user(prompt)], tools=None)
         ideas = _parse_ideas(response.content or "")
         data = {
             "generated_at": now_iso(),
@@ -1130,6 +1205,19 @@ class MuseService:
             "goals": [goal_to_dict(g) for g in self.app.goals.list()],
             "settings": self.settings_view(),
         }
+
+
+def _tidy_summary(report: TidyReport) -> str:
+    """The tidy-up as one chat message: what was merged and dropped, and where to undo it."""
+    n_m, n_d = len(report.merged), len(report.dropped)
+    parts = []
+    if n_m:
+        parts.append(f"merged {n_m} line{'s' if n_m != 1 else ''}")
+    if n_d:
+        parts.append(f"dropped {n_d}")
+    head = "I tidied your memory — " + " and ".join(parts) + ":"
+    body = "\n".join(f"- {line}" for line in report.lines())
+    return f"{head}\n{body}\n\nEach change can be undone under Memory → Recent changes."
 
 
 def _short(text: str, limit: int = 60) -> str:

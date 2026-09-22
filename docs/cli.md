@@ -71,6 +71,10 @@ openmuse memory list
 openmuse memory add "Prefers short answers" --category preference
 openmuse memory forget m_9f8e7d        # id or a phrase to search for
 openmuse memory clear --yes
+openmuse memory tidy --dry-run         # what a tidy-up would merge and drop
+openmuse memory tidy                   # do it; every change is logged
+openmuse memory changes                # the log, newest first
+openmuse memory restore c_1a2b3c4d     # undo one change
 ```
 
 ## Vault

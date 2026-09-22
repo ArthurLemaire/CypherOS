@@ -528,6 +528,86 @@ def memory_forget(target: str, config: ConfigOpt = None) -> None:
         console.print(f"forgot {store.forget_matching(target)} memories")
 
 
+@memory_app.command("tidy")
+def memory_tidy(
+    config: ConfigOpt = None,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Show what would change without changing it")
+    ] = False,
+) -> None:
+    """Merge lines that say the same thing, keep the newer fact, drop what was never a fact.
+
+    The model proposes, OpenMuse checks (nothing invented, nothing you wrote dropped),
+    and every change is logged so `memory restore` can undo it.
+    """
+    from openmuse.app import OpenMuseApp
+    from openmuse.console import ConsoleUI
+    from openmuse.memory import tidy
+
+    s = _settings(config)
+    muse = OpenMuseApp(s, ConsoleUI(console))  # resolves a key kept in the vault
+    if muse.memory is None:
+        console.print("[red]memory is disabled in the config[/red]")
+        raise typer.Exit(1)
+    store = muse.memory
+
+    async def go() -> None:
+        try:
+            report = await tidy(store, muse.llm, dry_run=dry_run)
+        finally:
+            await muse.close()
+        lines = report.lines()
+        if not lines:
+            console.print(f"[dim]{report.considered} memories, nothing to tidy.[/dim]")
+        for line in lines:
+            console.print(f" - {line}")
+        for why in report.skipped:
+            console.print(f"[dim] · not applied — {why}[/dim]")
+        if report.more:
+            console.print("[dim]more was proposed; the next pass continues.[/dim]")
+        if not dry_run and report.changed:
+            console.print(
+                f"[green]{report.changed} change(s); undo with `openmuse memory changes` / `memory restore <id>`.[/green]"
+            )
+
+    _run_async(go())
+
+
+@memory_app.command("changes")
+def memory_changes(config: ConfigOpt = None, limit: int = 20) -> None:
+    """What tidy-ups and updates changed, newest first."""
+    from openmuse.memory import MemoryStore
+
+    s = _settings(config)
+    changes = MemoryStore(s.memory_db).history(limit)
+    if not changes:
+        console.print("[dim]no changes logged[/dim]")
+        return
+    table = Table(title="Memory changes")
+    table.add_column("id", style="cyan")
+    table.add_column("when", style="dim")
+    table.add_column("change")
+    for c in changes:
+        before = " + ".join(m.content for m in c.before)
+        after = c.after.content if c.after else "—"
+        state = " [dim](restored)[/dim]" if c.restored else ""
+        table.add_row(c.id, c.at[:16].replace("T", " "), f"{c.action}: {before} → {after}{state}")
+    console.print(table)
+
+
+@memory_app.command("restore")
+def memory_restore(change_id: str, config: ConfigOpt = None) -> None:
+    """Undo one change by its id (c_xxx): the old lines come back, the new one goes."""
+    from openmuse.memory import MemoryStore
+
+    s = _settings(config)
+    change = MemoryStore(s.memory_db).restore(change_id)
+    if change is None:
+        console.print("[red]no such change[/red]")
+        raise typer.Exit(1)
+    console.print(f"restored: {' + '.join(m.content for m in change.before)}")
+
+
 @memory_app.command("clear")
 def memory_clear(config: ConfigOpt = None, yes: bool = typer.Option(False, "--yes", "-y")) -> None:
     """Delete all memories."""

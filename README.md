@@ -52,7 +52,7 @@ Meta's Muse is an agent that does things rather than answering questions: it res
 - Approval cards. Anything hard to undo (a shell command, an email, a network call after reading private data) stops and waits for a tap. An approval is scoped — once, this task, until restart, 24 hours, always — and bound to what it was for: `git` commands, email to one address, one website. Every permission you granted is listed under the avatar and can be revoked on its own.
 - Goals that outlive the chat. The agent breaks a goal into steps, updates them as it works, and can keep advancing goals on a timer while the app is closed, posting updates to the main chat.
 - Ideas: suggested next actions based on your goals, memory and recent conversations.
-- Memory you can read and edit. Durable facts about you are saved by the agent and shown in a tab; anything can be forgotten with one tap.
+- Memory you can read and edit. Durable facts about you are saved by the agent and shown in a tab; anything can be forgotten with one tap. When a fact changes, the line is updated rather than doubled, and a periodic tidy-up merges what says the same thing and drops what was never a fact — every change listed with an undo.
 - A Sentinel, a credential vault, taint tracking and an append-only audit log. See [Sentinel](#sentinel).
 - Tools: files, shell, Python, web search and fetch, email (with one-time codes scrubbed before the model sees them), an optional Playwright browser, and any [MCP](https://modelcontextprotocol.io) server.
 - Runs on any OpenAI-compatible model. DeepSeek, OpenAI, OpenRouter, Ollama, vLLM, or a company gateway with custom headers.
@@ -243,7 +243,8 @@ More in [docs/architecture.md](docs/architecture.md).
 - [x] Local models (Ollama) with automatic prompt-mode fallback
 - [ ] Triggers for goals: cron, webhooks, new mail
 - [ ] Calendar and contacts connectors (via MCP)
-- [ ] Better memory recall (embeddings) and periodic consolidation
+- [x] Memory that stays tidy: rare-word recall, updates instead of duplicates, a periodic tidy-up with undo
+- [ ] Memory recall with embeddings
 - [ ] Per-tool sandboxes for `shell` and `python_execute`
 - [ ] Skills: reusable task recipes
 - [x] The app in 简体中文 (Settings → App language); more languages welcome — one dictionary file each

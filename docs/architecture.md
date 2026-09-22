@@ -41,7 +41,7 @@ sequenceDiagram
 | Built-in tools | `openmuse/tools/files.py`, `shell.py`, `web.py`, `email_tool.py`, `browser.py`, `memory_tools.py`, `goal_tools.py`, `terminate.py` | |
 | MCP | `openmuse/tools/mcp_tools.py` | stdio / streamable HTTP / SSE clients, one `MCPTool` per remote tool |
 | LLM | `openmuse/llm/base.py`, `openai_chat.py`, `openai_responses.py`, `prompt_tools.py`, `factory.py`, `mock.py` | `BaseLLM`, streaming with `<think>` filter, retries, prompt-based tool calling, `MockLLM` for tests |
-| Memory, goals | `openmuse/memory/store.py`, `openmuse/goals/store.py` | SQLite; keyword ranking for memory injection |
+| Memory, goals | `openmuse/memory/store.py`, `openmuse/memory/consolidate.py`, `openmuse/goals/store.py` | SQLite; rare-word (IDF) ranking for memory injection; the tidy-up planner and its checks; a change log with undo |
 | App server | `openmuse/server/service.py`, `api.py`, `webui.py`, `events.py` | threads and workers, REST + WebSocket, `UI` implementation that turns callbacks into events, timeline persistence |
 | Front-end | `web/src/` | React + TypeScript + Tailwind; `store.tsx` (state, WebSocket), `screens/` (tabs), `components/` (cards, avatar, markdown) |
 | Terminal | `openmuse/console.py`, `openmuse/cli.py` | Rich console UI with inline approvals; Typer commands |

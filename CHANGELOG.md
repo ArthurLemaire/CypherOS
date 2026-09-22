@@ -4,6 +4,15 @@ All notable changes to OpenMuse. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+### Added
+
+- **Memory that stays tidy.** A fact that changed is updated in place (`remember` takes `replaces=<id>`, and a line that says the same thing in other words replaces the old one on its own) instead of piling up next to the old version. A periodic tidy-up — after every eight new lines or weekly, and *Memory → Tidy up* on demand, `openmuse memory tidy [--dry-run]` from the CLI — merges lines that say the same thing, keeps the newer fact when two contradict, and drops one-off requests that were never facts about the user. The model proposes; OpenMuse checks: a merged line may add no words that were not there (checked by character for Chinese), nothing the user wrote themselves is dropped, at most a fifth of the store changes per pass. Every merge, drop and update is logged with the text it replaced — *Memory → Recent changes* and `openmuse memory changes` show them, each with an undo (`memory restore <id>`). A tidy-up that changed something is one line in the Feed and the chat.
+- Recall weighs rare words: a word that is in half the memories no longer decides which one is meant.
+
+### Fixed
+
+- A reasoning model that spends the whole `max_tokens` thinking and returns nothing is asked once more with four times the budget — in the agent loop, for Ideas and for the memory tidy-up. The Responses API's "incomplete" is reported as the same `length` finish as the Chat API's.
+
 ## [0.2.0] — 2026-09-23
 
 The first release meant for other people's phones: the Muse-style app with Feed, Ideas, Goals and Library, scoped approvals, artifacts, push notifications, a browser view with take-over, reminders and routines, the app in 简体中文, `tool_mode = "auto"` so small local models work, and `openmuse doctor`. Verified end to end with DeepSeek V4.1 Flash and with `qwen3:8b`, `llama3.2:3b` and `gemma3:4b` on Ollama; CI on Linux, macOS and Windows.

@@ -40,6 +40,86 @@ def test_memory_relevant_prefers_matches(tmp_path: Path):
     assert len(rel) == 5
 
 
+def test_memory_search_weighs_rare_words_over_common_ones(tmp_path: Path):
+    store = MemoryStore(tmp_path / "m.db")
+    for city in ("Paris", "Rome", "Oslo", "Lima", "Cairo"):
+        store.add(f"Likes the food in {city}")
+    store.add("Likes the food in Kyoto, especially tofu")
+    store.add("Sister lives in Kyoto")
+    # "likes" and "food" are in six lines and say little; "kyoto" is in two and decides
+    top = store.search("what does she like to eat in Kyoto", limit=2)
+    assert top[0].content.startswith("Likes the food in Kyoto")
+    assert {m.content for m in top} == {
+        "Likes the food in Kyoto, especially tofu",
+        "Sister lives in Kyoto",
+    }
+    # CJK: bigrams weighted the same way
+    store.add("喜欢京都的豆腐料理")
+    store.add("喜欢大阪的章鱼烧")
+    assert store.search("京都 美食")[0].content == "喜欢京都的豆腐料理"
+
+
+def test_memory_replace_drop_and_restore_are_logged(tmp_path: Path):
+    store = MemoryStore(tmp_path / "m.db")
+    a = store.add("Prefers window seats", "preference")
+    b = store.add("Likes a window seat on flights", "preference", source="user")
+    c = store.add("Asked for the weather in Kyoto today")
+    assert store.similar("Prefers a window seat")[0][1].id in (a.id, b.id)
+
+    merged = store.replace([a.id, b.id], "Prefers window seats on flights", category="preference")
+    assert merged is not None and merged.after is not None
+    assert store.get(a.id) is None and store.get(b.id) is None
+    assert merged.after.source == "user"  # the user wrote one of them
+    assert merged.after.created_at == min(a.created_at, b.created_at)
+    dropped = store.drop(c.id, reason="a one-off request")
+    assert dropped is not None and store.count() == 1
+
+    history = store.history()
+    assert [h.action for h in history] == ["drop", "merge"]
+    assert history[1].before[0].content in (
+        "Prefers window seats",
+        "Likes a window seat on flights",
+    )
+
+    # undo the merge: the two old lines come back, the merged one goes
+    restored = store.restore(merged.id)
+    assert restored is not None and restored.restored
+    assert store.get(merged.after.id) is None
+    assert {m.content for m in store.all()} == {
+        "Prefers window seats",
+        "Likes a window seat on flights",
+    }
+    assert store.restore(merged.id).restored  # a second time is a no-op
+    assert store.restore("c_nope") is None
+
+    # update() keeps the id, records when
+    u = store.update(a.id, "Prefers window seats, aisle is fine on short flights")
+    assert u is not None and u.id == a.id and u.updated_at
+    assert store.get_meta("tidied_at") == "" and store.set_meta("tidied_at", "x") is None
+    assert store.get_meta("tidied_at") == "x"
+    store.close()
+
+
+def test_memory_store_migrates_an_old_database(tmp_path: Path):
+    import sqlite3
+
+    path = tmp_path / "old.db"
+    conn = sqlite3.connect(path)
+    conn.execute(
+        "CREATE TABLE memories (id TEXT PRIMARY KEY, content TEXT NOT NULL, category TEXT NOT NULL "
+        "DEFAULT 'general', created_at TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'agent')"
+    )
+    conn.execute(
+        "INSERT INTO memories VALUES ('m_old', 'Old fact', 'profile', '2026-01-01T00:00:00+00:00', 'agent')"
+    )
+    conn.commit()
+    conn.close()
+    store = MemoryStore(path)
+    assert store.get("m_old").updated_at == ""
+    assert store.history() == []
+    store.close()
+
+
 def test_goals_lifecycle(tmp_path: Path):
     store = GoalStore(tmp_path / "g.db")
     goal = store.create(

@@ -5,6 +5,7 @@ import type {
   FileInfo,
   Goal,
   IdeasData,
+  MemoryChange,
   MemoryItem,
   PushInfo,
   Reminder,
@@ -13,6 +14,7 @@ import type {
   StateSnapshot,
   TestResult,
   ThreadMeta,
+  TidyReport,
   TimelineEvent,
   UpcomingData,
   WsMessage,
@@ -126,6 +128,10 @@ export const api = {
   addMemory: (content: string, category: string) =>
     request<MemoryItem>("/api/memory", json({ content, category })),
   forgetMemory: (id: string) => request<{ ok: boolean }>(`/api/memory/${id}`, { method: "DELETE" }),
+  tidyMemory: () => request<TidyReport>("/api/memory/tidy", { method: "POST" }),
+  memoryChanges: (limit = 30) => request<MemoryChange[]>(`/api/memory/changes?limit=${limit}`),
+  restoreMemoryChange: (id: string) =>
+    request<MemoryChange>(`/api/memory/changes/${id}/restore`, { method: "POST" }),
   ideas: (refresh = false) => request<IdeasData>(`/api/ideas${refresh ? "?refresh=1" : ""}`),
   activity: (n = 150) => request<ActivityData>(`/api/activity?n=${n}`),
   feed: (limit = 60) => request<FeedItem[]>(`/api/feed?limit=${limit}`),
