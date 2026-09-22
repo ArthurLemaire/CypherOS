@@ -85,8 +85,8 @@ def test_terminate_summary_becomes_assistant_bubble(server):
     client.post("/api/threads/main/send", json={"text": "do it"})
     assistant = wait_for(lambda: events_of(client, kind="assistant"))
     assert assistant[-1]["text"] == "All done ✔"
-    tools = events_of(client, kind="tool")
-    assert tools and tools[0]["tool"] == "terminate" and tools[0]["status"] == "ok"
+    # the summary is the bubble; no chip is shown for the terminate call itself
+    assert events_of(client, kind="tool") == []
 
 
 def test_approval_card_flow(server, settings: Settings):

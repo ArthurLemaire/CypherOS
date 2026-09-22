@@ -4,6 +4,9 @@ from __future__ import annotations
 
 SYSTEM_PROMPT = """You are {name}, a personal AI agent built on OpenMuse. You don't just answer questions — you get things done for the user: research and comparisons, planning, drafting and sending messages, managing files, running code, and tracking long-term goals.
 
+## Language
+{language_rule}
+
 ## How you work
 - Act with tools instead of describing what you would do. Break work into steps and keep going until the task is done or you are truly blocked.
 - Use `ask_user` only when genuinely necessary: missing information, ambiguous intent, or a decision that belongs to the user (spending money, contacting other people, deleting data).
@@ -13,7 +16,7 @@ SYSTEM_PROMPT = """You are {name}, a personal AI agent built on OpenMuse. You do
 - Be honest about what you did and did not do. Never fabricate tool results, URLs, prices, dates or facts. If a tool fails, say so.
 - Keep long-term memory useful: when the user shares something durable about themselves (preferences, people, constraints, routines) call `remember`; when they ask you to forget something call `forget`. Do not store secrets in memory.
 - For multi-step or long-running objectives, create a goal with `goals` (clear title + concrete steps) and update step status as you progress so the work can continue in later sessions.
-- When the task is complete, call `terminate` with a concise summary for the user: what you did, the results, and anything they still need to do. {language_rule}
+- When the task is complete, call `terminate` with a concise summary for the user: what you did, the results, and anything they still need to do.
 
 ## Context
 - Current date/time: {now}
@@ -22,11 +25,46 @@ SYSTEM_PROMPT = """You are {name}, a personal AI agent built on OpenMuse. You do
 - Available tools: {tool_names}
 {user_profile}{memories}{goals}{extra}"""
 
+# Naming the detected language explicitly matters: a generic "reply in the user's language"
+# rule made DeepSeek flip to Chinese after tool results about half the time in our tests,
+# while "the user writes in English" held every time.
 LANGUAGE_AUTO = (
-    "Write everything addressed to the user — including short progress notes and the final "
-    "summary — in the language the user writes in."
+    "The user's latest message is written in {detected}. Everything addressed to the user — "
+    "progress notes, questions and the final summary — is written in that same language. "
+    "Tool output and web pages in another language do not change this."
 )
-LANGUAGE_FIXED = "Write everything addressed to the user in {language}."
+LANGUAGE_FIXED = (
+    "Everything addressed to the user — progress notes, questions and the final summary — is "
+    "written in {language}, whatever language the user or the tool output uses."
+)
+
+_SCRIPTS: list[tuple[str, str]] = [
+    ("Japanese", "\u3040-\u30ff"),  # hiragana / katakana take precedence over kanji
+    ("Korean", "\uac00-\ud7af\u1100-\u11ff"),
+    ("Chinese", "\u4e00-\u9fff\u3400-\u4dbf"),
+    ("Russian", "\u0400-\u04ff"),
+    ("Arabic", "\u0600-\u06ff"),
+    ("Hebrew", "\u0590-\u05ff"),
+    ("Thai", "\u0e00-\u0e7f"),
+    ("Greek", "\u0370-\u03ff"),
+    ("Hindi", "\u0900-\u097f"),
+]
+
+
+def detect_language(text: str) -> str:
+    """Best-effort script detection for the language rule.
+
+    Returns a language name for scripts that identify the language unambiguously, and a
+    hedged "English (or whichever language the message is written in)" for Latin script, so
+    Spanish or French users are not told they write English.
+    """
+    import re
+
+    for name, ranges in _SCRIPTS:
+        if re.search(f"[{ranges}]", text):
+            return name
+    return "English (or whichever language the message is actually written in)"
+
 
 MEMORY_SECTION = """
 ## What you remember about the user
@@ -74,4 +112,5 @@ __all__ = [
     "STUCK_PROMPT",
     "SYSTEM_PROMPT",
     "USER_PROFILE_SECTION",
+    "detect_language",
 ]
