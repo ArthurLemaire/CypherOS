@@ -735,7 +735,7 @@ class MuseService:
                 continue
             out.append(
                 {
-                    "path": str(p.relative_to(ws)),
+                    "path": p.relative_to(ws).as_posix(),
                     "name": p.name,
                     "size": st.st_size,
                     "modified": datetime.fromtimestamp(st.st_mtime, UTC).isoformat(

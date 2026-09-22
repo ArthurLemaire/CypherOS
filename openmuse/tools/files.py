@@ -128,8 +128,8 @@ class Files(BaseTool):
                 root = self._resolve(path)
                 matches = []
                 for p in root.rglob("*"):
-                    if p.is_file() and fnmatch.fnmatch(str(p.relative_to(root)), pattern):
-                        matches.append(str(p.relative_to(self.workspace.resolve())))
+                    if p.is_file() and fnmatch.fnmatch(p.relative_to(root).as_posix(), pattern):
+                        matches.append(p.relative_to(self.workspace.resolve()).as_posix())
                     if len(matches) >= 200:
                         break
                 return ToolResult(output="\n".join(matches) or "(no matches)")
