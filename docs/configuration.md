@@ -8,7 +8,9 @@ Search order:
 2. `./config/config.toml`
 3. `~/.openmuse/config.toml`
 
-Any string value may contain `${VAR}` or `${VAR:-default}`; it is replaced with the environment variable when the file is loaded, so API keys never need to be written down.
+Any string value may contain `${VAR}` or `${VAR:-default}`; it is replaced with the environment variable when the file is loaded, so API keys never need to be written down. `api_key`, `address` and `password` may also be `{{vault:NAME}}`: the value is read from the encrypted vault when the client is built, never shown to the model.
+
+Three layers, later ones win: the file, then environment overrides, then whatever was changed in the app's *Connections* screen (`<data_dir>/app-settings.json`: model, email servers, browser switch, MCP servers added from the phone). That last file only ever refers to secrets as `{{vault:NAME}}`.
 
 ## Environment overrides
 
@@ -171,6 +173,7 @@ cors_origins     = []            # only for the Vite dev server, e.g. ["http://l
 | `vault.enc`, `vault.key` | encrypted secrets and the key (or `OPENMUSE_VAULT_KEY`) |
 | `audit.jsonl` | append-only audit log |
 | `approvals.json` | permissions you granted for 24 hours or always (tool + target, scope, expiry) |
+| `app-settings.json` | what was changed in the app's Connections screen, layered over `config.toml` (no secrets, only `{{vault:NAME}}` references) |
 | `sessions/` | CLI conversation history |
 | `threads/`, `profile.json`, `ideas.json`, `server_token`, `logs/` | app state |
 | `./workspace` (`agent.workspace`) | files the agent reads and writes |

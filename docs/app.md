@@ -24,6 +24,10 @@ openmuse serve --port 9000 --no-qr
 
 The token is generated once and stored in `<data_dir>/server_token`; set `server.token` or `OPENMUSE_SERVER_TOKEN` to choose your own. Keep `server.auth = true` on any network you do not fully control. To reach the app from outside your network, put it behind something you trust (Tailscale, a reverse proxy with TLS) rather than opening the port.
 
+## First run
+
+On a fresh data directory the app opens with setup instead of the chat: your name; the agent's name, avatar, colour and style; the model (pick a provider, paste a key — it goes into the vault on the server and the model never sees it; or keep what `config.toml` already says); optionally your mailbox; then a few things to try. *Skip setup* at any point. Everything here can be changed later under the avatar. Setup does not reappear once finished, or once a conversation exists.
+
 ## What is on the screen
 
 Five tabs — Chat, Feed, Ideas, Goals, Library — and a menu behind the avatar.
@@ -45,7 +49,10 @@ Five tabs — Chat, Feed, Ideas, Goals, Library — and a menu behind the avatar
 - *Permissions* — the Sentinel mode, and every standing permission you granted with a revoke button on each.
 - *Upcoming* — the background-work switch, the next pass time, and the goals in line with a *run now* button.
 - *Memory* — everything the agent has remembered about you, by category, plus an entry box. *Forget* deletes an item; the agent will not see it again.
-- *Settings* — the agent's name, avatar, colour and personality; the Sentinel mode (Balanced = `ask`, Cautious = `strict`, Hands-off = `auto`); background work (advance one active goal every N minutes while the app is closed); *show thinking*; reply language.
+- *Connections* — what the agent can reach, plugged in and out from the phone. **Model**: provider presets (DeepSeek, OpenAI, OpenRouter, Ollama, any OpenAI-compatible endpoint), model name, tool-calling mode, and the API key — which is written to the vault as `LLM_API_KEY` and swapped in for every thread on the spot; *Test* asks the model for a one-word reply. **Email**: presets for common providers, address and app password (vault: `EMAIL_ADDRESS`, `EMAIL_PASSWORD`), IMAP/SMTP servers; *Connect* saves and signs in to both servers to prove it works; *Disconnect* removes the credentials and the tools. **Browser**: on/off, with the install hint when Playwright is missing. **MCP servers**: add a server by command (stdio) or URL, choose the risk level of its tools, remove it again; servers from `config.toml` are listed read-only. **Vault**: the names of every stored secret, add or delete one. Only names ever leave the server.
+- *Settings* — the agent's name, avatar, colour and personality, and what it calls you; the Sentinel mode (Balanced = `ask`, Cautious = `strict`, Hands-off = `auto`); background work (advance one active goal every N minutes while the app is closed); *show thinking*; reply language.
+
+Non-secret choices made in Connections are stored in `<data_dir>/app-settings.json` and layered over `config.toml` on every start — for the CLI too — so a phone-only setup never needs a file edited. Secrets are only ever referenced from there as `{{vault:NAME}}`.
 
 ## Background work
 
@@ -77,7 +84,16 @@ Everything the app does goes through this API, so another front-end (a Telegram 
 | GET | `/api/feed?limit=` | the Feed: `{id, ts, kind (background · artifact · approval · question), title, text, thread, thread_title, path}` newest first |
 | GET | `/api/upcoming` | `{proactive, interval_minutes, next_pass_at, queue[{goal_id, title, next_step, progress}], busy}` |
 | GET | `/api/files` · `/api/files/{path}?download=1` | list / read workspace files (HTML and SVG are served with `Content-Security-Policy: sandbox`) |
-| GET / PUT | `/api/settings` | view / change `{profile, sentinel_mode, show_thinking, language}` |
+| GET / PUT | `/api/settings` | view / change `{profile{name, emoji, color, style, user_name, proactive, goal_interval_minutes}, sentinel_mode, show_thinking, language}`; the view includes `onboarded` and `llm_ready` |
+| GET | `/api/connections` | model (`key_source`: vault · config · missing · none), provider presets, email, browser, MCP servers (`connected`, `tools`, `from_app`), vault names, `onboarded` |
+| PUT | `/api/connections/llm` `{provider, model, base_url, tool_mode, api_key}` | change the model; `api_key` set → stored in the vault, `""` → no key, omitted → unchanged. Takes effect immediately in every thread |
+| POST | `/api/connections/llm/test` | one short round trip to the model: `{ok, reply, ms}` or `{ok: false, error}` |
+| PUT / DELETE | `/api/connections/email` | save `{address, password, imap_host, imap_port, smtp_host, smtp_port, smtp_starttls, enabled}` (address and password go to the vault) / disconnect and forget the credentials |
+| POST | `/api/connections/email/test` | sign in to IMAP and SMTP: `{ok, inbox}` or `{ok: false, error}` |
+| PUT | `/api/connections/browser` `{enabled}` | turn the browser tool on or off |
+| POST · DELETE | `/api/connections/mcp` `{name, command, args[], env{}, url, risk}` · `/api/connections/mcp/{name}` | connect a server now (502 if it does not come up) / disconnect and remove one added from the app |
+| GET · PUT · DELETE | `/api/vault` · `/api/vault/{name}` `{value}` | list secret names / store / delete. Values are never returned |
+| POST | `/api/onboarded` `{done}` | mark first-run setup as finished |
 | WS | `/ws?token=` | live events |
 
 ### WebSocket
@@ -91,7 +107,7 @@ On connect the server sends `{"kind": "hello", "state": …}` (the same payload 
 | `stream_start` / `delta` / `stream_end` | the assistant reply being generated |
 | `status` | idle / working / waiting, with a short detail line |
 | `thread`, `thread_cleared`, `thread_deleted` | thread list changes |
-| `goals`, `memory`, `ideas`, `profile`, `settings`, `approvals_reset` | refresh hints for the tabs |
+| `goals`, `memory`, `ideas`, `profile`, `settings`, `connections`, `approvals_reset` | refresh hints for the tabs |
 | `error`, `pong` | replies to client messages |
 
 Client → server: `{"kind": "send", "thread": "main", "text": "…"}`, `{"kind": "approval", "id": "…", "approved": true, "scope": "once"}`, `{"kind": "ping"}`.

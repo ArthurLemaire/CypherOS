@@ -27,6 +27,7 @@ from openmuse.llm import BaseLLM
 from openmuse.logger import logger
 from openmuse.schema import Message
 from openmuse.sentinel.grants import SCOPES
+from openmuse.server.connections import Connections
 from openmuse.server.events import MAIN_THREAD, EventBus, Timeline, new_id, now_iso
 from openmuse.server.webui import WebUI, current_thread
 
@@ -72,6 +73,8 @@ class Profile:
     emoji: str = "✨"
     color: str = "#7c3aed"
     style: str = ""
+    # what the user wants to be called
+    user_name: str = ""
     proactive: bool = False
     goal_interval_minutes: int = 60
 
@@ -81,6 +84,7 @@ class Profile:
             "emoji": self.emoji,
             "color": self.color,
             "style": self.style,
+            "user_name": self.user_name,
             "proactive": self.proactive,
             "goal_interval_minutes": self.goal_interval_minutes,
         }
@@ -95,6 +99,7 @@ class Profile:
         p.emoji = str(p.emoji)[:8] or "✨"
         p.color = str(p.color)[:16] or "#7c3aed"
         p.style = str(p.style)[:1000]
+        p.user_name = str(p.user_name).strip()[:60]
         p.goal_interval_minutes = max(5, min(int(p.goal_interval_minutes), 24 * 60))
         return p
 
@@ -147,6 +152,7 @@ class MuseService:
         )
         self.ui._timelines_provider = lambda: [(t.id, t.timeline) for t in self.threads.values()]
         self.app = OpenMuseApp(settings, ui=self.ui, llm=llm, session_id="app")
+        self.connections = Connections(self)
         self.token = self._load_token()
         self._scheduler: asyncio.Task[None] | None = None
         self._started = False
@@ -171,6 +177,7 @@ class MuseService:
                 t.worker.cancel()
         await asyncio.sleep(0)
         if self._started:
+            await self.connections.close()
             await self.app.close()
         self._started = False
 
@@ -210,11 +217,13 @@ class MuseService:
     def _apply_profile(self) -> None:
         a = self.settings.agent
         a.name = self.profile.name
-        extra = (
-            f"\nYour personality / style, chosen by the user: {self.profile.style.strip()}"
-            if self.profile.style.strip()
-            else ""
-        )
+        extra = ""
+        if self.profile.user_name:
+            extra += (
+                f"\nThe user's name is {self.profile.user_name}; address them by it when natural."
+            )
+        if self.profile.style.strip():
+            extra += f"\nYour personality / style, chosen by the user: {self.profile.style.strip()}"
         a.instructions = (self._base_instructions.rstrip() + extra).strip()
 
     def update_profile(self, data: dict[str, Any]) -> Profile:
@@ -744,6 +753,13 @@ class MuseService:
             "memory_enabled": s.memory.enabled,
             "data_dir": str(self.data_dir),
             "started_at": self.started_at,
+            "onboarded": bool(self.connections.data.get("onboarded")),
+            "llm_ready": bool(s.llm.api_key and not self.app.vault.has_placeholders(s.llm.api_key))
+            or bool(
+                s.llm.base_url
+                and "127.0.0.1" in s.llm.base_url
+                or "localhost" in (s.llm.base_url or "")
+            ),
         }
 
     def update_settings(self, data: dict[str, Any]) -> dict[str, Any]:

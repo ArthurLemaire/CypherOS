@@ -10,11 +10,14 @@ Search order for the TOML config file:
 String values may reference environment variables with ``${VAR}`` or
 ``${VAR:-default}`` so that secrets never have to live in the file itself.
 A handful of ``OPENMUSE_*`` environment variables override the most common
-settings (see :func:`_apply_env_overrides`).
+settings (see :func:`_apply_env_overrides`). Whatever was changed from the app
+(``<data_dir>/app-settings.json``: model, connectors, MCP servers) is layered on
+top; secrets it refers to live in the vault as ``{{vault:NAME}}``.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import tomllib
@@ -273,8 +276,62 @@ def _apply_env_overrides(raw: dict[str, Any]) -> None:
         server["token"] = val
 
 
+APP_SETTINGS_FILE = "app-settings.json"
+
+
+def load_app_settings(data_dir: Path) -> dict[str, Any]:
+    """Settings changed from the app (model, connectors, MCP servers, onboarding state).
+
+    They live in ``<data_dir>/app-settings.json`` and are layered over ``config.toml`` so a
+    phone-only setup works without ever editing a file. Secrets are not in here: the app
+    stores them in the vault and this file only holds ``{{vault:NAME}}`` references.
+    """
+    path = data_dir / APP_SETTINGS_FILE
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text("utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def save_app_settings(data_dir: Path, data: dict[str, Any]) -> None:
+    data_dir.mkdir(parents=True, exist_ok=True)
+    path = data_dir / APP_SETTINGS_FILE
+    path.write_text(json.dumps({"version": 1, **data}, ensure_ascii=False, indent=1), "utf-8")
+    try:
+        path.chmod(0o600)
+    except OSError:  # pragma: no cover
+        pass
+
+
+def apply_app_settings(settings: Settings, data: dict[str, Any]) -> None:
+    """Layer app-managed settings over ``settings`` in place."""
+    if llm := data.get("llm"):
+        for key in ("provider", "model", "base_url", "api_key", "tool_mode"):
+            if key in llm and llm[key] not in (None, ""):
+                setattr(settings.llm, key, llm[key])
+        if settings.llm.base_url:
+            settings.llm.base_url = settings.llm.base_url.rstrip("/")
+    if email := data.get("email"):
+        for key in ("enabled", "imap_host", "imap_port", "smtp_host", "smtp_port", "smtp_starttls"):
+            if key in email and email[key] is not None:
+                setattr(settings.connectors.email, key, email[key])
+    if browser := data.get("browser"):
+        if "enabled" in browser:
+            settings.browser.enabled = bool(browser["enabled"])
+    for raw_server in (data.get("mcp") or {}).get("servers") or []:
+        try:
+            server = MCPServerSettings.model_validate(raw_server)
+        except ValueError:
+            continue
+        settings.mcp.servers = [s for s in settings.mcp.servers if s.name != server.name]
+        settings.mcp.servers.append(server)
+
+
 def load_settings(path: str | Path | None = None) -> Settings:
-    """Load settings from TOML (if found) + environment."""
+    """Load settings from TOML (if found) + environment + what was changed in the app."""
     config_file = find_config_file(path)
     raw: dict[str, Any] = {}
     if config_file is not None:
@@ -286,10 +343,12 @@ def load_settings(path: str | Path | None = None) -> Settings:
     settings.source = str(config_file) if config_file else "defaults+env"
     settings.data_dir = settings.data_dir.expanduser()
     settings.agent.workspace = settings.agent.workspace.expanduser()
+    apply_app_settings(settings, load_app_settings(settings.data_dir))
     return settings
 
 
 __all__ = [
+    "APP_SETTINGS_FILE",
     "AgentSettings",
     "BrowserSettings",
     "ConnectorSettings",
@@ -303,6 +362,9 @@ __all__ = [
     "SentinelSettings",
     "ServerSettings",
     "Settings",
+    "apply_app_settings",
     "find_config_file",
+    "load_app_settings",
     "load_settings",
+    "save_app_settings",
 ]

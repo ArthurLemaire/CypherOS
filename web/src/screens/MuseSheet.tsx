@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Loader2,
   Play,
+  Plug,
   ShieldAlert,
   ShieldCheck,
   ShieldOff,
@@ -41,7 +42,7 @@ export function MuseSheet({ open, onClose }: { open: boolean; onClose: () => voi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const go = (tab: "memory" | "you") => {
+  const go = (tab: "memory" | "connections" | "you") => {
     onClose();
     setTab(tab);
   };
@@ -80,6 +81,7 @@ export function MuseSheet({ open, onClose }: { open: boolean; onClose: () => voi
           pending={pending}
           onPick={(v) => setView(v)}
           onMemory={() => go("memory")}
+          onConnections={() => go("connections")}
           onSettings={() => go("you")}
         />
       )}
@@ -97,16 +99,20 @@ function Menu({
   pending,
   onPick,
   onMemory,
+  onConnections,
   onSettings,
 }: {
   name: string;
   pending: number;
   onPick: (v: View) => void;
   onMemory: () => void;
+  onConnections: () => void;
   onSettings: () => void;
 }) {
   const { state } = useStore();
   const mode = state.settings?.sentinel.mode;
+  const c = state.settings?.connectors;
+  const connected = [c?.email && "email", c?.browser && "browser", c?.mcp.length ? `${c.mcp.length} MCP` : null].filter(Boolean);
   return (
     <div className="pb-2">
       <div className="flex items-center gap-3 rounded-3xl bg-surface-2/70 px-4 py-3">
@@ -126,6 +132,12 @@ function Menu({
       </ul>
       <ul className="mt-3 divide-y divide-border/70 rounded-3xl border border-border/70 overflow-hidden">
         <MenuRow icon={<Brain size={19} />} label="Memory" hint={`What ${name} remembers about you`} onClick={onMemory} />
+        <MenuRow
+          icon={<Plug size={19} />}
+          label="Connections"
+          hint={connected.length ? `Model, ${connected.join(", ")}` : "Model, email, browser, MCP servers"}
+          onClick={onConnections}
+        />
         <MenuRow icon={<SlidersHorizontal size={19} />} label="Settings" hint="Name, style, how careful it is" onClick={onSettings} />
       </ul>
     </div>

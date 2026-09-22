@@ -21,8 +21,8 @@ import type {
   WsMessage,
 } from "./types";
 
-/** Tab bar: chat · feed · ideas · goals · library. Memory and settings live behind the avatar. */
-export type Tab = "chat" | "feed" | "ideas" | "goals" | "library" | "memory" | "you";
+/** Tab bar: chat · feed · ideas · goals · library. Memory, connections and settings live behind the avatar. */
+export type Tab = "chat" | "feed" | "ideas" | "goals" | "library" | "memory" | "connections" | "you";
 
 const FEED_SEEN_KEY = "openmuse_feed_seen";
 
@@ -57,6 +57,10 @@ export interface AppState {
   feedSeenAt: string;
   /** Path of the workspace file open in the viewer, if any. */
   viewer: string | null;
+  /** Bumps when a connection (model, email, browser, MCP) changes on the server. */
+  connectionsVersion: number;
+  /** First-run setup dismissed for this session (the server remembers a finished one). */
+  onboardingDismissed: boolean;
   tab: Tab;
   toast: string | null;
 }
@@ -74,6 +78,7 @@ type Action =
   | { type: "tab"; tab: Tab }
   | { type: "feedSeen"; at: string }
   | { type: "viewer"; path: string | null }
+  | { type: "onboardingDismissed" }
   | { type: "toast"; toast: string | null };
 
 const initial: AppState = {
@@ -97,6 +102,8 @@ const initial: AppState = {
   feedVersion: 0,
   feedSeenAt: localStorage.getItem(FEED_SEEN_KEY) ?? "",
   viewer: null,
+  connectionsVersion: 0,
+  onboardingDismissed: false,
   tab: "chat",
   toast: null,
 };
@@ -183,6 +190,8 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, feedSeenAt: action.at };
     case "viewer":
       return { ...state, viewer: action.path };
+    case "onboardingDismissed":
+      return { ...state, onboardingDismissed: true };
     case "toast":
       return { ...state, toast: action.toast };
     case "ws":
@@ -277,6 +286,8 @@ function applyWs(state: AppState, msg: WsMessage): AppState {
       };
     case "settings":
       return { ...state, settings: msg.settings, profile: msg.settings.profile };
+    case "connections":
+      return { ...state, connectionsVersion: state.connectionsVersion + 1 };
     case "error":
       return { ...state, toast: msg.error };
     case "pong":
@@ -308,6 +319,7 @@ interface StoreValue {
   openThread: (thread: string) => void;
   markFeedSeen: (at: string) => void;
   openFile: (path: string | null) => void;
+  dismissOnboarding: () => void;
   toast: (text: string) => void;
 }
 
@@ -403,6 +415,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       openThread: (thread) => dispatch({ type: "activeThread", thread }),
       markFeedSeen: (at) => dispatch({ type: "feedSeen", at }),
       openFile: (path) => dispatch({ type: "viewer", path }),
+      dismissOnboarding: () => dispatch({ type: "onboardingDismissed" }),
       toast: (text) => dispatch({ type: "toast", toast: text }),
     }),
     [state, loadEvents, refreshGoals, refreshSettings],

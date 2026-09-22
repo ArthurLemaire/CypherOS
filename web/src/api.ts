@@ -1,5 +1,6 @@
 import type {
   ActivityData,
+  ConnectionsData,
   FeedItem,
   FileInfo,
   Goal,
@@ -7,6 +8,7 @@ import type {
   MemoryItem,
   SettingsView,
   StateSnapshot,
+  TestResult,
   ThreadMeta,
   TimelineEvent,
   UpcomingData,
@@ -119,6 +121,24 @@ export const api = {
   settings: () => request<SettingsView>("/api/settings"),
   updateSettings: (body: Record<string, unknown>) =>
     request<SettingsView>("/api/settings", { method: "PUT", body: JSON.stringify(body) }),
+  // connections: secrets go into the vault on the server; only names ever come back
+  connections: () => request<ConnectionsData>("/api/connections"),
+  setLLM: (body: Record<string, unknown>) =>
+    request<ConnectionsData["llm"]>("/api/connections/llm", { method: "PUT", body: JSON.stringify(body) }),
+  testLLM: () => request<TestResult>("/api/connections/llm/test", { method: "POST" }),
+  setEmail: (body: Record<string, unknown>) =>
+    request<ConnectionsData["email"]>("/api/connections/email", { method: "PUT", body: JSON.stringify(body) }),
+  disconnectEmail: () => request<ConnectionsData["email"]>("/api/connections/email", { method: "DELETE" }),
+  testEmail: () => request<TestResult>("/api/connections/email/test", { method: "POST" }),
+  setBrowser: (enabled: boolean) =>
+    request<ConnectionsData["browser"]>("/api/connections/browser", { method: "PUT", body: JSON.stringify({ enabled }) }),
+  addMCP: (body: Record<string, unknown>) => request<ConnectionsData>("/api/connections/mcp", json(body)),
+  removeMCP: (name: string) =>
+    request<{ ok: boolean }>(`/api/connections/mcp/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  vaultSet: (name: string, value: string) =>
+    request<string[]>(`/api/vault/${encodeURIComponent(name)}`, { method: "PUT", body: JSON.stringify({ value }) }),
+  vaultDelete: (name: string) => request<{ ok: boolean }>(`/api/vault/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  onboarded: (done = true) => request<{ onboarded: boolean }>("/api/onboarded", json({ done })),
 };
 
 /** WebSocket with automatic reconnect. Returns a disposer. */

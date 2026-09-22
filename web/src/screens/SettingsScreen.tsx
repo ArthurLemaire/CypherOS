@@ -1,4 +1,4 @@
-import { Check, LogOut, Shield, ShieldAlert, ShieldCheck } from "lucide-react";
+import { Check, ChevronRight, LogOut, Shield, ShieldAlert, ShieldCheck } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { api, setToken } from "../api";
 import { Avatar } from "../components/Avatar";
@@ -31,12 +31,13 @@ const MODES: Array<{ id: "ask" | "strict" | "auto"; title: string; text: string;
 ];
 
 export function SettingsScreen() {
-  const { state, refreshSettings, toast } = useStore();
+  const { state, refreshSettings, setTab, toast } = useStore();
   const s = state.settings;
   const [name, setName] = useState("");
   const [emoji, setEmoji] = useState("✨");
   const [color, setColor] = useState(COLORS[0]);
   const [style, setStyle] = useState("");
+  const [userName, setUserName] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -49,6 +50,7 @@ export function SettingsScreen() {
       setEmoji(state.profile.emoji);
       setColor(state.profile.color);
       setStyle(state.profile.style);
+      setUserName(state.profile.user_name ?? "");
     }
   }, [state.profile]);
 
@@ -67,7 +69,11 @@ export function SettingsScreen() {
 
   const dirty =
     !!state.profile &&
-    (name !== state.profile.name || emoji !== state.profile.emoji || color !== state.profile.color || style !== state.profile.style);
+    (name !== state.profile.name ||
+      emoji !== state.profile.emoji ||
+      color !== state.profile.color ||
+      style !== state.profile.style ||
+      userName !== (state.profile.user_name ?? ""));
 
   const preview = state.profile ? { ...state.profile, name, emoji, color } : null;
 
@@ -136,10 +142,20 @@ export function SettingsScreen() {
               className="mt-0.5 w-full resize-none rounded-2xl bg-surface-2 px-3.5 py-2.5 text-[14px] outline-none focus:ring-2 focus:ring-accent/40"
             />
           </div>
+          <div>
+            <label className="text-[12px] text-muted">What it calls you</label>
+            <input
+              value={userName}
+              onChange={(e) => setUserName(e.target.value)}
+              maxLength={60}
+              placeholder="Your name"
+              className="mt-0.5 w-full rounded-2xl bg-surface-2 px-3.5 py-2.5 text-[14px] outline-none focus:ring-2 focus:ring-accent/40"
+            />
+          </div>
           <button
             type="button"
             disabled={!dirty || saving}
-            onClick={() => void update({ profile: { name, emoji, color, style } }, "Saved")}
+            onClick={() => void update({ profile: { name, emoji, color, style, user_name: userName } }, "Saved")}
             className="w-full rounded-2xl bg-accent text-accent-fg py-2.5 font-medium disabled:opacity-40"
           >
             Save
@@ -208,12 +224,12 @@ export function SettingsScreen() {
         {/* Model */}
         <Section title="Model">
           {s && (
-            <div className="text-[13.5px] flex items-center justify-between">
+            <button type="button" onClick={() => setTab("connections")} className="w-full text-[13.5px] flex items-center justify-between">
               <span className="text-muted">Provider / model</span>
-              <span className="font-mono text-[12.5px]">
-                {s.llm.provider} · {s.llm.model}
+              <span className="font-mono text-[12.5px] flex items-center gap-1">
+                {s.llm.model} <ChevronRight size={14} className="text-muted" />
               </span>
-            </div>
+            </button>
           )}
           <Toggle
             label="Show thinking"
@@ -239,10 +255,11 @@ export function SettingsScreen() {
           </div>
           {s && (
             <div className="text-[12.5px] text-muted">
-              Tools: {s.tools.map((t) => t.name).join(", ")}.
-              {s.connectors.email ? " Email connected." : " Email not configured."}
-              {s.connectors.browser ? " Browser enabled." : ""}
-              {s.connectors.mcp.length ? ` MCP: ${s.connectors.mcp.join(", ")}.` : ""}
+              Tools: {s.tools.map((t) => t.name).join(", ")}.{" "}
+              <button type="button" onClick={() => setTab("connections")} className="text-accent underline-offset-2 hover:underline">
+                Connections
+              </button>{" "}
+              is where email, the browser and MCP servers are plugged in.
             </div>
           )}
         </Section>

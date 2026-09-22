@@ -311,6 +311,121 @@ def test_settings_and_profile(server, settings: Settings):
     )
 
 
+def test_user_name_reaches_the_instructions(server, settings: Settings):
+    client, _, _ = server
+    client.put("/api/settings", json={"profile": {"user_name": "Sam"}})
+    assert "The user's name is Sam" in settings.agent.instructions
+
+
+# ----------------------------------------------------------------------------- connections
+def test_connections_model_key_goes_to_the_vault(server, settings: Settings):
+    client, service, _ = server
+    view = client.get("/api/connections").json()
+    assert view["llm"]["key_source"] == "config" and "deepseek" in view["providers"]
+    assert view["onboarded"] is False
+    # the test endpoint talks to the current (mock) model
+    service.app.llm.script.append(LLMResponse(content="OK"))
+    result = client.post("/api/connections/llm/test").json()
+    assert result["ok"] is True and result["reply"] == "OK"
+
+    r = client.put(
+        "/api/connections/llm",
+        json={
+            "model": "deepseek-chat",
+            "base_url": "https://api.deepseek.com/",
+            "api_key": "sk-secret-123",
+        },
+    )
+    assert r.status_code == 200
+    llm = r.json()
+    assert llm["model"] == "deepseek-chat" and llm["key_source"] == "vault" and llm["from_app"]
+    # the key itself never comes back over the API, only its name
+    assert "sk-secret-123" not in json.dumps(client.get("/api/connections").json())
+    assert client.get("/api/vault").json() == ["LLM_API_KEY"]
+    assert service.app.vault.get("LLM_API_KEY") == "sk-secret-123"
+    # settings carry a reference, and every thread now talks to the new client
+    assert settings.llm.api_key == "{{vault:LLM_API_KEY}}"
+    assert settings.llm.base_url == "https://api.deepseek.com"
+    assert all(t.agent.llm is service.app.llm for t in service.threads.values())
+    # the file on disk holds the reference, not the key
+    on_disk = (settings.data_dir / "app-settings.json").read_text()
+    assert "sk-secret-123" not in on_disk and "vault:LLM_API_KEY" in on_disk
+
+    # the new client got the real key, resolved from the vault
+    assert service.app.llm.settings.api_key == "sk-secret-123"
+    assert service.app.llm.settings.model == "deepseek-chat"
+    assert client.put("/api/connections/llm", json={"tool_mode": "bogus"}).status_code == 400
+
+
+def test_connections_email_and_browser(server, settings: Settings):
+    client, service, _ = server
+    email = client.put(
+        "/api/connections/email",
+        json={
+            "address": "alice@example.com",
+            "password": "app-pass",
+            "imap_host": "imap.example.com",
+            "smtp_host": "smtp.example.com",
+            "smtp_port": 465,
+            "smtp_starttls": False,
+        },
+    ).json()
+    assert email["enabled"] and email["configured"] and email["address"] == "alice@example.com"
+    assert email["password_set"] is True and "app-pass" not in json.dumps(email)
+    assert settings.connectors.email.smtp_port == 465 and settings.connectors.email.enabled
+    assert "read_emails" in service.app.tools and "send_email" in service.app.tools
+    assert service.app.vault.get("EMAIL_PASSWORD") == "app-pass"
+
+    # an unreachable server fails the test cleanly instead of hanging
+    settings.connectors.email.imap_host = "127.0.0.1"
+    settings.connectors.email.imap_port = 9
+    assert client.post("/api/connections/email/test").json()["ok"] is False
+
+    off = client.delete("/api/connections/email").json()
+    assert off["enabled"] is False and off["configured"] is False and off["password_set"] is False
+    assert "read_emails" not in service.app.tools
+    assert service.app.vault.get("EMAIL_PASSWORD") is None
+
+    browser = client.put("/api/connections/browser", json={"enabled": True}).json()
+    assert browser["enabled"] is True
+    assert (
+        client.put("/api/connections/browser", json={"enabled": False}).json()["enabled"] is False
+    )
+
+
+def test_connections_mcp_and_vault(server):
+    client, _, _ = server
+    # a server that cannot start is reported, not swallowed
+    r = client.post(
+        "/api/connections/mcp", json={"name": "broken", "command": "/nonexistent/mcp-server"}
+    )
+    assert r.status_code == 502
+    assert client.post("/api/connections/mcp", json={"name": "x"}).status_code == 400
+    assert client.delete("/api/connections/mcp/nope").status_code == 404
+
+    assert client.put("/api/vault/GITHUB_TOKEN", json={"value": "ghp_x"}).json() == ["GITHUB_TOKEN"]
+    assert client.put("/api/vault/bad name", json={"value": "x"}).status_code == 400
+    assert client.delete("/api/vault/GITHUB_TOKEN").json() == {"ok": True}
+    assert client.delete("/api/vault/GITHUB_TOKEN").status_code == 404
+
+    client.post("/api/onboarded", json={"done": True})
+    assert client.get("/api/settings").json()["onboarded"] is True
+
+
+def test_app_settings_are_layered_on_config(server, settings: Settings):
+    from openmuse.config import Settings as S
+    from openmuse.config import apply_app_settings, load_app_settings
+
+    client, _, _ = server
+    client.put("/api/connections/llm", json={"model": "m2", "api_key": "k"})
+    client.put("/api/connections/email", json={"imap_host": "imap.x", "smtp_host": "smtp.x"})
+    client.put("/api/connections/browser", json={"enabled": True})
+    fresh = S()
+    apply_app_settings(fresh, load_app_settings(settings.data_dir))
+    assert fresh.llm.model == "m2" and fresh.llm.api_key == "{{vault:LLM_API_KEY}}"
+    assert fresh.connectors.email.imap_host == "imap.x" and fresh.browser.enabled is True
+
+
 def test_files_are_scoped_to_workspace(server, settings: Settings):
     client, _, _ = server
     (settings.agent.workspace / "notes").mkdir()
