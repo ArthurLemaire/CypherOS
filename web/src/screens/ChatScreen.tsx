@@ -61,6 +61,11 @@ export function ChatScreen() {
   }, [status, thread, queued]);
 
   const pendingApprovals = events.filter((e) => e.type === "approval" && e.status === "pending").length;
+  // files made in this chat: a reply that names one ("saved to `plan.md`") opens it on tap
+  const files = useMemo(
+    () => Array.from(new Set(events.flatMap((e) => (e.type === "artifact" ? [e.path] : [])))),
+    [events],
+  );
 
   return (
     <div className="flex h-full flex-col">
@@ -123,10 +128,11 @@ export function ChatScreen() {
             }
             onOpenFile={openFile}
             onOpenBrowser={setBrowserView}
+            files={files}
           />
         ))}
         {stream && stream.text && (
-          <AssistantBubble text={stream.text} streaming />
+          <AssistantBubble text={stream.text} streaming files={files} onOpenFile={openFile} />
         )}
         {(thread?.busy || status.state !== "idle") && !stream?.text && status.state !== "waiting" && (
           <TypingIndicator label={thread?.queued ? `${thread.queued} queued` : undefined} />
@@ -208,6 +214,7 @@ function EventView({
   onDecide,
   onOpenFile,
   onOpenBrowser,
+  files,
 }: {
   event: TimelineEvent;
   prev?: TimelineEvent;
@@ -215,13 +222,23 @@ function EventView({
   onDecide: (approved: boolean, scope: string) => void;
   onOpenFile: (path: string) => void;
   onOpenBrowser: (id: string) => void;
+  files: readonly string[];
 }) {
   switch (event.type) {
     case "user":
       return <UserBubble event={event} showTime={!prev || prev.type !== "user"} />;
     case "assistant":
       if (event.quiet) return <QuietLine text={event.text} about={event.about} ts={event.ts} />;
-      return <AssistantBubble text={event.text} reasoning={event.reasoning} ts={event.ts} continued={prev?.type === "assistant"} />;
+      return (
+        <AssistantBubble
+          text={event.text}
+          reasoning={event.reasoning}
+          ts={event.ts}
+          continued={prev?.type === "assistant"}
+          files={files}
+          onOpenFile={onOpenFile}
+        />
+      );
     case "tool":
       return <ToolChip event={event} />;
     case "approval":
@@ -256,12 +273,16 @@ function AssistantBubble({
   ts,
   streaming,
   continued,
+  files,
+  onOpenFile,
 }: {
   text: string;
   reasoning?: string;
   ts?: string;
   streaming?: boolean;
   continued?: boolean;
+  files?: readonly string[];
+  onOpenFile?: (path: string) => void;
 }) {
   const [showReasoning, setShowReasoning] = useState(false);
   return (
@@ -279,7 +300,7 @@ function AssistantBubble({
           </div>
         )}
         <div className="rounded-3xl rounded-bl-lg bg-surface border border-border/70 px-4 py-2.5 shadow-sm">
-          <Markdown text={text} />
+          <Markdown text={text} files={files} onOpenFile={onOpenFile} />
           {streaming && <span className="inline-block w-1.5 h-4 ml-0.5 align-middle bg-accent/70 animate-pulse rounded-sm" />}
         </div>
         {ts && <div className="mt-1 ml-1 text-[11px] text-muted">{timeShort(ts)}</div>}
