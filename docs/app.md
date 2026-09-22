@@ -54,7 +54,13 @@ Five tabs — Chat, Feed, Ideas, Goals, Library — and a menu behind the avatar
 - *Upcoming* — the background-work switch, the next pass time, and the goals in line with a *run now* button.
 - *Memory* — everything the agent has remembered about you, by category, plus an entry box. *Forget* deletes an item; the agent will not see it again.
 - *Connections* — what the agent can reach, plugged in and out from the phone. **Model**: provider presets (DeepSeek, OpenAI, OpenRouter, Ollama, any OpenAI-compatible endpoint), model name, tool-calling mode, and the API key — which is written to the vault as `LLM_API_KEY` and swapped in for every thread on the spot; *Test* asks the model for a one-word reply. **Email**: presets for common providers, address and app password (vault: `EMAIL_ADDRESS`, `EMAIL_PASSWORD`), IMAP/SMTP servers; *Connect* saves and signs in to both servers to prove it works; *Disconnect* removes the credentials and the tools. **Browser**: on/off, with the install hint when Playwright is missing. **MCP servers**: add a server by command (stdio) or URL, choose the risk level of its tools, remove it again; servers from `config.toml` are listed read-only. **Vault**: the names of every stored secret, add or delete one. Only names ever leave the server.
-- *Settings* — the agent's name, avatar, colour and personality, and what it calls you; the Sentinel mode (Balanced = `ask`, Cautious = `strict`, Hands-off = `auto`); proactivity (the Off / Low / Default / High dial, the check-in interval, quiet hours — see [Background work](#background-work)); *show thinking*; reply language.
+- *Settings* — the agent's name, avatar, colour and personality, and what it calls you; the Sentinel mode (Balanced = `ask`, Cautious = `strict`, Hands-off = `auto`); proactivity (the Off / Low / Default / High dial, the check-in interval, quiet hours — see [Background work](#background-work)); notifications (below); *show thinking*; reply language.
+
+### Notifications
+
+*Settings → Notifications → Let Muse notify this device.* Standard Web Push through the browser's own push service, no account with anyone: the server generates a VAPID key pair once (`<data_dir>/push-vapid.json`) and keeps the subscriptions of your devices (`push-subscriptions.json`). You get a notification when the agent needs your approval, asks a question, finished a background pass that had something to report, or it is check-in time on a goal. Quiet passes and step-by-step narration never leave the app, and nothing is shown while the app is on screen — the card is already there. Tapping a notification opens the right chat. On a phone with the app on the home screen, the icon carries a badge with the number of cards waiting for you.
+
+Push needs a secure context: `https://` or `localhost`. Over plain `http://` on your LAN the rest of the app works and the toggle explains why this part is off — see [deployment](deployment.md#reaching-it-from-outside-your-network) for a TLS setup. Embedded browsers (the kind inside another app) usually have no push service at all; use Chrome, Edge, Firefox or Safari 16.4+ (iOS: home-screen apps only).
 
 Non-secret choices made in Connections are stored in `<data_dir>/app-settings.json` and layered over `config.toml` on every start — for the CLI too — so a phone-only setup never needs a file edited. Secrets are only ever referenced from there as `{{vault:NAME}}`.
 
@@ -113,6 +119,9 @@ Everything the app does goes through this API, so another front-end (a Telegram 
 | POST · DELETE | `/api/connections/mcp` `{name, command, args[], env{}, url, risk}` · `/api/connections/mcp/{name}` | connect a server now (502 if it does not come up) / disconnect and remove one added from the app |
 | GET · PUT · DELETE | `/api/vault` · `/api/vault/{name}` `{value}` | list secret names / store / delete. Values are never returned |
 | POST | `/api/onboarded` `{done}` | mark first-run setup as finished |
+| GET | `/api/push` | `{available, public_key, subscriptions, devices[]}` — the VAPID public key to subscribe with |
+| POST | `/api/push/subscribe` `{subscription}`, `/api/push/unsubscribe` `{endpoint}` | register / drop this device's `PushSubscription` |
+| POST | `/api/push/test` | send a test notification to every subscribed device |
 | WS | `/ws?token=` | live events |
 
 ### WebSocket

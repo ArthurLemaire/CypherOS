@@ -742,3 +742,112 @@ def test_timeline_survives_restart(server, settings: Settings):
     assert texts == ["remember this", "persisted"]
     # and the model context was restored as well
     assert [m.role.value for m in fresh.threads["main"].agent.messages] == ["user", "assistant"]
+
+
+# ----------------------------------------------------------------------------- push
+FAKE_SUB = {
+    "endpoint": "https://push.example/sub/1",
+    "keys": {"p256dh": "BPk", "auth": "abc"},
+}
+
+
+def test_push_keys_subscriptions_and_gone_endpoints(settings: Settings, monkeypatch):
+    from openmuse.server import push as push_mod
+    from openmuse.server.push import PushService
+
+    svc = PushService(settings.data_dir)
+    assert svc.enabled and svc.public_key and (settings.data_dir / "push-vapid.json").is_file()
+    # the same keys come back on the next start; a phone stays subscribed across restarts
+    assert PushService(settings.data_dir).public_key == svc.public_key
+
+    with pytest.raises(ValueError):
+        svc.subscribe({"endpoint": "http://not-https", "keys": {}})
+    assert svc.subscribe(FAKE_SUB, ua="Safari on iPhone") == 1
+    assert svc.subscribe({**FAKE_SUB, "endpoint": "https://push.example/sub/2"}) == 2
+    assert svc.subscribe(FAKE_SUB) == 2  # re-subscribing the same endpoint replaces it
+    assert PushService(settings.data_dir).view()["subscriptions"] == 2
+
+    sent: list[tuple[str, dict[str, Any]]] = []
+
+    class Gone(Exception):
+        response = type("R", (), {"status_code": 410})()
+
+    def fake_webpush(subscription_info, data, **_kw):  # noqa: ANN001
+        if subscription_info["endpoint"].endswith("/2"):
+            raise Gone("gone")
+        sent.append((subscription_info["endpoint"], json.loads(data)))
+
+    import pywebpush
+
+    monkeypatch.setattr(pywebpush, "webpush", fake_webpush)
+    monkeypatch.setattr(pywebpush, "WebPushException", Gone)
+    svc._send_all({"title": "t", "body": "b", "tag": "x", "url": "/", "badge": 1, "kind": "test"})
+    assert [e for e, _ in sent] == ["https://push.example/sub/1"]
+    assert sent[0][1]["title"] == "t" and sent[0][1]["badge"] == 1
+    # the endpoint the push service reported gone is forgotten
+    assert [s["endpoint"] for s in svc.subscriptions] == ["https://push.example/sub/1"]
+    assert svc.unsubscribe("https://push.example/sub/1") and svc.subscriptions == []
+    assert push_mod.available()
+
+
+def test_cards_and_background_results_reach_the_phone(server, monkeypatch):
+    client, service, llm = server
+    pushed: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        service.push,
+        "notify",
+        lambda title, body, **kw: pushed.append({"title": title, "body": body, **kw}),
+    )
+    r = client.post("/api/push/subscribe", json={"subscription": FAKE_SUB})
+    assert r.status_code == 200 and r.json()["subscriptions"] == 1
+    assert client.get("/api/push").json()["public_key"]
+
+    llm.script.extend(
+        [
+            LLMResponse(content="Running a command.", tool_calls=[tc("shell", command="echo hi")]),
+            LLMResponse(content="Done."),
+        ]
+    )
+    client.post("/api/threads/main/send", json={"text": "run echo"})
+    card = wait_for(
+        lambda: [e for e in events_of(client, kind="approval") if e["status"] == "pending"]
+    )[0]
+    assert pushed and pushed[-1]["kind"] == "approval"
+    assert pushed[-1]["title"].endswith("needs your approval") and pushed[-1]["badge"] == 1
+    assert pushed[-1]["tag"] == f"approval-{card['id']}" and pushed[-1]["url"] == "/"
+    client.post(f"/api/approvals/{card['id']}", json={"approved": True})
+    wait_for(lambda: not service.threads["main"].busy)
+    # the user's own turn ending is not pushed: only background results are
+    assert [p["kind"] for p in pushed] == ["approval"]
+
+    # a background pass that had something to say
+    service.push.subscriptions and service._maybe_push(
+        {
+            "id": "a1",
+            "type": "assistant",
+            "thread": "main",
+            "source": "background",
+            "about": "Working on your goal: Learn Rust",
+            "text": "**Chapter 3** is done — [notes](notes.md) are in the library.",
+        }
+    )
+    assert pushed[-1]["title"] == "Learn Rust" and pushed[-1]["kind"] == "background"
+    assert pushed[-1]["body"] == "Chapter 3 is done — notes are in the library."
+    # a quiet pass stays in the app
+    before = len(pushed)
+    service._maybe_push(
+        {
+            "id": "a2",
+            "type": "assistant",
+            "thread": "main",
+            "source": "background",
+            "quiet": True,
+            "text": "nothing new",
+        }
+    )
+    assert len(pushed) == before
+
+    r = client.post("/api/push/unsubscribe", json={"endpoint": FAKE_SUB["endpoint"]})
+    assert r.json()["subscriptions"] == 0
+    # nothing subscribed: nothing to send
+    assert client.post("/api/push/test").json()["ok"] is False

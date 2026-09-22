@@ -37,6 +37,7 @@ dependencies = [
   "fastapi>=0.110",
   "uvicorn[standard]>=0.29",
   "qrcode>=7.4",
+  "pywebpush>=2.0",
 ]
 
 [project.optional-dependencies]

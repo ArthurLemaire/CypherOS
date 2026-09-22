@@ -3,8 +3,9 @@ import { useEffect, useState, type ReactNode } from "react";
 import { api, setToken } from "../api";
 import { Avatar } from "../components/Avatar";
 import { BackBar } from "../components/BackBar";
+import { disablePush, enablePush, pushState, type PushState } from "../push";
 import { useStore } from "../store";
-import type { Proactivity } from "../types";
+import type { Proactivity, PushInfo } from "../types";
 import { cx } from "../util";
 
 const EMOJI = ["✨", "🌙", "🪐", "🌿", "🔥", "🌊", "🦉", "🦊", "🐙", "🎯", "🧭", "💎", "🍀", "🎈", "🤖", "🧠"];
@@ -227,6 +228,11 @@ export function SettingsScreen() {
           <QuietHours value={state.profile?.quiet_hours ?? ""} onChange={(v) => void update({ profile: { quiet_hours: v } })} />
         </Section>
 
+        {/* Notifications */}
+        <Section title="Notifications">
+          <PushSettings name={state.profile?.name ?? "Muse"} />
+        </Section>
+
         {/* Model */}
         <Section title="Model">
           {s && (
@@ -291,6 +297,93 @@ export function SettingsScreen() {
         </Section>
       </div>
     </div>
+  );
+}
+
+/** Web Push: on / off, what stands in the way, and a test button. */
+function PushSettings({ name }: { name: string }) {
+  const { toast } = useStore();
+  const [info, setInfo] = useState<PushInfo | null>(null);
+  const [status, setStatus] = useState<PushState>("off");
+  const [busy, setBusy] = useState(false);
+
+  const refresh = async () => {
+    setStatus(await pushState());
+    try {
+      setInfo(await api.push());
+    } catch {
+      /* older server */
+    }
+  };
+  useEffect(() => {
+    void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const toggle = async () => {
+    if (!info) return;
+    setBusy(true);
+    try {
+      const next = status === "on" ? await disablePush() : await enablePush(info.public_key);
+      setStatus(next);
+      if (next === "denied") toast("Notifications are blocked for this site in the browser settings");
+      await refresh();
+    } catch (e) {
+      const err = e as Error;
+      toast(
+        err.name === "AbortError"
+          ? "This browser has no push service (embedded browsers often don't). Use Chrome, Edge, Firefox or Safari 16.4+ on the phone."
+          : err.message,
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const test = async () => {
+    try {
+      const r = await api.pushTest();
+      toast(r.ok ? "Sent — it should arrive in a moment" : r.error ?? "Could not send");
+    } catch (e) {
+      toast((e as Error).message);
+    }
+  };
+
+  const blocked =
+    status === "unsupported"
+      ? "This browser cannot receive push notifications."
+      : status === "insecure"
+        ? "Notifications need https:// (or localhost). Over plain http on your LAN the app works, this part stays off — see docs/deployment.md."
+        : status === "denied"
+          ? "Blocked for this site. Allow notifications in the browser's site settings, then try again."
+          : info && !info.available
+            ? "The server was installed without pywebpush."
+            : "";
+
+  return (
+    <>
+      <Toggle
+        label={`Let ${name} notify this device`}
+        hint="When it needs your approval, has a question, finished something in the background, or it is check-in time. Nothing is shown while the app is on screen."
+        checked={status === "on"}
+        onChange={() => void toggle()}
+        disabled={busy || !!blocked}
+      />
+      {blocked && <div className="text-[12.5px] text-muted">{blocked}</div>}
+      {info && info.subscriptions > 0 && (
+        <div className="flex items-center justify-between text-[12.5px] text-muted">
+          <span>
+            {info.subscriptions} device{info.subscriptions === 1 ? "" : "s"} subscribed
+          </span>
+          <button type="button" onClick={() => void test()} className="text-accent font-medium">
+            Send a test
+          </button>
+        </div>
+      )}
+      <div className="text-[12.5px] text-muted">
+        On a phone, add the app to the home screen first: then the icon shows a badge with what is waiting for you, and notifications open the right chat.
+      </div>
+    </>
   );
 }
 
@@ -374,7 +467,19 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function Toggle({ label, hint, checked, onChange }: { label: string; hint?: string; checked: boolean; onChange: (v: boolean) => void }) {
+function Toggle({
+  label,
+  hint,
+  checked,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  hint?: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  disabled?: boolean;
+}) {
   return (
     <label className="flex items-start gap-3 cursor-pointer">
       <div className="flex-1">
@@ -385,8 +490,12 @@ function Toggle({ label, hint, checked, onChange }: { label: string; hint?: stri
         type="button"
         role="switch"
         aria-checked={checked}
+        disabled={disabled}
         onClick={() => onChange(!checked)}
-        className={cx("relative mt-0.5 h-7 w-12 shrink-0 rounded-full transition", checked ? "bg-accent" : "bg-surface-2 border border-border")}
+        className={cx(
+          "relative mt-0.5 h-7 w-12 shrink-0 rounded-full transition disabled:opacity-50",
+          checked ? "bg-accent" : "bg-surface-2 border border-border",
+        )}
       >
         <span className={cx("absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition", checked ? "left-[22px]" : "left-0.5")} />
       </button>
