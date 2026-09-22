@@ -24,6 +24,7 @@ import type {
 
 /** Tab bar: chat · feed · ideas · goals · library. Memory, connections and settings live behind the avatar. */
 export type Tab = "chat" | "feed" | "ideas" | "goals" | "library" | "memory" | "connections" | "you";
+const TAB_NAMES: Tab[] = ["chat", "feed", "ideas", "goals", "library", "memory", "connections", "you"];
 
 const FEED_SEEN_KEY = "openmuse_feed_seen";
 
@@ -397,16 +398,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // The service worker (push + app badge) and where a notification tap should land.
   useEffect(() => {
     void registerWorker();
+    // `?thread=<id>` opens a chat, `?tab=goals` (feed, ideas, library, connections) a tab —
+    // used by notification taps and by links into the app.
     const openFromUrl = (href: string) => {
       const url = new URL(href, window.location.origin);
       const thread = url.searchParams.get("thread");
+      const tab = url.searchParams.get("tab");
       if (thread) dispatch({ type: "activeThread", thread });
-      dispatch({ type: "tab", tab: "chat" });
+      if (tab && TAB_NAMES.includes(tab as Tab) && !thread) dispatch({ type: "tab", tab: tab as Tab });
+      else dispatch({ type: "tab", tab: "chat" });
     };
     const initial = new URL(window.location.href);
-    if (initial.searchParams.get("thread")) {
+    if (initial.searchParams.get("thread") || initial.searchParams.get("tab")) {
       openFromUrl(initial.href);
       initial.searchParams.delete("thread");
+      initial.searchParams.delete("tab");
       window.history.replaceState({}, "", initial.toString());
     }
     const onMessage = (ev: MessageEvent) => {
