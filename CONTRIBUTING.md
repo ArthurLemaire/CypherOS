@@ -52,9 +52,10 @@ Prefer an [MCP server](https://modelcontextprotocol.io) for integrations with an
 
 ## Releasing (maintainers)
 
-1. Bump `version` in `pyproject.toml` and `openmuse/__init__.py`, note the changes in the GitHub release draft, commit.
+1. Bump `version` in `pyproject.toml` and `openmuse/__init__.py`; move the `Unreleased` entries in `CHANGELOG.md` under the new version with today's date; commit.
 2. `git tag vX.Y.Z && git push origin main vX.Y.Z`.
-3. The [Release](.github/workflows/release.yml) workflow checks the tag against the version, builds and smoke-tests the wheel, then publishes to PyPI through Trusted Publishing (`pypi` environment, no stored token).
+3. The [Release](.github/workflows/release.yml) workflow checks the tag against the version, builds and smoke-tests the wheel, then publishes to PyPI through Trusted Publishing (`pypi` environment, no stored token). The [Docker image](.github/workflows/docker.yml) workflow pushes `ghcr.io/openmuseagent/openmuse:X.Y.Z` and `:latest` for amd64 and arm64.
+4. Paste the changelog section into the GitHub release.
 
 ## Security issues
 

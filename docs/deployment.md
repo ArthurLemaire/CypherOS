@@ -21,6 +21,17 @@ docker compose up -d daemon                       # advance goals on a timer, no
 
 The image runs as a non-root user with all capabilities dropped. Two volumes hold state: `openmuse-data` (memory, goals, vault, audit log, threads) and `./workspace` (the agent's files). `config/config.toml` is mounted read-only. Set `OPENMUSE_SERVER_TOKEN` in `.env` so the token is stable across restarts, and open the printed URL from your phone using the host's address.
 
+Without cloning — the published image (linux/amd64 and linux/arm64, so a Raspberry Pi or an Apple-silicon Mac works):
+
+```bash
+docker run -d --name muse -p 8787:8787 --env-file .env \
+  -v openmuse-data:/data -v "$PWD/workspace:/workspace" \
+  ghcr.io/openmuseagent/openmuse:latest
+docker logs muse                          # the URL with the access token
+```
+
+`:latest` and `:X.Y.Z` follow releases; `:edge` follows `main`. Without a mounted `config.toml` the image starts from `config.example.toml`, so the model is set from `.env` (`OPENMUSE_LLM_*`) or in the app's Connections screen.
+
 Building by hand:
 
 ```bash

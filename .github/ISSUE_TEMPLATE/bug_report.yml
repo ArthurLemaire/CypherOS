@@ -1,0 +1,63 @@
+name: Bug report
+description: Something does not work the way the docs say it does.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. A bug report we can reproduce is usually fixed within days.
+        **Security issues** (a way past the Sentinel, a leaked secret, an SSRF) go to the address in
+        [SECURITY.md](../blob/main/SECURITY.md), not here.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what happened instead. Paste the exact error if there is one.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. openmuse serve
+        2. In the app, ask "…"
+        3. Approve the shell call
+        4. See …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: OpenMuse version
+      description: "`openmuse version`, or the commit hash if you run from source"
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where
+      options:
+        - Phone / web app (openmuse serve)
+        - Terminal (openmuse chat / run)
+        - Daemon (openmuse daemon / goals run)
+        - Docker
+        - Library / API
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model and provider
+      description: e.g. deepseek-chat via api.deepseek.com, tool mode native
+  - type: input
+    id: os
+    attributes:
+      label: OS and Python
+      description: e.g. macOS 15 / Python 3.12, Ubuntu 24.04 / Docker
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log
+      description: "`<data_dir>/logs/` or the server's terminal output. Remove anything private — API keys, addresses, message contents you would not post publicly."
+      render: text
