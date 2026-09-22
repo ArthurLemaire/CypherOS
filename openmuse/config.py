@@ -241,8 +241,10 @@ def _apply_env_overrides(raw: dict[str, Any]) -> None:
             if val := os.environ.get(env):
                 llm["api_key"] = val
                 break
-    if (val := os.environ.get("OPENMUSE_DATA_DIR")) and not raw.get("data_dir"):
+    if val := os.environ.get("OPENMUSE_DATA_DIR"):
         raw["data_dir"] = val
+    if val := os.environ.get("OPENMUSE_WORKSPACE"):
+        raw.setdefault("agent", {})["workspace"] = val
     if val := os.environ.get("OPENMUSE_SENTINEL_MODE"):
         raw.setdefault("sentinel", {})["mode"] = val
     if val := os.environ.get("OPENMUSE_LOG_LEVEL"):

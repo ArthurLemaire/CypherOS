@@ -1,0 +1,43 @@
+# OpenMuse in a container — the closest thing to Muse's "Secure VM".
+#
+#   cp .env.example .env && $EDITOR .env          # API keys
+#   docker compose run --rm muse                  # interactive chat
+#   docker compose run --rm muse run "plan my week"
+#   docker compose up -d daemon                   # advance goals in the background
+#
+# The agent only sees two mounts: /data (memory, goals, vault, audit log) and
+# /workspace (its files). ./config/config.toml is mounted read-only over the
+# bundled example — run `openmuse config init` (or copy config.example.toml)
+# on the host first.
+
+services:
+  muse:
+    build: .
+    image: openmuse:latest
+    env_file:
+      - path: .env
+        required: false
+    stdin_open: true
+    tty: true
+    volumes:
+      - openmuse-data:/data
+      - ./workspace:/workspace
+      - ./config/config.toml:/app/config/config.toml:ro
+    # Uncomment to make the container filesystem immutable apart from the mounts.
+    # read_only: true
+    # tmpfs: [/tmp]
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # command: chat            # default; override with `run "..."`, `goals list`, ...
+
+  daemon:
+    extends: muse
+    stdin_open: false
+    tty: false
+    command: ["daemon", "--interval", "3600"]
+    restart: unless-stopped
+
+volumes:
+  openmuse-data:
