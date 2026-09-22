@@ -207,8 +207,10 @@ class WebUI:
     def _announce_artifact(self, thread: str, rel: str, action: str) -> None:
         seen = self._artifacts.setdefault(thread, {})
         if rel in seen:
-            # the same file touched again in this run: refresh the card, don't stack another
-            self.patch(thread, seen[rel], action="update", updated_ts=now_iso())
+            # The same file touched again in this run: refresh the card, don't stack another.
+            # The action stays what it was — a page written in parts (write, then append)
+            # is still a new page, not an update of something the user had before.
+            self.patch(thread, seen[rel], updated_ts=now_iso())
             return
         ev = self.emit(
             {
