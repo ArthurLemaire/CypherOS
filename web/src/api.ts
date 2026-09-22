@@ -50,6 +50,23 @@ export function fileUrl(path: string, download = false): string {
   return `/api/files/${path.split("/").map(encodeURIComponent).join("/")}${q ? `?${q}` : ""}`;
 }
 
+/** A browser frame (JPEG) kept in memory on the server for the current run. */
+export function frameUrl(thread: string, frame: string): string {
+  const token = getToken();
+  const q = token ? `?token=${encodeURIComponent(token)}` : "";
+  return `/api/browser/${encodeURIComponent(thread)}/frames/${encodeURIComponent(frame)}.jpg${q}`;
+}
+
+export interface BrowserControl {
+  action: "click" | "type" | "key" | "scroll" | "navigate" | "look";
+  x?: number;
+  y?: number;
+  text?: string;
+  key?: string;
+  dy?: number;
+  url?: string;
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = { ...(init.headers as Record<string, string>) };
   const token = getToken();
@@ -143,6 +160,9 @@ export const api = {
     request<string[]>(`/api/vault/${encodeURIComponent(name)}`, { method: "PUT", body: JSON.stringify({ value }) }),
   vaultDelete: (name: string) => request<{ ok: boolean }>(`/api/vault/${encodeURIComponent(name)}`, { method: "DELETE" }),
   onboarded: (done = true) => request<{ onboarded: boolean }>("/api/onboarded", json({ done })),
+  // browser view
+  browserControl: (thread: string, body: BrowserControl) =>
+    request<{ url: string; title: string }>(`/api/browser/${encodeURIComponent(thread)}/control`, json(body)),
   // push
   push: () => request<PushInfo>("/api/push"),
   pushSubscribe: (subscription: Record<string, unknown>) => request<PushInfo>("/api/push/subscribe", json({ subscription })),

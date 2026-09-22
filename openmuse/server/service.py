@@ -31,6 +31,7 @@ from openmuse.server.connections import Connections
 from openmuse.server.events import MAIN_THREAD, EventBus, Timeline, new_id, now_iso
 from openmuse.server.push import PushService
 from openmuse.server.webui import WebUI, current_thread
+from openmuse.tools.browser import Browser
 
 IDEAS_PROMPT = """You are {name}, the user's personal agent. Based on what you know about them, propose {n} concrete, genuinely useful things you could do for them right now. Prefer tasks you can actually complete with your tools (research, comparisons, planning, drafting, tracking, reminders, organising files, advancing their goals).
 
@@ -214,6 +215,7 @@ class MuseService:
         self.push = PushService(settings.data_dir)
         self.ui.on_event = self._maybe_push
         self.app = OpenMuseApp(settings, ui=self.ui, llm=llm, session_id="app")
+        self.watch_browser()
         self.connections = Connections(self)
         self.token = self._load_token()
         self._scheduler: asyncio.Task[None] | None = None
@@ -376,6 +378,9 @@ class MuseService:
         ]
         for ev in running:
             timeline.update(ev["id"], status="error", output="interrupted by a restart")
+        for ev in timeline.events:
+            if ev.get("type") == "browser" and ev.get("status") == "live":
+                timeline.update(ev["id"], status="done")
         session_file = self.threads_dir / f"{thread_id}.session.json"
         agent = MuseAgent(
             settings=self.settings,
@@ -558,6 +563,39 @@ class MuseService:
         if ok:
             self.bus.publish({"kind": "approvals_reset"})
         return ok
+
+    # ------------------------------------------------------------------ browser view
+    @property
+    def browser(self) -> Browser | None:
+        tool = self.app.tools.get("browser")
+        return tool if isinstance(tool, Browser) else None
+
+    def watch_browser(self) -> None:
+        """Show the user what the browser tool sees. Called again when the tool is added."""
+        tool = self.browser
+        if tool is not None:
+            tool.on_frame = self.ui.on_browser_frame
+
+    async def browser_control(self, thread: str, body: dict[str, Any]) -> dict[str, Any]:
+        """The user takes over the agent's browser from the app (tap, type, open a URL)."""
+        tool = self.browser
+        if tool is None:
+            raise LookupError("the browser tool is not enabled")
+        action = str(body.get("action") or "")
+        if action not in ("click", "type", "key", "scroll", "navigate", "look"):
+            raise ValueError(f"unknown browser action '{action}'")
+        if action not in ("look", "navigate") and not tool.open:
+            raise LookupError("the browser is not open right now — open a URL first")
+        return await tool.user_action(
+            action,
+            thread,
+            x=body.get("x"),
+            y=body.get("y"),
+            text=body.get("text"),
+            key=body.get("key"),
+            dy=body.get("dy"),
+            url=body.get("url"),
+        )
 
     # ------------------------------------------------------------------ push
     def pending_count(self) -> int:

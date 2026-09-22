@@ -32,10 +32,13 @@ docker logs muse                          # the URL with the access token
 
 `:latest` and `:X.Y.Z` follow releases; `:edge` follows `main`. Without a mounted `config.toml` the image starts from `config.example.toml`, so the model is set from `.env` (`OPENMUSE_LLM_*`) or in the app's Connections screen.
 
+**With a browser.** The `-browser` tags (`:latest-browser`, `:X.Y.Z-browser`, `:edge-browser`; linux/amd64) bundle Chromium and Playwright and start with the browser tool on, so the agent can use websites and you can watch and take over from the phone (see [the app → browser view](app.md#what-is-on-the-screen)). It is about 400 MB larger. `OPENMUSE_BROWSER_ENABLED=1` is what switches the tool on in that image; the same variable works anywhere Playwright and Chromium are installed.
+
 Building by hand:
 
 ```bash
 docker build -t openmuse .
+docker build --build-arg WITH_BROWSER=1 -t openmuse:browser .   # with Chromium
 docker run -d --name muse -p 8787:8787 --env-file .env \
   -v openmuse-data:/data -v "$PWD/workspace:/workspace" \
   -v "$PWD/config/config.toml:/app/config/config.toml:ro" openmuse

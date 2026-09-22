@@ -303,6 +303,7 @@ class Connections:
                     workspace=s.agent.workspace,
                 )
             )
+            self.svc.watch_browser()
         elif not enabled:
             tools.remove("browser")
         self._publish()

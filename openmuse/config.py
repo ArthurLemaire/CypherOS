@@ -276,6 +276,10 @@ def _apply_env_overrides(raw: dict[str, Any]) -> None:
         server["port"] = int(val)
     if val := os.environ.get("OPENMUSE_SERVER_TOKEN"):
         server["token"] = val
+    # turns the browser tool on (the browser Docker image sets it); it never turns it off, so a
+    # mounted config.toml keeps the last word otherwise
+    if os.environ.get("OPENMUSE_BROWSER_ENABLED", "").strip().lower() in ("1", "true", "yes", "on"):
+        raw.setdefault("browser", {})["enabled"] = True
 
 
 APP_SETTINGS_FILE = "app-settings.json"

@@ -147,6 +147,18 @@ class OnboardedBody(BaseModel):
     done: bool = True
 
 
+class BrowserControlBody(BaseModel):
+    """The user drives the agent's browser. ``x``/``y`` are fractions of the frame."""
+
+    action: str
+    x: float | None = Field(default=None, ge=0, le=1)
+    y: float | None = Field(default=None, ge=0, le=1)
+    text: str | None = Field(default=None, max_length=4000)
+    key: str | None = Field(default=None, max_length=40)
+    dy: float | None = Field(default=None, ge=-5000, le=5000)
+    url: str | None = Field(default=None, max_length=2000)
+
+
 class PushSubscribeBody(BaseModel):
     # the PushSubscription.toJSON() of the browser: {endpoint, expirationTime, keys{p256dh, auth}}
     subscription: dict[str, Any]
@@ -517,6 +529,30 @@ def create_app(settings: Settings, service: MuseService | None = None) -> FastAP
     async def onboarded(body: OnboardedBody) -> dict[str, Any]:
         conn.set_onboarded(body.done)
         return {"onboarded": body.done}
+
+    # ------------------------------------------------------------------ browser view
+    @app.get("/api/browser/{thread_id}/frames/{frame_id}.jpg", dependencies=dep)
+    async def browser_frame(thread_id: str, frame_id: str) -> Response:
+        jpeg = svc.ui.browser_frame(thread_id, frame_id)
+        if jpeg is None:
+            raise HTTPException(404, "that frame is gone")
+        return Response(
+            content=jpeg,
+            media_type="image/jpeg",
+            headers={"Cache-Control": "private, max-age=86400, immutable"},
+        )
+
+    @app.post("/api/browser/{thread_id}/control", dependencies=dep)
+    async def browser_control(thread_id: str, body: BrowserControlBody) -> dict[str, Any]:
+        _thread_or_404(thread_id)
+        try:
+            return await svc.browser_control(thread_id, body.model_dump(exclude_none=True))
+        except LookupError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001 - playwright raises many error types
+            raise HTTPException(502, f"browser error: {str(exc).splitlines()[0][:200]}") from exc
 
     # ------------------------------------------------------------------ push
     @app.get("/api/push", dependencies=dep)

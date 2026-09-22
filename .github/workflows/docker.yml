@@ -63,3 +63,37 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # The same image with Chromium bundled and the browser tool on: :edge-browser,
+      # :X.Y.Z-browser, :latest-browser. amd64 only: Chromium and its libraries under QEMU
+      # take far too long to build; on an arm64 box, `docker build --build-arg WITH_BROWSER=1 .`
+      # does the same natively.
+      - name: Image tags (browser)
+        id: meta_browser
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/openmuse
+          flavor: |
+            latest=false
+            suffix=-browser
+          tags: |
+            type=edge,branch=main
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+          labels: |
+            org.opencontainers.image.title=OpenMuse (with browser)
+            org.opencontainers.image.description=OpenMuse with Chromium bundled for the browser tool.
+            org.opencontainers.image.licenses=MIT
+
+      - name: Build and push (browser)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          build-args: WITH_BROWSER=1
+          push: true
+          tags: ${{ steps.meta_browser.outputs.tags }}
+          labels: ${{ steps.meta_browser.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

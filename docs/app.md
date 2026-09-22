@@ -34,6 +34,8 @@ Five tabs — Chat, Feed, Ideas, Goals, Library — and a menu behind the avatar
 
 **Chat.** One main conversation plus side chats (the *Chats* button top right). Messages stream in as they are generated. Tool calls appear as chips: tap one for the arguments and output. Files the agent writes show up as artifact cards that open in the app. When Sentinel needs a decision an approval card appears; when the agent needs information a question card appears. The composer stays open while the agent works; anything you send is folded into the running turn before the next model call.
 
+*Browser view.* When the agent uses the browser tool, a browser card appears with what it is looking at: a picture of the page after every action, the page title, where it is, and what it just did ("Opened example.com", "Clicked 'Sign in'"). The card is LIVE while the run goes on and stays in the chat afterwards. Tap it for the full view; *Take over* puts you at the controls — tap the picture to click there, type into the focused field, press Enter, open a URL — and *Hand back* returns the page to the agent, which is told what you did and continues from there. That is how a login happens: the agent stops at the form and asks, you sign in, it carries on. Passwords you type go to the website, never through the model. Frames are kept in memory on the server for the current session only (the last dozen per chat); after a restart old cards show a placeholder. Needs the browser tool (`pip install "openmuse[browser]" && playwright install chromium`, or the `-browser` Docker image).
+
 **Feed.** What happened without you asking: one entry per background pass (its final word, and any file it made), plus every approval or question still waiting for you, in any chat. A *Next up* card says when the next pass runs and which goal is in line. Unseen entries are counted on the tab.
 
 **Ideas.** Five suggestions generated from your goals, memory and recent conversation. Tap one to send it as a message; *Refresh* regenerates.
@@ -119,6 +121,8 @@ Everything the app does goes through this API, so another front-end (a Telegram 
 | POST · DELETE | `/api/connections/mcp` `{name, command, args[], env{}, url, risk}` · `/api/connections/mcp/{name}` | connect a server now (502 if it does not come up) / disconnect and remove one added from the app |
 | GET · PUT · DELETE | `/api/vault` · `/api/vault/{name}` `{value}` | list secret names / store / delete. Values are never returned |
 | POST | `/api/onboarded` `{done}` | mark first-run setup as finished |
+| GET | `/api/browser/{thread}/frames/{id}.jpg` | a browser frame (JPEG, in memory for the current session) |
+| POST | `/api/browser/{thread}/control` `{action: click(x,y as 0–1 fractions) · type(text) · key(key) · scroll(dy) · navigate(url) · look}` | you drive the agent's browser; `409` when the browser is not open (open a URL first) |
 | GET | `/api/push` | `{available, public_key, subscriptions, devices[]}` — the VAPID public key to subscribe with |
 | POST | `/api/push/subscribe` `{subscription}`, `/api/push/unsubscribe` `{endpoint}` | register / drop this device's `PushSubscription` |
 | POST | `/api/push/test` | send a test notification to every subscribed device |
@@ -130,8 +134,8 @@ On connect the server sends `{"kind": "hello", "state": …}` (the same payload 
 
 | Server → client | Meaning |
 |---|---|
-| `event` | a new timeline event (`user`, `assistant`, `tool`, `approval`, `question`, `artifact`, `notice`). An `approval` carries `summary`, `purpose` (what you asked for), `target`, `grant_key`, `grant_options`, `risk`, `warnings`, `args`. Events produced during a background pass carry `source: "background"` and `about` (the pass label) |
-| `update` | fields changed on an existing event (a tool finished, an approval was decided) |
+| `event` | a new timeline event (`user`, `assistant`, `tool`, `approval`, `question`, `artifact`, `browser`, `notice`). An `approval` carries `summary`, `purpose` (what you asked for), `target`, `grant_key`, `grant_options`, `risk`, `warnings`, `args`. A `browser` card carries `url`, `title`, `action`, `frame` (id of the latest picture), `frames`, `status` (`live` / `done`), `by_user`. Events produced during a background pass carry `source: "background"` and `about` (the pass label) |
+| `update` | fields changed on an existing event (a tool finished, an approval was decided, a browser card got a new frame) |
 | `stream_start` / `delta` / `stream_end` | the assistant reply being generated |
 | `status` | idle / working / waiting, with a short detail line |
 | `thread`, `thread_cleared`, `thread_deleted` | thread list changes |

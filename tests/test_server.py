@@ -16,6 +16,7 @@ from openmuse.llm import MockLLM
 from openmuse.schema import Function, LLMResponse, ToolCall
 from openmuse.server import create_app
 from openmuse.server.service import MuseService, _parse_ideas
+from openmuse.server.webui import current_thread
 
 
 def tc(name: str, **args: Any) -> ToolCall:
@@ -851,3 +852,143 @@ def test_cards_and_background_results_reach_the_phone(server, monkeypatch):
     assert r.json()["subscriptions"] == 0
     # nothing subscribed: nothing to send
     assert client.post("/api/push/test").json()["ok"] is False
+
+
+# ----------------------------------------------------------------------------- browser view
+def test_browser_frames_make_one_live_card_per_run(server):
+    from openmuse.tools.browser import BrowserFrame
+
+    client, service, _ = server
+    ui = service.ui
+    ui.begin_run("main")
+    token = current_thread.set("main")
+    try:
+        ui.on_browser_frame(
+            BrowserFrame("https://a.example/", "A", "Opened a.example", b"\xff\xd8one")
+        )
+        ui.on_browser_frame(
+            BrowserFrame("https://a.example/x", "A/x", "Clicked 'x'", b"\xff\xd8two")
+        )
+    finally:
+        current_thread.reset(token)
+    cards = events_of(client, kind="browser")
+    assert len(cards) == 1
+    card = cards[0]
+    assert card["status"] == "live" and card["frames"] == 2 and card["action"] == "Clicked 'x'"
+    assert card["url"] == "https://a.example/x" and card["title"] == "A/x"
+    # the latest frame is served as a JPEG; older ones stay for a while, unknown ones 404
+    r = client.get(f"/api/browser/main/frames/{card['frame']}.jpg")
+    assert r.status_code == 200 and r.headers["content-type"] == "image/jpeg"
+    assert r.content == b"\xff\xd8two"
+    assert client.get("/api/browser/main/frames/f_nope.jpg").status_code == 404
+
+    ui.end_run("main")
+    assert events_of(client, kind="browser")[0]["status"] == "done"
+
+    # the user driving between runs refreshes the last card instead of adding one
+    ui.on_browser_frame(
+        BrowserFrame(
+            "https://a.example/login",
+            "Login",
+            "You tapped the page",
+            b"\xff\xd8three",
+            True,
+            "main",
+        )
+    )
+    cards = events_of(client, kind="browser")
+    assert len(cards) == 1 and cards[0]["by_user"] and cards[0]["frames"] == 3
+    assert cards[0]["status"] == "done"
+
+    # a new run gets a new card
+    ui.begin_run("main")
+    token = current_thread.set("main")
+    try:
+        ui.on_browser_frame(
+            BrowserFrame("https://b.example/", "B", "Opened b.example", b"\xff\xd8four")
+        )
+    finally:
+        current_thread.reset(token)
+    ui.end_run("main")
+    assert len(events_of(client, kind="browser")) == 2
+
+    # taking over needs the browser tool
+    r = client.post("/api/browser/main/control", json={"action": "click", "x": 0.5, "y": 0.5})
+    assert r.status_code == 409
+    assert client.post("/api/browser/main/control", json={"action": "fly"}).status_code in (
+        400,
+        409,
+    )
+    assert (
+        client.post("/api/browser/main/control", json={"action": "click", "x": 2}).status_code
+        == 422
+    )
+
+
+def _chromium_available() -> bool:
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        return False
+    try:
+        with sync_playwright() as pw:
+            pw.chromium.launch(headless=True).close()
+    except Exception:  # noqa: BLE001
+        return False
+    return True
+
+
+@pytest.mark.skipif(not _chromium_available(), reason="playwright + chromium not installed")
+async def test_browser_tool_reports_frames_and_user_takeover(tmp_path):
+    import http.server
+    import threading
+
+    from openmuse.tools.browser import Browser, BrowserFrame
+
+    html = (
+        b"<title>Login</title><h1>Sign in</h1><input id=u placeholder=User>"
+        b"<button onclick=\"document.querySelector('h1').textContent='Welcome'\">Go</button>"
+    )
+
+    class Page(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            self.wfile.write(html)
+
+        def log_message(self, *_):  # noqa: ANN002
+            pass
+
+    httpd = http.server.HTTPServer(("127.0.0.1", 0), Page)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    page = f"http://127.0.0.1:{httpd.server_port}/"
+
+    frames: list[BrowserFrame] = []
+    tool = Browser(workspace=tmp_path, on_frame=frames.append)
+    try:
+        result = await tool.execute(action="navigate", url=page)
+        assert not result.error and "Sign in" in result.output and "[0]" in result.output
+        assert (
+            frames and frames[-1].jpeg[:2] == b"\xff\xd8" and frames[-1].action.startswith("Opened")
+        )
+        assert frames[-1].title == "Login" and not frames[-1].by_user
+
+        # the agent clicks: the caption names the button, the page changed
+        result = await tool.execute(action="click", index=1)
+        assert "Welcome" in result.output and frames[-1].action == "Clicked 'Go'"
+
+        # the user takes over, then the model is told what happened
+        state = await tool.user_action("navigate", "main", url=page)
+        assert state["title"] == "Login" and frames[-1].by_user and frames[-1].thread == "main"
+        await tool.user_action("click", "main", x=0.5, y=0.5)
+        await tool.user_action("type", "main", text="alice")
+        result = await tool.execute(action="extract")
+        assert "the user took over the browser" in result.output
+        assert "typed 5 characters" in result.output and "clicked at" in result.output
+        # reported once
+        result = await tool.execute(action="extract")
+        assert "took over" not in result.output
+    finally:
+        await tool.cleanup()
+        httpd.shutdown()

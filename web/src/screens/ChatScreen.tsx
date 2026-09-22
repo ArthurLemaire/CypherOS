@@ -2,7 +2,8 @@ import { ArrowUp, ChevronDown, MessageSquarePlus, Moon, MoreHorizontal, Plus, Tr
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { api } from "../api";
 import { Avatar } from "../components/Avatar";
-import { ApprovalCard, ArtifactCard, Notice, QuestionCard, ToolChip } from "../components/Cards";
+import { BrowserViewer } from "../components/BrowserViewer";
+import { ApprovalCard, ArtifactCard, BrowserCard, Notice, QuestionCard, ToolChip } from "../components/Cards";
 import { Markdown } from "../components/Markdown";
 import { Sheet } from "../components/Sheet";
 import { useStore } from "../store";
@@ -21,6 +22,8 @@ export function ChatScreen() {
   const thread = threads.find((t) => t.id === activeThread);
   const [activityOpen, setActivityOpen] = useState(false);
   const [threadsOpen, setThreadsOpen] = useState(false);
+  // the browser card being watched (or driven) full-screen
+  const [browserView, setBrowserView] = useState<string | null>(null);
   const name = profile?.name ?? "Muse";
 
   const listRef = useRef<HTMLDivElement>(null);
@@ -119,6 +122,7 @@ export function ChatScreen() {
               decide(ev.id, approved, scope).catch((e: Error) => toast(e.message || "Could not send decision"))
             }
             onOpenFile={openFile}
+            onOpenBrowser={setBrowserView}
           />
         ))}
         {stream && stream.text && (
@@ -146,6 +150,7 @@ export function ChatScreen() {
       />
 
       <MuseSheet open={activityOpen} onClose={() => setActivityOpen(false)} />
+      {browserView && <BrowserViewer thread={activeThread} eventId={browserView} onClose={() => setBrowserView(null)} />}
       <ThreadsSheet
         open={threadsOpen}
         onClose={() => setThreadsOpen(false)}
@@ -202,12 +207,14 @@ function EventView({
   name,
   onDecide,
   onOpenFile,
+  onOpenBrowser,
 }: {
   event: TimelineEvent;
   prev?: TimelineEvent;
   name: string;
   onDecide: (approved: boolean, scope: string) => void;
   onOpenFile: (path: string) => void;
+  onOpenBrowser: (id: string) => void;
 }) {
   switch (event.type) {
     case "user":
@@ -225,6 +232,8 @@ function EventView({
       return <Notice event={event} />;
     case "artifact":
       return <ArtifactCard event={event} onOpen={onOpenFile} />;
+    case "browser":
+      return <BrowserCard event={event} onOpen={onOpenBrowser} />;
     default:
       return null;
   }
