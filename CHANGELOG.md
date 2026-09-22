@@ -43,6 +43,7 @@ All notable changes to OpenMuse. The format follows [Keep a Changelog](https://k
 - Artifacts appear when the workspace lives inside the data directory (`~/.openmuse/workspace`).
 - A page written in parts (write, then append) keeps one card and stays "new"; a streamed reply that turned out to be a tool call no longer leaves an empty bubble; a one-line reply delivered through `terminate` right after a text reply is shown again instead of being taken for a repeat.
 - A macOS-only test race in the server suite.
+- Ideas: one malformed item in the model's list (a missing colon, a real newline in a string, a reply cut off at `max_tokens`) no longer throws the whole list away and shows the starter ideas instead.
 
 ## [0.1.0] — 2026-09-22
 

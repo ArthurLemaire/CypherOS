@@ -930,6 +930,12 @@ def test_ideas_fallback_and_parsing(server):
     assert data["source"] == "model" and data["ideas"][0]["title"] == "Book the dentist"
     assert _parse_ideas("no json here") == []
     assert _parse_ideas('<think>x</think>[{"title":"a","prompt":"b"}]')[0]["title"] == "a"
+    # what models actually send: a code fence, a real newline inside a string, a trailing
+    # comma, and a reply cut off at max_tokens — the items that parse are kept
+    fenced = '```json\n[{"title":"a","detail":"line\none","prompt":"b"},]\n```'
+    assert [i["title"] for i in _parse_ideas(fenced)] == ["a"]
+    cut = '[{"title":"a","prompt":"b"}, {"title":"c","prompt":"d"}, {"title":"e","pro'
+    assert [i["title"] for i in _parse_ideas(cut)] == ["a", "c"]
 
 
 def test_timeline_survives_restart(server, settings: Settings):
