@@ -1,6 +1,7 @@
 import { ArrowRight, CornerDownLeft, Globe, Hand, Loader2, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, frameUrl } from "../api";
+import { useT } from "../i18n";
 import { useStore } from "../store";
 import type { BrowserEvent } from "../types";
 import { cx } from "../util";
@@ -14,6 +15,7 @@ import { Sheet } from "./Sheet";
  */
 export function BrowserViewer({ thread, eventId, onClose }: { thread: string; eventId: string; onClose: () => void }) {
   const { state, toast } = useStore();
+  const t = useT();
   const event = (state.events[thread] ?? []).find((e) => e.id === eventId) as BrowserEvent | undefined;
   const [control, setControl] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -62,7 +64,7 @@ export function BrowserViewer({ thread, eventId, onClose }: { thread: string; ev
           <span className="truncate">{event.title || host}</span>
           {live && (
             <span className="ml-1 flex items-center gap-1 rounded-full bg-rose-500/12 px-2 py-0.5 text-[10.5px] font-semibold text-rose-500">
-              <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-pulse" /> LIVE
+              <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-pulse" /> {t("LIVE")}
             </span>
           )}
         </div>
@@ -81,19 +83,19 @@ export function BrowserViewer({ thread, eventId, onClose }: { thread: string; ev
               <input
                 value={text}
                 onChange={(e) => setText(e.target.value)}
-                placeholder="Type into the focused field…"
+                placeholder={t("Type into the focused field…")}
                 className="flex-1 rounded-2xl bg-surface-2 px-3.5 py-2.5 text-[14px] outline-none"
                 autoComplete="off"
                 autoCapitalize="off"
               />
-              <button type="submit" disabled={!text || !!busy} aria-label="Type" className="rounded-full bg-accent p-2.5 text-white disabled:opacity-40">
+              <button type="submit" disabled={!text || !!busy} aria-label={t("Type")} className="rounded-full bg-accent p-2.5 text-white disabled:opacity-40">
                 {busy === "type" ? <Loader2 size={16} className="animate-spin" /> : <ArrowRight size={16} />}
               </button>
               <button
                 type="button"
                 onClick={() => void act({ action: "key", key: "Enter" })}
                 disabled={!!busy}
-                aria-label="Press Enter"
+                aria-label={t("Press Enter")}
                 className="rounded-full bg-surface-2 p-2.5 text-fg disabled:opacity-40"
               >
                 <CornerDownLeft size={16} />
@@ -110,23 +112,23 @@ export function BrowserViewer({ thread, eventId, onClose }: { thread: string; ev
               <input
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                placeholder="Open a URL…"
+                placeholder={t("Open a URL…")}
                 inputMode="url"
                 autoCapitalize="off"
                 className="flex-1 rounded-2xl bg-surface-2 px-3.5 py-2 text-[13px] outline-none"
               />
               <button type="submit" disabled={!url || !!busy} className="rounded-2xl bg-surface-2 px-3 py-2 text-[13px] font-medium disabled:opacity-40">
-                Go
+                {t("Go")}
               </button>
             </form>
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[12px] text-muted">Tap the page to click. If the browser was closed, open a URL first.</span>
+              <span className="text-[12px] text-muted">{t("Tap the page to click. If the browser was closed, open a URL first.")}</span>
               <button
                 type="button"
                 onClick={() => setControl(false)}
                 className="shrink-0 whitespace-nowrap rounded-full bg-accent/12 px-3 py-1.5 text-[13px] font-medium text-accent"
               >
-                Hand back
+                {t("Hand back")}
               </button>
             </div>
           </div>
@@ -140,7 +142,7 @@ export function BrowserViewer({ thread, eventId, onClose }: { thread: string; ev
                 type="button"
                 onClick={() => void act({ action: "look" })}
                 disabled={!!busy}
-                aria-label="Refresh"
+                aria-label={t("Refresh")}
                 className="rounded-full bg-surface-2 p-2 text-muted disabled:opacity-40"
               >
                 {busy === "look" ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
@@ -150,7 +152,7 @@ export function BrowserViewer({ thread, eventId, onClose }: { thread: string; ev
                 onClick={() => setControl(true)}
                 className="flex items-center gap-1.5 rounded-full bg-accent px-3.5 py-2 text-[13px] font-semibold text-white"
               >
-                <Hand size={14} /> Take over
+                <Hand size={14} /> {t("Take over")}
               </button>
             </div>
           </div>
@@ -161,9 +163,9 @@ export function BrowserViewer({ thread, eventId, onClose }: { thread: string; ev
         {gone ? (
           <div className="flex aspect-[16/10] flex-col items-center justify-center gap-1 text-muted">
             <Globe size={24} />
-            <span className="text-[12.5px]">This frame is no longer available.</span>
+            <span className="text-[12.5px]">{t("This frame is no longer available.")}</span>
             <button type="button" onClick={() => void act({ action: "look" })} className="text-accent text-[13px] font-medium">
-              Look again
+              {t("Look again")}
             </button>
           </div>
         ) : (
@@ -186,11 +188,11 @@ export function BrowserViewer({ thread, eventId, onClose }: { thread: string; ev
       </div>
       <div className="mt-2 flex items-center justify-between text-[12px] text-muted">
         <span className="truncate">{event.url}</span>
-        <span className="shrink-0 ml-2">{event.frames} frame{event.frames === 1 ? "" : "s"}</span>
+        <span className="shrink-0 ml-2">{event.frames === 1 ? t("1 frame") : t("{n} frames", { n: event.frames })}</span>
       </div>
       {control && (
         <div className="mt-3 rounded-2xl bg-accent/8 px-3.5 py-2.5 text-[13px] leading-snug">
-          You are driving. Sign in or fix what needs a person, then <span className="font-medium">Hand back</span> — the agent continues from the page as you left it. Passwords you type here go to the website, never to the model.
+          {t("You are driving. Sign in or fix what needs a person, then")} <span className="font-medium">{t("Hand back")}</span> {t("— the agent continues from the page as you left it. Passwords you type here go to the website, never to the model.")}
         </div>
       )}
     </Sheet>

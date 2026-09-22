@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect } from "react";
+import { useT } from "../i18n";
 
 /** Bottom sheet on phones, centered dialog on wide screens. */
 export function Sheet({
@@ -16,6 +17,7 @@ export function Sheet({
   children: ReactNode;
   footer?: ReactNode;
 }) {
+  const t = useT();
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -38,7 +40,7 @@ export function Sheet({
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close"
+            aria-label={t("Close")}
             className="p-2 -mr-2 rounded-full text-muted hover:bg-surface-2"
           >
             <X size={20} />

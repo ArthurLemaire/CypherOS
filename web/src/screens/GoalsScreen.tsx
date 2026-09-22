@@ -26,6 +26,7 @@ import {
 import { useEffect, useState, type ReactNode } from "react";
 import { api } from "../api";
 import { Sheet } from "../components/Sheet";
+import { getLocale, intlLocale, t, useT } from "../i18n";
 import { useStore } from "../store";
 import type { Goal, GoalCategory, GoalStep } from "../types";
 import { cx, relativeTime, timeShort } from "../util";
@@ -91,39 +92,50 @@ function joinCadence(cadence: string, anchor: string, time: string): string {
   return [cadence, anchor, time].filter(Boolean).join(" ");
 }
 
+/** "mon" → "Monday" / "星期一", in the UI language. */
+function weekdayName(short: string): string {
+  const idx = WEEKDAYS.indexOf(short);
+  if (idx < 0) return short;
+  const d = new Date(2024, 0, 1 + idx); // 2024-01-01 was a Monday
+  return d.toLocaleDateString(intlLocale(), { weekday: "long" });
+}
+
 export function describeCadence(spec: string): string {
   const { cadence, anchor, time } = splitCadence(spec);
-  const day = anchor && WEEKDAYS.includes(anchor) ? anchor[0].toUpperCase() + anchor.slice(1) : anchor;
   switch (cadence) {
     case "daily":
-      return `Daily at ${time}`;
+      return t("Daily at {time}", { time });
     case "weekdays":
-      return `Weekdays at ${time}`;
+      return t("Weekdays at {time}", { time });
     case "weekly":
-      return `${day ? `${day}s` : "Weekly"} at ${time}`;
+      return anchor && WEEKDAYS.includes(anchor)
+        ? t("{day}s at {time}", { day: weekdayName(anchor), time })
+        : t("Weekly at {time}", { time });
     case "monthly":
-      return `Monthly on the ${anchor || "1"}${ordinal(Number(anchor || 1))} at ${time}`;
+      return t("Monthly on the {day} at {time}", { day: ordinal(Number(anchor || 1)), time });
     default:
       return "";
   }
 }
 
+/** "1st", "22nd" — or the bare number where the language has no ordinal suffixes. */
 function ordinal(n: number): string {
+  if (getLocale() !== "en") return String(n);
   const s = ["th", "st", "nd", "rd"];
   const v = n % 100;
-  return s[(v - 20) % 10] ?? s[v] ?? s[0];
+  return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`;
 }
 
 export function dueLabel(due: string, overdue: boolean): string {
   if (!due) return "";
   const d = new Date(`${due}T00:00:00`);
-  const label = d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: d.getFullYear() === new Date().getFullYear() ? undefined : "numeric" });
-  if (overdue) return `Was due ${label}`;
+  const label = d.toLocaleDateString(intlLocale(), { month: "short", day: "numeric", year: d.getFullYear() === new Date().getFullYear() ? undefined : "numeric" });
+  if (overdue) return t("Was due {date}", { date: label });
   const days = Math.ceil((d.getTime() - Date.now()) / 86_400_000);
-  if (days <= 0) return "Due today";
-  if (days === 1) return "Due tomorrow";
-  if (days <= 14) return `Due in ${days} days`;
-  return `By ${label}`;
+  if (days <= 0) return t("Due today");
+  if (days === 1) return t("Due tomorrow");
+  if (days <= 14) return t("Due in {n} days", { n: days });
+  return t("By {date}", { date: label });
 }
 
 export function GoalsScreen() {
@@ -132,6 +144,7 @@ export function GoalsScreen() {
   const [creating, setCreating] = useState(false);
   const [filter, setFilter] = useState<GoalCategory | "all">("all");
   const name = state.profile?.name ?? "Muse";
+  const t = useT();
 
   useEffect(() => {
     void refreshGoals();
@@ -148,7 +161,7 @@ export function GoalsScreen() {
   const advance = async (g: Goal) => {
     try {
       await api.advanceGoal(g.id);
-      toast(`${name} is working on “${g.title}” in the main chat`);
+      toast(t("{name} is working on “{title}” in the main chat", { name, title: g.title }));
       openThread("main");
     } catch (e) {
       toast((e as Error).message);
@@ -159,14 +172,14 @@ export function GoalsScreen() {
     <div className="flex h-full flex-col">
       <header className="safe-top shrink-0 px-5 pt-4 pb-2 flex items-center gap-3">
         <div className="flex-1">
-          <h1 className="text-[24px] font-bold tracking-tight">Goals</h1>
-          <p className="text-[13px] text-muted">Long-running things {name} is tracking and moving forward for you.</p>
+          <h1 className="text-[24px] font-bold tracking-tight">{t("Goals")}</h1>
+          <p className="text-[13px] text-muted">{t("Long-running things {name} is tracking and moving forward for you.", { name })}</p>
         </div>
         <button
           type="button"
           onClick={() => setCreating(true)}
           className="h-10 w-10 rounded-full bg-accent text-accent-fg flex items-center justify-center active:scale-95 transition"
-          aria-label="New goal"
+          aria-label={t("New goal")}
         >
           <Plus size={22} />
         </button>
@@ -175,11 +188,11 @@ export function GoalsScreen() {
       {used.size > 0 && (
         <div className="shrink-0 flex gap-1.5 overflow-x-auto px-4 pb-2.5 no-scrollbar">
           <Chip active={filter === "all"} onClick={() => setFilter("all")}>
-            All
+            {t("All")}
           </Chip>
           {CATEGORIES.filter((c) => used.has(c.id)).map((c) => (
             <Chip key={c.id} active={filter === c.id} onClick={() => setFilter(c.id)}>
-              {c.icon({ size: 13 })} {c.label}
+              {c.icon({ size: 13 })} {t(c.label)}
             </Chip>
           ))}
         </div>
@@ -189,26 +202,25 @@ export function GoalsScreen() {
         {state.goals.length === 0 && (
           <div className="rounded-3xl border border-dashed border-border p-6 text-center">
             <Sparkles className="mx-auto text-accent" />
-            <div className="mt-2 font-semibold">No goals yet</div>
+            <div className="mt-2 font-semibold">{t("No goals yet")}</div>
             <p className="mt-1 text-[13.5px] text-muted">
-              Tell {name} about something you want to achieve — health, money, work, learning, the people in your life — and it will
-              break it into steps, keep track, remind you, and keep working on it in the background.
+              {t("Tell {name} about something you want to achieve — health, money, work, learning, the people in your life — and it will break it into steps, keep track, remind you, and keep working on it in the background.", { name })}
             </p>
             <button
               type="button"
               onClick={() => {
-                void send("main", "I want to set up a long-term goal. Ask me about it, then create it with concrete steps using the goals tool.");
+                void send("main", t("I want to set up a long-term goal. Ask me about it, then create it with concrete steps using the goals tool."));
                 openThread("main");
               }}
               className="mt-3 rounded-full bg-accent text-accent-fg px-4 py-2 text-[14px] font-medium"
             >
-              Plan a goal with {name}
+              {t("Plan a goal with {name}", { name })}
             </button>
           </div>
         )}
         {proposals.length > 0 && (
           <section>
-            <div className="px-1 mb-2 text-[12px] font-semibold uppercase tracking-wide text-muted">{name} suggests</div>
+            <div className="px-1 mb-2 text-[12px] font-semibold uppercase tracking-wide text-muted">{t("{name} suggests", { name })}</div>
             <div className="space-y-2.5">
               {proposals.map((g) => (
                 <ProposalCard key={g.id} goal={g} onChanged={refreshGoals} onOpen={() => setSelected(g.id)} />
@@ -216,9 +228,9 @@ export function GoalsScreen() {
             </div>
           </section>
         )}
-        <GoalGroup title="Active" goals={active} onOpen={setSelected} onAdvance={advance} />
-        <GoalGroup title="Paused" goals={paused} onOpen={setSelected} />
-        <GoalGroup title="Finished" goals={finished} onOpen={setSelected} />
+        <GoalGroup title={t("Active")} goals={active} onOpen={setSelected} onAdvance={advance} />
+        <GoalGroup title={t("Paused")} goals={paused} onOpen={setSelected} />
+        <GoalGroup title={t("Finished")} goals={finished} onOpen={setSelected} />
       </div>
 
       <GoalDetail goal={goal} onClose={() => setSelected(null)} onAdvance={advance} onChanged={refreshGoals} />
@@ -254,7 +266,7 @@ function CategoryBadge({ id, size = "sm" }: { id: GoalCategory; size?: "sm" | "m
   if (!c) return null;
   return (
     <span className={cx("inline-flex items-center gap-1 rounded-full font-medium", c.tone, size === "sm" ? "px-2 py-0.5 text-[11.5px]" : "px-2.5 py-1 text-[12.5px]")}>
-      {c.icon({ size: size === "sm" ? 11 : 13 })} {c.label}
+      {c.icon({ size: size === "sm" ? 11 : 13 })} {t(c.label)}
     </span>
   );
 }
@@ -284,6 +296,7 @@ function GoalGroup({
 }
 
 function GoalCard({ goal, onOpen, onAdvance }: { goal: Goal; onOpen: () => void; onAdvance?: () => void }) {
+  const t = useT();
   const pct = goal.progress.total ? Math.round((goal.progress.done / goal.progress.total) * 100) : 0;
   const due = dueLabel(goal.due, goal.overdue);
   return (
@@ -293,9 +306,9 @@ function GoalCard({ goal, onOpen, onAdvance }: { goal: Goal; onOpen: () => void;
           <div className="flex-1 min-w-0">
             <div className="font-semibold text-[15.5px] leading-snug">{goal.title}</div>
             {goal.next_step && goal.status === "active" && (
-              <div className="mt-1 text-[13px] text-muted truncate">Next: {goal.next_step}</div>
+              <div className="mt-1 text-[13px] text-muted truncate">{t("Next: {step}", { step: goal.next_step })}</div>
             )}
-            {goal.status !== "active" && <div className="mt-1 text-[13px] text-muted capitalize">{goal.status}</div>}
+            {goal.status !== "active" && <div className="mt-1 text-[13px] text-muted capitalize">{t(goal.status)}</div>}
           </div>
           <div className="text-[13px] text-muted whitespace-nowrap">
             {goal.progress.done}/{goal.progress.total}
@@ -316,13 +329,13 @@ function GoalCard({ goal, onOpen, onAdvance }: { goal: Goal; onOpen: () => void;
               <Bell size={11} /> {describeCadence(goal.check_in)}
             </span>
           )}
-          <span className="ml-auto">Updated {relativeTime(goal.updated_at)}</span>
+          <span className="ml-auto">{t("Updated {when}", { when: relativeTime(goal.updated_at) })}</span>
         </div>
       </button>
       {onAdvance && goal.next_step && (
         <div className="border-t border-border/70 px-3 py-2 flex justify-end">
           <button type="button" onClick={onAdvance} className="flex items-center gap-1.5 rounded-full bg-accent/12 text-accent px-3 py-1.5 text-[13px] font-medium">
-            <Play size={14} /> Work on it now
+            <Play size={14} /> {t("Work on it now")}
           </button>
         </div>
       )}
@@ -335,6 +348,7 @@ function ProposalCard({ goal, onChanged, onOpen }: { goal: Goal; onChanged: () =
   const { toast, state } = useStore();
   const [busy, setBusy] = useState(false);
   const name = state.profile?.name ?? "Muse";
+  const t = useT();
   const p = goal.proposal;
   if (!p) return null;
   const act = async (accept: boolean) => {
@@ -342,7 +356,7 @@ function ProposalCard({ goal, onChanged, onOpen }: { goal: Goal; onChanged: () =
     try {
       if (accept) await api.acceptProposal(goal.id);
       else await api.dismissProposal(goal.id);
-      toast(accept ? "Plan updated" : "Kept your plan");
+      toast(accept ? t("Plan updated") : t("Kept your plan"));
       onChanged();
     } catch (e) {
       toast((e as Error).message);
@@ -355,12 +369,12 @@ function ProposalCard({ goal, onChanged, onOpen }: { goal: Goal; onChanged: () =
     <div className="rounded-3xl border border-accent/30 bg-accent/5 px-4 py-3.5">
       <button type="button" onClick={onOpen} className="w-full text-left">
         <div className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-accent">
-          <Sparkles size={13} /> Adjust the plan for “{goal.title}”?
+          <Sparkles size={13} /> {t("Adjust the plan for “{title}”?", { title: goal.title })}
         </div>
         <p className="mt-1.5 text-[14px] leading-snug">{p.reason}</p>
         <div className="mt-2 text-[12px] text-muted">
-          {kept > 0 && <span>Keeps the {kept} step{kept === 1 ? "" : "s"} already done. </span>}
-          New remaining steps:
+          {kept > 0 && <span>{kept === 1 ? t("Keeps the 1 step already done.") : t("Keeps the {n} steps already done.", { n: kept })} </span>}
+          {t("New remaining steps:")}
         </div>
         <ol className="mt-1 space-y-0.5 text-[13.5px] list-decimal pl-5">
           {p.steps.map((s, i) => (
@@ -370,10 +384,10 @@ function ProposalCard({ goal, onChanged, onOpen }: { goal: Goal; onChanged: () =
       </button>
       <div className="mt-3 flex gap-2">
         <button type="button" disabled={busy} onClick={() => void act(false)} className="flex-1 rounded-2xl border border-border py-2 text-[13.5px] font-medium disabled:opacity-50">
-          Keep my plan
+          {t("Keep my plan")}
         </button>
         <button type="button" disabled={busy} onClick={() => void act(true)} className="flex-1 rounded-2xl bg-accent text-accent-fg py-2 text-[13.5px] font-medium disabled:opacity-50">
-          Use {name}'s plan
+          {t("Use {name}'s plan", { name })}
         </button>
       </div>
     </div>
@@ -381,6 +395,7 @@ function ProposalCard({ goal, onChanged, onOpen }: { goal: Goal; onChanged: () =
 }
 
 function CategoryPicker({ value, onChange }: { value: GoalCategory; onChange: (v: GoalCategory) => void }) {
+  const t = useT();
   return (
     <div className="flex flex-wrap gap-1.5">
       {CATEGORIES.map((c) => (
@@ -393,7 +408,7 @@ function CategoryPicker({ value, onChange }: { value: GoalCategory; onChange: (v
             value === c.id ? cx(c.tone, "border-transparent ring-2 ring-accent/40") : "border-border text-muted",
           )}
         >
-          {c.icon({ size: 12 })} {c.label}
+          {c.icon({ size: 12 })} {t(c.label)}
         </button>
       ))}
     </div>
@@ -401,8 +416,9 @@ function CategoryPicker({ value, onChange }: { value: GoalCategory; onChange: (v
 }
 
 function CadencePicker({ value, onChange }: { value: string; onChange: (spec: string) => void }) {
+  const t = useT();
   const { cadence, anchor, time } = splitCadence(value);
-  const set = (c: string, a: string, t: string) => onChange(joinCadence(c, a, t));
+  const set = (c: string, a: string, at: string) => onChange(joinCadence(c, a, at));
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-1.5">
@@ -416,7 +432,7 @@ function CadencePicker({ value, onChange }: { value: string; onChange: (spec: st
               cadence === c.id ? "bg-accent text-accent-fg border-transparent" : "border-border text-muted",
             )}
           >
-            {c.label}
+            {t(c.label)}
           </button>
         ))}
       </div>
@@ -426,7 +442,7 @@ function CadencePicker({ value, onChange }: { value: string; onChange: (spec: st
             <select value={anchor || "mon"} onChange={(e) => set(cadence, e.target.value, time)} className="rounded-xl bg-surface-2 px-2.5 py-1.5 outline-none">
               {WEEKDAYS.map((d) => (
                 <option key={d} value={d}>
-                  {d[0].toUpperCase() + d.slice(1)}
+                  {weekdayName(d)}
                 </option>
               ))}
             </select>
@@ -435,13 +451,12 @@ function CadencePicker({ value, onChange }: { value: string; onChange: (spec: st
             <select value={anchor || "1"} onChange={(e) => set(cadence, e.target.value, time)} className="rounded-xl bg-surface-2 px-2.5 py-1.5 outline-none">
               {Array.from({ length: 28 }, (_, i) => String(i + 1)).map((d) => (
                 <option key={d} value={d}>
-                  {d}
                   {ordinal(Number(d))}
                 </option>
               ))}
             </select>
           )}
-          <span className="text-muted">at</span>
+          <span className="text-muted">{t("at")}</span>
           <input type="time" value={time} onChange={(e) => set(cadence, anchor, e.target.value || "09:00")} className="rounded-xl bg-surface-2 px-2.5 py-1.5 outline-none" />
         </div>
       )}
@@ -464,6 +479,7 @@ function GoalDetail({
   const [newStep, setNewStep] = useState("");
   const [editing, setEditing] = useState(false);
   const name = state.profile?.name ?? "Muse";
+  const t = useT();
 
   const patch = async (body: Record<string, unknown>) => {
     if (!goal) return;
@@ -490,7 +506,7 @@ function GoalDetail({
     if (!goal) return;
     try {
       await api.checkInGoal(goal.id);
-      toast(`${name} will check in with you in the main chat`);
+      toast(t("{name} will check in with you in the main chat", { name }));
       openThread("main");
       onClose();
     } catch (e) {
@@ -499,7 +515,7 @@ function GoalDetail({
   };
 
   const remove = async () => {
-    if (!goal || !window.confirm(`Delete “${goal.title}”?`)) return;
+    if (!goal || !window.confirm(t("Delete “{title}”?", { title: goal.title }))) return;
     try {
       await api.deleteGoal(goal.id);
       onChanged();
@@ -521,19 +537,19 @@ function GoalDetail({
           <div className="flex gap-2">
             {goal.status === "active" ? (
               <button type="button" onClick={() => void patch({ status: "paused" })} className="flex-1 rounded-2xl border border-border py-2.5 font-medium flex items-center justify-center gap-1.5">
-                <Pause size={16} /> Pause
+                <Pause size={16} /> {t("Pause")}
               </button>
             ) : goal.status === "paused" ? (
               <button type="button" onClick={() => void patch({ status: "active" })} className="flex-1 rounded-2xl border border-border py-2.5 font-medium flex items-center justify-center gap-1.5">
-                <Play size={16} /> Resume
+                <Play size={16} /> {t("Resume")}
               </button>
             ) : null}
             {goal.status === "active" && (
               <button type="button" onClick={() => onAdvance(goal)} className="flex-1 rounded-2xl bg-accent text-accent-fg py-2.5 font-medium flex items-center justify-center gap-1.5">
-                <Play size={16} /> Work on it now
+                <Play size={16} /> {t("Work on it now")}
               </button>
             )}
-            <button type="button" onClick={() => void remove()} aria-label="Delete goal" className="rounded-2xl border border-border px-3 text-muted hover:text-rose-500">
+            <button type="button" onClick={() => void remove()} aria-label={t("Delete goal")} className="rounded-2xl border border-border px-3 text-muted hover:text-rose-500">
               <Trash2 size={18} />
             </button>
           </div>
@@ -550,42 +566,42 @@ function GoalDetail({
             {!editing ? (
               <button type="button" onClick={() => setEditing(true)} className="w-full text-left">
                 <div className="flex flex-wrap items-center gap-1.5 text-[12.5px]">
-                  {goal.category ? <CategoryBadge id={goal.category} size="md" /> : <span className="rounded-full border border-dashed border-border px-2.5 py-1 text-muted">No category</span>}
+                  {goal.category ? <CategoryBadge id={goal.category} size="md" /> : <span className="rounded-full border border-dashed border-border px-2.5 py-1 text-muted">{t("No category")}</span>}
                   <span className={cx("inline-flex items-center gap-1 rounded-full px-2.5 py-1", goal.overdue ? "bg-rose-500/12 text-rose-600 dark:text-rose-300 font-medium" : "bg-surface text-muted")}>
-                    <CalendarDays size={13} /> {due || "No target date"}
+                    <CalendarDays size={13} /> {due || t("No target date")}
                   </span>
                   <span className="inline-flex items-center gap-1 rounded-full bg-surface px-2.5 py-1 text-muted">
-                    <Bell size={13} /> {goal.check_in ? describeCadence(goal.check_in) : "No reminders"}
+                    <Bell size={13} /> {goal.check_in ? describeCadence(goal.check_in) : t("No reminders")}
                   </span>
                 </div>
                 {goal.next_check_in && goal.status === "active" && (
-                  <div className="mt-1.5 text-[12px] text-muted">Next check-in {relativeTime(goal.next_check_in)} · {timeShort(goal.next_check_in)}</div>
+                  <div className="mt-1.5 text-[12px] text-muted">{t("Next check-in {when}", { when: relativeTime(goal.next_check_in) })} · {timeShort(goal.next_check_in)}</div>
                 )}
-                <div className="mt-1.5 text-[12px] text-accent font-medium">Edit</div>
+                <div className="mt-1.5 text-[12px] text-accent font-medium">{t("Edit")}</div>
               </button>
             ) : (
               <div className="space-y-3">
                 <div>
-                  <div className="text-[12px] font-semibold uppercase tracking-wide text-muted mb-1.5">Area of life</div>
+                  <div className="text-[12px] font-semibold uppercase tracking-wide text-muted mb-1.5">{t("Area of life")}</div>
                   <CategoryPicker value={goal.category} onChange={(v) => void patch({ category: v })} />
                 </div>
                 <div>
-                  <div className="text-[12px] font-semibold uppercase tracking-wide text-muted mb-1.5">Target date</div>
+                  <div className="text-[12px] font-semibold uppercase tracking-wide text-muted mb-1.5">{t("Target date")}</div>
                   <div className="flex items-center gap-2">
                     <input type="date" value={goal.due} onChange={(e) => void patch({ due: e.target.value })} className="rounded-xl bg-surface px-2.5 py-1.5 text-[13.5px] outline-none" />
                     {goal.due && (
                       <button type="button" onClick={() => void patch({ due: "" })} className="text-[12.5px] text-muted">
-                        Clear
+                        {t("Clear")}
                       </button>
                     )}
                   </div>
                 </div>
                 <div>
-                  <div className="text-[12px] font-semibold uppercase tracking-wide text-muted mb-1.5">Reminders from {name}</div>
+                  <div className="text-[12px] font-semibold uppercase tracking-wide text-muted mb-1.5">{t("Reminders from {name}", { name })}</div>
                   <CadencePicker value={goal.check_in} onChange={(spec) => void patch({ check_in: spec })} />
                 </div>
                 <button type="button" onClick={() => setEditing(false)} className="text-[12.5px] text-accent font-medium">
-                  Done
+                  {t("Done")}
                 </button>
               </div>
             )}
@@ -593,7 +609,7 @@ function GoalDetail({
 
           <div>
             <div className="text-[12px] font-semibold uppercase tracking-wide text-muted mb-2">
-              Plan · {goal.progress.done}/{goal.progress.total}
+              {t("Plan")} · {goal.progress.done}/{goal.progress.total}
             </div>
             <ul className="space-y-1">
               {goal.steps.map((s) => {
@@ -602,7 +618,7 @@ function GoalDetail({
                   <li key={s.idx} className="flex items-start gap-2.5 rounded-2xl px-2 py-1.5 hover:bg-surface-2/60">
                     <button
                       type="button"
-                      aria-label={`Mark step ${s.idx} ${STEP_NEXT[s.status]}`}
+                      aria-label={t("Mark step {n} {status}", { n: s.idx, status: t(STEP_NEXT[s.status]) })}
                       onClick={() => void patch({ step_index: s.idx, step_status: STEP_NEXT[s.status] })}
                       className="mt-0.5 text-muted"
                     >
@@ -623,17 +639,17 @@ function GoalDetail({
                 value={newStep}
                 onChange={(e) => setNewStep(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && void addStep()}
-                placeholder="Add a step"
+                placeholder={t("Add a step")}
                 className="flex-1 rounded-2xl bg-surface-2 px-3.5 py-2 text-[14px] outline-none focus:ring-2 focus:ring-accent/40"
               />
-              <button type="button" onClick={() => void addStep()} className="rounded-2xl bg-surface-2 px-3 text-accent" aria-label="Add step">
+              <button type="button" onClick={() => void addStep()} className="rounded-2xl bg-surface-2 px-3 text-accent" aria-label={t("Add step")}>
                 <Plus size={18} />
               </button>
             </div>
           </div>
           {goal.notes && (
             <div>
-              <div className="text-[12px] font-semibold uppercase tracking-wide text-muted mb-1.5">Notes from {name}</div>
+              <div className="text-[12px] font-semibold uppercase tracking-wide text-muted mb-1.5">{t("Notes from {name}", { name })}</div>
               <pre className="whitespace-pre-wrap break-words text-[13px] leading-snug text-muted font-sans">{goal.notes}</pre>
             </div>
           )}
@@ -641,17 +657,17 @@ function GoalDetail({
             <button
               type="button"
               onClick={() => {
-                void send("main", `Let's talk about my goal “${goal.title}” (${goal.id}). What's the status and what should we do next?`);
+                void send("main", t("Let's talk about my goal “{title}” ({id}). What's the status and what should we do next?", { title: goal.title, id: goal.id }));
                 openThread("main");
                 onClose();
               }}
               className="text-[13.5px] text-accent font-medium"
             >
-              Discuss this goal in chat →
+              {t("Discuss this goal in chat →")}
             </button>
             {goal.status === "active" && (
               <button type="button" onClick={() => void checkIn()} className="text-[13.5px] text-accent font-medium inline-flex items-center gap-1">
-                <BellRing size={14} /> Check in with me now
+                <BellRing size={14} /> {t("Check in with me now")}
               </button>
             )}
           </div>
@@ -671,6 +687,7 @@ function NewGoalSheet({ open, onClose, onCreated }: { open: boolean; onClose: ()
   const [checkIn, setCheckIn] = useState("");
   const [busy, setBusy] = useState(false);
   const name = state.profile?.name ?? "Muse";
+  const t = useT();
 
   const reset = () => {
     setTitle("");
@@ -707,11 +724,15 @@ function NewGoalSheet({ open, onClose, onCreated }: { open: boolean; onClose: ()
     const extras = [
       category ? `category: ${category}` : "",
       due ? `target date: ${due}` : "",
-      checkIn ? `check in with me: ${describeCadence(checkIn).toLowerCase()} (check_in "${checkIn}")` : "",
+      checkIn ? `check_in "${checkIn}"` : "",
     ].filter(Boolean);
     void send(
       "main",
-      `Create a goal for me: "${title.trim()}"${description.trim() ? ` — ${description.trim()}` : ""}${extras.length ? ` (${extras.join(", ")})` : ""}. Break it into concrete steps with the goals tool, then tell me the plan.`,
+      t('Create a goal for me: "{title}"{description}{extras}. Break it into concrete steps with the goals tool, then tell me the plan.', {
+        title: title.trim(),
+        description: description.trim() ? ` — ${description.trim()}` : "",
+        extras: extras.length ? ` (${extras.join(", ")})` : "",
+      }),
     );
     reset();
     onClose();
@@ -722,34 +743,34 @@ function NewGoalSheet({ open, onClose, onCreated }: { open: boolean; onClose: ()
     <Sheet
       open={open}
       onClose={onClose}
-      title="New goal"
+      title={t("New goal")}
       footer={
         <div className="flex gap-2">
           <button type="button" onClick={askMuse} disabled={!title.trim()} className="flex-1 rounded-2xl border border-border py-2.5 font-medium disabled:opacity-50 flex items-center justify-center gap-1.5">
-            <Sparkles size={16} /> Let {name} plan it
+            <Sparkles size={16} /> {t("Let {name} plan it", { name })}
           </button>
           <button type="button" onClick={() => void create()} disabled={!title.trim() || busy} className="flex-1 rounded-2xl bg-accent text-accent-fg py-2.5 font-medium disabled:opacity-50">
-            Create
+            {t("Create")}
           </button>
         </div>
       }
     >
       <div className="space-y-3.5">
-        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What do you want to achieve?" className="w-full rounded-2xl bg-surface-2 px-3.5 py-2.5 text-[15px] outline-none focus:ring-2 focus:ring-accent/40" />
+        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t("What do you want to achieve?")} className="w-full rounded-2xl bg-surface-2 px-3.5 py-2.5 text-[15px] outline-none focus:ring-2 focus:ring-accent/40" />
         <div>
-          <div className="text-[12px] font-semibold uppercase tracking-wide text-muted mb-1.5">Area of life</div>
+          <div className="text-[12px] font-semibold uppercase tracking-wide text-muted mb-1.5">{t("Area of life")}</div>
           <CategoryPicker value={category} onChange={setCategory} />
         </div>
         <div className="flex items-center gap-3">
-          <div className="text-[12px] font-semibold uppercase tracking-wide text-muted flex-1">Target date</div>
+          <div className="text-[12px] font-semibold uppercase tracking-wide text-muted flex-1">{t("Target date")}</div>
           <input type="date" value={due} onChange={(e) => setDue(e.target.value)} className="rounded-xl bg-surface-2 px-2.5 py-1.5 text-[13.5px] outline-none" />
         </div>
         <div>
-          <div className="text-[12px] font-semibold uppercase tracking-wide text-muted mb-1.5">Reminders from {name}</div>
+          <div className="text-[12px] font-semibold uppercase tracking-wide text-muted mb-1.5">{t("Reminders from {name}", { name })}</div>
           <CadencePicker value={checkIn} onChange={setCheckIn} />
         </div>
-        <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Why it matters, constraints (optional)" rows={2} className="w-full rounded-2xl bg-surface-2 px-3.5 py-2.5 text-[14px] outline-none focus:ring-2 focus:ring-accent/40 resize-none" />
-        <textarea value={steps} onChange={(e) => setSteps(e.target.value)} placeholder={"Steps, one per line (optional — or let " + name + " plan them)"} rows={3} className="w-full rounded-2xl bg-surface-2 px-3.5 py-2.5 text-[14px] outline-none focus:ring-2 focus:ring-accent/40 resize-none" />
+        <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder={t("Why it matters, constraints (optional)")} rows={2} className="w-full rounded-2xl bg-surface-2 px-3.5 py-2.5 text-[14px] outline-none focus:ring-2 focus:ring-accent/40 resize-none" />
+        <textarea value={steps} onChange={(e) => setSteps(e.target.value)} placeholder={t("Steps, one per line (optional — or let {name} plan them)", { name })} rows={3} className="w-full rounded-2xl bg-surface-2 px-3.5 py-2.5 text-[14px] outline-none focus:ring-2 focus:ring-accent/40 resize-none" />
       </div>
     </Sheet>
   );

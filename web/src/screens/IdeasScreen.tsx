@@ -1,6 +1,7 @@
 import { ArrowRight, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { useT } from "../i18n";
 import { useStore } from "../store";
 import type { IdeasData } from "../types";
 import { relativeTime } from "../util";
@@ -11,13 +12,14 @@ export function IdeasScreen() {
   const [data, setData] = useState<IdeasData | null>(null);
   const [loading, setLoading] = useState(false);
   const name = state.profile?.name ?? "Muse";
+  const t = useT();
 
   const load = async (refresh = false) => {
     setLoading(true);
     try {
       const d = await api.ideas(refresh);
       setData(d);
-      if (d.error) toast(`Could not refresh ideas: ${d.error}`);
+      if (d.error) toast(t("Could not refresh ideas: {error}", { error: d.error }));
     } catch (e) {
       toast((e as Error).message);
     } finally {
@@ -34,16 +36,16 @@ export function IdeasScreen() {
     <div className="flex h-full flex-col">
       <header className="safe-top shrink-0 px-5 pt-4 pb-3 flex items-center gap-3">
         <div className="flex-1">
-          <h1 className="text-[24px] font-bold tracking-tight">Ideas</h1>
+          <h1 className="text-[24px] font-bold tracking-tight">{t("Ideas")}</h1>
           <p className="text-[13px] text-muted">
-            Things {name} could do for you, based on your goals, memory and recent conversations.
+            {t("Things {name} could do for you, based on your goals, memory and recent conversations.", { name })}
           </p>
         </div>
         <button
           type="button"
           onClick={() => void load(true)}
           disabled={loading}
-          aria-label="Refresh ideas"
+          aria-label={t("Refresh ideas")}
           className="h-10 w-10 rounded-full bg-surface-2 text-accent flex items-center justify-center disabled:opacity-60"
         >
           {loading ? <Loader2 size={20} className="animate-spin" /> : <RefreshCw size={19} />}
@@ -52,7 +54,9 @@ export function IdeasScreen() {
       <div className="flex-1 overflow-y-auto px-4 pb-6 space-y-2.5">
         {data && (
           <div className="px-1 text-[12px] text-muted">
-            {data.source === "model" ? `Generated ${relativeTime(data.generated_at)}` : "Starter ideas — refresh once " + name + " knows you better."}
+            {data.source === "model"
+              ? t("Generated {when}", { when: relativeTime(data.generated_at) })
+              : t("Starter ideas — refresh once {name} knows you better.", { name })}
           </div>
         )}
         {(data?.ideas ?? []).map((idea) => (
@@ -73,7 +77,7 @@ export function IdeasScreen() {
                 <div className="font-semibold text-[15.5px] leading-snug">{idea.title}</div>
                 {idea.detail && <div className="mt-1 text-[13.5px] text-muted leading-snug">{idea.detail}</div>}
                 <div className="mt-2 text-[13px] text-accent font-medium flex items-center gap-1">
-                  Ask {name} <ArrowRight size={14} />
+                  {t("Ask {name}", { name })} <ArrowRight size={14} />
                 </div>
               </div>
             </div>
@@ -81,7 +85,7 @@ export function IdeasScreen() {
         ))}
         {!data && loading && (
           <div className="py-10 text-center text-muted flex items-center justify-center gap-2">
-            <Loader2 className="animate-spin" size={18} /> Thinking about what I could do for you…
+            <Loader2 className="animate-spin" size={18} /> {t("Thinking about what I could do for you…")}
           </div>
         )}
       </div>

@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { frameUrl } from "../api";
+import { t, useT } from "../i18n";
 import type {
   ApprovalEvent,
   ArtifactEvent,
@@ -72,7 +73,7 @@ const RISK_STYLE: Record<RiskLevel, string> = {
 export function RiskBadge({ risk }: { risk: RiskLevel }) {
   return (
     <span className={cx("px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wide", RISK_STYLE[risk])}>
-      {risk}
+      {t(risk)}
     </span>
   );
 }
@@ -139,9 +140,9 @@ export function grantSubject(tool: string, target?: string | null): string {
   if (!target) return tool.replace(/_/g, " ");
   switch (tool) {
     case "shell":
-      return `${target.split(",").join(", ")} commands`;
+      return t("{what} commands", { what: target.split(",").join(", ") });
     case "send_email":
-      return `email to ${target.split(",").join(", ")}`;
+      return t("email to {who}", { who: target.split(",").join(", ") });
     default:
       return target;
   }
@@ -150,15 +151,15 @@ export function grantSubject(tool: string, target?: string | null): string {
 export function scopeLabel(scope: string, tool: string, target?: string | null): string {
   switch (scope) {
     case "once":
-      return "Once";
+      return t("Once");
     case "task":
-      return "For this task";
+      return t("For this task");
     case "session":
-      return "Until restart";
+      return t("Until restart");
     case "24h":
-      return "For 24 hours";
+      return t("For 24 hours");
     case "always":
-      return `Always for ${grantSubject(tool, target)}`;
+      return t("Always for {subject}", { subject: grantSubject(tool, target) });
     default:
       return scope;
   }
@@ -174,6 +175,7 @@ export function ApprovalCard({
   const [showArgs, setShowArgs] = useState(false);
   const [more, setMore] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
+  const t = useT();
   const pending = event.status === "pending";
   const sensitive = event.risk === "sensitive";
   const standing = (event.grant_options ?? ["once"]).filter((s) => s !== "once");
@@ -200,12 +202,12 @@ export function ApprovalCard({
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <div className="font-semibold text-[15px]">Approval needed</div>
+              <div className="font-semibold text-[15px]">{t("Approval needed")}</div>
               <RiskBadge risk={event.risk} />
             </div>
             <div className="mt-1 text-[14px] leading-snug break-words">{event.summary}</div>
             {event.purpose && (
-              <div className="mt-1 text-[12.5px] text-muted italic break-words line-clamp-2">For: {event.purpose}</div>
+              <div className="mt-1 text-[12.5px] text-muted italic break-words line-clamp-2">{t("For: {purpose}", { purpose: event.purpose })}</div>
             )}
             <div className="mt-1 flex items-center gap-1.5 text-[12px] text-muted">
               {toolIcon(event.tool, 13)} <span>{event.tool}</span>
@@ -233,13 +235,13 @@ export function ApprovalCard({
             className="text-[12.5px] text-accent flex items-center gap-1"
             onClick={() => setShowArgs((s) => !s)}
           >
-            {showArgs ? <ChevronDown size={13} /> : <ChevronRight size={13} />} Exactly what will run
+            {showArgs ? <ChevronDown size={13} /> : <ChevronRight size={13} />} {t("Exactly what will run")}
           </button>
           {showArgs && (
             <>
               <ArgsList args={event.args} />
               {event.reasons?.length > 0 && (
-                <div className="mt-1.5 text-[12px] text-muted">Why it asks: {event.reasons.join(" · ")}</div>
+                <div className="mt-1.5 text-[12px] text-muted">{t("Why it asks: {reasons}", { reasons: event.reasons.join(" · ") })}</div>
               )}
             </>
           )}
@@ -252,20 +254,20 @@ export function ApprovalCard({
                 onClick={() => onDecide(false, "once")}
                 className="flex-1 rounded-2xl border border-border py-2.5 font-semibold text-[15px] active:scale-[0.98] transition"
               >
-                Deny
+                {t("Deny")}
               </button>
               <button
                 type="button"
                 onClick={() => onDecide(true, "once")}
                 className="flex-1 rounded-2xl bg-accent text-accent-fg py-2.5 font-semibold text-[15px] active:scale-[0.98] transition"
               >
-                Allow once
+                {t("Allow once")}
               </button>
             </div>
             {standing.length > 0 ? (
               <>
                 <button type="button" className="text-[12.5px] text-muted self-center" onClick={() => setMore((m) => !m)}>
-                  {more ? "Fewer options" : `Allow ${grantSubject(event.tool, event.target)} for longer…`}
+                  {more ? t("Fewer options") : t("Allow {subject} for longer…", { subject: grantSubject(event.tool, event.target) })}
                 </button>
                 {more && (
                   <div className="grid grid-cols-2 gap-2">
@@ -283,7 +285,7 @@ export function ApprovalCard({
                 )}
               </>
             ) : (
-              <div className="text-[12px] text-muted self-center">This kind of action is approved one at a time.</div>
+              <div className="text-[12px] text-muted self-center">{t("This kind of action is approved one at a time.")}</div>
             )}
           </div>
         ) : (
@@ -295,10 +297,10 @@ export function ApprovalCard({
           >
             {event.status === "approved" ? <Check size={15} /> : <X size={15} />}
             {event.status === "approved"
-              ? `Approved${event.scope && event.scope !== "once" ? ` · ${scopeLabel(event.scope, event.tool, event.target).toLowerCase()}` : ""}`
+              ? `${t("Approved")}${event.scope && event.scope !== "once" ? ` · ${scopeLabel(event.scope, event.tool, event.target).toLowerCase()}` : ""}`
               : event.status === "denied"
-                ? "Denied"
-                : "Expired without an answer"}
+                ? t("Denied")
+                : t("Expired without an answer")}
             <span className="ml-auto font-normal">{timeShort(event.updated_ts ?? event.ts)}</span>
           </div>
         )}
@@ -309,17 +311,18 @@ export function ApprovalCard({
 
 // ------------------------------------------------------------------ question card
 export function QuestionCard({ event, name }: { event: QuestionEvent; name: string }) {
+  const t = useT();
   return (
     <div className="rise flex justify-start pl-11 pr-8">
       <div className="max-w-full rounded-3xl rounded-tl-lg border border-accent/40 bg-surface px-4 py-3 shadow-sm">
         <div className="flex items-center gap-1.5 text-[12px] font-semibold text-accent uppercase tracking-wide">
-          <MessageCircleQuestion size={14} /> {name} asks
+          <MessageCircleQuestion size={14} /> {t("{name} asks", { name })}
         </div>
         <div className="mt-1 text-[15px] leading-snug whitespace-pre-wrap break-words">{event.text}</div>
-        {event.status === "pending" && <div className="mt-1.5 text-[12.5px] text-muted">Reply below to continue.</div>}
+        {event.status === "pending" && <div className="mt-1.5 text-[12.5px] text-muted">{t("Reply below to continue.")}</div>}
         {event.status === "answered" && event.answer && (
           <div className="mt-2 text-[13px] text-muted border-t border-border pt-2">
-            You: <span className="text-fg">{event.answer}</span>
+            {t("You:")} <span className="text-fg">{event.answer}</span>
           </div>
         )}
       </div>
@@ -350,6 +353,7 @@ export function Notice({ event }: { event: NoticeEvent }) {
 /** The agent's browser, as a card: the latest frame, where it is, what it just did. */
 export function BrowserCard({ event, onOpen }: { event: BrowserEvent; onOpen: (id: string) => void }) {
   const [gone, setGone] = useState(false);
+  const t = useT();
   const live = event.status === "live";
   let host = event.url;
   try {
@@ -362,14 +366,14 @@ export function BrowserCard({ event, onOpen }: { event: BrowserEvent; onOpen: (i
       <button
         type="button"
         onClick={() => onOpen(event.id)}
-        aria-label={`Browser: ${event.title || host}`}
+        aria-label={t("Browser: {title}", { title: event.title || host })}
         className="w-full max-w-[340px] overflow-hidden rounded-3xl rounded-tl-lg border border-border bg-surface shadow-sm hover:bg-surface-2 transition text-left"
       >
         <div className="relative aspect-[16/10] bg-surface-2">
           {gone ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-muted">
               <Globe size={22} />
-              <span className="text-[12px]">Frame no longer available</span>
+              <span className="text-[12px]">{t("Frame no longer available")}</span>
             </div>
           ) : (
             <img
@@ -383,11 +387,11 @@ export function BrowserCard({ event, onOpen }: { event: BrowserEvent; onOpen: (i
           <div className="absolute left-2.5 top-2.5 flex items-center gap-1.5 rounded-full bg-black/60 px-2 py-0.5 text-[10.5px] font-semibold text-white">
             {live ? (
               <>
-                <span className="h-1.5 w-1.5 rounded-full bg-rose-400 animate-pulse" /> LIVE
+                <span className="h-1.5 w-1.5 rounded-full bg-rose-400 animate-pulse" /> {t("LIVE")}
               </>
             ) : (
               <>
-                <Globe size={11} /> BROWSER
+                <Globe size={11} /> {t("BROWSER")}
               </>
             )}
           </div>
@@ -396,7 +400,7 @@ export function BrowserCard({ event, onOpen }: { event: BrowserEvent; onOpen: (i
           <div className="min-w-0 flex-1">
             <div className="text-[13.5px] font-medium truncate">{event.title || host}</div>
             <div className="text-[12px] text-muted truncate">
-              {event.by_user ? "You" : ""}
+              {event.by_user ? t("You") : ""}
               {event.by_user && event.action.startsWith("You") ? event.action.slice(3) : event.action} · {host}
             </div>
           </div>
@@ -408,9 +412,10 @@ export function BrowserCard({ event, onOpen }: { event: BrowserEvent; onOpen: (i
 }
 
 export function ArtifactCard({ event, onOpen }: { event: ArtifactEvent; onOpen: (path: string) => void }) {
+  const t = useT();
   const kind = fileKind(event.name);
-  const what = kind === "html" ? "Page" : kind === "image" ? "Image" : kind === "data" ? "Data" : kind === "code" ? "Code" : "Document";
-  const label = event.action === "update" ? `${what} · updated` : what;
+  const what = kind === "html" ? t("Page") : kind === "image" ? t("Image") : kind === "data" ? t("Data") : kind === "code" ? t("Code") : t("Document");
+  const label = event.action === "update" ? `${what} · ${t("updated")}` : what;
   return (
     <div className="rise flex justify-start pl-11 pr-8">
       <button

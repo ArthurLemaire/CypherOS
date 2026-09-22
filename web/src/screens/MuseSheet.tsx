@@ -22,6 +22,7 @@ import { api } from "../api";
 import { Avatar } from "../components/Avatar";
 import { ApprovalCard, RiskBadge, grantSubject, scopeLabel, toolIcon } from "../components/Cards";
 import { Sheet } from "../components/Sheet";
+import { intlLocale, useT } from "../i18n";
 import { useStore } from "../store";
 import type { ActivityData, AuditEntry, Grant, Reminder, ReminderKind, RiskLevel, UpcomingData } from "../types";
 import { cx, relativeTime, timeShort } from "../util";
@@ -39,6 +40,7 @@ export function MuseSheet({ open, onClose }: { open: boolean; onClose: () => voi
   const [view, setView] = useState<View>("menu");
   const name = state.profile?.name ?? "Muse";
   const pending = state.pendingApprovals.length;
+  const t = useT();
 
   useEffect(() => {
     if (open) setView(pending > 0 ? "approvals" : "menu");
@@ -52,10 +54,10 @@ export function MuseSheet({ open, onClose }: { open: boolean; onClose: () => voi
 
   const titles: Record<View, string> = {
     menu: name,
-    activity: "Activity",
-    approvals: "Approvals",
-    permissions: "Permissions",
-    upcoming: "Upcoming",
+    activity: t("Activity"),
+    approvals: t("Approvals"),
+    permissions: t("Permissions"),
+    upcoming: t("Upcoming"),
   };
 
   return (
@@ -65,14 +67,14 @@ export function MuseSheet({ open, onClose }: { open: boolean; onClose: () => voi
       title={
         <div className="flex items-center gap-1.5">
           {view !== "menu" && (
-            <button type="button" onClick={() => setView("menu")} aria-label="Back" className="-ml-2 p-1 rounded-full text-muted hover:bg-surface-2">
+            <button type="button" onClick={() => setView("menu")} aria-label={t("Back")} className="-ml-2 p-1 rounded-full text-muted hover:bg-surface-2">
               <ChevronLeft size={20} />
             </button>
           )}
           <span>{titles[view]}</span>
           {view === "menu" && (
             <span className="text-[12px] font-normal text-muted">
-              {state.status.state === "idle" ? "idle" : state.status.detail || state.status.state}
+              {state.status.state === "idle" ? t("idle") : state.status.detail || t(state.status.state)}
             </span>
           )}
         </div>
@@ -113,9 +115,10 @@ function Menu({
   onSettings: () => void;
 }) {
   const { state } = useStore();
+  const t = useT();
   const mode = state.settings?.sentinel.mode;
   const c = state.settings?.connectors;
-  const connected = [c?.email && "email", c?.browser && "browser", c?.mcp.length ? `${c.mcp.length} MCP` : null].filter(Boolean);
+  const connected = [c?.email && t("email"), c?.browser && t("browser"), c?.mcp.length ? `${c.mcp.length} MCP` : null].filter(Boolean);
   return (
     <div className="pb-2">
       <div className="flex items-center gap-3 rounded-3xl bg-surface-2/70 px-4 py-3">
@@ -123,25 +126,25 @@ function Menu({
         <div className="min-w-0 flex-1">
           <div className="font-semibold text-[16px] truncate">{name}</div>
           <div className="text-[12.5px] text-muted truncate">
-            {state.settings?.llm.model ?? "—"} · {mode === "ask" ? "balanced" : mode === "strict" ? "cautious" : mode === "auto" ? "hands-off" : ""}
+            {state.settings?.llm.model ?? "—"} · {mode === "ask" ? t("balanced") : mode === "strict" ? t("cautious") : mode === "auto" ? t("hands-off") : ""}
           </div>
         </div>
       </div>
       <ul className="mt-3 divide-y divide-border/70 rounded-3xl border border-border/70 overflow-hidden">
-        <MenuRow icon={<ShieldAlert size={19} />} label="Approvals" hint={pending ? `${pending} waiting for you` : "Nothing waiting"} badge={pending} onClick={() => onPick("approvals")} />
-        <MenuRow icon={<ClipboardList size={19} />} label="Activity" hint="Every action, including refused ones" onClick={() => onPick("activity")} />
-        <MenuRow icon={<ShieldCheck size={19} />} label="Permissions" hint="What you allowed, revoke any time" onClick={() => onPick("permissions")} />
-        <MenuRow icon={<Bell size={19} />} label="Upcoming" hint={state.profile?.proactive ? "Background work is on" : "Background work is off"} onClick={() => onPick("upcoming")} />
+        <MenuRow icon={<ShieldAlert size={19} />} label={t("Approvals")} hint={pending ? t("{n} waiting for you", { n: pending }) : t("Nothing waiting")} badge={pending} onClick={() => onPick("approvals")} />
+        <MenuRow icon={<ClipboardList size={19} />} label={t("Activity")} hint={t("Every action, including refused ones")} onClick={() => onPick("activity")} />
+        <MenuRow icon={<ShieldCheck size={19} />} label={t("Permissions")} hint={t("What you allowed, revoke any time")} onClick={() => onPick("permissions")} />
+        <MenuRow icon={<Bell size={19} />} label={t("Upcoming")} hint={state.profile?.proactive ? t("Background work is on") : t("Background work is off")} onClick={() => onPick("upcoming")} />
       </ul>
       <ul className="mt-3 divide-y divide-border/70 rounded-3xl border border-border/70 overflow-hidden">
-        <MenuRow icon={<Brain size={19} />} label="Memory" hint={`What ${name} remembers about you`} onClick={onMemory} />
+        <MenuRow icon={<Brain size={19} />} label={t("Memory")} hint={t("What {name} remembers about you", { name })} onClick={onMemory} />
         <MenuRow
           icon={<Plug size={19} />}
-          label="Connections"
-          hint={connected.length ? `Model, ${connected.join(", ")}` : "Model, email, browser, MCP servers"}
+          label={t("Connections")}
+          hint={connected.length ? t("Model, {list}", { list: connected.join(", ") }) : t("Model, email, browser, MCP servers")}
           onClick={onConnections}
         />
-        <MenuRow icon={<SlidersHorizontal size={19} />} label="Settings" hint="Name, style, how careful it is" onClick={onSettings} />
+        <MenuRow icon={<SlidersHorizontal size={19} />} label={t("Settings")} hint={t("Name, style, how careful it is")} onClick={onSettings} />
       </ul>
     </div>
   );
@@ -166,13 +169,17 @@ function MenuRow({ icon, label, hint, badge, onClick }: { icon: ReactNode; label
 // ------------------------------------------------------------------ approvals queue
 function ApprovalsView({ onDone }: { onDone: () => void }) {
   const { state, decide, openThread, toast } = useStore();
+  const t = useT();
   const list = [...state.pendingApprovals].sort((a, b) => a.ts.localeCompare(b.ts));
-  const titleOf = (id: string) => state.threads.find((t) => t.id === id)?.title ?? id;
+  const titleOf = (id: string) => {
+    const th = state.threads.find((x) => x.id === id);
+    return th ? (th.id === "main" ? t(th.title) : th.title) : id;
+  };
 
   useEffect(() => {
     if (list.length === 0) {
-      const t = window.setTimeout(onDone, 600);
-      return () => window.clearTimeout(t);
+      const timer = window.setTimeout(onDone, 600);
+      return () => window.clearTimeout(timer);
     }
   }, [list.length, onDone]);
 
@@ -180,14 +187,14 @@ function ApprovalsView({ onDone }: { onDone: () => void }) {
     return (
       <div className="py-10 text-center text-muted text-[14px]">
         <Check size={26} className="mx-auto mb-2 text-emerald-500" />
-        Nothing is waiting for you.
+        {t("Nothing is waiting for you.")}
       </div>
     );
   }
   return (
     <div className="space-y-4 pb-2">
       <p className="text-[12.5px] text-muted">
-        Actions your Muse wants to take but cannot without you. Each one shows what will run and why; a permission you grant is bound to that exact tool and target.
+        {t("Actions your Muse wants to take but cannot without you. Each one shows what will run and why; a permission you grant is bound to that exact tool and target.")}
       </p>
       {list.map((ev) => (
         <div key={ev.id}>
@@ -209,6 +216,7 @@ function UpcomingView({ onSettings }: { onSettings: () => void }) {
   const [data, setData] = useState<UpcomingData | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const name = state.profile?.name ?? "Muse";
+  const t = useT();
 
   const load = () => api.upcoming().then(setData).catch((e: Error) => toast(e.message));
   useEffect(() => {
@@ -229,7 +237,7 @@ function UpcomingView({ onSettings }: { onSettings: () => void }) {
     setBusy(goalId);
     try {
       await api.advanceGoal(goalId);
-      toast(`${name} is working on it in the main chat`);
+      toast(t("{name} is working on it in the main chat", { name }));
     } catch (e) {
       toast((e as Error).message);
     } finally {
@@ -249,13 +257,17 @@ function UpcomingView({ onSettings }: { onSettings: () => void }) {
       <div className="rounded-2xl border border-border p-3.5">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <div className="font-medium">Background work</div>
+            <div className="font-medium">{t("Background work")}</div>
             <div className="text-[12.5px] text-muted">
               {data.proactive
-                ? `${data.proactivity[0].toUpperCase()}${data.proactivity.slice(1)} · every ${data.effective_interval_minutes} min ${name} picks one active goal and works on its next step.${
-                    data.quiet_until ? ` Quiet hours until ${timeShort(data.quiet_until)}.` : data.next_pass_at ? ` Next around ${timeShort(data.next_pass_at)}.` : ""
+                ? `${t(data.proactivity[0].toUpperCase() + data.proactivity.slice(1))} · ${t("every {n} min {name} picks one active goal and works on its next step.", { n: data.effective_interval_minutes, name })}${
+                    data.quiet_until
+                      ? ` ${t("Quiet hours until {time}.", { time: timeShort(data.quiet_until) })}`
+                      : data.next_pass_at
+                        ? ` ${t("Next around {time}.", { time: timeShort(data.next_pass_at) })}`
+                        : ""
                   }`
-                : `Off. ${name} only works when you ask.`}
+                : t("Off. {name} only works when you ask.", { name })}
             </div>
           </div>
           <button
@@ -269,14 +281,14 @@ function UpcomingView({ onSettings }: { onSettings: () => void }) {
           </button>
         </div>
         <button type="button" onClick={onSettings} className="mt-2 text-[12.5px] text-accent font-medium">
-          Level, interval and quiet hours in Settings
+          {t("Level, interval and quiet hours in Settings")}
         </button>
       </div>
 
       <div>
-        <div className="text-[12px] uppercase tracking-wide text-muted font-semibold mb-1.5">In line</div>
+        <div className="text-[12px] uppercase tracking-wide text-muted font-semibold mb-1.5">{t("In line")}</div>
         {data.queue.length === 0 ? (
-          <div className="text-[13px] text-muted">No active goal has a next step. Add one in Goals and {name} will pick it up.</div>
+          <div className="text-[13px] text-muted">{t("No active goal has a next step. Add one in Goals and {name} will pick it up.", { name })}</div>
         ) : (
           <ul className="space-y-1.5">
             {data.queue.map((g, i) => (
@@ -285,14 +297,14 @@ function UpcomingView({ onSettings }: { onSettings: () => void }) {
                 <div className="min-w-0 flex-1">
                   <div className="text-[13.5px] font-medium truncate">{g.title}</div>
                   <div className="text-[11.5px] text-muted truncate">
-                    {g.next_step ?? "—"} · {g.progress.done}/{g.progress.total} done
+                    {g.next_step ?? "—"} · {t("{done}/{total} done", { done: g.progress.done, total: g.progress.total })}
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => void runNow(g.goal_id)}
                   disabled={busy !== null || data.busy}
-                  aria-label={`Work on ${g.title} now`}
+                  aria-label={t("Work on {title} now", { title: g.title })}
                   className="rounded-full bg-accent/12 p-2 text-accent disabled:opacity-50"
                 >
                   {busy === g.goal_id ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} />}
@@ -305,7 +317,7 @@ function UpcomingView({ onSettings }: { onSettings: () => void }) {
 
       {data.check_ins.length > 0 && (
         <div>
-          <div className="text-[12px] uppercase tracking-wide text-muted font-semibold mb-1.5">Check-ins</div>
+          <div className="text-[12px] uppercase tracking-wide text-muted font-semibold mb-1.5">{t("Check-ins")}</div>
           <ul className="space-y-1.5">
             {data.check_ins.map((c) => (
               <li key={c.goal_id} className="flex items-center gap-2.5 rounded-2xl bg-surface-2/60 px-3 py-2">
@@ -319,7 +331,7 @@ function UpcomingView({ onSettings }: { onSettings: () => void }) {
               </li>
             ))}
           </ul>
-          <div className="mt-1.5 text-[12px] text-muted">Goal nudges you asked for; they arrive whatever the proactivity level, but wait out quiet hours.</div>
+          <div className="mt-1.5 text-[12px] text-muted">{t("Goal nudges you asked for; they arrive whatever the proactivity level, but wait out quiet hours.")}</div>
         </div>
       )}
 
@@ -331,6 +343,7 @@ function UpcomingView({ onSettings }: { onSettings: () => void }) {
 // ------------------------------------------------------------------ reminders & routines
 function RemindersSection({ items, name, onChange }: { items: Reminder[]; name: string; onChange: () => void }) {
   const { toast } = useStore();
+  const t = useT();
   const [busy, setBusy] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const active = items.filter((r) => r.status === "active");
@@ -351,7 +364,7 @@ function RemindersSection({ items, name, onChange }: { items: Reminder[]; name: 
     setBusy(r.id);
     try {
       await api.fireReminder(r.id);
-      toast(r.kind === "task" ? `${name} is on it` : `${name} will say it now`);
+      toast(r.kind === "task" ? t("{name} is on it", { name }) : t("{name} will say it now", { name }));
       onChange();
     } catch (e) {
       toast((e as Error).message);
@@ -363,10 +376,10 @@ function RemindersSection({ items, name, onChange }: { items: Reminder[]; name: 
   return (
     <div>
       <div className="flex items-center justify-between mb-1.5">
-        <div className="text-[12px] uppercase tracking-wide text-muted font-semibold">Reminders & routines</div>
+        <div className="text-[12px] uppercase tracking-wide text-muted font-semibold">{t("Reminders & routines")}</div>
         {!adding && (
           <button type="button" onClick={() => setAdding(true)} className="text-[12.5px] text-accent font-medium">
-            + Add
+            {t("+ Add")}
           </button>
         )}
       </div>
@@ -381,7 +394,7 @@ function RemindersSection({ items, name, onChange }: { items: Reminder[]; name: 
       )}
       {active.length === 0 && !adding ? (
         <div className="text-[13px] text-muted">
-          Nothing scheduled. Tell {name} “remind me at six to call mum” or “every weekday morning, summarise my unread email”.
+          {t("Nothing scheduled. Tell {name} “remind me at six to call mum” or “every weekday morning, summarise my unread email”.", { name })}
         </div>
       ) : (
         <ul className="space-y-1.5">
@@ -393,14 +406,14 @@ function RemindersSection({ items, name, onChange }: { items: Reminder[]; name: 
                 <div className="text-[11.5px] text-muted truncate">
                   {r.next_at ? `${relativeTime(r.next_at)} · ${timeShort(r.next_at)}` : "—"}
                   {r.repeat && ` · ${describeCadence(r.repeat).toLowerCase()}`}
-                  {r.kind === "task" && " · does the work"}
+                  {r.kind === "task" && ` · ${t("does the work")}`}
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => void fireNow(r)}
                 disabled={busy !== null}
-                aria-label={r.kind === "task" ? `Do "${r.text}" now` : `Remind me now: ${r.text}`}
+                aria-label={r.kind === "task" ? t("Do “{text}” now", { text: r.text }) : t("Remind me now: {text}", { text: r.text })}
                 className="rounded-full bg-accent/12 p-2 text-accent disabled:opacity-50"
               >
                 {busy === r.id ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} />}
@@ -409,7 +422,7 @@ function RemindersSection({ items, name, onChange }: { items: Reminder[]; name: 
                 type="button"
                 onClick={() => void cancel(r)}
                 disabled={busy !== null}
-                aria-label={`Cancel: ${r.text}`}
+                aria-label={t("Cancel: {text}", { text: r.text })}
                 className="rounded-full p-2 text-muted hover:text-fg disabled:opacity-50"
               >
                 <X size={15} />
@@ -421,20 +434,20 @@ function RemindersSection({ items, name, onChange }: { items: Reminder[]; name: 
       {finished.length > 0 && (
         <details className="mt-2">
           <summary className="text-[12px] text-muted cursor-pointer select-none">
-            {finished.length} finished recently
+            {t("{n} finished recently", { n: finished.length })}
           </summary>
           <ul className="mt-1.5 space-y-1">
             {finished.map((r) => (
               <li key={r.id} className="flex items-center gap-2 px-3 text-[12.5px] text-muted">
                 <span className="min-w-0 flex-1 truncate line-through decoration-border">{r.text}</span>
-                <span className="shrink-0">{r.status === "done" ? (r.last_fired_at ? relativeTime(r.last_fired_at) : "done") : "cancelled"}</span>
+                <span className="shrink-0">{r.status === "done" ? (r.last_fired_at ? relativeTime(r.last_fired_at) : t("done")) : t("cancelled")}</span>
               </li>
             ))}
           </ul>
         </details>
       )}
       <div className="mt-1.5 text-[12px] text-muted">
-        A time you named is kept whatever the level or the quiet hours. Reminders just say it; routines do the work and report.
+        {t("A time you named is kept whatever the level or the quiet hours. Reminders just say it; routines do the work and report.")}
       </div>
     </div>
   );
@@ -442,6 +455,7 @@ function RemindersSection({ items, name, onChange }: { items: Reminder[]; name: 
 
 function ReminderForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => void }) {
   const { toast } = useStore();
+  const t = useT();
   const [text, setText] = useState("");
   const [kind, setKind] = useState<ReminderKind>("remind");
   const [mode, setMode] = useState<"once" | "repeat">("once");
@@ -477,28 +491,28 @@ function ReminderForm({ onDone, onCancel }: { onDone: () => void; onCancel: () =
         autoFocus
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder={kind === "task" ? "What should be done…" : "What to remind you of…"}
+        placeholder={kind === "task" ? t("What should be done…") : t("What to remind you of…")}
         className={cx(field, "w-full h-10 text-[14px]")}
       />
       <div className="flex gap-1.5 text-[12.5px]">
-        <Segment options={[["remind", "Remind me"], ["task", "Do it for me"]]} value={kind} onChange={(v) => setKind(v as ReminderKind)} />
-        <Segment options={[["once", "Once"], ["repeat", "Repeat"]]} value={mode} onChange={(v) => setMode(v as "once" | "repeat")} />
+        <Segment options={[["remind", t("Remind me")], ["task", t("Do it for me")]]} value={kind} onChange={(v) => setKind(v as ReminderKind)} />
+        <Segment options={[["once", t("Once")], ["repeat", t("Repeat")]]} value={mode} onChange={(v) => setMode(v as "once" | "repeat")} />
       </div>
       {mode === "once" ? (
         <input type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} className={cx(field, "w-full")} />
       ) : (
         <div className="flex flex-wrap gap-1.5">
           <select value={cadence} onChange={(e) => setCadence(e.target.value)} className={field}>
-            <option value="daily">Every day</option>
-            <option value="weekdays">Weekdays</option>
-            <option value="weekly">Weekly</option>
-            <option value="monthly">Monthly</option>
+            <option value="daily">{t("Every day")}</option>
+            <option value="weekdays">{t("Weekdays")}</option>
+            <option value="weekly">{t("Weekly")}</option>
+            <option value="monthly">{t("Monthly")}</option>
           </select>
           {cadence === "weekly" && (
             <select value={weekday} onChange={(e) => setWeekday(e.target.value)} className={field}>
-              {["mon", "tue", "wed", "thu", "fri", "sat", "sun"].map((d) => (
+              {["mon", "tue", "wed", "thu", "fri", "sat", "sun"].map((d, i) => (
                 <option key={d} value={d}>
-                  {d[0].toUpperCase() + d.slice(1)}
+                  {new Date(2024, 0, 1 + i).toLocaleDateString(intlLocale(), { weekday: "long" })}
                 </option>
               ))}
             </select>
@@ -507,7 +521,7 @@ function ReminderForm({ onDone, onCancel }: { onDone: () => void; onCancel: () =
             <select value={day} onChange={(e) => setDay(e.target.value)} className={field}>
               {Array.from({ length: 28 }, (_, i) => String(i + 1)).map((d) => (
                 <option key={d} value={d}>
-                  Day {d}
+                  {t("Day {d}", { d })}
                 </option>
               ))}
             </select>
@@ -517,7 +531,7 @@ function ReminderForm({ onDone, onCancel }: { onDone: () => void; onCancel: () =
       )}
       <div className="flex justify-end gap-2 pt-0.5">
         <button type="button" onClick={onCancel} className="rounded-full px-3 py-1.5 text-[13px] text-muted">
-          Cancel
+          {t("Cancel")}
         </button>
         <button
           type="button"
@@ -525,7 +539,7 @@ function ReminderForm({ onDone, onCancel }: { onDone: () => void; onCancel: () =
           disabled={saving || !text.trim()}
           className="rounded-full bg-accent px-3.5 py-1.5 text-[13px] font-medium text-accent-fg disabled:opacity-50"
         >
-          {saving ? "Saving…" : mode === "once" ? "Set reminder" : "Set routine"}
+          {saving ? t("Saving…") : mode === "once" ? t("Set reminder") : t("Set routine")}
         </button>
       </div>
     </div>
@@ -579,13 +593,14 @@ function useActivity(open: boolean): [ActivityData | null, () => Promise<void>] 
 
 function ActivityView({ open }: { open: boolean }) {
   const [data] = useActivity(open);
+  const t = useT();
   const entries = (data?.audit ?? []).filter((e) => e.event === "tool_call").reverse();
   return (
     <div className="pb-2">
       <p className="text-[12.5px] text-muted mb-2">
-        Every tool call goes through the Sentinel and is written to the audit log — including the ones it refused.
+        {t("Every tool call goes through the Sentinel and is written to the audit log — including the ones it refused.")}
       </p>
-      {data && entries.length === 0 && <div className="py-8 text-center text-muted text-[14px]">Nothing yet.</div>}
+      {data && entries.length === 0 && <div className="py-8 text-center text-muted text-[14px]">{t("Nothing yet.")}</div>}
       <ul className="space-y-1.5">
         {entries.map((e, i) => (
           <AuditRow key={`${e.ts}-${i}`} entry={e} />
@@ -598,14 +613,15 @@ function ActivityView({ open }: { open: boolean }) {
 // ------------------------------------------------------------------ permissions
 function PermissionsView({ open }: { open: boolean }) {
   const { state, toast } = useStore();
+  const t = useT();
   const [data, reload] = useActivity(open);
 
   const reset = async () => {
-    if (!window.confirm("Forget every permission you granted? Your Muse will ask again next time.")) return;
+    if (!window.confirm(t("Forget every permission you granted? Your Muse will ask again next time."))) return;
     try {
       await api.resetApprovals();
       await reload();
-      toast("Permissions reset");
+      toast(t("Permissions reset"));
     } catch (e) {
       toast((e as Error).message);
     }
@@ -615,7 +631,7 @@ function PermissionsView({ open }: { open: boolean }) {
     try {
       await api.revokeGrant(g.key);
       await reload();
-      toast(`Revoked: ${grantSubject(g.tool, g.target)}`);
+      toast(t("Revoked: {subject}", { subject: grantSubject(g.tool, g.target) }));
     } catch (e) {
       toast((e as Error).message);
     }
@@ -626,40 +642,40 @@ function PermissionsView({ open }: { open: boolean }) {
     <div className="space-y-4 pb-2">
       <div className="rounded-2xl border border-border p-3.5">
         <div className="flex items-center gap-2 font-medium">
-          <ShieldCheck size={18} className="text-accent" /> Sentinel mode: <span className="capitalize">{mode}</span>
+          <ShieldCheck size={18} className="text-accent" /> {t("Sentinel mode:")} <span className="capitalize">{mode === "ask" ? t("balanced") : mode === "strict" ? t("cautious") : mode === "auto" ? t("hands-off") : mode}</span>
         </div>
         <p className="mt-1 text-[12.5px] text-muted">
-          {mode === "ask" && "Safe and moderate actions run freely; anything sensitive (email, shell, purchases) waits for you."}
-          {mode === "strict" && "Moderate and sensitive actions both wait for your approval."}
-          {mode === "auto" && "Everything is approved automatically except explicit deny rules. Use with care."}
+          {mode === "ask" && t("Safe and moderate actions run freely; anything sensitive (email, shell, purchases) waits for you.")}
+          {mode === "strict" && t("Moderate and sensitive actions both wait for your approval.")}
+          {mode === "auto" && t("Everything is approved automatically except explicit deny rules. Use with care.")}
         </p>
         {data?.tainted && (
           <p className="mt-2 text-[12.5px] text-amber-600 dark:text-amber-300 flex items-center gap-1.5">
-            <ShieldOff size={14} /> Private data was read this session: network calls to new destinations need approval.
+            <ShieldOff size={14} /> {t("Private data was read this session: network calls to new destinations need approval.")}
           </p>
         )}
       </div>
       <GrantList grants={data?.grants ?? []} onRevoke={revoke} />
-      <PermissionList title="Always ask (from config)" tools={state.settings?.sentinel.always_ask_tools ?? []} muted />
+      <PermissionList title={t("Always ask (from config)")} tools={state.settings?.sentinel.always_ask_tools ?? []} muted />
       {(data?.grants.length ?? 0) > 0 && (
         <button type="button" onClick={() => void reset()} className="w-full rounded-2xl border border-border py-2.5 text-[14px] font-medium">
-          Reset all granted permissions
+          {t("Reset all granted permissions")}
         </button>
       )}
     </div>
   );
 }
 
-function grantUntil(g: Grant): string {
+function grantUntil(g: Grant, t: (key: string, vars?: Record<string, string | number>) => string): string {
   switch (g.scope) {
     case "task":
-      return "for the current task";
+      return t("for the current task");
     case "session":
-      return "until restart";
+      return t("until restart");
     case "24h":
-      return g.expires_at ? `until ${timeShort(g.expires_at)}` : "for 24 hours";
+      return g.expires_at ? t("until {time}", { time: timeShort(g.expires_at) }) : t("for 24 hours");
     case "always":
-      return "always";
+      return t("always");
     default:
       return g.scope;
   }
@@ -667,11 +683,12 @@ function grantUntil(g: Grant): string {
 
 /** Every standing permission you granted, one row each, revocable on its own. */
 function GrantList({ grants, onRevoke }: { grants: Grant[]; onRevoke: (g: Grant) => void }) {
+  const t = useT();
   return (
     <div>
-      <div className="text-[12px] uppercase tracking-wide text-muted font-semibold mb-1.5">Permissions you granted</div>
+      <div className="text-[12px] uppercase tracking-wide text-muted font-semibold mb-1.5">{t("Permissions you granted")}</div>
       {grants.length === 0 ? (
-        <div className="text-[13px] text-muted">None. Approvals you give “once” are not kept.</div>
+        <div className="text-[13px] text-muted">{t("None. Approvals you give “once” are not kept.")}</div>
       ) : (
         <ul className="space-y-1.5">
           {grants.map((g) => (
@@ -680,12 +697,12 @@ function GrantList({ grants, onRevoke }: { grants: Grant[]; onRevoke: (g: Grant)
               <div className="min-w-0 flex-1">
                 <div className="text-[13.5px] font-medium truncate">{grantSubject(g.tool, g.target)}</div>
                 <div className="text-[11.5px] text-muted">
-                  {g.tool} · {grantUntil(g)} · granted {timeShort(g.granted_at)}
+                  {g.tool} · {grantUntil(g, t)} · {t("granted {time}", { time: timeShort(g.granted_at) })}
                 </div>
               </div>
               <button
                 type="button"
-                aria-label={`Revoke ${scopeLabel(g.scope, g.tool, g.target)}`}
+                aria-label={t("Revoke {what}", { what: scopeLabel(g.scope, g.tool, g.target) })}
                 onClick={() => onRevoke(g)}
                 className="rounded-full p-1.5 text-muted hover:bg-surface active:scale-95"
               >
@@ -700,16 +717,17 @@ function GrantList({ grants, onRevoke }: { grants: Grant[]; onRevoke: (g: Grant)
 }
 
 function PermissionList({ title, tools, muted }: { title: string; tools: string[]; muted?: boolean }) {
+  const t = useT();
   return (
     <div>
       <div className="text-[12px] uppercase tracking-wide text-muted font-semibold mb-1.5">{title}</div>
       {tools.length === 0 ? (
-        <div className="text-[13px] text-muted">None</div>
+        <div className="text-[13px] text-muted">{t("None")}</div>
       ) : (
         <div className="flex flex-wrap gap-1.5">
-          {tools.map((t) => (
-            <span key={t} className={cx("rounded-full px-2.5 py-1 text-[12.5px] flex items-center gap-1", muted ? "bg-surface-2 text-muted" : "bg-accent/12 text-accent")}>
-              {toolIcon(t, 12)} {t}
+          {tools.map((tool) => (
+            <span key={tool} className={cx("rounded-full px-2.5 py-1 text-[12.5px] flex items-center gap-1", muted ? "bg-surface-2 text-muted" : "bg-accent/12 text-accent")}>
+              {toolIcon(tool, 12)} {tool}
             </span>
           ))}
         </div>
@@ -719,6 +737,7 @@ function PermissionList({ title, tools, muted }: { title: string; tools: string[
 }
 
 function AuditRow({ entry }: { entry: AuditEntry }) {
+  const t = useT();
   const denied = entry.decision === "deny";
   const failed = entry.ok === false && !denied;
   return (
@@ -736,14 +755,14 @@ function AuditRow({ entry }: { entry: AuditEntry }) {
           {entry.risk && <RiskBadge risk={entry.risk as RiskLevel} />}
           {entry.approved === true && (
             <span className="text-emerald-600 dark:text-emerald-300">
-              approved by you{entry.approval_scope && entry.approval_scope !== "once" ? ` (${entry.approval_scope})` : ""}
+              {t("approved by you")}{entry.approval_scope && entry.approval_scope !== "once" ? ` (${entry.approval_scope})` : ""}
             </span>
           )}
           {entry.approved == null && entry.approval_scope && entry.approval_scope !== "once" && (
-            <span className="text-emerald-600 dark:text-emerald-300">covered by your {entry.approval_scope} permission</span>
+            <span className="text-emerald-600 dark:text-emerald-300">{t("covered by your {scope} permission", { scope: entry.approval_scope })}</span>
           )}
-          {denied && <span className="text-rose-500">blocked</span>}
-          {failed && <span className="text-amber-600">failed</span>}
+          {denied && <span className="text-rose-500">{t("blocked")}</span>}
+          {failed && <span className="text-amber-600">{t("failed")}</span>}
           {typeof entry.duration_ms === "number" && <span>{(entry.duration_ms / 1000).toFixed(1)}s</span>}
         </div>
         {denied && entry.reasons && entry.reasons.length > 0 && <div className="mt-0.5 text-[12px] text-muted">{entry.reasons.join(" · ")}</div>}
