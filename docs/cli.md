@@ -90,5 +90,8 @@ openmuse audit [-n 20] [--json]        # recent decisions, approvals, tool calls
 openmuse config init [--path config/config.toml] [--force]
 openmuse config show                   # effective settings, secrets masked
 openmuse config path                   # which file is in use
-openmuse version
+openmuse doctor [--no-model]           # config, data dir, model, connectors — one screen
+openmuse version                       # also: openmuse --version / -V
 ```
+
+`openmuse doctor` is the first thing to run when something is off, and what to paste into a bug report: which config file is in use, where the data lives, which model and endpoint are configured and whether a key is set, the tools the agent has, connector state, and a one-line call to the model with its latency (`--no-model` skips that). It exits non-zero when something needs fixing and says what.
