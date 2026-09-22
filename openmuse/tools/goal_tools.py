@@ -6,7 +6,7 @@ from typing import Any
 
 from openmuse.goals import GOAL_STATUSES, STEP_STATUSES, GoalStore
 from openmuse.schema import RiskLevel, ToolResult
-from openmuse.tools.base import BaseTool
+from openmuse.tools.base import BaseTool, CallAssessment
 
 
 class Goals(BaseTool):
@@ -41,6 +41,23 @@ class Goals(BaseTool):
     }
     risk: RiskLevel = RiskLevel.SAFE
     store: GoalStore
+
+    def assess(self, args: dict[str, Any]) -> CallAssessment:
+        a = super().assess(args)
+        action = str(args.get("action") or "?")
+        gid = args.get("goal_id") or ""
+        if action == "create":
+            detail = str(args.get("title") or "")[:80]
+        elif action == "update_step":
+            detail = f"{gid} step {args.get('step_index')} → {args.get('status') or 'note'}"
+        elif action in ("add_step", "note"):
+            detail = f"{gid}: {str(args.get('title') or args.get('note') or '')[:60]}"
+        elif action == "set_status":
+            detail = f"{gid} → {args.get('status')}"
+        else:
+            detail = gid or str(args.get("status") or "")
+        a.summary = f"goals {action}" + (f": {detail}" if detail else "")
+        return a
 
     async def execute(
         self,

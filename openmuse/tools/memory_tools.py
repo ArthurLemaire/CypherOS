@@ -6,7 +6,12 @@ from typing import Any
 
 from openmuse.memory import MemoryStore
 from openmuse.schema import RiskLevel, ToolResult
-from openmuse.tools.base import BaseTool
+from openmuse.tools.base import BaseTool, CallAssessment
+
+
+def _short(value: Any, limit: int = 80) -> str:
+    text = str(value or "").strip().replace("\n", " ")
+    return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
 class Remember(BaseTool):
@@ -30,6 +35,11 @@ class Remember(BaseTool):
     risk: RiskLevel = RiskLevel.SAFE
     store: MemoryStore
 
+    def assess(self, args: dict[str, Any]) -> CallAssessment:
+        a = super().assess(args)
+        a.summary = f"remember: {_short(args.get('content'))}"
+        return a
+
     async def execute(self, content: str = "", category: str = "general", **_: Any) -> ToolResult:
         try:
             item = self.store.add(content, category=category or "general")
@@ -50,6 +60,11 @@ class Recall(BaseTool):
     reads_private_data: bool = True
     store: MemoryStore
 
+    def assess(self, args: dict[str, Any]) -> CallAssessment:
+        a = super().assess(args)
+        a.summary = f"recall: {_short(args.get('query'))}"
+        return a
+
     async def execute(self, query: str = "", limit: int = 10, **_: Any) -> ToolResult:
         items = self.store.search(query, limit=max(1, min(int(limit or 10), 50)))
         if not items:
@@ -69,6 +84,12 @@ class Forget(BaseTool):
     }
     risk: RiskLevel = RiskLevel.MODERATE
     store: MemoryStore
+
+    def assess(self, args: dict[str, Any]) -> CallAssessment:
+        a = super().assess(args)
+        target = args.get("memory_id") or args.get("query") or "?"
+        a.summary = f"forget: {_short(target)}"
+        return a
 
     async def execute(
         self, memory_id: str | None = None, query: str | None = None, **_: Any

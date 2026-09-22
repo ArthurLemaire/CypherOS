@@ -305,7 +305,10 @@ def test_files_are_scoped_to_workspace(server, settings: Settings):
     listing = client.get("/api/files").json()
     assert listing[0]["path"] == "notes/plan.md"
     assert client.get("/api/files/notes/plan.md").text == "# plan"
-    assert client.get("/api/files/../config.toml").status_code in (403, 404)
+    # encoded traversal reaches the handler (a literal ".." is normalised away by the client)
+    assert client.get("/api/files/%2e%2e/config.toml").status_code in (403, 404)
+    with pytest.raises(PermissionError):
+        server[1].resolve_workspace_path("../config.toml")
     assert client.get("/api/files/nope.txt").status_code == 404
 
 
