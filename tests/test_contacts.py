@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -24,6 +25,12 @@ from openmuse.schema import RiskLevel
 from openmuse.server import create_app
 from openmuse.server.service import MuseService
 from openmuse.tools import Contacts, SendEmail
+
+
+def private(path: Path) -> bool:
+    """0600 — where the file system has modes (Windows keeps files under the user's profile)."""
+    return os.name != "posix" or (path.stat().st_mode & 0o777) == 0o600
+
 
 GOOGLE = """BEGIN:VCARD
 VERSION:3.0
@@ -201,7 +208,7 @@ async def test_book_fetches_links_and_caches_them(tmp_path: Path, monkeypatch: p
     assert status["Cloud"]["contacts"] == 2 and not status["Cloud"]["error"]
     assert status["Page"]["error"] == "not a vCard file"
     assert status["Missing"]["error"] == "HTTP 404"
-    assert len(book) == 2 and cache.exists() and (cache.stat().st_mode & 0o777) == 0o600
+    assert len(book) == 2 and cache.exists() and private(cache)
     # a new book answers from the cache without the network
     monkeypatch.setattr(httpx, "AsyncClient", None)
     again = ContactBook(settings, own_file=tmp_path / "own.vcf", cache_file=cache)
@@ -213,7 +220,7 @@ def test_own_book_add_update_remove(tmp_path: Path):
     bob = book.add("Bob Li", email="bob@example.com", note="landlord")
     assert bob.id == "own-bob-li" and bob.source == OWN and bob.first == "Bob"
     own_file = tmp_path / "data" / "contacts.vcf"
-    assert own_file.exists() and (own_file.stat().st_mode & 0o777) == 0o600
+    assert own_file.exists() and private(own_file)
     # same name again: an update, not a second Bob
     bob2 = book.add("bob li", phone="+86 150 0000 0000", org="Rent Co", note="landlord")
     assert bob2.id == bob.id and len(book.own) == 1
@@ -298,7 +305,7 @@ def test_contacts_in_the_app(settings: Settings, tmp_path: Path):
         (src,) = view["sources"]
         assert src["name"] == "iPhone" and src["file"] and src["from_app"] and src["contacts"] == 1
         saved = settings.contacts_dir / "iPhone.vcf"
-        assert saved.exists() and (saved.stat().st_mode & 0o777) == 0o600
+        assert saved.exists() and private(saved)
         assert load_app_settings(settings.data_dir)["contacts"]["sources"][0]["url"] == str(saved)
         # not a vCard
         r = client.post("/api/connections/contacts/import?name=Bad", content=b"hello")
