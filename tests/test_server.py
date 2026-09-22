@@ -103,6 +103,23 @@ def test_terminate_summary_becomes_assistant_bubble(server):
     assert events_of(client, kind="tool") == []
 
 
+def test_terminate_only_reply_after_a_text_reply_is_still_shown(server):
+    """A text reply leaves 'the model already said its piece' state behind; the next
+    run's terminate-only response must not be mistaken for a repeat of it."""
+    client, service, llm = server
+    llm.script.append(LLMResponse(content="Sure — anything else?"))
+    client.post("/api/threads/main/send", json={"text": "thanks"})
+    wait_idle(service)
+    llm.script.append(
+        LLMResponse(content="", tool_calls=[tc("terminate", status="success", summary="Bye!")])
+    )
+    client.post("/api/threads/main/send", json={"text": "bye"})
+    wait_idle(service)
+    texts = [e["text"] for e in events_of(client, kind="assistant")]
+    assert texts == ["Sure — anything else?", "Bye!"]
+    assert events_of(client, kind="assistant")[-1]["final"] is True
+
+
 def test_approval_card_flow(server, settings: Settings):
     client, service, llm = server
     llm.script.extend(
