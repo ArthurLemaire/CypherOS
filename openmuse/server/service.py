@@ -25,6 +25,7 @@ from openmuse.config import Settings
 from openmuse.goals import Goal
 from openmuse.llm import BaseLLM
 from openmuse.logger import logger
+from openmuse.reminders import Reminder
 from openmuse.schema import Message
 from openmuse.sentinel.grants import SCOPES
 from openmuse.server.connections import Connections
@@ -32,6 +33,7 @@ from openmuse.server.events import MAIN_THREAD, EventBus, Timeline, new_id, now_
 from openmuse.server.push import PushService
 from openmuse.server.webui import WebUI, current_thread
 from openmuse.tools.browser import Browser
+from openmuse.tools.reminder_tools import Reminders
 
 IDEAS_PROMPT = """You are {name}, the user's personal agent. Based on what you know about them, propose {n} concrete, genuinely useful things you could do for them right now. Prefer tasks you can actually complete with your tools (research, comparisons, planning, drafting, tracking, reminders, organising files, advancing their goals).
 
@@ -216,6 +218,7 @@ class MuseService:
         self.ui.on_event = self._maybe_push
         self.app = OpenMuseApp(settings, ui=self.ui, llm=llm, session_id="app")
         self.watch_browser()
+        self._watch_reminders()
         self.connections = Connections(self)
         self.token = self._load_token()
         self._scheduler: asyncio.Task[None] | None = None
@@ -656,6 +659,10 @@ class MuseService:
         title = about.replace("Working on your goal: ", "") or name
         if about.startswith("Check-in: "):
             title = f"{name} · check-in"
+        elif about.startswith("Reminder: "):
+            title = f"{name} · reminder"
+        elif about.startswith("Routine: "):
+            title = about[len("Routine: ") :] or name
         self.push.notify(
             title,
             _first_lines(str(event["text"])),
@@ -735,10 +742,65 @@ class MuseService:
         candidates.sort(key=lambda g: (not g.overdue, g.updated_at))
         return candidates[0] if candidates else None
 
+    # ------------------------------------------------------------------ reminders
+    def _watch_reminders(self) -> None:
+        """New items from the tool belong to the chat they were set in, and the Upcoming
+        view learns about them right away."""
+        tool = self.app.tools.get("reminders")
+        if isinstance(tool, Reminders):
+            tool.thread_of = current_thread.get
+            tool.on_change = lambda: self.bus.publish({"kind": "reminders"})
+
+    def create_reminder(
+        self, text: str, at: str = "", repeat: str = "", kind: str = "remind", thread: str = ""
+    ) -> Reminder:
+        item = self.app.reminders.create(
+            text, at=at, repeat=repeat, kind=kind, thread=thread or MAIN_THREAD
+        )
+        self.bus.publish({"kind": "reminders"})
+        return item
+
+    def cancel_reminder(self, reminder_id: str) -> Reminder | None:
+        item = self.app.reminders.cancel(reminder_id)
+        if item is not None:
+            self.bus.publish({"kind": "reminders"})
+        return item
+
+    def fire_reminder(self, reminder_id: str) -> Reminder:
+        """Hand a reminder or routine to the agent now, in the chat it was set from."""
+        item = self.app.reminders.get(reminder_id)
+        if item is None:
+            raise KeyError(reminder_id)
+        if item.status != "active":
+            raise ValueError(f"reminder is {item.status}")
+        thread = item.thread if item.thread in self.threads else MAIN_THREAD
+        now = datetime.now().astimezone().strftime("%A, %Y-%m-%d %H:%M")
+        template = prompts.REMINDER_PROMPT if item.kind == "remind" else prompts.ROUTINE_PROMPT
+        label = ("Reminder: " if item.kind == "remind" else "Routine: ") + _short(item.text)
+        self.send(
+            thread,
+            template.format(now=now, text=item.text, quiet=prompts.QUIET_MARKER),
+            source="reminder",
+            label=label,
+        )
+        fired = self.app.reminders.mark_fired(item.id)
+        self.bus.publish({"kind": "reminders"})
+        return fired or item
+
+    def _run_due_reminders(self) -> None:
+        """A time the user named is kept whatever the proactivity level or the quiet hours;
+        the message queues behind a conversation in progress rather than skipping."""
+        for item in self.app.reminders.due():
+            try:
+                self.fire_reminder(item.id)
+            except (KeyError, ValueError):  # pragma: no cover - raced with a cancel
+                continue
+
     async def _goal_scheduler(self) -> None:
         self.schedule_next_pass()
         while True:
             try:
+                self._run_due_reminders()
                 self._run_due_check_ins()
                 due = self.next_goal_pass_at or datetime.now(UTC)
                 remaining = (due - datetime.now(UTC)).total_seconds()
@@ -973,6 +1035,7 @@ class MuseService:
         quiet_until = self.profile.quiet_hours_end()
         return {
             "check_ins": check_ins,
+            "reminders": [r.to_dict() for r in self.app.reminders.list(None)],
             "proactive": self.profile.proactive,
             "proactivity": self.profile.proactivity,
             "interval_minutes": self.profile.goal_interval_minutes,
@@ -1067,6 +1130,12 @@ class MuseService:
             "goals": [goal_to_dict(g) for g in self.app.goals.list()],
             "settings": self.settings_view(),
         }
+
+
+def _short(text: str, limit: int = 60) -> str:
+    """One line of ``text`` for a label."""
+    text = " ".join(text.split())
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 
 def _first_lines(text: str, limit: int = 200) -> str:

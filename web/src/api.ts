@@ -7,6 +7,8 @@ import type {
   IdeasData,
   MemoryItem,
   PushInfo,
+  Reminder,
+  ReminderKind,
   SettingsView,
   StateSnapshot,
   TestResult,
@@ -128,6 +130,11 @@ export const api = {
   activity: (n = 150) => request<ActivityData>(`/api/activity?n=${n}`),
   feed: (limit = 60) => request<FeedItem[]>(`/api/feed?limit=${limit}`),
   upcoming: () => request<UpcomingData>("/api/upcoming"),
+  reminders: (all = false) => request<Reminder[]>(`/api/reminders${all ? "?all=1" : ""}`),
+  createReminder: (body: { text: string; kind?: ReminderKind; at?: string; repeat?: string; thread?: string }) =>
+    request<Reminder>("/api/reminders", { method: "POST", body: JSON.stringify(body) }),
+  fireReminder: (id: string) => request<Reminder>(`/api/reminders/${id}/fire`, { method: "POST" }),
+  cancelReminder: (id: string) => request<Reminder>(`/api/reminders/${id}`, { method: "DELETE" }),
   files: (limit = 300) => request<FileInfo[]>(`/api/files?limit=${limit}`),
   /** Raw contents of a workspace file, fetched with the token in a header (never in a URL). */
   fileText: async (path: string): Promise<string> => {

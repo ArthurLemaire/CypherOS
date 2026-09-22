@@ -108,13 +108,14 @@ Prefer a terminal? `openmuse chat` gives you the same agent with approvals in th
 | Feed | What happened while you were away: the result of each background pass, files it made, and every card still waiting for you, from any chat. *Next up* says what runs next. |
 | Ideas | Five suggested actions, regenerated on demand. Tap one to send it as a message. |
 | Goals | Goals by area of life (health, finance, career, learning…), each with a plan, step status and notes, a target date and an optional check-in cadence — a short message at that time, nothing more. When what the agent learns no longer fits the plan it proposes a change and you accept or keep yours. A proactivity dial (Off / Low / Default / High) and quiet hours decide how often it works on goals while you are away and when it speaks up — a pass with nothing to report stays a one-liner instead of a message. |
+| Reminders | "Remind me at six to call mum" — one message at that time, in the chat you said it in. "Every weekday at 07:30, a one-line weather check for my ride" — a routine: the agent does the work then and reports. Kept whatever the proactivity level or quiet hours; listed under *Upcoming* and in the terminal. |
 | Library | Everything the agent made — pages, documents, trackers, images — opened in the app. Pages render in a sandbox that cannot reach your token or the API. |
-| Avatar | The menu: the approvals queue across all chats, the activity log, permissions you granted (revoke any one), what is upcoming, memory, connections, and settings (name, avatar, personality, Sentinel mode, background work, language). |
+| Avatar | The menu: the approvals queue across all chats, the activity log, permissions you granted (revoke any one), what is upcoming (background work, check-ins, reminders), memory, connections, and settings (name, avatar, personality, Sentinel mode, background work, language). |
 | Connections | Plug things in from the phone: the model (provider presets, key straight into the vault, one-tap test), your mailbox (read and send, with a sign-in check), the browser, MCP servers, and the vault itself. Keys and passwords never reach the model. |
 
 The first time you open it, a short setup runs instead: your name, your Muse's name and style, the model and key, optionally your mail. Skip it if `config.toml` already says it all.
 
-Add it to the home screen and turn on notifications (Settings): the phone buzzes when the agent needs an approval, has a question, finished something in the background or it is check-in time — standard Web Push through the browser, no account with anyone — and the icon shows how many cards are waiting. Needs `https://` or `localhost`; see [deployment](docs/deployment.md).
+Add it to the home screen and turn on notifications (Settings): the phone buzzes when the agent needs an approval, has a question, finished something in the background, or a reminder or check-in is due — standard Web Push through the browser, no account with anyone — and the icon shows how many cards are waiting. Needs `https://` or `localhost`; see [deployment](docs/deployment.md).
 
 The app talks to a small REST + WebSocket API, documented in [docs/app.md](docs/app.md), so other front-ends can be built on the same server.
 

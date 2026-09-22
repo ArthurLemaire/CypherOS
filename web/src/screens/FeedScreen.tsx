@@ -28,7 +28,7 @@ export function FeedScreen() {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.feedVersion]);
+  }, [state.feedVersion, state.remindersVersion]);
 
   // Looking at the feed marks it read — the newest item's time is the watermark.
   useEffect(() => {
@@ -90,6 +90,9 @@ function NextUp({
   onGoals: () => void;
 }) {
   const next = data.queue[0];
+  const active = data.reminders.filter((r) => r.status === "active" && r.next_at);
+  const nextReminder = active[0];
+  const activeReminders = active.length;
   return (
     <div className="rounded-3xl border border-border/70 bg-surface shadow-sm px-4 py-3.5">
       <div className="flex items-center gap-2 text-[12px] uppercase tracking-wide text-muted font-semibold">
@@ -128,6 +131,13 @@ function NextUp({
         <div className="mt-1.5 text-[12.5px] text-muted">
           Check-in on <span className="font-medium text-fg">{data.check_ins[0].title}</span> {relativeTime(data.check_ins[0].at)}
           {data.check_ins.length > 1 && ` · ${data.check_ins.length - 1} more`}
+        </div>
+      )}
+      {nextReminder && (
+        <div className="mt-1.5 text-[12.5px] text-muted">
+          {nextReminder.kind === "task" ? "Routine" : "Reminder"} <span className="font-medium text-fg">{nextReminder.text}</span>{" "}
+          {relativeTime(nextReminder.next_at!)}
+          {activeReminders > 1 && ` · ${activeReminders - 1} more`}
         </div>
       )}
     </div>

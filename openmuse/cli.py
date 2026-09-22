@@ -1,10 +1,11 @@
-"""Command-line interface: ``openmuse chat | run | serve | goals | memory | vault | audit | config | daemon``."""
+"""Command-line interface: ``openmuse chat | run | serve | goals | reminders | memory | vault | audit | config | daemon``."""
 
 from __future__ import annotations
 
 import asyncio
 import json
 import shutil
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -24,10 +25,12 @@ app = typer.Typer(
     pretty_exceptions_show_locals=False,
 )
 goals_app = typer.Typer(help="Manage long-term goals.", no_args_is_help=True)
+reminders_app = typer.Typer(help="Reminders and routines.", no_args_is_help=True)
 memory_app = typer.Typer(help="Inspect or edit long-term memory.", no_args_is_help=True)
 vault_app = typer.Typer(help="Store credentials the model never sees.", no_args_is_help=True)
 config_app = typer.Typer(help="Configuration helpers.", no_args_is_help=True)
 app.add_typer(goals_app, name="goals")
+app.add_typer(reminders_app, name="reminders")
 app.add_typer(memory_app, name="memory")
 app.add_typer(vault_app, name="vault")
 app.add_typer(config_app, name="config")
@@ -54,6 +57,7 @@ def _settings(config: Path | None, auto: bool = False) -> Settings:
             "[yellow]No API key configured.[/yellow] Set [bold]llm.api_key[/bold] in config.toml "
             "(run `openmuse config init`) or export DEEPSEEK_API_KEY / OPENAI_API_KEY."
         )
+    settings.ensure_dirs()  # the store commands open SQLite files under data_dir directly
     return settings
 
 
@@ -387,6 +391,73 @@ def goals_delete(goal_id: str, config: ConfigOpt = None) -> None:
     s = _settings(config)
     ok = GoalStore(s.goals_db).delete(goal_id)
     console.print("deleted" if ok else f"[red]no goal {goal_id}[/red]")
+
+
+# ============================================================================ reminders
+@reminders_app.command("list")
+def reminders_list(
+    config: ConfigOpt = None,
+    all: Annotated[bool, typer.Option("--all", help="Include recently finished ones")] = False,  # noqa: A002
+) -> None:
+    """List reminders and routines, soonest first."""
+    from openmuse.reminders import ReminderStore
+
+    s = _settings(config)
+    items = ReminderStore(s.reminders_db).list(None if all else "active")
+    if not items:
+        console.print("[dim]nothing scheduled[/dim]")
+        return
+    table = Table(title="Reminders")
+    table.add_column("id", style="cyan")
+    table.add_column("when")
+    table.add_column("kind")
+    table.add_column("text")
+    table.add_column("status")
+    for r in items:
+        when = r.repeat or (
+            datetime.fromisoformat(r.next_at).astimezone().strftime("%Y-%m-%d %H:%M")
+            if r.next_at
+            else "-"
+        )
+        table.add_row(r.id, when, r.kind, r.text, r.status)
+    console.print(table)
+
+
+@reminders_app.command("add")
+def reminders_add(
+    text: str,
+    config: ConfigOpt = None,
+    at: Annotated[str, typer.Option(help="One-off, local time: 'YYYY-MM-DD HH:MM'")] = "",
+    repeat: Annotated[
+        str, typer.Option(help="Routine: 'daily 08:00', 'weekdays 07:30', 'weekly mon 09:00'…")
+    ] = "",
+    task: Annotated[bool, typer.Option("--task", help="Do the work then, not just say it")] = False,
+) -> None:
+    """Schedule a reminder (or, with --task, a routine the agent carries out)."""
+    from openmuse.reminders import ReminderStore
+
+    s = _settings(config)
+    try:
+        item = ReminderStore(s.reminders_db).create(
+            text, at=at, repeat=repeat, kind="task" if task else "remind"
+        )
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from None
+    console.print(item.render(), markup=False)
+
+
+@reminders_app.command("cancel")
+def reminders_cancel(reminder_id: str, config: ConfigOpt = None) -> None:
+    """Cancel a reminder or routine."""
+    from openmuse.reminders import ReminderStore
+
+    s = _settings(config)
+    item = ReminderStore(s.reminders_db).cancel(reminder_id)
+    if item is None:
+        console.print(f"[red]no active reminder {reminder_id}[/red]")
+        raise typer.Exit(1)
+    console.print(item.render(), markup=False)
 
 
 # ============================================================================ memory
