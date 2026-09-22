@@ -1,0 +1,188 @@
+import { ArrowRight, Bell, FileText, MessageCircleQuestion, Moon, ShieldAlert, Sparkles } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { api } from "../api";
+import { useStore } from "../store";
+import type { FeedItem, UpcomingData } from "../types";
+import { cx, relativeTime, timeShort } from "../util";
+
+/**
+ * What happened while you were away. Muse works in the background and only interrupts
+ * when something is worth it; everything else lands here — replies from background
+ * passes, files it made, cards still waiting for you.
+ */
+export function FeedScreen() {
+  const { state, openThread, openFile, markFeedSeen, setTab, toast } = useStore();
+  const [items, setItems] = useState<FeedItem[] | null>(null);
+  const [upcoming, setUpcoming] = useState<UpcomingData | null>(null);
+  const name = state.profile?.name ?? "Muse";
+
+  useEffect(() => {
+    let alive = true;
+    api.feed(80)
+      .then((d) => alive && setItems(d))
+      .catch((e: Error) => toast(e.message));
+    api.upcoming()
+      .then((d) => alive && setUpcoming(d))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.feedVersion]);
+
+  // Looking at the feed marks it read — the newest item's time is the watermark.
+  useEffect(() => {
+    if (items && items.length && items[0].ts > state.feedSeenAt) markFeedSeen(items[0].ts);
+  }, [items, state.feedSeenAt, markFeedSeen]);
+
+  const groups = useMemo(() => groupByDay(items ?? []), [items]);
+
+  return (
+    <div className="flex h-full flex-col">
+      <header className="safe-top shrink-0 px-5 pt-4 pb-3">
+        <h1 className="text-[24px] font-bold tracking-tight">Feed</h1>
+        <p className="text-[13px] text-muted">What {name} did while you were away, and what it is waiting on.</p>
+      </header>
+
+      <div className="flex-1 overflow-y-auto px-4 pb-6 space-y-4">
+        {upcoming && <NextUp data={upcoming} name={name} onSettings={() => setTab("you")} onGoals={() => setTab("goals")} />}
+
+        {items && items.length === 0 && (
+          <div className="py-10 text-center text-muted text-[14px] px-6">
+            <Moon size={28} className="mx-auto mb-2 opacity-60" />
+            Nothing yet. Once {name} works on a goal in the background or needs your approval, it shows up here.
+          </div>
+        )}
+
+        {groups.map(([day, list]) => (
+          <section key={day}>
+            <div className="px-1 mb-1.5 text-[12px] uppercase tracking-wide text-muted font-semibold">{day}</div>
+            <ul className="space-y-2">
+              {list.map((it) => (
+                <li key={it.id}>
+                  <FeedRow
+                    item={it}
+                    unseen={it.ts > state.feedSeenAt}
+                    onOpen={() => {
+                      if (it.kind === "artifact" && it.path) openFile(it.path);
+                      else openThread(it.thread);
+                    }}
+                  />
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function NextUp({
+  data,
+  name,
+  onSettings,
+  onGoals,
+}: {
+  data: UpcomingData;
+  name: string;
+  onSettings: () => void;
+  onGoals: () => void;
+}) {
+  const next = data.queue[0];
+  return (
+    <div className="rounded-3xl border border-border/70 bg-surface shadow-sm px-4 py-3.5">
+      <div className="flex items-center gap-2 text-[12px] uppercase tracking-wide text-muted font-semibold">
+        <Bell size={13} /> Next up
+      </div>
+      {!data.proactive ? (
+        <div className="mt-1.5 text-[14px] leading-snug">
+          Background work is off. {name} only acts when you ask.{" "}
+          <button type="button" onClick={onSettings} className="text-accent font-medium">
+            Turn it on
+          </button>
+        </div>
+      ) : !next ? (
+        <div className="mt-1.5 text-[14px] leading-snug">
+          No goal has a next step to work on.{" "}
+          <button type="button" onClick={onGoals} className="text-accent font-medium">
+            Add one
+          </button>
+        </div>
+      ) : (
+        <div className="mt-1.5 text-[14px] leading-snug">
+          {data.busy ? "Working now" : data.next_pass_at ? `Around ${timeShort(data.next_pass_at)}` : "Soon"}: <span className="font-medium">{next.title}</span>
+          {next.next_step && <span className="text-muted"> — {next.next_step}</span>}
+          {data.queue.length > 1 && <span className="text-muted"> · {data.queue.length - 1} more in line</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FeedRow({ item, unseen, onOpen }: { item: FeedItem; unseen: boolean; onOpen: () => void }) {
+  const icon =
+    item.kind === "approval" ? (
+      <ShieldAlert size={18} />
+    ) : item.kind === "question" ? (
+      <MessageCircleQuestion size={18} />
+    ) : item.kind === "artifact" ? (
+      <FileText size={18} />
+    ) : (
+      <Sparkles size={18} />
+    );
+  const tone =
+    item.kind === "approval"
+      ? "bg-amber-500/12 text-amber-600 dark:text-amber-300"
+      : item.kind === "question"
+        ? "bg-accent/12 text-accent"
+        : "bg-surface-2 text-muted";
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={cx(
+        "w-full text-left rounded-3xl border bg-surface shadow-sm px-4 py-3 active:scale-[0.99] transition",
+        unseen ? "border-accent/40" : "border-border/70",
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <div className={cx("rounded-2xl p-2 mt-0.5", tone)}>{icon}</div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <div className="font-semibold text-[14.5px] leading-snug truncate">{item.title}</div>
+            {unseen && <span className="h-2 w-2 rounded-full bg-accent shrink-0" />}
+          </div>
+          {item.text && <div className="mt-0.5 text-[13.5px] text-muted leading-snug line-clamp-3 whitespace-pre-wrap">{item.text}</div>}
+          <div className="mt-1.5 flex items-center gap-2 text-[12px] text-muted">
+            <span>{relativeTime(item.ts)}</span>
+            <span>·</span>
+            <span className="truncate">{item.thread_title}</span>
+            <span className="ml-auto flex items-center gap-1 text-accent font-medium">
+              {item.kind === "artifact" ? "Open" : item.kind === "approval" || item.kind === "question" ? "Answer" : "Open chat"}
+              <ArrowRight size={13} />
+            </span>
+          </div>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function groupByDay(items: FeedItem[]): Array<[string, FeedItem[]]> {
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  const label = (iso: string) => {
+    const d = new Date(iso);
+    if (d.toDateString() === today.toDateString()) return "Today";
+    if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
+    return d.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+  };
+  const map = new Map<string, FeedItem[]>();
+  for (const it of items) {
+    const k = label(it.ts);
+    map.set(k, [...(map.get(k) ?? []), it]);
+  }
+  return [...map.entries()];
+}

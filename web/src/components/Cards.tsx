@@ -7,9 +7,9 @@ import {
   ChevronDown,
   ChevronRight,
   Code2,
-  ExternalLink,
   FileText,
   Globe,
+  Image as ImageIcon,
   Loader2,
   Mail,
   MessageCircleQuestion,
@@ -21,7 +21,6 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { fileUrl } from "../api";
 import type {
   ApprovalEvent,
   ArtifactEvent,
@@ -345,26 +344,27 @@ export function Notice({ event }: { event: NoticeEvent }) {
 }
 
 // ------------------------------------------------------------------ artifact
-export function ArtifactCard({ event }: { event: ArtifactEvent }) {
+/** A file the agent made. Opens in the in-app viewer (pages render sandboxed, never with the app's origin). */
+export function ArtifactCard({ event, onOpen }: { event: ArtifactEvent; onOpen: (path: string) => void }) {
   const kind = fileKind(event.name);
+  const label = kind === "html" ? "Page" : kind === "image" ? "Image" : kind === "data" ? "Data" : kind === "code" ? "Code" : "Document";
   return (
     <div className="rise flex justify-start pl-11 pr-8">
-      <a
-        href={fileUrl(event.path)}
-        target="_blank"
-        rel="noreferrer noopener"
-        className="flex items-center gap-3 rounded-3xl rounded-tl-lg border border-border bg-surface px-4 py-3 shadow-sm hover:bg-surface-2 transition max-w-full"
+      <button
+        type="button"
+        onClick={() => onOpen(event.path)}
+        className="flex items-center gap-3 rounded-3xl rounded-tl-lg border border-border bg-surface px-4 py-3 shadow-sm hover:bg-surface-2 transition max-w-full text-left"
       >
         <div className="rounded-2xl bg-accent/12 text-accent p-2.5">
-          {kind === "code" ? <Code2 size={20} /> : <FileText size={20} />}
+          {kind === "code" ? <Code2 size={20} /> : kind === "html" ? <Globe size={20} /> : kind === "image" ? <ImageIcon size={20} /> : <FileText size={20} />}
         </div>
         <div className="min-w-0">
-          <div className="text-[11px] uppercase tracking-wide text-muted font-semibold">Artifact</div>
+          <div className="text-[11px] uppercase tracking-wide text-muted font-semibold">{label}</div>
           <div className="font-medium text-[14.5px] truncate">{event.name}</div>
           <div className="text-[12px] text-muted truncate">{event.path}</div>
         </div>
-        <ExternalLink size={16} className="text-muted ml-1 shrink-0" />
-      </a>
+        <ChevronRight size={16} className="text-muted ml-1 shrink-0" />
+      </button>
     </div>
   );
 }

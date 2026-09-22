@@ -14,7 +14,7 @@ import re
 import secrets
 import uuid
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -149,6 +149,7 @@ class MuseService:
         self._scheduler: asyncio.Task[None] | None = None
         self._started = False
         self.started_at = now_iso()
+        self.next_goal_pass_at: datetime | None = None
         self._load_threads()
 
     # ------------------------------------------------------------------ lifecycle
@@ -404,7 +405,10 @@ class MuseService:
                 self.ui.set_status("working", "Thinking…", thread.id)
                 try:
                     self.ui.reply_shown.discard(thread.id)
-                    final = await thread.agent.run(text, purpose=thread.purposes.pop(text, None))
+                    purpose = thread.purposes.pop(text, None)
+                    if purpose:
+                        self.ui.background[thread.id] = purpose
+                    final = await thread.agent.run(text, purpose=purpose)
                     if (
                         final
                         and final.strip()
@@ -429,6 +433,7 @@ class MuseService:
                     if thread.agent.state.value == "error":
                         thread.agent.state = thread.agent.state.__class__.IDLE
                 finally:
+                    self.ui.background.pop(thread.id, None)
                     thread.agent.inbox = None
                     thread.busy = False
                     thread.updated_at = now_iso()
@@ -466,14 +471,16 @@ class MuseService:
             MAIN_THREAD,
             prompts.ADVANCE_GOAL_PROMPT.format(goal=goal.render()),
             source="goal",
-            label=f"Working on goal in the background: {goal.title}",
+            label=f"Working on your goal: {goal.title}",
         )
         return goal
 
     async def _goal_scheduler(self) -> None:
         while True:
             try:
-                await asyncio.sleep(max(60, self.profile.goal_interval_minutes * 60))
+                interval = max(60, self.profile.goal_interval_minutes * 60)
+                self.next_goal_pass_at = datetime.now(UTC) + timedelta(seconds=interval)
+                await asyncio.sleep(interval)
                 if not self.profile.proactive:
                     continue
                 main = self.threads.get(MAIN_THREAD)
@@ -583,6 +590,117 @@ class MuseService:
                 break
         out.sort(key=lambda f: f["modified"], reverse=True)
         return out[:limit]
+
+    # ------------------------------------------------------------------ feed / upcoming
+    def feed(self, limit: int = 60) -> list[dict[str, Any]]:
+        """What happened without you asking, newest first: one entry per background pass
+        (its final reply, plus any file it made) and every card still waiting for you."""
+        items: list[dict[str, Any]] = []
+        for t in self.threads.values():
+            items.extend(self._feed_of(t))
+        items.sort(key=lambda i: i["ts"], reverse=True)
+        return items[:limit]
+
+    def _feed_of(self, t: Thread) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+
+        def item(ev: dict[str, Any], kind: str, title: str, text: str) -> dict[str, Any]:
+            return {
+                "id": ev["id"],
+                "ts": ev["ts"],
+                "kind": kind,
+                "title": title,
+                "text": text,
+                "thread": t.id,
+                "thread_title": t.title,
+                "path": ev.get("path"),
+            }
+
+        # A background pass is the notice that starts it followed by everything the agent
+        # says or makes until you speak. Only its last word goes to the Feed — the
+        # step-by-step narration stays in the chat.
+        run: dict[str, Any] | None = None
+
+        def flush() -> None:
+            if run is None:
+                return
+            last = run["said"][-1] if run["said"] else None
+            if last is not None:
+                out.append(item(last, "background", run["label"], last.get("text", "")))
+            elif t.busy and run is runs[-1]:
+                out.append(item(run["start"], "background", run["label"], "Working on it…"))
+            for art in run["made"]:
+                out.append(item(art, "artifact", f"Made {art.get('name', 'a file')}", run["label"]))
+
+        runs: list[dict[str, Any]] = []
+        for ev in t.timeline.events:
+            kind, src = ev.get("type"), ev.get("source")
+            if kind == "approval":
+                if ev.get("status") == "pending":
+                    out.append(
+                        item(ev, "approval", "Waiting for your approval", ev.get("summary", ""))
+                    )
+                continue
+            if kind == "question":
+                if ev.get("status") == "pending":
+                    out.append(
+                        item(
+                            ev,
+                            "question",
+                            f"{self.profile.name} has a question",
+                            ev.get("text", ""),
+                        )
+                    )
+                continue
+            if kind == "notice" and src not in (None, "background"):
+                flush()
+                run = {"label": ev.get("text", ""), "start": ev, "said": [], "made": []}
+                runs.append(run)
+            elif src == "background":
+                if run is None:
+                    run = {
+                        "label": ev.get("about") or "While you were away",
+                        "start": ev,
+                        "said": [],
+                        "made": [],
+                    }
+                    runs.append(run)
+                if kind == "artifact":
+                    run["made"].append(ev)
+                elif kind in ("assistant", "notice"):
+                    run["said"].append(ev)
+            elif kind == "user":
+                flush()
+                run = None
+        flush()
+        return out
+
+    def upcoming(self) -> dict[str, Any]:
+        """What is scheduled: the next background pass and the goals it would work on."""
+        active = [g for g in self.app.goals.list("active") if g.next_step is not None]
+        queue = [
+            {
+                "goal_id": g.id,
+                "title": g.title,
+                "next_step": g.next_step.title if g.next_step else None,
+                "progress": {
+                    "done": sum(1 for s in g.steps if s.status in ("done", "skipped")),
+                    "total": len(g.steps),
+                },
+            }
+            for g in active
+        ]
+        return {
+            "proactive": self.profile.proactive,
+            "interval_minutes": self.profile.goal_interval_minutes,
+            "next_pass_at": (
+                self.next_goal_pass_at.isoformat(timespec="seconds")
+                if self.next_goal_pass_at and self.profile.proactive
+                else None
+            ),
+            "queue": queue,
+            "busy": any(t.busy for t in self.threads.values()),
+        }
 
     # ------------------------------------------------------------------ state snapshots
     def activity(self, n: int = 100) -> dict[str, Any]:

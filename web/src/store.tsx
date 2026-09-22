@@ -10,6 +10,7 @@ import {
 } from "react";
 import { api, AuthError, connectWs, getToken } from "./api";
 import type {
+  ApprovalEvent,
   Goal,
   Profile,
   SettingsView,
@@ -20,7 +21,10 @@ import type {
   WsMessage,
 } from "./types";
 
-export type Tab = "chat" | "goals" | "ideas" | "memory" | "you";
+/** Tab bar: chat · feed · ideas · goals · library. Memory and settings live behind the avatar. */
+export type Tab = "chat" | "feed" | "ideas" | "goals" | "library" | "memory" | "you";
+
+const FEED_SEEN_KEY = "openmuse_feed_seen";
 
 export interface Stream {
   id: string;
@@ -45,6 +49,14 @@ export interface AppState {
   settings: SettingsView | null;
   goalsVersion: number;
   memoryVersion: number;
+  /** Cards waiting for you, across every thread — the approvals queue. */
+  pendingApprovals: ApprovalEvent[];
+  /** Bumps whenever something lands in the Feed (background work, cards, artifacts). */
+  feedVersion: number;
+  /** ISO time of the newest Feed item you have looked at. */
+  feedSeenAt: string;
+  /** Path of the workspace file open in the viewer, if any. */
+  viewer: string | null;
   tab: Tab;
   toast: string | null;
 }
@@ -60,6 +72,8 @@ type Action =
   | { type: "goals"; goals: Goal[] }
   | { type: "settings"; settings: SettingsView }
   | { type: "tab"; tab: Tab }
+  | { type: "feedSeen"; at: string }
+  | { type: "viewer"; path: string | null }
   | { type: "toast"; toast: string | null };
 
 const initial: AppState = {
@@ -79,9 +93,25 @@ const initial: AppState = {
   settings: null,
   goalsVersion: 0,
   memoryVersion: 0,
+  pendingApprovals: [],
+  feedVersion: 0,
+  feedSeenAt: localStorage.getItem(FEED_SEEN_KEY) ?? "",
+  viewer: null,
   tab: "chat",
   toast: null,
 };
+
+function upsertApproval(list: ApprovalEvent[], ev: TimelineEvent): ApprovalEvent[] {
+  if (ev.type !== "approval") return list;
+  const rest = list.filter((a) => a.id !== ev.id);
+  return ev.status === "pending" ? [...rest, ev] : rest;
+}
+
+/** Events that belong in the Feed: background work, cards waiting for you, artifacts. */
+function isFeedWorthy(ev: TimelineEvent): boolean {
+  if (ev.type === "approval" || ev.type === "question") return true;
+  return ev.source === "background" || ev.source === "goal";
+}
 
 function upsertEvent(list: TimelineEvent[] | undefined, ev: TimelineEvent): TimelineEvent[] {
   const events = list ?? [];
@@ -118,6 +148,8 @@ function reducer(state: AppState, action: Action): AppState {
         threads: s.threads,
         goals: s.goals,
         settings: s.settings,
+        pendingApprovals: s.pending_approvals,
+        feedVersion: state.feedVersion + 1,
         activeThread: s.threads.some((t) => t.id === state.activeThread) ? state.activeThread : "main",
       };
     }
@@ -146,6 +178,11 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, settings: action.settings, profile: action.settings.profile };
     case "tab":
       return { ...state, tab: action.tab };
+    case "feedSeen":
+      localStorage.setItem(FEED_SEEN_KEY, action.at);
+      return { ...state, feedSeenAt: action.at };
+    case "viewer":
+      return { ...state, viewer: action.path };
     case "toast":
       return { ...state, toast: action.toast };
     case "ws":
@@ -168,11 +205,16 @@ function applyWs(state: AppState, msg: WsMessage): AppState {
       const threads = state.threads.map((t) =>
         t.id === ev.thread && msg.kind === "event" ? { ...t, updated_at: ev.ts } : t,
       );
+      // Only threads whose history has been loaded get the event merged in; the rest are
+      // fetched when opened. The approvals queue and the Feed follow every thread.
+      const loaded = state.events[ev.thread] !== undefined;
       return {
         ...state,
         streams,
         threads,
-        events: { ...state.events, [ev.thread]: upsertEvent(state.events[ev.thread], ev) },
+        events: loaded ? { ...state.events, [ev.thread]: upsertEvent(state.events[ev.thread], ev) } : state.events,
+        pendingApprovals: upsertApproval(state.pendingApprovals, ev),
+        feedVersion: isFeedWorthy(ev) ? state.feedVersion + 1 : state.feedVersion,
       };
     }
     case "stream_start":
@@ -213,11 +255,16 @@ function applyWs(state: AppState, msg: WsMessage): AppState {
         ...state,
         events,
         threads: state.threads.filter((t) => t.id !== msg.thread),
+        pendingApprovals: state.pendingApprovals.filter((a) => a.thread !== msg.thread),
         activeThread: state.activeThread === msg.thread ? "main" : state.activeThread,
       };
     }
     case "thread_cleared":
-      return { ...state, events: { ...state.events, [msg.thread]: [] } };
+      return {
+        ...state,
+        events: { ...state.events, [msg.thread]: [] },
+        pendingApprovals: state.pendingApprovals.filter((a) => a.thread !== msg.thread),
+      };
     case "goals":
       return { ...state, goalsVersion: state.goalsVersion + 1 };
     case "memory":
@@ -259,6 +306,8 @@ interface StoreValue {
   refreshSettings: () => Promise<void>;
   setTab: (tab: Tab) => void;
   openThread: (thread: string) => void;
+  markFeedSeen: (at: string) => void;
+  openFile: (path: string | null) => void;
   toast: (text: string) => void;
 }
 
@@ -352,6 +401,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       refreshSettings,
       setTab: (tab) => dispatch({ type: "tab", tab }),
       openThread: (thread) => dispatch({ type: "activeThread", thread }),
+      markFeedSeen: (at) => dispatch({ type: "feedSeen", at }),
+      openFile: (path) => dispatch({ type: "viewer", path }),
       toast: (text) => dispatch({ type: "toast", toast: text }),
     }),
     [state, loadEvents, refreshGoals, refreshSettings],

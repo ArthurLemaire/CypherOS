@@ -2,6 +2,7 @@ import { Check, LogOut, Shield, ShieldAlert, ShieldCheck } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { api, setToken } from "../api";
 import { Avatar } from "../components/Avatar";
+import { BackBar } from "../components/BackBar";
 import { useStore } from "../store";
 import { cx } from "../util";
 
@@ -72,7 +73,8 @@ export function SettingsScreen() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="safe-top shrink-0 px-5 pt-4 pb-3">
+      <header className="safe-top shrink-0 px-5 pt-2 pb-3">
+        <BackBar />
         <h1 className="text-[24px] font-bold tracking-tight">You &amp; {state.profile?.name ?? "Muse"}</h1>
         <p className="text-[13px] text-muted">Make it yours, and decide how careful it should be.</p>
       </header>

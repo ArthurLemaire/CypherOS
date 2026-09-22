@@ -262,7 +262,14 @@ def test_goals_api(server):
     notice = wait_for(lambda: events_of(client, kind="notice"))[0]
     assert "Run a 10k" in notice["text"] and notice["source"] == "goal"
     assert events_of(client, kind="user") == []  # the goal prompt is not shown as a user bubble
-    wait_for(lambda: events_of(client, kind="assistant"))
+    reply = wait_for(lambda: events_of(client, kind="assistant"))[0]
+    # work done on the agent's own initiative is tagged, so the Feed can show it
+    assert reply["source"] == "background" and "Run a 10k" in reply["about"]
+    # one Feed entry per pass: its final word, not the step-by-step narration
+    feed = client.get("/api/feed").json()
+    assert [i["kind"] for i in feed] == ["background"]
+    assert feed[0]["title"] == "Working on your goal: Run a 10k"
+    assert feed[0]["text"] == "Trained today." and feed[0]["thread_title"] == "Main chat"
     g = client.patch(f"/api/goals/{g['id']}", json={"status": "paused"}).json()
     assert g["status"] == "paused"
     assert client.post(f"/api/goals/{g['id']}/advance").status_code == 409
@@ -316,6 +323,56 @@ def test_files_are_scoped_to_workspace(server, settings: Settings):
     with pytest.raises(PermissionError):
         server[1].resolve_workspace_path("../config.toml")
     assert client.get("/api/files/nope.txt").status_code == 404
+
+
+def test_html_artifacts_are_served_sandboxed(server, settings: Settings):
+    client, _, _ = server
+    (settings.agent.workspace / "page.html").write_text("<script>alert(1)</script>", "utf-8")
+    r = client.get("/api/files/page.html")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/html")
+    assert "sandbox" in r.headers["content-security-policy"]
+    (settings.agent.workspace / "notes.md").write_text("# hi", "utf-8")
+    assert "content-security-policy" not in client.get("/api/files/notes.md").headers
+
+
+def test_feed_and_upcoming(server):
+    client, service, llm = server
+    assert client.get("/api/feed").json() == []
+    up = client.get("/api/upcoming").json()
+    assert up["proactive"] is False and up["queue"] == [] and up["next_pass_at"] is None
+
+    g = client.post("/api/goals", json={"title": "Learn Spanish", "steps": ["Pick an app"]}).json()
+    client.put("/api/settings", json={"profile": {"proactive": True, "goal_interval_minutes": 30}})
+    up = client.get("/api/upcoming").json()
+    assert up["proactive"] is True and up["interval_minutes"] == 30
+    assert up["queue"] == [
+        {
+            "goal_id": g["id"],
+            "title": "Learn Spanish",
+            "next_step": "Pick an app",
+            "progress": {"done": 0, "total": 1},
+        }
+    ]
+
+    # a pending approval is something the Feed shows, whatever thread it belongs to
+    side = client.post("/api/threads", json={"title": "Side"}).json()
+    llm.script.extend(
+        [
+            LLMResponse(tool_calls=[tc("shell", command="echo hi")]),
+            LLMResponse(content="ok"),
+        ]
+    )
+    client.post(f"/api/threads/{side['id']}/send", json={"text": "run it"})
+    card = wait_for(
+        lambda: [e for e in events_of(client, side["id"], "approval") if e["status"] == "pending"]
+    )[0]
+    feed = client.get("/api/feed").json()
+    assert feed[0]["kind"] == "approval" and feed[0]["thread"] == side["id"]
+    assert feed[0]["id"] == card["id"] and feed[0]["thread_title"] == "Side"
+    assert client.get("/api/state").json()["pending_approvals"][0]["id"] == card["id"]
+    client.post(f"/api/approvals/{card['id']}", json={"approved": False})
+    wait_for(lambda: events_of(client, side["id"], "assistant"))
+    assert client.get("/api/feed").json() == []
 
 
 def test_ideas_fallback_and_parsing(server):

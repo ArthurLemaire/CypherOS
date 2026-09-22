@@ -11,6 +11,8 @@
     GET  /api/memory  POST /api/memory  DELETE /api/memory/{id}
     GET  /api/ideas (?refresh=1)
     GET  /api/activity                   audit tail + approvals granted
+    GET  /api/feed                        what happened without you asking
+    GET  /api/upcoming                    next background pass and the goals in line
     GET  /api/files  GET /api/files/{path}
     GET|PUT /api/settings
     WS   /ws?token=…                     live events
@@ -326,6 +328,14 @@ def create_app(settings: Settings, service: MuseService | None = None) -> FastAP
         return svc.update_settings(body.model_dump(exclude_none=True))
 
     # ------------------------------------------------------------------ files
+    @app.get("/api/feed", dependencies=dep)
+    async def feed(limit: int = Query(60, ge=1, le=500)) -> list[dict[str, Any]]:
+        return svc.feed(limit)
+
+    @app.get("/api/upcoming", dependencies=dep)
+    async def upcoming() -> dict[str, Any]:
+        return svc.upcoming()
+
     @app.get("/api/files", dependencies=dep)
     async def list_files(limit: int = Query(200, ge=1, le=2000)) -> list[dict[str, Any]]:
         return svc.list_files(limit)
@@ -355,6 +365,9 @@ def create_app(settings: Settings, service: MuseService | None = None) -> FastAP
         headers = (
             {"Content-Disposition": f'attachment; filename="{target.name}"'} if download else {}
         )
+        if media.startswith("text/html") or media == "image/svg+xml":
+            # Files the agent wrote never run with the app's origin: no token, no API.
+            headers["Content-Security-Policy"] = "sandbox allow-scripts allow-popups"
         return FileResponse(target, media_type=media, headers=headers)
 
     # ------------------------------------------------------------------ websocket

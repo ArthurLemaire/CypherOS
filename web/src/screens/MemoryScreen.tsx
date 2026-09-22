@@ -1,6 +1,7 @@
 import { Brain, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
+import { BackBar } from "../components/BackBar";
 import { useStore } from "../store";
 import type { MemoryItem } from "../types";
 import { relativeTime } from "../util";
@@ -54,7 +55,8 @@ export function MemoryScreen() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="safe-top shrink-0 px-5 pt-4 pb-3">
+      <header className="safe-top shrink-0 px-5 pt-2 pb-3">
+        <BackBar />
         <h1 className="text-[24px] font-bold tracking-tight">Memory</h1>
         <p className="text-[13px] text-muted">
           What {name} remembers about you. Read it, add to it, or make {name} forget — nothing here is hidden from you.

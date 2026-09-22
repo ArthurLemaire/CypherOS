@@ -5,6 +5,10 @@ interface BaseEvent {
   ts: string;
   thread: string;
   updated_ts?: string;
+  /** "user" for things you said; "goal" / "background" for work your Muse did on its own. */
+  source?: string;
+  /** For background events: the short label of the work being done. */
+  about?: string;
 }
 
 export interface UserEvent extends BaseEvent {
@@ -216,6 +220,38 @@ export interface ActivityData {
   audit: AuditEntry[];
   grants: Grant[];
   tainted: boolean;
+}
+
+/** One entry of the Feed: something that happened without you asking. */
+export interface FeedItem {
+  id: string;
+  ts: string;
+  kind: "background" | "artifact" | "approval" | "question";
+  title: string;
+  text: string;
+  thread: string;
+  thread_title: string;
+  path?: string | null;
+}
+
+export interface UpcomingData {
+  proactive: boolean;
+  interval_minutes: number;
+  next_pass_at: string | null;
+  queue: Array<{
+    goal_id: string;
+    title: string;
+    next_step: string | null;
+    progress: { done: number; total: number };
+  }>;
+  busy: boolean;
+}
+
+export interface FileInfo {
+  path: string;
+  name: string;
+  size: number;
+  modified: string;
 }
 
 export type WsMessage =

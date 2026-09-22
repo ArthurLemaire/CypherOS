@@ -26,17 +26,26 @@ The token is generated once and stored in `<data_dir>/server_token`; set `server
 
 ## What is on the screen
 
-**Chat.** One main conversation plus side chats (the *Chats* button top right). Messages stream in as they are generated. Tool calls appear as chips: tap one for the arguments and output. Files the agent writes show up as artifact cards you can open. When Sentinel needs a decision an approval card appears; when the agent needs information a question card appears. The composer stays open while the agent works; anything you send is folded into the running turn before the next model call.
+Five tabs — Chat, Feed, Ideas, Goals, Library — and a menu behind the avatar.
 
-**Avatar.** The dot shows the state (idle, working, waiting for you). Tap the avatar for the activity sheet: the audit trail for this Muse and the permissions you have granted, with a button to forget them.
+**Chat.** One main conversation plus side chats (the *Chats* button top right). Messages stream in as they are generated. Tool calls appear as chips: tap one for the arguments and output. Files the agent writes show up as artifact cards that open in the app. When Sentinel needs a decision an approval card appears; when the agent needs information a question card appears. The composer stays open while the agent works; anything you send is folded into the running turn before the next model call.
 
-**Goals.** Goals created by the agent or by you (the `+` button). Each has a plan; steps are pending, in progress, done or blocked, with notes. *Work on it now* runs one background pass on that goal in a side thread and posts the result to the main chat.
+**Feed.** What happened without you asking: one entry per background pass (its final word, and any file it made), plus every approval or question still waiting for you, in any chat. A *Next up* card says when the next pass runs and which goal is in line. Unseen entries are counted on the tab.
 
 **Ideas.** Five suggestions generated from your goals, memory and recent conversation. Tap one to send it as a message; *Refresh* regenerates.
 
-**Memory.** Everything the agent has remembered about you, by category, plus an entry box. *Forget* deletes an item; the agent will not see it again.
+**Goals.** Goals created by the agent or by you (the `+` button). Each has a plan; steps are pending, in progress, done or blocked, with notes. *Work on it now* runs one background pass on that goal and posts the result to the main chat.
 
-**You.** The agent's name, avatar, colour and personality; the Sentinel mode (Balanced = `ask`, Cautious = `strict`, Hands-off = `auto`); background work (advance one active goal every N minutes while the app is closed); *show thinking*; reply language.
+**Library.** Every file in the agent's workspace, newest first, filtered by kind (pages, documents, images, data, code) and searchable. Files open in the app: pages render live, Markdown is formatted, CSV becomes a table, images and PDFs display inline. A page the agent wrote runs in a sandboxed frame with an opaque origin — it cannot read the access token or call the API — and the server sends `Content-Security-Policy: sandbox` with every HTML file for the same reason.
+
+**Avatar.** The dot shows the state (idle, working, waiting for you); a badge counts approvals waiting anywhere. Tap it for the menu:
+
+- *Approvals* — the queue of cards waiting for you across all chats, answerable right there. Opens first when something is pending.
+- *Activity* — the audit trail: every tool call, decision and approval, including refused ones.
+- *Permissions* — the Sentinel mode, and every standing permission you granted with a revoke button on each.
+- *Upcoming* — the background-work switch, the next pass time, and the goals in line with a *run now* button.
+- *Memory* — everything the agent has remembered about you, by category, plus an entry box. *Forget* deletes an item; the agent will not see it again.
+- *Settings* — the agent's name, avatar, colour and personality; the Sentinel mode (Balanced = `ask`, Cautious = `strict`, Hands-off = `auto`); background work (advance one active goal every N minutes while the app is closed); *show thinking*; reply language.
 
 ## Background work
 
@@ -65,7 +74,9 @@ Everything the app does goes through this API, so another front-end (a Telegram 
 | GET / POST | `/api/memory` · DELETE `/api/memory/{id}` | list / add `{content, category}` / forget |
 | GET | `/api/ideas?refresh=1` | cached or regenerated suggestions |
 | GET | `/api/activity` | audit tail, granted permissions (`grants[]` with `key`, `tool`, `target`, `scope`, `expires_at`), taint flag |
-| GET | `/api/files` · `/api/files/{path}` | list / download workspace files |
+| GET | `/api/feed?limit=` | the Feed: `{id, ts, kind (background · artifact · approval · question), title, text, thread, thread_title, path}` newest first |
+| GET | `/api/upcoming` | `{proactive, interval_minutes, next_pass_at, queue[{goal_id, title, next_step, progress}], busy}` |
+| GET | `/api/files` · `/api/files/{path}?download=1` | list / read workspace files (HTML and SVG are served with `Content-Security-Policy: sandbox`) |
 | GET / PUT | `/api/settings` | view / change `{profile, sentinel_mode, show_thinking, language}` |
 | WS | `/ws?token=` | live events |
 
@@ -75,7 +86,7 @@ On connect the server sends `{"kind": "hello", "state": …}` (the same payload 
 
 | Server → client | Meaning |
 |---|---|
-| `event` | a new timeline event (`user`, `assistant`, `tool`, `approval`, `question`, `artifact`, `notice`). An `approval` carries `summary`, `purpose` (what you asked for), `target`, `grant_key`, `grant_options`, `risk`, `warnings`, `args` |
+| `event` | a new timeline event (`user`, `assistant`, `tool`, `approval`, `question`, `artifact`, `notice`). An `approval` carries `summary`, `purpose` (what you asked for), `target`, `grant_key`, `grant_options`, `risk`, `warnings`, `args`. Events produced during a background pass carry `source: "background"` and `about` (the pass label) |
 | `update` | fields changed on an existing event (a tool finished, an approval was decided) |
 | `stream_start` / `delta` / `stream_end` | the assistant reply being generated |
 | `status` | idle / working / waiting, with a short detail line |
