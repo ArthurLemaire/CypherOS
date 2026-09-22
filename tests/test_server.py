@@ -217,6 +217,42 @@ def test_websocket_hello_and_live_events(server):
         assert seen == ["hello over ws", "ws reply"]
 
 
+def test_stream_that_was_not_a_reply_is_discarded(server):
+    """MockLLM streams the whole content; when the reply is a prompt-mode tool call the
+    parser removes, the phone must drop the bubble it was filling."""
+    from openmuse.llm.prompt_tools import PromptToolAdapter
+
+    client, service, llm = server
+    code = "open('n.txt','w').write('1')"
+    # a ```json fence streams as text (only the <tool_call> tag stops the stream early)
+    inner_call = LLMResponse(
+        content=f'```json\n{{"name": "python_execute", "arguments": {{"code": "{code}"}}}}\n```'
+    )
+    llm.script.extend([inner_call, LLMResponse(content="Done.")])
+    wrapped = PromptToolAdapter(llm)
+    published: list[dict[str, Any]] = []
+    real_publish = service.ui.bus.publish
+
+    def record(message: dict[str, Any]) -> None:
+        published.append(message)
+        real_publish(message)
+
+    service.ui.bus.publish = record  # type: ignore[method-assign]
+    for t in service.threads.values():
+        t.agent.llm = wrapped
+    try:
+        client.post("/api/threads/main/send", json={"text": "write a file"})
+        wait_for(lambda: [e for e in events_of(client, kind="assistant") if e["text"] == "Done."])
+        ends = [m for m in published if m["kind"] == "stream_end"]
+        assert len(ends) == 2
+        assert ends[0].get("discard") is True, "the streamed fence was not a reply"
+        assert "discard" not in ends[1], "the real reply keeps its bubble until the event lands"
+    finally:
+        service.ui.bus.publish = real_publish  # type: ignore[method-assign]
+        for t in service.threads.values():
+            t.agent.llm = llm
+
+
 def test_websocket_rejects_bad_token(server):
     client, _, _ = server
     from starlette.websockets import WebSocketDisconnect

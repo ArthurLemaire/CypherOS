@@ -276,13 +276,18 @@ class WebUI:
         thread = self.thread()
         sid = self._stream_ids.pop(thread, None)
         self._stream_buf.pop(thread, None)
-        if sid is not None:
-            self.bus.publish({"kind": "stream_end", "thread": thread, "id": sid})
         text = (content or "").strip()
         quiet = False
         if thread in self.background:
             quiet, text = split_quiet(text)
             text = text.strip()
+        if sid is not None:
+            end: dict[str, Any] = {"kind": "stream_end", "thread": thread, "id": sid}
+            if not text:
+                # what streamed was not the reply after all — a prompt-mode tool call the
+                # parser took out, or a quiet background pass — so the bubble goes now
+                end["discard"] = True
+            self.bus.publish(end)
         if not text and not (self.show_thinking and reasoning):
             return
         event: dict[str, Any] = {"id": sid or new_id("a"), "type": "assistant", "text": text}
