@@ -84,6 +84,12 @@ GOALS_SECTION = """
 (Use `goals` with action=get for details, and update steps as you make progress.)
 """
 
+CALENDAR_SECTION = """
+## Calendar
+{items}
+(Use `calendar` for other days, to search, to find free time, or to draft an event as an .ics file.)
+"""
+
 USER_PROFILE_SECTION = """
 ## User profile
 {profile}
@@ -168,6 +174,7 @@ def split_quiet(text: str) -> tuple[bool, str]:
 __all__ = [
     "ADVANCE_GOAL_PROMPT",
     "CHECK_IN_PROMPT",
+    "CALENDAR_SECTION",
     "GOALS_SECTION",
     "LANGUAGE_AUTO",
     "LANGUAGE_FIXED",

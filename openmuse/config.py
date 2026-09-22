@@ -136,8 +136,25 @@ class EmailSettings(BaseModel):
     scrub_secrets: bool = True
 
 
+class CalendarFeedSettings(BaseModel):
+    name: str
+    # A private .ics link (Google, Outlook, iCloud, Fastmail, Nextcloud all have one) or a
+    # local file. The link is usually the secret, so "{{vault:CALENDAR_WORK}}" works here.
+    url: str
+
+
+class CalendarSettings(BaseModel):
+    enabled: bool = False
+    feeds: list[CalendarFeedSettings] = Field(default_factory=list)
+    refresh_minutes: int = 30
+    # Working hours, for "when am I free" — local time.
+    day_start: str = "09:00"
+    day_end: str = "18:00"
+
+
 class ConnectorSettings(BaseModel):
     email: EmailSettings = Field(default_factory=EmailSettings)
+    calendar: CalendarSettings = Field(default_factory=CalendarSettings)
 
 
 class BrowserSettings(BaseModel):
@@ -204,6 +221,10 @@ class Settings(BaseModel):
     @property
     def reminders_db(self) -> Path:
         return self.data_dir / "reminders.db"
+
+    @property
+    def calendar_cache(self) -> Path:
+        return self.data_dir / "calendar-cache.json"
 
     @property
     def vault_file(self) -> Path:
@@ -331,6 +352,23 @@ def apply_app_settings(settings: Settings, data: dict[str, Any]) -> None:
         for key in ("enabled", "imap_host", "imap_port", "smtp_host", "smtp_port", "smtp_starttls"):
             if key in email and email[key] is not None:
                 setattr(settings.connectors.email, key, email[key])
+    if calendar := data.get("calendar"):
+        cal = settings.connectors.calendar
+        if "enabled" in calendar and calendar["enabled"] is not None:
+            cal.enabled = bool(calendar["enabled"])
+        for key in ("refresh_minutes", "day_start", "day_end"):
+            if calendar.get(key) not in (None, ""):
+                setattr(cal, key, calendar[key])
+        if isinstance(calendar.get("feeds"), list):
+            feeds = []
+            for raw_feed in calendar["feeds"]:
+                try:
+                    feeds.append(CalendarFeedSettings.model_validate(raw_feed))
+                except ValueError:
+                    continue
+            # feeds added in the app come after the ones in config.toml; same name → app wins
+            names = {f.name for f in feeds}
+            cal.feeds = [f for f in cal.feeds if f.name not in names] + feeds
     if browser := data.get("browser"):
         if "enabled" in browser:
             settings.browser.enabled = bool(browser["enabled"])
@@ -365,6 +403,8 @@ __all__ = [
     "APP_SETTINGS_FILE",
     "AgentSettings",
     "BrowserSettings",
+    "CalendarFeedSettings",
+    "CalendarSettings",
     "ConnectorSettings",
     "DEFAULT_DATA_DIR",
     "EmailSettings",

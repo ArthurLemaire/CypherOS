@@ -1243,3 +1243,65 @@ async def test_browser_tool_reports_frames_and_user_takeover(tmp_path):
     finally:
         await tool.cleanup()
         httpd.shutdown()
+
+
+# ----------------------------------------------------------------------------- calendar
+def test_calendar_feed_from_the_app(server, settings: Settings, tmp_path: Path):
+    from datetime import date
+
+    client, service, llm = server
+    view = client.get("/api/connections").json()["calendar"]
+    assert view["configured"] is False and view["feeds"] == []
+    assert "calendar" not in service.app.tools
+    assert client.get("/api/calendar").json()["configured"] is False
+
+    today = date.today()
+    ics = tmp_path / "work.ics"
+    ics.write_text(
+        "BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VEVENT\nUID:1\n"
+        f"DTSTART;VALUE=DATE:{today:%Y%m%d}\nDTEND;VALUE=DATE:{today + timedelta(days=1):%Y%m%d}\n"
+        "SUMMARY:Team offsite\nEND:VEVENT\nEND:VCALENDAR\n",
+        encoding="utf-8",
+    )
+    r = client.post("/api/connections/calendar/feeds", json={"name": "Work", "url": str(ics)})
+    assert r.status_code == 200, r.text
+    view = r.json()
+    assert view["configured"] and view["feeds"][0]["events"] == 1 and view["feeds"][0]["from_app"]
+    # the link is the secret: it lives in the vault, the settings hold a placeholder
+    assert service.app.vault.get("CALENDAR_WORK") == str(ics)
+    assert settings.connectors.calendar.feeds[0].url == "{{vault:CALENDAR_WORK}}"
+    assert "calendar" in service.app.tools
+
+    cal = client.get("/api/calendar").json()
+    assert cal["configured"] and [e["summary"] for e in cal["events"]] == ["Team offsite"]
+    assert cal["events"][0]["all_day"] is True
+
+    # the agent sees today's events in its system prompt
+    prompt = service.threads["main"].agent.build_system_prompt("hi")
+    assert "## Calendar" in prompt and "Team offsite" in prompt and "(today)" in prompt
+
+    assert client.post("/api/connections/calendar/test").json()["ok"] is True
+    r = client.put("/api/connections/calendar", json={"day_start": "08:30", "day_end": "17:00"})
+    assert r.json()["day_start"] == "08:30" and settings.connectors.calendar.day_end == "17:00"
+    assert client.put("/api/connections/calendar", json={"day_start": "8am"}).status_code == 400
+
+    bad = client.post(
+        "/api/connections/calendar/feeds", json={"name": "Old", "url": str(tmp_path / "none.ics")}
+    )
+    assert bad.status_code == 200 and "FileNotFoundError" in bad.json()["error"]
+    assert client.get("/api/connections").json()["calendar"]["feeds"][1]["error"]
+
+    assert client.delete("/api/connections/calendar/feeds/Old").status_code == 200
+    assert client.delete("/api/connections/calendar/feeds/Work").status_code == 200
+    assert client.delete("/api/connections/calendar/feeds/Work").status_code == 404
+    view = client.get("/api/connections").json()["calendar"]
+    assert view["feeds"] == [] and view["enabled"] is False
+    assert "calendar" not in service.app.tools and service.app.vault.get("CALENDAR_WORK") is None
+    # the app settings file remembers it all for the next start
+    saved = json.loads((settings.data_dir / "app-settings.json").read_text())
+    assert saved["calendar"] == {
+        "feeds": [],
+        "enabled": False,
+        "day_start": "08:30",
+        "day_end": "17:00",
+    }

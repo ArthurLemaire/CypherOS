@@ -15,10 +15,12 @@
     GET  /api/activity                   audit tail + approvals granted
     GET  /api/feed                        what happened without you asking
     GET  /api/upcoming                    next background pass and the goals in line
+    GET  /api/calendar (?days&refresh=1)  today's and tomorrow's events from the calendar feeds
     GET  /api/files  GET /api/files/{path}
     GET|PUT /api/settings
     GET  /api/connections                 model, email, browser, MCP servers, vault names
-    PUT  /api/connections/llm|email|browser   POST /api/connections/llm|email/test
+    PUT  /api/connections/llm|email|browser|calendar   POST /api/connections/llm|email|calendar/test
+    POST /api/connections/calendar/feeds {name,url}  DELETE /api/connections/calendar/feeds/{name}
     POST /api/connections/mcp  DELETE /api/connections/mcp/{name}
     GET  /api/vault  PUT|DELETE /api/vault/{name}   (names only ever come back)
     POST /api/onboarded
@@ -135,6 +137,18 @@ class EmailBody(BaseModel):
 
 class BrowserBody(BaseModel):
     enabled: bool
+
+
+class CalendarFeedBody(BaseModel):
+    name: str = Field(min_length=1, max_length=40)
+    url: str = Field(min_length=1, max_length=2000)
+
+
+class CalendarBody(BaseModel):
+    enabled: bool | None = None
+    refresh_minutes: int | None = Field(default=None, ge=5, le=1440)
+    day_start: str | None = None
+    day_end: str | None = None
 
 
 class MCPBody(BaseModel):
@@ -561,6 +575,38 @@ def create_app(settings: Settings, service: MuseService | None = None) -> FastAP
     @app.put("/api/connections/browser", dependencies=dep)
     async def put_browser(body: BrowserBody) -> dict[str, Any]:
         return conn.set_browser(body.enabled)
+
+    @app.put("/api/connections/calendar", dependencies=dep)
+    async def put_calendar(body: CalendarBody) -> dict[str, Any]:
+        try:
+            return conn.set_calendar(body.model_dump(exclude_none=True))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/api/connections/calendar/feeds", dependencies=dep)
+    async def add_calendar_feed(body: CalendarFeedBody) -> dict[str, Any]:
+        try:
+            return await conn.add_calendar_feed(body.model_dump())
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.delete("/api/connections/calendar/feeds/{name}", dependencies=dep)
+    async def delete_calendar_feed(name: str) -> dict[str, Any]:
+        if not conn.remove_calendar_feed(name):
+            raise HTTPException(404, "no such calendar (feeds from config.toml are removed there)")
+        return conn.view()["calendar"]
+
+    @app.post("/api/connections/calendar/test", dependencies=dep)
+    async def test_calendar() -> dict[str, Any]:
+        return await conn.test_calendar()
+
+    @app.get("/api/calendar", dependencies=dep)
+    async def calendar(days: int = Query(2, ge=1, le=31), refresh: int = 0) -> dict[str, Any]:
+        if refresh:
+            await svc.app.calendar.refresh(force=True)
+        else:
+            await svc.app.calendar.refresh()
+        return svc.calendar_view(days)
 
     @app.post("/api/connections/mcp", dependencies=dep)
     async def add_mcp(body: MCPBody) -> dict[str, Any]:

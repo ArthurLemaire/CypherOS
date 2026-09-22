@@ -8,6 +8,7 @@ from pathlib import Path
 
 from openmuse import prompts
 from openmuse.agent import MuseAgent
+from openmuse.calendar import CalendarFeeds
 from openmuse.config import Settings
 from openmuse.goals import GoalStore
 from openmuse.llm import BaseLLM, create_llm
@@ -18,6 +19,7 @@ from openmuse.sentinel import AuditLog, Sentinel
 from openmuse.tools import (
     AskUser,
     Browser,
+    Calendar,
     Files,
     Forget,
     Goals,
@@ -55,6 +57,9 @@ class OpenMuseApp:
         self.memory = MemoryStore(settings.memory_db) if settings.memory.enabled else None
         self.goals = GoalStore(settings.goals_db)
         self.reminders = ReminderStore(settings.reminders_db)
+        self.calendar = CalendarFeeds(
+            settings.connectors.calendar, vault=self.vault, cache_file=settings.calendar_cache
+        )
         self.audit = AuditLog(settings.audit_file, session_id=self.session_id)
         self.sentinel = Sentinel(
             settings.sentinel,
@@ -75,6 +80,7 @@ class OpenMuseApp:
             audit=self.audit,
             memory=self.memory,
             goals=self.goals,
+            calendar=self.calendar,
             session_file=settings.data_dir / "sessions" / f"{self.session_id}.json",
         )
 
@@ -116,6 +122,8 @@ class OpenMuseApp:
                 ReadEmails(settings=s.connectors.email, vault=self.vault),
                 SendEmail(settings=s.connectors.email, vault=self.vault),
             )
+        if s.connectors.calendar.enabled:
+            tools.add(Calendar(feeds=self.calendar, workspace=ws))
         if s.browser.enabled:
             if playwright_available():
                 tools.add(
