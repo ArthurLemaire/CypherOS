@@ -19,7 +19,14 @@ from tenacity import (
 )
 
 from openmuse.config import LLMSettings
-from openmuse.llm.base import BaseLLM, DeltaCallback, ThinkStreamFilter, split_think
+from openmuse.llm.base import (
+    BaseLLM,
+    DeltaCallback,
+    ThinkStreamFilter,
+    ToolsUnsupported,
+    says_no_tools,
+    split_think,
+)
 from openmuse.logger import logger
 from openmuse.schema import Function, LLMResponse, Message, ToolCall, new_id
 
@@ -80,9 +87,14 @@ class OpenAIChatLLM(BaseLLM):
                         attempt.retry_state.attempt_number - 1,
                         self.settings.max_retries,
                     )
-                if self.settings.stream:
-                    return await self._ask_stream(params, on_delta)
-                return await self._ask_once(params)
+                try:
+                    if self.settings.stream:
+                        return await self._ask_stream(params, on_delta)
+                    return await self._ask_once(params)
+                except openai.BadRequestError as e:
+                    if tools and says_no_tools(str(e)):
+                        raise ToolsUnsupported(str(e)) from e
+                    raise
         raise RuntimeError("unreachable")  # pragma: no cover
 
     async def close(self) -> None:

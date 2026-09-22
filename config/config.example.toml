@@ -50,9 +50,10 @@ max_retries = 5
 # "<think>…</think>" drop the first tokens after </think> when streaming — if the
 # beginning of replies goes missing, set stream = false (responses stay complete).
 stream = true
-# "native" uses the provider's function-calling API. "prompt" describes tools in
-# the prompt and parses <tool_call> blocks – for endpoints that ignore `tools`.
-tool_mode = "native"
+# "auto" uses the provider's function-calling API and falls back to describing tools in
+# the prompt when the endpoint rejects `tools` (Ollama without a tool template).
+# "native" never falls back; "prompt" is for endpoints that silently ignore `tools`.
+tool_mode = "auto"
 # Some DeepSeek thinking endpoints want reasoning_content echoed back with tool calls.
 pass_reasoning = false
 # extra_body = { "thinking" = { "type" = "enabled" } }

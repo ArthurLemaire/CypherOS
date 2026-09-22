@@ -23,10 +23,11 @@ npm run build          # writes openmuse/server/static/ — commit the result wi
 ## Before you push
 
 ```bash
-ruff check openmuse tests && ruff format openmuse tests
+ruff check openmuse tests scripts && ruff format openmuse tests scripts
 mypy                                           # types; config in pyproject.toml
 python -m pytest -q                            # MockLLM only, no network
 OPENMUSE_LIVE=1 python -m pytest -q -m live    # optional: against your configured model
+python scripts/provider_check.py               # optional: five real tasks against your model, one line each
 cd web && npm run check && npm run build       # if you touched web/
 ```
 

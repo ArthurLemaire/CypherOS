@@ -17,11 +17,16 @@ import json
 import re
 from typing import Any
 
-from openmuse.llm.base import BaseLLM, DeltaCallback
+from openmuse.llm.base import BaseLLM, DeltaCallback, ToolsUnsupported
+from openmuse.logger import logger
 from openmuse.schema import Function, LLMResponse, Message, Role, ToolCall
 
 _TOOL_CALL_RE = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.DOTALL)
+# What small models produce instead of the tags, protocol notwithstanding: Gemma
+# writes ```tool_call fences, others a ```json fence holding {"name", "arguments"}.
+_FENCED_RE = re.compile(r"```(?:tool_call|tool_code|json)?[ \t]*\n?\s*(\{.*?\})\s*```", re.DOTALL)
 _OPEN_TAG = "<tool_call>"
+_STOP_TAGS = (_OPEN_TAG, "```tool_call")
 
 PROTOCOL = """
 # Tool calling protocol
@@ -55,29 +60,55 @@ def render_tools(tools: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def parse_tool_calls(text: str | None) -> tuple[str | None, list[ToolCall]]:
-    """Split model output into (visible_text, tool_calls)."""
+def _as_call(raw: str, known: set[str] | None, strict: bool) -> ToolCall | None:
+    """One JSON object → a ToolCall, or None when it is not a call.
+
+    ``strict`` is for fenced blocks, which may be a model quoting JSON for other
+    reasons: those must have ``arguments`` (or ``parameters``) and, when the tool
+    names are known, name one of them.
+    """
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("name"), str):
+        return None
+    args = data.get("arguments", data.get("parameters"))
+    if strict:
+        if not isinstance(args, dict) or (known is not None and data["name"] not in known):
+            return None
+    if args is None:
+        args = {}
+    elif not isinstance(args, dict):
+        args = {"value": args}
+    return ToolCall(
+        function=Function(name=data["name"], arguments=json.dumps(args, ensure_ascii=False))
+    )
+
+
+def parse_tool_calls(
+    text: str | None, known: set[str] | None = None
+) -> tuple[str | None, list[ToolCall]]:
+    """Split model output into (visible_text, tool_calls).
+
+    ``<tool_call>`` blocks are the protocol; fenced ```tool_call / ```json blocks
+    that hold ``{"name", "arguments"}`` for a known tool are accepted too, because
+    that is what several small models emit however clearly the prompt says otherwise.
+    """
     if not text:
         return text, []
     calls: list[ToolCall] = []
     for raw in _TOOL_CALL_RE.findall(text):
-        try:
-            data = json.loads(raw)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(data, dict) or "name" not in data:
-            continue
-        args = data.get("arguments", {})
-        if not isinstance(args, dict):
-            args = {"value": args}
-        calls.append(
-            ToolCall(
-                function=Function(
-                    name=str(data["name"]), arguments=json.dumps(args, ensure_ascii=False)
-                )
-            )
-        )
+        call = _as_call(raw, known, strict=False)
+        if call is not None:
+            calls.append(call)
     visible = _TOOL_CALL_RE.sub("", text)
+    if not calls:
+        fenced = [(m, _as_call(m.group(1), known, strict=True)) for m in _FENCED_RE.finditer(text)]
+        calls = [c for _, c in fenced if c is not None]
+        for m, c in reversed(fenced):
+            if c is not None:
+                visible = visible[: m.start()] + visible[m.end() :]
     # An unterminated block (model cut off) is dropped from the visible text.
     if _OPEN_TAG in visible:
         visible = visible.split(_OPEN_TAG, 1)[0]
@@ -133,17 +164,18 @@ class _StopAtToolCall:
         if self.stopped or not self.on_delta:
             return
         self.buf += text
-        idx = self.buf.find(_OPEN_TAG)
-        if idx != -1:
-            self.on_delta(self.buf[:idx])
+        cut = [i for i in (self.buf.find(t) for t in _STOP_TAGS) if i != -1]
+        if cut:
+            self.on_delta(self.buf[: min(cut)])
             self.stopped = True
             return
         # Hold back a possible partial tag prefix.
         hold = 0
-        for k in range(len(_OPEN_TAG) - 1, 0, -1):
-            if self.buf.endswith(_OPEN_TAG[:k]):
-                hold = k
-                break
+        for tag in _STOP_TAGS:
+            for k in range(len(tag) - 1, 0, -1):
+                if self.buf.endswith(tag[:k]):
+                    hold = max(hold, k)
+                    break
         emit, self.buf = self.buf[: len(self.buf) - hold], self.buf[len(self.buf) - hold :]
         if emit:
             self.on_delta(emit)
@@ -155,11 +187,29 @@ class _StopAtToolCall:
 
 
 class PromptToolAdapter(BaseLLM):
-    name = "prompt_tools"
-    supports_native_tools = False
+    """Prompt-based tools around any model.
 
-    def __init__(self, inner: BaseLLM):
+    With ``native_first`` the inner provider's function calling is used until the
+    endpoint rejects the ``tools`` field (:class:`ToolsUnsupported`); from then on
+    every request goes through the prompt protocol. That is ``tool_mode = "auto"``:
+    the same config works for DeepSeek and for a small Ollama model that has no
+    tool template.
+    """
+
+    name = "prompt_tools"
+
+    def __init__(self, inner: BaseLLM, *, native_first: bool = False):
         self.inner = inner
+        self.native = native_first and inner.supports_native_tools
+
+    @property
+    def supports_native_tools(self) -> bool:  # type: ignore[override]
+        return self.native
+
+    @property
+    def settings(self) -> Any:
+        """The wrapped provider's settings (model, base_url, …)."""
+        return getattr(self.inner, "settings", None)
 
     async def ask(
         self,
@@ -170,11 +220,22 @@ class PromptToolAdapter(BaseLLM):
     ) -> LLMResponse:
         if not tools:
             return await self.inner.ask(messages, None, on_delta=on_delta)
+        if self.native:
+            try:
+                return await self.inner.ask(messages, tools, tool_choice, on_delta=on_delta)
+            except ToolsUnsupported as e:
+                self.native = False
+                logger.warning(
+                    "the endpoint does not do native tool calling ({}); "
+                    "describing tools in the prompt from now on",
+                    str(e).splitlines()[0][:200],
+                )
         converted = convert_messages(messages, tools)
         stopper = _StopAtToolCall(on_delta)
         resp = await self.inner.ask(converted, None, on_delta=stopper if on_delta else None)
         stopper.flush()
-        visible, calls = parse_tool_calls(resp.content)
+        known = {t.get("function", t).get("name", "") for t in tools}
+        visible, calls = parse_tool_calls(resp.content, known)
         resp.content = visible
         resp.tool_calls = calls
         resp.finish_reason = "tool_calls" if calls else resp.finish_reason

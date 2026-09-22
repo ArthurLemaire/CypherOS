@@ -13,6 +13,29 @@ DeltaCallback = Callable[[str], None]
 
 _THINK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL)
 
+# What endpoints say when they cannot do function calling for this model:
+# Ollama: "registry.ollama.ai/library/gemma3:4b does not support tools";
+# vLLM: '"auto" tool choice requires --enable-auto-tool-choice ...';
+# others: "tools are not supported", "function calling is not supported".
+_NO_TOOLS_RE = re.compile(
+    r"(does not|doesn'?t|is not|isn'?t|are not|aren'?t|not) support(ed)?\b[^.]{0,40}\b(tool|function)"
+    r"|\b(tool|function)[^.]{0,40}\b(not supported|unsupported|not available)"
+    r"|enable-auto-tool-choice",
+    re.IGNORECASE,
+)
+
+
+class ToolsUnsupported(Exception):
+    """The endpoint rejected the request because of the ``tools`` field.
+
+    Providers raise this instead of the raw 400 so the prompt-mode fallback can
+    take over (``tool_mode = "auto"``).
+    """
+
+
+def says_no_tools(message: str) -> bool:
+    return bool(_NO_TOOLS_RE.search(message or ""))
+
 
 class BaseLLM(ABC):
     """A chat model that may or may not support native tool calling."""
@@ -116,4 +139,11 @@ class ThinkStreamFilter:
         return text or None
 
 
-__all__ = ["BaseLLM", "DeltaCallback", "ThinkStreamFilter", "split_think"]
+__all__ = [
+    "BaseLLM",
+    "DeltaCallback",
+    "ThinkStreamFilter",
+    "ToolsUnsupported",
+    "says_no_tools",
+    "split_think",
+]
