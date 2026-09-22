@@ -59,6 +59,8 @@ Prefer an [MCP server](https://modelcontextprotocol.io) for integrations with an
 3. The [Release](.github/workflows/release.yml) workflow checks the tag against the version, builds and smoke-tests the wheel, then publishes to PyPI through Trusted Publishing (`pypi` environment, no stored token). The [Docker image](.github/workflows/docker.yml) workflow pushes `ghcr.io/openmuseagent/openmuse:X.Y.Z` and `:latest` for amd64 and arm64.
 4. Paste the changelog section into the GitHub release.
 
+Dependabot's weekly PRs are grouped per ecosystem. A `web/` bump changes the bundle by definition, so CI does not check the committed build on those PRs; after merging one, run `cd web && npm ci && npm run build` and commit the result (`chore(web): rebuild after dependency updates`).
+
 ## Security issues
 
 Open a private security advisory on GitHub rather than a public issue.
