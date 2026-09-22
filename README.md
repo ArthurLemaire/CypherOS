@@ -1,290 +1,244 @@
 <p align="center">
-  <h1 align="center">OpenMuse</h1>
-  <p align="center">
-    An open-source personal AI agent in the spirit of Meta's <b>Muse</b> — with a <b>Sentinel</b> gatekeeper, an encrypted credential vault, approvals, an audit trail, long-term memory and goals.<br/>
-    Bring your own model.
-  </p>
+  <img src="web/public/icon.svg" width="88" alt="OpenMuse">
+</p>
+
+<h1 align="center">OpenMuse</h1>
+
+<p align="center">
+  An open-source version of Meta's <a href="https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/">Muse</a>: a personal agent that works for you from your phone, keeps going while the app is closed, and asks before it does anything you can't undo. Self-hosted, any model.
 </p>
 
 <p align="center">
   <a href="https://github.com/OpenMuseAgent/OpenMuse/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/OpenMuseAgent/OpenMuse/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
-  <img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-blue.svg">
-  <a href="README_zh.md">中文文档</a>
+  <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
+  <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-blue.svg">
+  <br>
+  English · <a href="README_zh.md">简体中文</a>
 </p>
 
----
+<p align="center">
+  <img src="docs/screenshots/chat-approval.png" width="24%" alt="Chat with an approval card">
+  <img src="docs/screenshots/goal-detail.png" width="24%" alt="A goal with its plan">
+  <img src="docs/screenshots/ideas.png" width="24%" alt="Ideas tab">
+  <img src="docs/screenshots/settings.png" width="24%" alt="Sentinel settings">
+</p>
 
-**OpenMuse is an open-source replica of [Meta Muse](https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/)**, the personal AI agent Meta introduced on September 8, 2026. Muse's pitch is an agent that actually *does things for you* — reads your mail, browses, runs code, remembers you and pursues goals over days — while staying safe because every action passes through a gatekeeper (Meta calls it *Sentinel*) and your credentials never touch the model. OpenMuse re-creates that architecture in ~5k lines of typed Python you can read in an afternoon, and runs against **any OpenAI-compatible model**: DeepSeek, OpenAI, Anthropic, OpenRouter, Ollama, vLLM or your company's internal gateway.
+## Start here
 
-> Status: **v0.1.0 — alpha**. The core loop, Sentinel, vault, memory, goals, tools and CLI work end-to-end; APIs may still change.
-
-## Features
-
-| | |
+| You want to... | Go to |
 |---|---|
-| 🛡️ **Sentinel gatekeeper** | Every tool call is mediated by a policy engine: `allow` / `ask` / `deny`, three modes (`ask`, `strict`, `auto`), per-tool risk levels, glob rules on arguments, session or persistent approvals. |
-| 🧪 **Taint tracking + egress allowlist** | Once the agent has touched private data (mail, memories, files outside the workspace) the session is *tainted* and any network egress to a host outside your allowlist needs explicit approval — a practical defence against prompt-injection exfiltration. |
-| 🔐 **Credential vault** | Fernet-encrypted secret store. Config and tools reference `{{vault:NAME}}`; Sentinel resolves the placeholder at execution time, so the model never sees the value, and outputs are redacted. |
-| 📜 **Audit trail** | Append-only JSONL of every decision, approval, tool call and result. `openmuse audit`. |
-| 🧠 **Memory** | `remember` / `recall` / `forget` backed by SQLite; relevant memories are injected into the system prompt. |
-| 🎯 **Goals + daemon** | Multi-step, long-horizon goals with plans, progress and notes. `openmuse daemon` keeps advancing active goals unattended (Sentinel `auto` mode + deny rules). |
-| 🧰 **Tools & MCP** | Files (workspace-scoped), shell, Python, web search / fetch (SSRF-safe), email, browser — plus any [Model Context Protocol](https://modelcontextprotocol.io) server over stdio / HTTP / SSE. |
-| ✉️ **Email connector with OTP scrubbing** | IMAP/SMTP via vault credentials. One-time codes and reset links are stripped *before* the model reads a mail. |
-| 🌐 **Optional Playwright browser** | `pip install "openmuse[browser]"` for navigate / extract / click / type / screenshot. |
-| 🔌 **Any model** | Chat Completions or Responses API, streaming, `<think>` handling, native or prompt-based tool calling, `extra_headers` / `extra_body` for gateways. |
+| Install and open the app on your phone | [Install](#install) → [Quick start](#quick-start) |
+| Use it from the terminal instead | [CLI](docs/cli.md) |
+| Point it at DeepSeek, OpenAI, Ollama, or an internal gateway | [Models](#models) · [Configuration](docs/configuration.md) |
+| Understand what it will and won't do without asking | [Sentinel](#sentinel) · [docs/sentinel.md](docs/sentinel.md) |
+| Connect email, a browser, or MCP servers | [Configuration → Connectors](docs/configuration.md#connectors) |
+| Read the code | [Architecture](#architecture) · [docs/architecture.md](docs/architecture.md) |
+| Run it in Docker | [Deployment](docs/deployment.md) |
+
+## What it does
+
+Meta's Muse is an agent that does things rather than answering questions: it researches, plans, writes files, sends mail, works on goals over weeks, and every risky action passes through a separate gatekeeper. OpenMuse rebuilds that shape in the open:
+
+- One long conversation with your agent, plus side chats for separate tasks. Tool calls show up inline as chips you can expand.
+- Approval cards. Anything hard to undo (a shell command, an email, a network call after reading private data) stops and waits for a tap: deny, allow once, allow for the session, always allow.
+- Goals that outlive the chat. The agent breaks a goal into steps, updates them as it works, and can keep advancing goals on a timer while the app is closed, posting updates to the main chat.
+- Ideas: suggested next actions based on your goals, memory and recent conversations.
+- Memory you can read and edit. Durable facts about you are saved by the agent and shown in a tab; anything can be forgotten with one tap.
+- A Sentinel, a credential vault, taint tracking and an append-only audit log. See [Sentinel](#sentinel).
+- Tools: files, shell, Python, web search and fetch, email (with one-time codes scrubbed before the model sees them), an optional Playwright browser, and any [MCP](https://modelcontextprotocol.io) server.
+- Runs on any OpenAI-compatible model. DeepSeek, OpenAI, OpenRouter, Ollama, vLLM, or a company gateway with custom headers.
+
+## Why OpenMuse
+
+- **It is a Muse, not a bot framework.** One agent with a name and a face, a phone app with Chat / Goals / Ideas / Memory tabs, approval cards, background work. If you want a bot in Telegram or Discord, see [Related projects](#related-projects).
+- **Safety is the architecture, not a setting.** The agent never touches tools directly. A separate `Sentinel` decides allow / ask / deny per call, resolves `{{vault:NAME}}` placeholders so secrets never reach the model, tracks taint (private data read → new destinations need approval), and logs everything.
+- **Bring your own model.** Chat Completions or Responses API, streaming, `<think>` handling, native or prompt-based tool calling.
+- **Small enough to read.** About 7k lines of typed Python and 3k lines of TypeScript. No orchestration framework underneath.
+
+## Install
+
+Python 3.11 or newer. The phone app is pre-built and included in the package; Node is only needed if you change `web/`.
+
+```bash
+uv tool install git+https://github.com/OpenMuseAgent/OpenMuse.git
+# or: pip install git+https://github.com/OpenMuseAgent/OpenMuse.git
+```
+
+From a checkout, for development:
+
+```bash
+git clone https://github.com/OpenMuseAgent/OpenMuse.git && cd OpenMuse
+uv venv && source .venv/bin/activate
+uv pip install -e ".[dev]"
+```
+
+Optional: `openmuse[browser]` adds the Playwright browser tool (then `playwright install chromium`). A PyPI release follows the first tagged version.
+
+## Quick start
+
+```bash
+openmuse config init                 # writes config/config.toml
+export DEEPSEEK_API_KEY=sk-...       # the default config uses DeepSeek; see Models below
+openmuse serve --host 0.0.0.0        # prints a URL and a QR code
+```
+
+Scan the QR code with your phone (same Wi-Fi), or open the URL on this machine. The link carries a one-time access token; add the page to your home screen and it behaves like an app. Then try:
+
+- *"Compare the Sony WH-1000XM6 and Bose QuietComfort Ultra for long flights and save a short comparison to headphones.md"*
+- *"Check how much free disk space this machine has"* — this one produces an approval card.
+- *"Set up a goal: conversational Japanese before my Kyoto trip in December, 30 minutes a day"* — then open the Goals tab.
+
+Prefer a terminal? `openmuse chat` gives you the same agent with approvals in the console, and `openmuse run "task"` runs one task and exits. See [docs/cli.md](docs/cli.md).
+
+## The app
+
+`openmuse serve` starts an always-on agent and serves a mobile-first web app from the same process (FastAPI + a WebSocket for live events; React on the client, bundled into the Python package).
+
+<p align="center">
+  <img src="docs/screenshots/chat-research.png" width="24%" alt="Research with tool chips and a file artifact">
+  <img src="docs/screenshots/chat-approval.png" width="24%" alt="Approval card">
+  <img src="docs/screenshots/memory.png" width="24%" alt="Memory tab">
+  <img src="docs/screenshots/goal-detail.png" width="24%" alt="Goal plan">
+</p>
+
+| Screen | What you get |
+|---|---|
+| Chat | Message-style conversation, streaming replies, tool chips with output, file artifacts, approval and question cards, side chats. You can keep typing while the agent works; new messages are folded into the running turn. |
+| Goals | Active / paused / done goals, a plan with step status and notes, "work on it now", and a switch to keep working on goals every N minutes while you are away. |
+| Ideas | Five suggested actions, regenerated on demand. Tap one to send it as a message. |
+| Memory | Everything the agent remembers about you, by category. Add or forget entries. |
+| You | Name, avatar, colour and personality of your agent; the Sentinel mode; background work; reply language. |
+| Avatar | Tap it for the activity log: every tool call, decision and approval from the audit trail. |
+
+The app talks to a small REST + WebSocket API, documented in [docs/app.md](docs/app.md), so other front-ends can be built on the same server.
+
+## Sentinel
+
+Every tool call goes through `Sentinel` before it runs. Tools declare a risk level (`safe` / `moderate` / `sensitive`) and can escalate a specific call (`shell` on `rm -rf`, `web_fetch` on a private IP). Evaluation order, first match wins:
+
+1. `deny_tools` → deny
+2. `[[sentinel.rules]]` matching glob patterns on the arguments → the rule's action
+3. `always_allow_tools` / `always_ask_tools`
+4. Taint: the session has read private data (email, memories, files outside the workspace) **and** this call sends data to a host outside `egress_allowlist` → ask
+5. Risk × mode: `ask` asks for sensitive calls, `strict` also for moderate ones, `auto` allows everything not denied
+
+```toml
+[sentinel]
+mode = "ask"                              # ask | strict | auto
+always_ask_tools = ["send_email", "shell"]
+egress_allowlist = ["*.wikipedia.org", "github.com", "*.github.com"]
+
+[[sentinel.rules]]
+tool   = "shell"
+match  = { command = "*rm -rf*" }
+action = "deny"
+```
+
+Secrets live in a Fernet-encrypted vault (`openmuse vault set EMAIL_PASSWORD`). Config and tool arguments reference them as `{{vault:EMAIL_PASSWORD}}`; Sentinel substitutes the value right before execution and redacts it from tool output, so the model never sees it. Every decision is appended to `~/.openmuse/audit.jsonl`. Details in [docs/sentinel.md](docs/sentinel.md).
+
+## Models
+
+Edit `[llm]` in `config/config.toml`. Any OpenAI-compatible endpoint works:
+
+```toml
+[llm]
+provider = "openai"                    # Chat Completions; "openai_responses" for the Responses API
+model    = "deepseek-flash"
+base_url = "https://api.deepseek.com"
+api_key  = "${DEEPSEEK_API_KEY}"
+
+# OpenAI:      model = "gpt-5.6-sol"  base_url = "https://api.openai.com/v1"   api_key = "${OPENAI_API_KEY}"
+# Ollama:      model = "qwen3:32b"    base_url = "http://localhost:11434/v1"   api_key = "ollama"
+# OpenRouter:  model = "deepseek/deepseek-flash"  base_url = "https://openrouter.ai/api/v1"
+# A gateway that needs headers:  extra_headers = { "X-End-User-Id" = "openmuse" }
+# A model that ignores `tools`:  tool_mode = "prompt"
+```
+
+The same settings can be set with `OPENMUSE_LLM_MODEL`, `OPENMUSE_LLM_BASE_URL`, `OPENMUSE_LLM_API_KEY`, `OPENMUSE_LLM_PROVIDER`. Full reference: [docs/configuration.md](docs/configuration.md).
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    U([You]) <--> CLI[CLI / Console UI]
-    CLI <--> A[MuseAgent loop]
-    A <--> LLM[(LLM<br/>any OpenAI-compatible)]
-    A --> S{{Sentinel}}
-    S -- allow --> T[Tools]
-    S -- ask --> U
-    S -- deny --> A
-    S --> AU[(Audit log)]
-    S <--> V[(Credential vault<br/>Fernet)]
-    T --> F[files / shell / python]
-    T --> W[web_search / web_fetch / browser]
-    T --> E[read_emails / send_email]
-    T --> M[(Memory)]
-    T --> G[(Goals)]
+    P([Phone / browser]) <-- WebSocket + REST --> S[MuseService<br/>threads, scheduler, ideas]
+    C([Terminal]) <--> A
+    S <--> A[MuseAgent loop]
+    A <--> LLM[(any OpenAI-compatible model)]
+    A --> G{{Sentinel}}
+    G -- allow --> T[Tools]
+    G -- ask --> P
+    G --> AU[(audit.jsonl)]
+    G <--> V[(vault.enc)]
+    T --> F[files · shell · python]
+    T --> W[web_search · web_fetch · browser]
+    T --> E[email]
     T --> MCP[MCP servers]
-    M -. injected .-> A
-    G -. injected .-> A
+    T <--> M[(memory.db)]
+    T <--> GO[(goals.db)]
 ```
 
-* **MuseAgent** – a think → act loop with context trimming, stuck detection and session persistence (`openmuse/agent/core.py`).
-* **Sentinel** – `Policy` (rules, risk × mode, taint) + `AuditLog` + approvals + vault resolution (`openmuse/sentinel/`).
-* **Vault** – `CredentialVault` with `{{vault:NAME}}` resolution and output redaction (`openmuse/vault/`).
-* **Tools** – `BaseTool` with static `risk` and dynamic `assess()` (e.g. `shell` escalates on `rm -rf`, `web_fetch` blocks private IPs) (`openmuse/tools/`).
-* **LLM** – `OpenAIChatLLM`, `OpenAIResponsesLLM`, `PromptToolAdapter` fallback, `MockLLM` for tests (`openmuse/llm/`).
+| Area | Files |
+|---|---|
+| Agent loop, system prompt, context window | `openmuse/agent/core.py`, `openmuse/prompts.py` |
+| Sentinel: policy, approvals, taint, audit | `openmuse/sentinel/` |
+| Credential vault | `openmuse/vault/` |
+| Tools and MCP adapter | `openmuse/tools/` |
+| LLM providers, `<think>` filter, prompt-based tool calling | `openmuse/llm/` |
+| Memory and goals (SQLite) | `openmuse/memory/`, `openmuse/goals/` |
+| App server: service, REST/WebSocket API, timeline | `openmuse/server/` |
+| Phone app (React, Vite, Tailwind) | `web/` → built into `openmuse/server/static/` |
+| Terminal UI and CLI | `openmuse/console.py`, `openmuse/cli.py` |
 
-### How it compares to Meta Muse
+More in [docs/architecture.md](docs/architecture.md).
+
+## OpenMuse and Meta Muse
 
 | Meta Muse | OpenMuse |
 |---|---|
-| Runs in a *Secure VM* | Run it in Docker (`docker compose run muse`) or any sandbox you like |
-| *Sentinel* approves sensitive actions | `Sentinel` policy engine: allow / ask / deny, taint tracking, egress allowlist |
-| Credentials isolated from the model | Encrypted vault + `{{vault:NAME}}` placeholders, never in prompts |
-| Remembers preferences | SQLite memory with `remember` / `recall` / `forget` |
-| Works on long tasks in the background | `goals` store + `openmuse daemon` |
-| Connects to mail, calendar, browser | Email (IMAP/SMTP), Playwright browser, anything via MCP |
-| Meta's models only | Any OpenAI-compatible endpoint, local models included |
-| Closed source | MIT |
+| Runs in a per-user Secure VM | Runs on your machine or in Docker; the workspace and data directory are the boundary |
+| Sentinel approves sensitive actions | `Sentinel` policy engine: allow / ask / deny, rules, taint tracking, egress allowlist |
+| Credentials never reach the model | Encrypted vault with `{{vault:NAME}}` placeholders and output redaction |
+| Remembers you | SQLite memory the agent maintains and you can edit |
+| Works on goals in the background | Goals with steps; scheduler advances them and reports to the chat |
+| Mobile app with chat, goals, approvals | Mobile-first web app served by `openmuse serve`, installable to the home screen |
+| Meta's models | Any OpenAI-compatible model |
+| Closed | MIT |
 
-## Quick start
+## Docs
 
-```bash
-# 1. install (Python 3.11+)
-uv pip install openmuse            # or: pip install openmuse
-# from source:
-git clone https://github.com/OpenMuseAgent/OpenMuse.git && cd OpenMuse
-uv venv && source .venv/bin/activate && uv pip install -e ".[dev]"
-
-# 2. create a config and point it at a model
-openmuse config init               # writes config/config.toml
-export DEEPSEEK_API_KEY=sk-...     # default config uses DeepSeek
-
-# 3. talk to your agent
-openmuse chat
-openmuse run "Summarise the top 3 Hacker News stories into workspace/hn.md"
-```
-
-The config file is searched in this order: `--config PATH`, `$OPENMUSE_CONFIG`, `./config/config.toml`, `~/.openmuse/config.toml`. String values may contain `${ENV_VAR}` or `${ENV_VAR:-default}`.
-
-### Choosing a model
-
-Any OpenAI-compatible endpoint works. Edit `[llm]` in `config/config.toml`:
-
-```toml
-[llm]
-# DeepSeek (default)
-provider = "openai"                # Chat Completions API
-model    = "deepseek-flash"
-base_url = "https://api.deepseek.com"
-api_key  = "${DEEPSEEK_API_KEY}"
-
-# OpenAI
-# model = "gpt-5.6-sol"          base_url = "https://api.openai.com/v1"   api_key = "${OPENAI_API_KEY}"
-
-# Ollama / vLLM / LM Studio (fully local, private)
-# model = "qwen3:32b"          base_url = "http://localhost:11434/v1"  api_key = "ollama"
-
-# OpenRouter
-# model = "deepseek/deepseek-flash"  base_url = "https://openrouter.ai/api/v1"  api_key = "${OPENROUTER_API_KEY}"
-
-# Any gateway that needs extra headers / body fields
-# base_url      = "https://gateway.example.com/v1"
-# extra_headers = { "X-End-User-Id" = "openmuse" }
-# extra_body    = { "thinking" = { "type" = "enabled" } }
-# provider      = "openai_responses"   # if the gateway speaks the Responses API instead
-# tool_mode     = "prompt"             # if the endpoint ignores `tools` (tools are described in the prompt instead)
-```
-
-Quick overrides without touching the file: `OPENMUSE_LLM_MODEL`, `OPENMUSE_LLM_BASE_URL`, `OPENMUSE_LLM_API_KEY`, `OPENMUSE_LLM_PROVIDER`, `OPENMUSE_LLM_TOOL_MODE`, `OPENMUSE_SENTINEL_MODE`, `OPENMUSE_DATA_DIR`, `OPENMUSE_LOG_LEVEL` (see [`.env.example`](.env.example)).
-
-## CLI
-
-```text
-openmuse chat  [--auto] [--show-thinking] [--resume]   interactive session (/help, /memory, /goals, /audit, /tools, /tainted, /reset)
-openmuse run   "task"  [--auto]                         one-shot task
-openmuse daemon [--interval 3600] [--once]              keep advancing active goals (Sentinel auto mode)
-
-openmuse goals   list|show|add|run|status|delete
-openmuse memory  list|add|forget|clear
-openmuse vault   set|list|delete                        secrets the model never sees
-openmuse audit   [-n 20] [--json]                       recent audit entries
-openmuse config  init|show|path
-openmuse version
-```
-
-All commands accept `--config PATH`. `--auto` switches Sentinel to `auto` mode for the run (explicit `deny` rules still apply).
-
-## Sentinel
-
-Sentinel sits between the agent and every tool. Each tool declares a static risk level (`safe` / `moderate` / `sensitive`) and may escalate it dynamically per call. The policy is evaluated in this order — first match wins:
-
-1. `deny_tools` → **deny**
-2. `[[sentinel.rules]]` with matching glob patterns on arguments → rule's `action`
-3. `always_allow_tools` / `always_ask_tools`
-4. Taint: session has read private data **and** the call sends data to a host not in `egress_allowlist` → **ask**
-5. Risk × mode: `ask` mode asks for `sensitive`; `strict` asks for `moderate` and `sensitive`; `auto` allows everything
-
-```toml
-[sentinel]
-mode = "ask"                              # ask | strict | auto
-always_ask_tools   = ["send_email", "shell"]
-deny_tools         = []
-taint_tracking     = true
-egress_allowlist   = ["duckduckgo.com", "*.duckduckgo.com", "*.wikipedia.org", "github.com", "*.github.com"]
-
-[[sentinel.rules]]                        # first match wins; values are glob patterns
-tool   = "shell"
-match  = { command = "*rm -rf*" }
-action = "deny"
-reason = "recursive deletes are not allowed"
-
-[[sentinel.rules]]
-tool   = "files"
-match  = { action = "write", path = "*.env" }
-action = "ask"
-```
-
-When Sentinel asks, you can approve **once**, for the **session**, or **always** (persisted). Every decision lands in `~/.openmuse/audit.jsonl`.
-
-## Credential vault
-
-```bash
-openmuse vault set EMAIL_PASSWORD          # prompted, stored Fernet-encrypted in ~/.openmuse/vault.enc
-openmuse vault list                        # names only
-```
-
-```toml
-[connectors.email]
-enabled  = true
-address  = "{{vault:EMAIL_ADDRESS}}"
-password = "{{vault:EMAIL_PASSWORD}}"
-```
-
-Placeholders are resolved by Sentinel right before a tool executes. The model only ever sees `{{vault:EMAIL_PASSWORD}}`; if a secret value leaks into a tool result it is redacted before the model reads it. The key lives in `~/.openmuse/vault.key` or `$OPENMUSE_VAULT_KEY`.
-
-## Memory and goals
-
-```bash
-openmuse memory add "I prefer concise answers in English" --category preference
-openmuse goals add "Learn Rust" -s "Read the book ch.1-4" -s "Build a CLI" -s "Publish a crate"
-openmuse goals run g_xxxx               # advance one goal now
-openmuse daemon --interval 1800         # advance all active goals every 30 min
-```
-
-The agent also manages memory (`remember` / `recall` / `forget`) and goals (`goals` tool) on its own during conversations. `recall` and `read_emails` mark the session as tainted.
-
-## Tools
-
-| Tool | Risk | Notes |
-|---|---|---|
-| `files` | safe | read / write / append / list / search, confined to `agent.workspace` |
-| `shell` | sensitive | dangerous patterns escalate; `always_ask_tools` by default |
-| `python_execute` | moderate | subprocess with timeout |
-| `web_search` | safe | DuckDuckGo |
-| `web_fetch` | moderate | HTML → Markdown, blocks private / loopback hosts |
-| `read_emails` / `send_email` | moderate / sensitive | IMAP / SMTP, OTP + reset-link scrubbing |
-| `browser` | moderate | optional Playwright |
-| `remember` / `recall` / `forget` | safe / safe / moderate | long-term memory |
-| `goals` | safe | create / list / update steps / notes |
-| `ask_user`, `terminate` | safe | control flow |
-| MCP tools | configurable | risk level per server |
-
-### MCP servers
-
-```toml
-[[mcp.servers]]
-name = "filesystem"
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-filesystem", "./workspace"]
-risk = "moderate"
-
-[[mcp.servers]]
-name = "calendar"
-url = "http://localhost:8000/mcp"      # streamable HTTP, falls back to SSE automatically
-risk = "sensitive"
-reads_private_data = true
-```
-
-Remote tools appear as `<server>__<tool>` and go through Sentinel like everything else.
-
-## Docker (the "Secure VM")
-
-```bash
-cp .env.example .env && $EDITOR .env
-docker compose run --rm muse                      # interactive chat
-docker compose run --rm muse run "plan my week"   # one-shot
-docker compose up daemon                          # background goal runner
-```
-
-State (`/data`) and the agent's files (`/workspace`) are volumes; the container runs as a non-root user with no host access beyond those mounts.
-
-## Development
-
-```bash
-uv pip install -e ".[dev]"
-ruff check openmuse tests && ruff format --check openmuse tests
-python -m pytest -q                       # unit tests, MockLLM, no network
-OPENMUSE_LIVE=1 python -m pytest -q -m live   # smoke test against your configured model
-```
-
-See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-### Troubleshooting
-
-* **Beginning of replies missing when streaming** (e.g. "帮你写作…" instead of "你好！我能帮你写作…"). Some proxies that inline `<think>…</think>` into `content` drop the first tokens after `</think>` *on the server side* when streaming; non-streaming responses are complete. Set `stream = false` under `[llm]`.
-* **Model ignores tools.** Set `tool_mode = "prompt"` — tools are described in the system prompt and parsed from `<tool_call>` blocks.
-* **429 / rate limits.** Requests retry with exponential back-off (`max_retries`, default 5). Lower `max_steps` or add `web_fetch` to `always_ask_tools` to slow the loop down.
+- [Configuration](docs/configuration.md): every setting, environment overrides, connectors, MCP
+- [Sentinel](docs/sentinel.md): policy order, rules, taint tracking, vault, audit
+- [The app and its API](docs/app.md): phone access, tokens, threads, approvals, endpoints
+- [CLI](docs/cli.md): `chat`, `run`, `serve`, `daemon`, `goals`, `memory`, `vault`, `audit`, `config`
+- [Architecture](docs/architecture.md): source map and extension points
+- [Deployment](docs/deployment.md): Docker, Compose, keeping it running
+- [Troubleshooting](docs/troubleshooting.md)
 
 ## Roadmap
 
-- [ ] **Mobile-first chat app (high priority)** — replicate the phone showcase from Meta's Muse launch: message-style conversation, tasks running in the background, approval cards, a Goals tab
-- [ ] Web UI (approvals on your phone) and Telegram / Slack front-ends
-- [ ] Scheduled triggers for goals (cron, webhooks, new-mail events)
+- [x] Agent loop, Sentinel, vault, audit, memory, goals, tools, MCP, CLI
+- [x] Mobile-first app: chat, approval cards, side chats, Goals / Ideas / Memory, background goal work
+- [ ] Push notifications when an approval is waiting or a goal posts an update
+- [ ] Triggers for goals: cron, webhooks, new mail
 - [ ] Calendar and contacts connectors (via MCP)
-- [ ] Vector-based memory recall, memory consolidation
-- [ ] Planner / sub-agent delegation for long goals
-- [ ] Per-tool sandboxes (gVisor / Firecracker) for `shell` and `python_execute`
-- [ ] Skills: reusable, shareable task recipes
+- [ ] Better memory recall (embeddings) and periodic consolidation
+- [ ] Per-tool sandboxes for `shell` and `python_execute`
+- [ ] Skills: reusable task recipes
 
-## Acknowledgements
+## Contributing
 
-* [browser-use](https://github.com/browser-use/browser-use) – inspiration for the browser tool's element annotation.
-* [Model Context Protocol](https://modelcontextprotocol.io) – so we don't have to write every connector ourselves.
-* Meta's Muse – for the Sentinel / vault / secure-VM architecture that OpenMuse re-creates in the open.
+Use it for a real task, report what broke, then pick something focused. [CONTRIBUTING.md](CONTRIBUTING.md) has the development setup; CI runs `ruff`, `pytest` and the web build.
+
+## Related projects
+
+- [nanobot](https://github.com/HKUDS/nanobot): a lightweight personal assistant framework that lives in chat apps (Telegram, Discord, Slack, WeChat...). Pick it if you want a bot in the channels you already use. OpenMuse is one agent with Muse's product shape and safety model; it does not try to be a channel framework.
+- [OpenClaw](https://github.com/openclaw/openclaw): the always-on gateway approach many assistant projects follow.
+- [browser-use](https://github.com/browser-use/browser-use): the element-annotation idea behind the browser tool.
+- [Model Context Protocol](https://modelcontextprotocol.io): how OpenMuse gets connectors without writing each one.
 
 ## Disclaimer
 
-OpenMuse is an independent community project. It is not affiliated with, endorsed by, or derived from Meta Platforms, Inc. or its Muse product. "Muse" is used descriptively.
+OpenMuse is an independent community project. It is not affiliated with, endorsed by, or derived from Meta Platforms, Inc. or its Muse product.
 
 ## License
 

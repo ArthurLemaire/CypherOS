@@ -509,14 +509,16 @@ def config_init(
     force: bool = typer.Option(False, "--force", help="Overwrite existing file"),
 ) -> None:
     """Create a config.toml from the bundled example."""
-    example = Path(__file__).resolve().parent.parent / "config" / "config.example.toml"
+    here = Path(__file__).resolve().parent
+    candidates = [here / "config.example.toml", here.parent / "config" / "config.example.toml"]
+    example = next((p for p in candidates if p.exists()), None)
     if path.exists() and not force:
         console.print(f"[yellow]{path} already exists (use --force to overwrite)[/yellow]")
         raise typer.Exit(1)
     path.parent.mkdir(parents=True, exist_ok=True)
-    if example.exists():
+    if example is not None:
         shutil.copy(example, path)
-    else:  # installed as a wheel without the example: write a minimal file
+    else:  # no example shipped: write a minimal file
         path.write_text(
             '[llm]\nprovider = "openai"\nmodel = "deepseek-flash"\nbase_url = "https://api.deepseek.com"\n'
             'api_key = "${DEEPSEEK_API_KEY}"\n\n[sentinel]\nmode = "ask"\n',

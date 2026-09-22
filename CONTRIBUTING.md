@@ -1,8 +1,8 @@
-# Contributing to OpenMuse
+# Contributing
 
-Thanks for helping build an open personal agent. Issues, discussions and pull requests are all welcome.
+Use OpenMuse for a real task, report what broke, then pick something focused. Issues and pull requests are welcome; for anything larger than a fix, open an issue first so we can agree on the shape.
 
-## Development setup
+## Setup
 
 ```bash
 git clone https://github.com/OpenMuseAgent/OpenMuse.git && cd OpenMuse
@@ -11,35 +11,45 @@ uv pip install -e ".[dev]"            # add ",browser" for the Playwright tool
 openmuse config init                  # config/config.toml is git-ignored
 ```
 
+The phone app lives in `web/` (React, TypeScript, Tailwind, Vite). Node 20+ is only needed if you change it:
+
+```bash
+cd web && npm install
+npm run dev            # http://localhost:5173, proxied to `openmuse serve` on 8787
+npm run build          # writes openmuse/server/static/ — commit the result with your change
+```
+
 ## Before you push
 
 ```bash
-ruff check openmuse tests
-ruff format openmuse tests
-python -m pytest -q                   # unit tests only, no network
-OPENMUSE_LIVE=1 python -m pytest -q -m live   # optional: smoke test against your model
+ruff check openmuse tests && ruff format openmuse tests
+python -m pytest -q                            # MockLLM only, no network
+OPENMUSE_LIVE=1 python -m pytest -q -m live    # optional: against your configured model
+cd web && npm run build                        # if you touched web/
 ```
 
-CI runs the same three commands on Python 3.11 and 3.12.
+CI runs the Python checks on 3.11 and 3.12, builds the web app and checks that the committed build is current, and builds the Docker image.
 
 ## Guidelines
 
-* **Security first.** Anything that lets the agent act on the world must go through `Sentinel`. New tools declare an honest `risk` level, set `reads_private_data` / `egress_hosts` where relevant, and override `assess()` if a call can be more dangerous than the default.
-* **Secrets never reach the model.** Use `{{vault:NAME}}` placeholders; never log or return raw credentials.
-* **Tests with `MockLLM`.** Agent behaviour is tested without network access (`tests/test_agent.py` shows the pattern). Live tests are marked `@pytest.mark.live` and skipped by default.
-* **No internal endpoints.** Do not commit gateway URLs, app ids or keys. `config/config.toml`, `.env` and `workspace/` are git-ignored on purpose.
-* **Commit messages** follow [Conventional Commits](https://www.conventionalcommits.org): `feat(tools): …`, `fix(llm): …`, `docs: …`, `ci: …`.
-* **Style**: Ruff (line length 100), type hints everywhere, `from __future__ import annotations`, small modules.
+- **Everything that acts goes through Sentinel.** New tools declare an honest `risk`, set `reads_private_data` / `egress` where they apply, and override `assess()` when a call can be more dangerous than the default or needs a readable summary. See [docs/sentinel.md](docs/sentinel.md#writing-a-safe-tool).
+- **Secrets never reach the model.** Use `{{vault:NAME}}` placeholders. Do not log or return raw credentials.
+- **Test with `MockLLM`.** Agent and server behaviour is tested without network access (`tests/test_agent.py`, `tests/test_server.py`). Live tests are marked `@pytest.mark.live` and skipped by default.
+- **No internal endpoints or keys in the repo.** `config/config.toml`, `.env` and `workspace/` are git-ignored on purpose.
+- **Commits** follow [Conventional Commits](https://www.conventionalcommits.org): `feat(tools): …`, `fix(server): …`, `docs: …`, `ci: …`.
+- **Style**: Ruff (line length 100), type hints, `from __future__ import annotations`, small modules. In `web/`, keep components small and state in `store.tsx`.
+- **Docs are part of the change.** If you alter a setting, a command, a tool's behaviour or the API, update the matching page in `docs/`.
 
 ## Adding a tool
 
-1. Subclass `BaseTool` in `openmuse/tools/`, define `name`, `description`, `parameters`, `risk`, and `async execute(**kwargs) -> ToolResult`.
-2. Register it in `openmuse/app.py::_build_tools` (behind a config flag if it needs credentials).
-3. Add a unit test in `tests/test_tools.py`.
-4. Document it in the *Tools* table of both READMEs.
+1. Subclass `BaseTool` in `openmuse/tools/`: `name`, `description`, `parameters` (JSON schema), `risk`, `async execute(**kwargs) -> ToolResult`.
+2. Register it in `openmuse/app.py::_build_tools` (behind a config flag if it needs credentials or an optional dependency).
+3. Add a label in `openmuse/server/webui.py::_TOOL_LABELS` so the app shows a readable status.
+4. Add a unit test in `tests/test_tools.py`.
+5. Mention it in `docs/configuration.md` if it has settings.
 
-Prefer exposing new integrations as [MCP servers](https://modelcontextprotocol.io) when possible — they plug in via `[[mcp.servers]]` with zero code.
+Prefer an [MCP server](https://modelcontextprotocol.io) for integrations with an existing protocol; it plugs in through `[[mcp.servers]]` with no code.
 
-## Reporting security issues
+## Security issues
 
-Please open a private security advisory on GitHub instead of a public issue.
+Open a private security advisory on GitHub rather than a public issue.
