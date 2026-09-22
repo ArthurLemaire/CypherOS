@@ -19,6 +19,12 @@ updates:
     groups:
       web:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      # React, TypeScript, Vite and the icon set change their APIs on majors; those are
+      # upgrades someone does by hand, with the app in front of them
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     labels: ["dependencies"]
 
   - package-ecosystem: github-actions
