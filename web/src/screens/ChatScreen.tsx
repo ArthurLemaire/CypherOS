@@ -13,9 +13,10 @@ import { MuseSheet } from "./MuseSheet";
 export function ChatScreen() {
   const { state, send, decide, loadEvents, openThread, openFile, toast } = useStore();
   const { profile, status, activeThread, threads } = state;
-  const events = state.events[activeThread] ?? [];
   // undefined until the first fetch for this thread has returned — don't flash the empty state
-  const eventsLoaded = state.events[activeThread] !== undefined;
+  const loaded = state.events[activeThread];
+  const events = useMemo(() => loaded ?? [], [loaded]);
+  const eventsLoaded = loaded !== undefined;
   const stream = state.streams[activeThread];
   const thread = threads.find((t) => t.id === activeThread);
   const [activityOpen, setActivityOpen] = useState(false);

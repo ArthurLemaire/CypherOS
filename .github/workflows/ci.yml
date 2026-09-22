@@ -75,6 +75,12 @@ jobs:
       - name: Install
         run: npm ci
         working-directory: web
+      - name: Lint
+        run: npm run lint
+        working-directory: web
+      - name: Unit tests
+        run: npm test
+        working-directory: web
       - name: Type-check and build
         run: npm run build
         working-directory: web

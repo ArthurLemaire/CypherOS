@@ -16,6 +16,7 @@ The phone app lives in `web/` (React, TypeScript, Tailwind, Vite). Node 20+ is o
 ```bash
 cd web && npm install
 npm run dev            # http://localhost:5173, proxied to `openmuse serve` on 8787
+npm run check          # eslint, tsc, vitest
 npm run build          # writes openmuse/server/static/ — commit the result with your change
 ```
 
@@ -26,10 +27,10 @@ ruff check openmuse tests && ruff format openmuse tests
 mypy                                           # types; config in pyproject.toml
 python -m pytest -q                            # MockLLM only, no network
 OPENMUSE_LIVE=1 python -m pytest -q -m live    # optional: against your configured model
-cd web && npm run build                        # if you touched web/
+cd web && npm run check && npm run build       # if you touched web/
 ```
 
-CI runs the Python checks on 3.11 and 3.12, builds the web app and checks that the committed build is current, and builds the Docker image.
+CI runs the Python checks on Linux and macOS with Python 3.11–3.13 (Windows is advisory), lints, tests and builds the web app and checks that the committed build is current, and builds the Docker image.
 
 ## Guidelines
 
