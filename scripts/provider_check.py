@@ -60,7 +60,7 @@ async def _artifact(answer: str, muse: OpenMuseApp, ui: HeadlessUI, ws: Path) ->
         return "no .md file in the workspace"
     text = files[0].read_text(encoding="utf-8", errors="replace")
     if text.count("\n") < 2:
-        return f"{files[0].name} has fewer than three lines"
+        return f"{files[0].name} has fewer than three lines: {text[:120]!r}"
     return None
 
 

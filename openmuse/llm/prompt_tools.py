@@ -68,7 +68,8 @@ def _as_call(raw: str, known: set[str] | None, strict: bool) -> ToolCall | None:
     names are known, name one of them.
     """
     try:
-        data = json.loads(raw)
+        # strict=False: small models put real newlines inside JSON strings (code arguments)
+        data = json.loads(raw, strict=False)
     except json.JSONDecodeError:
         return None
     if not isinstance(data, dict) or not isinstance(data.get("name"), str):
@@ -109,6 +110,17 @@ def parse_tool_calls(
         for m, c in reversed(fenced):
             if c is not None:
                 visible = visible[: m.start()] + visible[m.end() :]
+    if not calls:
+        # the whole reply is one bare JSON object (Llama 3.x when its template does not
+        # fire), possibly after a sentence of narration on its own lines
+        for i, line in enumerate(text.splitlines()):
+            if line.lstrip().startswith("{"):
+                tail = "\n".join(text.splitlines()[i:]).strip()
+                bare = _as_call(tail, known, strict=True)
+                if bare is not None:
+                    calls = [bare]
+                    visible = "\n".join(text.splitlines()[:i])
+                break
     # An unterminated block (model cut off) is dropped from the visible text.
     if _OPEN_TAG in visible:
         visible = visible.split(_OPEN_TAG, 1)[0]
@@ -220,9 +232,10 @@ class PromptToolAdapter(BaseLLM):
     ) -> LLMResponse:
         if not tools:
             return await self.inner.ask(messages, None, on_delta=on_delta)
+        known = {t.get("function", t).get("name", "") for t in tools}
         if self.native:
             try:
-                return await self.inner.ask(messages, tools, tool_choice, on_delta=on_delta)
+                resp = await self.inner.ask(messages, tools, tool_choice, on_delta=on_delta)
             except ToolsUnsupported as e:
                 self.native = False
                 logger.warning(
@@ -230,11 +243,20 @@ class PromptToolAdapter(BaseLLM):
                     "describing tools in the prompt from now on",
                     str(e).splitlines()[0][:200],
                 )
+            else:
+                if not resp.tool_calls and resp.content:
+                    # a native-mode model that wrote the call as text (Llama 3.x does this
+                    # when its template does not fire): a bare or fenced JSON object naming
+                    # one of our tools is a call, not an answer
+                    visible, calls = parse_tool_calls(resp.content, known)
+                    if calls:
+                        resp.content, resp.tool_calls = visible, calls
+                        resp.finish_reason = "tool_calls"
+                return resp
         converted = convert_messages(messages, tools)
         stopper = _StopAtToolCall(on_delta)
         resp = await self.inner.ask(converted, None, on_delta=stopper if on_delta else None)
         stopper.flush()
-        known = {t.get("function", t).get("name", "") for t in tools}
         visible, calls = parse_tool_calls(resp.content, known)
         resp.content = visible
         resp.tool_calls = calls

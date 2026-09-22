@@ -155,13 +155,15 @@ base_url = "https://api.deepseek.com"
 api_key  = "${DEEPSEEK_API_KEY}"
 
 # OpenAI:      model = "gpt-5.6-sol"  base_url = "https://api.openai.com/v1"   api_key = "${OPENAI_API_KEY}"
-# Ollama:      model = "qwen3:32b"    base_url = "http://localhost:11434/v1"   api_key = "ollama"
+# Ollama:      model = "qwen3:8b"     base_url = "http://localhost:11434/v1"   api_key = "ollama"
 # OpenRouter:  model = "deepseek/deepseek-flash"  base_url = "https://openrouter.ai/api/v1"
 # 需要自定义请求头的网关：  extra_headers = { "X-End-User-Id" = "openmuse" }
 # 静默忽略 `tools` 字段的端点：  tool_mode = "prompt"   （直接拒绝 tools 的端点由默认的 "auto" 自动降级处理）
 ```
 
 同样的设置也可以用 `OPENMUSE_LLM_MODEL`、`OPENMUSE_LLM_BASE_URL`、`OPENMUSE_LLM_API_KEY`、`OPENMUSE_LLM_PROVIDER` 覆盖。完整参考：[docs/configuration.md](docs/configuration.md)。
+
+本地模型可用：Ollama 上的 `qwen3:8b` 以原生工具调用通过了[模型检查脚本](scripts/provider_check.py)的五个日常任务，`gemma3:4b` 通过提示词降级模式通过。结果与设置见 [docs/configuration.md → Local models](docs/configuration.md#local-models)；运行 `python scripts/provider_check.py` 一分钟内就能知道你的模型表现如何。
 
 ## 架构
 

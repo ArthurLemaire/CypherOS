@@ -109,6 +109,40 @@ def test_parse_tool_calls_accepts_fenced_calls_from_small_models():
     both = '<tool_call>{"name": "files", "arguments": {}}</tool_call>\n```json\n{"a": 1}\n```'
     visible, calls = parse_tool_calls(both, known)
     assert [c.function.name for c in calls] == ["files"] and visible == '```json\n{"a": 1}\n```'
+    # Llama 3.x: the whole reply is a bare JSON object, real newlines inside the code string
+    bare = (
+        "Let me run that.\n"
+        '{"name": "python_execute", "parameters": {"code": "for i in range(3):\n    print(i)"}}'
+    )
+    visible, calls = parse_tool_calls(bare, known)
+    assert [c.function.name for c in calls] == ["python_execute"]
+    assert calls[0].arguments["code"] == "for i in range(3):\n    print(i)"
+    assert visible == "Let me run that."
+    # ...but a JSON object that is not one of our tools, or has no arguments, is an answer
+    for text in ('{"name": "Kyoto", "arguments": {}}', '{"name": "files"}', '{"a": 1}'):
+        visible, calls = parse_tool_calls(text, known)
+        assert calls == [] and visible == text
+
+
+async def test_native_mode_rescues_a_call_written_as_text():
+    from openmuse.llm.mock import MockLLM
+    from openmuse.llm.prompt_tools import PromptToolAdapter
+    from openmuse.schema import LLMResponse
+
+    tools = [{"type": "function", "function": {"name": "files", "parameters": {}}}]
+    inner = MockLLM(
+        [
+            LLMResponse(content='{"name": "files", "parameters": {"action": "list"}}'),
+            LLMResponse(content="Here is the list."),
+        ]
+    )
+    llm = PromptToolAdapter(inner, native_first=True)
+    resp = await llm.ask([Message.user("list files")], tools)
+    assert [c.function.name for c in resp.tool_calls] == ["files"]
+    assert resp.content is None and resp.finish_reason == "tool_calls"
+    assert inner.calls[0]["tools"] == tools, "still native: tools went to the provider"
+    plain = await llm.ask([Message.user("thanks")], tools)
+    assert plain.content == "Here is the list." and not plain.tool_calls
 
 
 def test_convert_messages_flattens_tool_roles():

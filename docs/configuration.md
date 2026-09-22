@@ -73,8 +73,11 @@ Ollama serves an OpenAI-compatible API at `http://localhost:11434/v1`; models wi
 | Model | Tool calling | provider_check | Notes |
 |---|---|---|---|
 | `qwen3:8b` | native (also 5/5 with `tool_mode = "prompt"`) | 5/5 | the default preset; 7–20 s per task |
+| `llama3.2:3b` | native | 5/5 | often writes the call as a bare JSON object in the text and double-escapes newlines in file content; both are repaired (see below) |
 | `gemma3:4b` | prompt, via the `auto` fallback | 5/5 | Ollama rejects `tools` for it; emits ```` ```tool_call ```` fences, which the prompt parser accepts |
 | DeepSeek V4.1 Flash (hosted) | native | 5/5 | 1–4 s per task |
+
+Small models bend the protocol in predictable ways, and OpenMuse meets them halfway rather than failing the task: a reply that is a bare or fenced JSON object naming one of the tools (with an arguments object) counts as a tool call in every mode; JSON strings may contain real newlines; `files.write` turns a one-line text with two or more spelled-out `\n` into lines (code, which has real newlines, is never touched). A quoted JSON object with other keys stays text.
 
 Set `max_tokens` to what the model can produce in one turn (4096 is fine for these) and keep `agent.max_context_messages` modest — a local 8B model with an 8k context window fills up fast once tool results start coming back.
 

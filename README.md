@@ -155,13 +155,15 @@ base_url = "https://api.deepseek.com"
 api_key  = "${DEEPSEEK_API_KEY}"
 
 # OpenAI:      model = "gpt-5.6-sol"  base_url = "https://api.openai.com/v1"   api_key = "${OPENAI_API_KEY}"
-# Ollama:      model = "qwen3:32b"    base_url = "http://localhost:11434/v1"   api_key = "ollama"
+# Ollama:      model = "qwen3:8b"     base_url = "http://localhost:11434/v1"   api_key = "ollama"
 # OpenRouter:  model = "deepseek/deepseek-flash"  base_url = "https://openrouter.ai/api/v1"
 # A gateway that needs headers:  extra_headers = { "X-End-User-Id" = "openmuse" }
 # An endpoint that silently ignores `tools`:  tool_mode = "prompt"   (rejections are handled by the default "auto")
 ```
 
 The same settings can be set with `OPENMUSE_LLM_MODEL`, `OPENMUSE_LLM_BASE_URL`, `OPENMUSE_LLM_API_KEY`, `OPENMUSE_LLM_PROVIDER`. Full reference: [docs/configuration.md](docs/configuration.md).
+
+Local models work: `qwen3:8b` on Ollama passes the [provider check](scripts/provider_check.py) (five everyday tasks) with native tool calling, `gemma3:4b` through the prompt fallback. Results and settings in [docs/configuration.md → Local models](docs/configuration.md#local-models); `python scripts/provider_check.py` tells you about yours in a minute.
 
 ## Architecture
 
