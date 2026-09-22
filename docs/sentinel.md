@@ -36,6 +36,16 @@ This changes what *egress* means for `shell`: without a sandbox every shell comm
 
 `[sandbox] mode` is `auto` (the default: use bubblewrap when it is installed and can create a namespace here), `bwrap` (insist — `openmuse doctor` fails and the log says why when it cannot) or `off`. Where it does not work — macOS, Windows, most Docker containers (the default seccomp profile blocks unprivileged user namespaces, which is fine: the container is the box) — commands run as before, with the scrubbed environment and the workspace as working directory, and *Settings → Safety* says so. `openmuse doctor` prints the sandbox line; the settings API has it under `sandbox`.
 
+**Ubuntu 24.04 and its derivatives** restrict unprivileged user namespaces with AppArmor: `kernel.apparmor_restrict_unprivileged_userns=1` leaves a namespace made by a program with no AppArmor profile of its own without capabilities. Depending on the machine, bubblewrap then fails outright (`bwrap: setting up uid map: Permission denied`) or makes the box but cannot set up its network namespace (`bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted`). In the second case OpenMuse keeps the box for the file system and gives up on the network: the status line says *the network is not blocked*, and `shell` commands are judged as they are without a box — every one may reach out. In both cases the fix is the stock profile for `/usr/bin/bwrap`, which Ubuntu 25.04 ships in `apparmor` and 24.04 has in `apparmor-profiles` (it was pulled from the default set after a Flatpak regression):
+
+```bash
+sudo apt install apparmor-profiles
+sudo install -m 0644 /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/
+sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+```
+
+`openmuse doctor` says when this is the situation. Turning the restriction off (`sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`) also works but weakens the whole machine, not just the box.
+
 ## Decision order
 
 For each call, the first matching step decides:

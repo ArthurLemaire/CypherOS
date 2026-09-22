@@ -46,6 +46,21 @@ jobs:
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq bubblewrap
           bwrap --version
+          # Ubuntu 24.04 leaves unprivileged user namespaces without capabilities unless an
+          # AppArmor profile covers the binary; the runner has none for bwrap, so a network
+          # namespace cannot be set up ("loopback: Failed RTM_NEWADDR"). Load the stock
+          # profile, as docs/sentinel.md tells users to; fall back to lifting the restriction.
+          echo "apparmor_restrict_unprivileged_userns=$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo n/a)"
+          if ! bwrap --unshare-all --ro-bind / / -- /bin/true 2>/dev/null; then
+            sudo apt-get install -y -qq apparmor-profiles apparmor-utils >/dev/null 2>&1 || true
+            if [ -f /usr/share/apparmor/extra-profiles/bwrap-userns-restrict ]; then
+              sudo install -m 0644 /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/ \
+                && sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict \
+                && echo "loaded the bwrap-userns-restrict profile" || true
+            fi
+            bwrap --unshare-all --ro-bind / / -- /bin/true 2>/dev/null \
+              || { sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true; }
+          fi
           bwrap --unshare-all --ro-bind / / -- /bin/true && echo "bubblewrap works here" || echo "bubblewrap cannot create a namespace here; the boxed tests will skip"
 
       - name: Ruff lint

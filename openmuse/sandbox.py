@@ -15,7 +15,10 @@ best thing is to give each ``shell`` and ``python_execute`` call its own namespa
 ``sandbox.mode`` is ``auto`` (use bubblewrap when it works here), ``bwrap`` (insist) or
 ``off``. Without it — macOS, Windows, a Docker container without user namespaces — the
 commands run as before: scrubbed environment, workspace as cwd, and the container or the
-machine is the box.
+machine is the box. On a kernel that leaves unprivileged user namespaces without
+capabilities (Ubuntu 24.04's ``apparmor_restrict_unprivileged_userns`` when no AppArmor
+profile covers ``bwrap``) the box works but cannot take the network away; then every
+command is judged as it is without a box: it may reach the network.
 """
 
 from __future__ import annotations
@@ -81,6 +84,18 @@ def needs_network(command: str, programs: str | None) -> bool:
     return bool(names & NETWORK_PROGRAMS) or bool(_URL.search(command))
 
 
+def userns_restricted() -> bool:
+    """Ubuntu's AppArmor restriction on unprivileged user namespaces, which leaves one made
+    by a program without a profile with no capabilities."""
+    try:
+        return (
+            Path("/proc/sys/kernel/apparmor_restrict_unprivileged_userns").read_text().strip()
+            == "1"
+        )
+    except OSError:
+        return False
+
+
 def in_container() -> bool:
     """Inside Docker / Podman? (``/.dockerenv``, ``/run/.containerenv``, or the image's own
     marker.)"""
@@ -136,6 +151,11 @@ class Sandbox:
         self.version = ""
         self.reason = ""
         self.active = False
+        # False where the box works but cannot take the network away: a kernel that leaves
+        # an unprivileged user namespace without capabilities (Ubuntu 24.04's
+        # apparmor_restrict_unprivileged_userns when no AppArmor profile covers bwrap) makes
+        # bubblewrap fail at setting up the loopback interface of a new network namespace.
+        self.blocks_network = True
         if settings.mode not in ("auto", "bwrap", "off"):
             raise ValueError("sandbox.mode must be auto, bwrap or off")
         if settings.mode == "off":
@@ -159,38 +179,72 @@ class Sandbox:
             logger.info("commands run unboxed: {}", self.reason)
 
     def _probe(self) -> tuple[bool, str]:
-        """Can bubblewrap make a namespace here? (Not in most Docker containers.)"""
+        """Can bubblewrap make a namespace here? (Not in most Docker containers.) And can it
+        take the network away, or only the file system?"""
         assert self.bwrap
         try:
             version = subprocess.run(
                 [self.bwrap, "--version"], capture_output=True, text=True, timeout=5
             ).stdout.strip()
             self.version = version.replace("bubblewrap", "").strip()
-            run = subprocess.run(
-                self.wrap(["/bin/true"], network=False, cwd=Path("/")),
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
+            run = self._try(network=False)
+            err = self._last_line(run)
+            if run.returncode != 0 and "loopback" in err:
+                # the namespace was made; only configuring its loopback interface was refused
+                run = self._try(network=True)
+                if run.returncode == 0:
+                    self.blocks_network = False
+                    return True, ""
+                err = self._last_line(run)
         except (OSError, subprocess.SubprocessError) as exc:
             return False, f"bubblewrap failed to start: {exc}"
         if run.returncode != 0:
-            err = (run.stderr or run.stdout).strip().splitlines()
-            return False, "bubblewrap cannot create a namespace here" + (
-                f" ({err[-1]})" if err else ""
-            )
+            reason = "bubblewrap cannot create a namespace here" + (f" ({err})" if err else "")
+            if userns_restricted():
+                reason += (
+                    " — kernel.apparmor_restrict_unprivileged_userns=1 and no AppArmor profile "
+                    "covers bwrap; see docs/sentinel.md → The sandbox"
+                )
+            return False, reason
         return True, ""
+
+    def _try(self, network: bool) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            self.wrap(["/bin/true"], network=network, cwd=Path("/")),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+    @staticmethod
+    def _last_line(run: subprocess.CompletedProcess[str]) -> str:
+        lines = (run.stderr or run.stdout).strip().splitlines()
+        return lines[-1] if lines else ""
+
+    NO_NETWORK_BLOCKING = (
+        "the network is not blocked: this kernel leaves unprivileged user namespaces "
+        "without capabilities (Ubuntu's apparmor_restrict_unprivileged_userns with no "
+        "AppArmor profile for bwrap), so a network namespace cannot be set up"
+    )
 
     @property
     def status(self) -> str:
-        if self.active:
+        if self.active and self.blocks_network:
             return f"bubblewrap {self.version}".strip()
+        if self.active:
+            return f"bubblewrap {self.version}".strip() + f" — {self.NO_NETWORK_BLOCKING}"
         return f"off — {self.reason}"
 
     def describe(self) -> str:
         """One line for the model and the app."""
         if not self.active:
             return "Commands run in the workspace with a scrubbed environment (no sandbox)."
+        if not self.blocks_network:
+            return (
+                "Commands run in a sandbox: only the workspace is writable, the home directory "
+                "is not there, /tmp is private. The network is reachable (this system cannot "
+                "block it), so a command counts as reaching it when it looks like it does."
+            )
         return (
             "Commands run in a sandbox: only the workspace is writable, the home directory "
             "is not there, /tmp is private, and there is no network unless the command needs it."
@@ -211,7 +265,7 @@ class Sandbox:
             "--unshare-uts",
             "--unshare-cgroup-try",
         ]
-        if not network:
+        if not network and self.blocks_network:
             args.append("--unshare-net")
         for path in ("/usr", "/etc", "/opt", "/var", "/snap", "/nix", "/run/systemd/resolve"):
             args += ["--ro-bind-try", path, path]
@@ -263,4 +317,5 @@ __all__ = [
     "in_container",
     "interpreter_roots",
     "needs_network",
+    "userns_restricted",
 ]

@@ -109,13 +109,62 @@ def test_settings_default_and_shell_assessment(tmp_path: Path, monkeypatch: pyte
     assert shell.assess({"command": "ls -la"}).risk == RiskLevel.SENSITIVE  # still a shell
 
 
-def _bwrap_works() -> bool:
+def test_a_box_that_cannot_take_the_network_away(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Ubuntu 24.04 with the userns restriction and no AppArmor profile for bwrap: the
+    namespace is made, its loopback cannot be configured. The box stays on for the file
+    system; commands are judged as reaching the network, like without a box."""
+    import subprocess
+
+    monkeypatch.setattr("openmuse.sandbox.shutil.which", lambda _name: "/usr/bin/bwrap")
+    monkeypatch.setattr("openmuse.sandbox.platform.system", lambda: "Linux")
+    calls: list[list[str]] = []
+
+    def fake_run(argv, **_kw):
+        calls.append(argv)
+        if argv[1:] == ["--version"]:
+            return subprocess.CompletedProcess(argv, 0, stdout="bubblewrap 0.9.0\n", stderr="")
+        if "--unshare-net" in argv:
+            err = "bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted\n"
+            return subprocess.CompletedProcess(argv, 1, stdout="", stderr=err)
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("openmuse.sandbox.subprocess.run", fake_run)
+    box = Sandbox(SandboxSettings(), workspace=tmp_path)
+    assert box.active and not box.blocks_network and box.reason == ""
+    assert len(calls) == 3  # version, with --unshare-net (refused), without (works)
+    assert box.status.startswith("bubblewrap 0.9.0 — the network is not blocked")
+    assert "cannot block it" in box.describe()
+    # no command asks for --unshare-net any more …
+    assert "--unshare-net" not in box.wrap(["/bin/true"], network=False, cwd=tmp_path)
+    # … and the shell tool judges commands as it does without a box: all may reach out
+    shell = Shell(workspace=tmp_path, sandbox=box)
+    assert shell.assess({"command": "ls -la"}).egress
+    assert shell.assess({"command": "ls -la"}).summary == "shell: ls -la"
+
+    # any other failure: no box
+    def fake_run_fail(argv, **_kw):
+        if argv[1:] == ["--version"]:
+            return subprocess.CompletedProcess(argv, 0, stdout="bubblewrap 0.9.0\n", stderr="")
+        err = "bwrap: setting up uid map: Permission denied\n"
+        return subprocess.CompletedProcess(argv, 1, stdout="", stderr=err)
+
+    monkeypatch.setattr("openmuse.sandbox.subprocess.run", fake_run_fail)
+    box = Sandbox(SandboxSettings(), workspace=tmp_path)
+    assert not box.active and box.reason.endswith("(bwrap: setting up uid map: Permission denied)")
+
+
+def _probe() -> Sandbox | None:
     if platform.system() != "Linux":
-        return False
-    return Sandbox(SandboxSettings(), workspace=Path.cwd()).active
+        return None
+    box = Sandbox(SandboxSettings(), workspace=Path.cwd())
+    return box if box.active else None
 
 
-needs_bwrap = pytest.mark.skipif(not _bwrap_works(), reason="bubblewrap does not work here")
+_BOX = _probe()
+needs_bwrap = pytest.mark.skipif(_BOX is None, reason="bubblewrap does not work here")
+needs_net_box = pytest.mark.skipif(
+    _BOX is None or not _BOX.blocks_network, reason="bubblewrap cannot block the network here"
+)
 
 
 @needs_bwrap
@@ -146,7 +195,7 @@ async def test_boxed_shell_sees_only_the_workspace(tmp_path: Path):
     assert r.ok and "GONE" in r.output
 
 
-@needs_bwrap
+@needs_net_box
 async def test_boxed_commands_have_no_network_unless_they_say_so(tmp_path: Path):
     ws = tmp_path / "ws"
     ws.mkdir()
@@ -169,7 +218,7 @@ async def test_boxed_commands_have_no_network_unless_they_say_so(tmp_path: Path)
     assert r.ok and r.output.startswith(f"{ws} {tuple(sys.version_info[:2])}")
 
 
-@needs_bwrap
+@needs_net_box
 async def test_no_network_failure_is_explained(tmp_path: Path):
     box = Sandbox(SandboxSettings(), workspace=tmp_path)
     py = PythonExecute(workspace=tmp_path, sandbox=box)
