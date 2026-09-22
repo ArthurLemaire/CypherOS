@@ -35,6 +35,9 @@ class CallAssessment(BaseModel):
     # Network destination (hostname) if known, e.g. "example.com". ``None`` with
     # ``egress=True`` means "unknown destination" (shell, python...).
     egress_target: str | None = None
+    # What a standing approval for this call should be bound to: a host, a recipient, a
+    # program name. Defaults to ``egress_target``; ``None`` means "the whole tool".
+    target: str | None = None
     # One-line, human-readable description shown in approval prompts / audit log.
     summary: str = ""
     # Extra warnings ("command contains rm -rf", ...).

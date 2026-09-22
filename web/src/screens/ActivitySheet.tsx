@@ -1,10 +1,10 @@
-import { Ban, Check, ShieldCheck, ShieldOff } from "lucide-react";
+import { Ban, Check, ShieldCheck, ShieldOff, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api";
-import { RiskBadge, toolIcon } from "../components/Cards";
+import { RiskBadge, grantSubject, scopeLabel, toolIcon } from "../components/Cards";
 import { Sheet } from "../components/Sheet";
 import { useStore } from "../store";
-import type { ActivityData, AuditEntry, RiskLevel } from "../types";
+import type { ActivityData, AuditEntry, Grant, RiskLevel } from "../types";
 import { cx, timeShort } from "../util";
 
 /** Tap the avatar: what your Muse has been doing, and what it is allowed to do. */
@@ -26,11 +26,21 @@ export function ActivitySheet({ open, onClose }: { open: boolean; onClose: () =>
   }, [open]);
 
   const reset = async () => {
-    if (!window.confirm("Forget every “allow for session / always” permission you granted?")) return;
+    if (!window.confirm("Forget every permission you granted? Your Muse will ask again next time.")) return;
     try {
       await api.resetApprovals();
       setData(await api.activity(150));
       toast("Permissions reset");
+    } catch (e) {
+      toast((e as Error).message);
+    }
+  };
+
+  const revoke = async (g: Grant) => {
+    try {
+      await api.revokeGrant(g.key);
+      setData(await api.activity(150));
+      toast(`Revoked: ${grantSubject(g.tool, g.target)}`);
     } catch (e) {
       toast((e as Error).message);
     }
@@ -95,17 +105,65 @@ export function ActivitySheet({ open, onClose }: { open: boolean; onClose: () =>
               </p>
             )}
           </div>
-          <PermissionList title="Allowed until restart" tools={data?.approvals.session ?? []} />
-          <PermissionList title="Always allowed" tools={data?.approvals.persistent ?? []} />
+          <GrantList grants={data?.grants ?? []} onRevoke={revoke} />
           <PermissionList title="Always ask (from config)" tools={state.settings?.sentinel.always_ask_tools ?? []} muted />
-          {((data?.approvals.session.length ?? 0) > 0 || (data?.approvals.persistent.length ?? 0) > 0) && (
+          {(data?.grants.length ?? 0) > 0 && (
             <button type="button" onClick={() => void reset()} className="w-full rounded-2xl border border-border py-2.5 text-[14px] font-medium">
-              Reset granted permissions
+              Reset all granted permissions
             </button>
           )}
         </div>
       )}
     </Sheet>
+  );
+}
+
+function grantUntil(g: Grant): string {
+  switch (g.scope) {
+    case "task":
+      return "for the current task";
+    case "session":
+      return "until restart";
+    case "24h":
+      return g.expires_at ? `until ${timeShort(g.expires_at)}` : "for 24 hours";
+    case "always":
+      return "always";
+    default:
+      return g.scope;
+  }
+}
+
+/** Every standing permission you granted, one row each, revocable on its own. */
+function GrantList({ grants, onRevoke }: { grants: Grant[]; onRevoke: (g: Grant) => void }) {
+  return (
+    <div>
+      <div className="text-[12px] uppercase tracking-wide text-muted font-semibold mb-1.5">Permissions you granted</div>
+      {grants.length === 0 ? (
+        <div className="text-[13px] text-muted">None. Approvals you give “once” are not kept.</div>
+      ) : (
+        <ul className="space-y-1.5">
+          {grants.map((g) => (
+            <li key={g.key} className="flex items-center gap-2.5 rounded-2xl bg-surface-2/60 px-3 py-2">
+              <span className="text-accent">{toolIcon(g.tool, 15)}</span>
+              <div className="min-w-0 flex-1">
+                <div className="text-[13.5px] font-medium truncate">{grantSubject(g.tool, g.target)}</div>
+                <div className="text-[11.5px] text-muted">
+                  {g.tool} · {grantUntil(g)} · granted {timeShort(g.granted_at)}
+                </div>
+              </div>
+              <button
+                type="button"
+                aria-label={`Revoke ${scopeLabel(g.scope, g.tool, g.target)}`}
+                onClick={() => onRevoke(g)}
+                className="rounded-full p-1.5 text-muted hover:bg-surface active:scale-95"
+              >
+                <X size={15} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -145,6 +203,9 @@ function AuditRow({ entry }: { entry: AuditEntry }) {
           <span>{timeShort(entry.ts)}</span>
           {entry.risk && <RiskBadge risk={entry.risk as RiskLevel} />}
           {entry.approved === true && <span className="text-emerald-600 dark:text-emerald-300">approved by you{entry.approval_scope && entry.approval_scope !== "once" ? ` (${entry.approval_scope})` : ""}</span>}
+          {entry.approved == null && entry.approval_scope && entry.approval_scope !== "once" && (
+            <span className="text-emerald-600 dark:text-emerald-300">covered by your {entry.approval_scope} permission</span>
+          )}
           {denied && <span className="text-rose-500">blocked</span>}
           {failed && <span className="text-amber-600">failed</span>}
           {typeof entry.duration_ms === "number" && <span>{(entry.duration_ms / 1000).toFixed(1)}s</span>}

@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 from openmuse.schema import RiskLevel, ToolCall, ToolResult
 
-ApprovalScope = Literal["once", "session", "always"]
+ApprovalScope = Literal["once", "task", "session", "24h", "always"]
 
 
 class ApprovalRequest(BaseModel):
@@ -23,6 +23,13 @@ class ApprovalRequest(BaseModel):
     reasons: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     egress_target: str | None = None
+    # What the user asked for, so the card can say why this action is happening.
+    purpose: str = ""
+    # What a standing permission would be bound to (host, recipient, program); None = the tool.
+    target: str | None = None
+    grant_key: str = ""
+    # Scopes the Sentinel is willing to grant for this call, in display order.
+    grant_options: list[ApprovalScope] = Field(default_factory=lambda: ["once"])
 
 
 class ApprovalDecision(BaseModel):

@@ -170,7 +170,7 @@ cors_origins     = []            # only for the Vite dev server, e.g. ["http://l
 | `memory.db`, `goals.db` | SQLite |
 | `vault.enc`, `vault.key` | encrypted secrets and the key (or `OPENMUSE_VAULT_KEY`) |
 | `audit.jsonl` | append-only audit log |
-| `approvals.json` | "always allow" decisions |
+| `approvals.json` | permissions you granted for 24 hours or always (tool + target, scope, expiry) |
 | `sessions/` | CLI conversation history |
 | `threads/`, `profile.json`, `ideas.json`, `server_token`, `logs/` | app state |
 | `./workspace` (`agent.workspace`) | files the agent reads and writes |

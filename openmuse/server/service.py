@@ -26,6 +26,7 @@ from openmuse.goals import Goal
 from openmuse.llm import BaseLLM
 from openmuse.logger import logger
 from openmuse.schema import Message
+from openmuse.sentinel.grants import SCOPES
 from openmuse.server.events import MAIN_THREAD, EventBus, Timeline, new_id, now_iso
 from openmuse.server.webui import WebUI, current_thread
 
@@ -109,6 +110,8 @@ class Thread:
     inbox: asyncio.Queue[str] = field(default_factory=asyncio.Queue)
     worker: asyncio.Task[None] | None = None
     busy: bool = False
+    # background prompts (goal work, ideas) → the short label shown as the approval purpose
+    purposes: dict[str, str] = field(default_factory=dict)
 
     def meta(self) -> dict[str, Any]:
         return {
@@ -262,6 +265,22 @@ class MuseService:
         updated_at: str | None = None,
     ) -> Thread:
         timeline = Timeline(thread_id, self.threads_dir / f"{thread_id}.json")
+        # Cards that were waiting for an answer when the server stopped can't be answered
+        # any more: the agent run behind them is gone.
+        stale = [
+            ev
+            for ev in timeline.events
+            if ev.get("type") in ("approval", "question") and ev.get("status") == "pending"
+        ]
+        for ev in stale:
+            timeline.update(ev["id"], status="expired")
+        running = [
+            ev
+            for ev in timeline.events
+            if ev.get("type") == "tool" and ev.get("status") == "running"
+        ]
+        for ev in running:
+            timeline.update(ev["id"], status="error", output="interrupted by a restart")
         session_file = self.threads_dir / f"{thread_id}.session.json"
         agent = MuseAgent(
             settings=self.settings,
@@ -364,6 +383,8 @@ class MuseService:
                     "thread": thread_id,
                 }
             )
+            if label:
+                thread.purposes[text] = label
         thread.inbox.put_nowait(text)
         self._ensure_worker(thread)
         return event
@@ -382,10 +403,12 @@ class MuseService:
                 self.bus.publish({"kind": "thread", "thread": thread.meta()})
                 self.ui.set_status("working", "Thinking…", thread.id)
                 try:
-                    final = await thread.agent.run(text)
+                    self.ui.reply_shown.discard(thread.id)
+                    final = await thread.agent.run(text, purpose=thread.purposes.pop(text, None))
                     if (
                         final
                         and final.strip()
+                        and thread.id not in self.ui.reply_shown
                         and final.strip() != self.ui.last_assistant_text.get(thread.id)
                     ):
                         self.ui.emit(
@@ -418,13 +441,19 @@ class MuseService:
     def decide(
         self, approval_id: str, approved: bool, scope: str = "once", reason: str = ""
     ) -> bool:
-        if scope not in ("once", "session", "always"):
+        if scope not in SCOPES:
             scope = "once"
         return self.ui.resolve_approval(approval_id, approved, scope, reason)
 
     def forget_approvals(self) -> None:
         self.app.sentinel.forget_approvals()
         self.bus.publish({"kind": "approvals_reset"})
+
+    def revoke_grant(self, key: str) -> bool:
+        ok = self.app.sentinel.revoke(key)
+        if ok:
+            self.bus.publish({"kind": "approvals_reset"})
+        return ok
 
     # ------------------------------------------------------------------ goals
     def advance_goal(self, goal_id: str) -> Goal:
@@ -558,12 +587,10 @@ class MuseService:
     # ------------------------------------------------------------------ state snapshots
     def activity(self, n: int = 100) -> dict[str, Any]:
         s = self.app.sentinel
+        s.grants.purge_expired()
         return {
             "audit": self.app.audit.tail(n),
-            "approvals": {
-                "session": sorted(s.session_allow),
-                "persistent": sorted(s.persistent_allow),
-            },
+            "grants": [g.to_dict() for g in s.active_grants()],
             "tainted": s.tainted,
         }
 

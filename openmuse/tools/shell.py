@@ -26,6 +26,32 @@ _DANGEROUS = [
 ]
 
 
+_SKIP_PROGRAMS = {"cd", "export", "set", "true", "time", "env", "nohup", "exec"}
+
+
+def programs_of(command: str) -> str | None:
+    """The programs a shell command runs (``cd web && npm run build`` → ``npm``).
+
+    This is what an approval for a shell command is bound to: allowing ``git`` for the
+    session does not allow ``curl``. Returns ``None`` when nothing recognisable is found.
+    """
+    names: list[str] = []
+    for segment in re.split(r"\|\||&&|;|\||\n", command):
+        tokens = segment.strip().split()
+        while tokens and (
+            re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", tokens[0]) or tokens[0] in ("env", "time")
+        ):
+            tokens.pop(0)
+        if not tokens:
+            continue
+        program = tokens[0].rsplit("/", 1)[-1]
+        if program in _SKIP_PROGRAMS or not re.fullmatch(r"[A-Za-z0-9_.+-]+", program):
+            continue
+        if program not in names:
+            names.append(program)
+    return ",".join(sorted(names)) if names else None
+
+
 async def _run(cmd: list[str] | str, cwd: Path, timeout: float, shell: bool) -> ToolResult:
     try:
         if shell:
@@ -87,6 +113,7 @@ class Shell(BaseTool):
             risk=RiskLevel.SENSITIVE,
             egress=True,
             egress_target=None,
+            target=programs_of(command),
             summary=f"shell: {command[:160]}",
             warnings=[f"command looks dangerous: {w}" for w in warnings],
         )
@@ -151,4 +178,4 @@ class PythonExecute(BaseTool):
             script.unlink(missing_ok=True)
 
 
-__all__ = ["PythonExecute", "Shell"]
+__all__ = ["PythonExecute", "Shell", "programs_of"]

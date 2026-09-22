@@ -143,7 +143,8 @@ async def _slash(cmd: str, muse) -> bool:  # noqa: ANN001
         console.print(
             "/reset – clear conversation   /memory – list memories   /goals – list goals\n"
             "/audit [n] – recent audit entries   /tools – list tools   /tainted – taint status\n"
-            "/forget-approvals – clear session/persistent approvals   /exit – quit"
+            "/permissions – what you allowed   /revoke <key> – take one back\n"
+            "/forget-approvals – clear every granted permission   /exit – quit"
         )
     elif name == "reset":
         muse.agent.reset()
@@ -159,6 +160,20 @@ async def _slash(cmd: str, muse) -> bool:  # noqa: ANN001
             console.print(f"  [cyan]{t.name}[/cyan] [{t.risk.value}] {t.description[:90]}")
     elif name == "tainted":
         console.print(f"session tainted: {muse.sentinel.tainted}")
+    elif name == "permissions":
+        grants = muse.sentinel.active_grants()
+        if not grants:
+            console.print("[dim]no standing permissions[/dim]")
+        for g in grants:
+            until = {"task": "this task", "session": "until restart", "always": "always"}.get(
+                g.scope, f"until {_local_time(g.to_dict()['expires_at'] or '')}"
+            )
+            console.print(f"  [cyan]{g.key}[/cyan]  {until}")
+    elif name == "revoke":
+        if muse.sentinel.revoke(arg.strip()):
+            console.print(f"[dim]revoked {arg.strip()}[/dim]")
+        else:
+            console.print(f"[red]no permission '{arg.strip()}' (see /permissions)[/red]")
     elif name == "forget-approvals":
         muse.sentinel.forget_approvals()
         console.print("[dim]approvals cleared[/dim]")

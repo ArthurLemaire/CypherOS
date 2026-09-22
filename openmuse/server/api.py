@@ -5,6 +5,8 @@
     GET  /api/threads/{id}/events        timeline (?limit&before)
     POST /api/threads/{id}/send {text}   queue a message (non-blocking)
     POST /api/approvals/{id} {approved, scope, reason}
+    DELETE /api/approvals                 forget every granted permission
+    DELETE /api/approvals/grants/{key}    revoke one (key = "tool" or "tool:target")
     GET  /api/goals  POST /api/goals  GET|PATCH|DELETE /api/goals/{id}  POST /api/goals/{id}/advance|steps
     GET  /api/memory  POST /api/memory  DELETE /api/memory/{id}
     GET  /api/ideas (?refresh=1)
@@ -210,6 +212,12 @@ def create_app(settings: Settings, service: MuseService | None = None) -> FastAP
     @app.delete("/api/approvals", dependencies=dep)
     async def reset_approvals() -> dict[str, Any]:
         svc.forget_approvals()
+        return {"ok": True}
+
+    @app.delete("/api/approvals/grants/{key:path}", dependencies=dep)
+    async def revoke_grant(key: str) -> dict[str, Any]:
+        if not svc.revoke_grant(key):
+            raise HTTPException(404, "no such permission")
         return {"ok": True}
 
     # ------------------------------------------------------------------ goals

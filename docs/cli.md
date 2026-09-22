@@ -24,6 +24,8 @@ Interactive session in the terminal with approvals inline. Slash commands:
 | `/audit [n]` | recent audit entries |
 | `/tools` | tools the agent can use right now |
 | `/tainted` | whether the session has read private data |
+| `/permissions` | standing permissions you granted (key and lifetime) |
+| `/revoke <key>` | take one back, e.g. `/revoke shell:git` |
 
 `--resume` continues the most recent session (`<data_dir>/sessions/`).
 

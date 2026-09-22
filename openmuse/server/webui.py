@@ -62,6 +62,9 @@ class WebUI:
         self._stream_buf: dict[str, str] = {}
         self._tool_events: dict[str, str] = {}  # tool call id -> event id
         self.last_assistant_text: dict[str, str] = {}
+        self._step_text: dict[str, str] = {}  # text of the response currently being handled
+        # threads whose final reply is already on screen (text + terminate in one response)
+        self.reply_shown: set[str] = set()
 
     # ------------------------------------------------------------------ helpers
     @staticmethod
@@ -124,6 +127,7 @@ class WebUI:
         if self.show_thinking and reasoning:
             event["reasoning"] = reasoning.strip()
         self.last_assistant_text[thread] = text
+        self._step_text[thread] = text
         self.emit(event)
 
     def on_tool_call(self, call: ToolCall, summary: str) -> None:
@@ -131,8 +135,13 @@ class WebUI:
         if call.name in ("terminate", "ask_user"):
             # The final summary becomes the assistant bubble and questions get their own
             # card — a chip for either would only duplicate them.
+            if call.name == "terminate" and self._step_text.get(thread):
+                # The model already said its piece in the same response; the summary it
+                # hands to terminate would be the same thing twice.
+                self.reply_shown.add(thread)
             self.set_status("working", _TOOL_LABELS.get(call.name, "Working…"), thread)
             return
+        self._step_text.pop(thread, None)
         args = call.arguments if isinstance(call.arguments, dict) else {}
         ev = self.emit(
             {
@@ -207,6 +216,10 @@ class WebUI:
                 "reasons": request.reasons,
                 "warnings": request.warnings,
                 "egress_target": request.egress_target,
+                "purpose": request.purpose,
+                "target": request.target,
+                "grant_key": request.grant_key,
+                "grant_options": list(request.grant_options),
                 "args": _preview_args(request.args),
                 "status": "pending",
             }

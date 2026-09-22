@@ -106,18 +106,24 @@ def test_approval_card_flow(server, settings: Settings):
     assert card["tool"] == "shell" and card["risk"] == "sensitive"
     assert client.get("/api/state").json()["pending_approvals"][0]["id"] == card["id"]
 
+    assert card["purpose"] == "run echo"
+    assert card["grant_key"] == "shell:echo" or card["grant_key"] == "shell"
+    assert "session" in card["grant_options"]
+
     r = client.post(f"/api/approvals/{card['id']}", json={"approved": True, "scope": "session"})
     assert r.status_code == 200
     wait_for(lambda: [e for e in events_of(client, kind="approval") if e["status"] == "approved"])
     tool = wait_for(lambda: [e for e in events_of(client, kind="tool") if e["status"] == "ok"])[0]
     assert "approved-run" in tool["output"]
-    activity = client.get("/api/activity").json()
-    assert "shell" in activity["approvals"]["session"]
+    grants = client.get("/api/activity").json()["grants"]
+    assert [g["scope"] for g in grants] == ["session"] and grants[0]["tool"] == "shell"
     # deciding twice is rejected
     assert client.post(f"/api/approvals/{card['id']}", json={"approved": False}).status_code == 404
-    # reset permissions
+    # revoke one permission, then reset everything
+    assert client.delete(f"/api/approvals/grants/{grants[0]['key']}").status_code == 200
+    assert client.delete(f"/api/approvals/grants/{grants[0]['key']}").status_code == 404
+    assert client.get("/api/activity").json()["grants"] == []
     assert client.delete("/api/approvals").status_code == 200
-    assert client.get("/api/activity").json()["approvals"]["session"] == []
 
 
 def test_denied_approval_blocks_tool(server):
