@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import os
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from openmuse.logger import logger
@@ -39,6 +41,22 @@ _TOOL_LABELS = {
     "terminate": "Wrapping up",
 }
 
+# Tools that cannot create files; no point scanning the workspace around them.
+_READ_ONLY_TOOLS = {
+    "web_search",
+    "web_fetch",
+    "recall",
+    "remember",
+    "forget",
+    "goals",
+    "ask_user",
+    "terminate",
+    "read_emails",
+    "send_email",
+}
+_SKIP_DIRS = {"node_modules", "__pycache__", ".venv", "venv", ".git"}
+_SCAN_CAP = 3000
+
 
 class WebUI:
     """Turns agent callbacks into timeline events + live WebSocket messages."""
@@ -49,11 +67,22 @@ class WebUI:
         get_timeline: Callable[[str], Timeline],
         approval_timeout: float = 3600.0,
         show_thinking: bool = False,
+        workspace: Path | None = None,
+        exclude: tuple[Path, ...] = (),
     ):
         self.bus = bus
         self.get_timeline = get_timeline
         self.approval_timeout = approval_timeout
         self.show_thinking = show_thinking
+        self.workspace = workspace
+        # directories inside the workspace that are OpenMuse's own (the data dir, when
+        # someone points both at the same place) — never artifacts
+        self.exclude = tuple(p.resolve() for p in exclude)
+        # workspace snapshot taken before a tool ran, per thread; files that are new or
+        # changed afterwards become artifact cards — whatever tool wrote them
+        self._ws_before: dict[str, dict[str, float] | None] = {}
+        # artifact events already shown in the current run: path -> event id
+        self._artifacts: dict[str, dict[str, str]] = {}
         self.pending_approvals: dict[str, asyncio.Future[ApprovalDecision]] = {}
         self.pending_questions: dict[str, asyncio.Future[str]] = {}  # thread -> future
         self.status: dict[str, dict[str, Any]] = {}
@@ -70,10 +99,66 @@ class WebUI:
         # were away.
         self.background: dict[str, str] = {}
 
+    # ------------------------------------------------------------------ run lifecycle
+    def begin_run(self, thread: str, background: str | None = None) -> None:
+        """Called by the service before each agent run in ``thread``."""
+        self.reply_shown.discard(thread)
+        self._artifacts[thread] = {}
+        if background:
+            self.background[thread] = background
+        else:
+            self.background.pop(thread, None)
+
+    def end_run(self, thread: str) -> None:
+        self.background.pop(thread, None)
+        self._ws_before.pop(thread, None)
+
     # ------------------------------------------------------------------ helpers
     @staticmethod
     def thread() -> str:
         return current_thread.get()
+
+    def _scan_workspace(self) -> dict[str, float] | None:
+        """Relative path → mtime for every visible file, or None when the workspace is
+        too big to diff cheaply (then only the files tool announces artifacts)."""
+        ws = self.workspace
+        if ws is None or not ws.is_dir():
+            return None
+        out: dict[str, float] = {}
+        for root, dirs, files in os.walk(ws):
+            here = Path(root)
+            if any(here == x or x in here.parents for x in self.exclude):
+                dirs[:] = []
+                continue
+            dirs[:] = [d for d in dirs if not d.startswith(".") and d not in _SKIP_DIRS]
+            for name in files:
+                if name.startswith("."):
+                    continue
+                p = Path(root) / name
+                try:
+                    out[p.relative_to(ws).as_posix()] = p.stat().st_mtime
+                except OSError:
+                    continue
+                if len(out) > _SCAN_CAP:
+                    return None
+        return out
+
+    def _announce_artifact(self, thread: str, rel: str, action: str) -> None:
+        seen = self._artifacts.setdefault(thread, {})
+        if rel in seen:
+            # the same file touched again in this run: refresh the card, don't stack another
+            self.patch(thread, seen[rel], action="update", updated_ts=now_iso())
+            return
+        ev = self.emit(
+            {
+                "type": "artifact",
+                "path": rel,
+                "name": rel.rsplit("/", 1)[-1],
+                "action": action,
+                "thread": thread,
+            }
+        )
+        seen[rel] = ev["id"]
 
     def emit(self, event: dict[str, Any], persist: bool = True) -> dict[str, Any]:
         thread = event.get("thread") or self.thread()
@@ -160,6 +245,8 @@ class WebUI:
             }
         )
         self._tool_events[call.id] = ev["id"]
+        if call.name not in _READ_ONLY_TOOLS:
+            self._ws_before[thread] = self._scan_workspace()
         label = _TOOL_LABELS.get(call.name, f"Using {call.name}")
         self.set_status("working", f"{label}: {summary}" if summary else label, thread)
 
@@ -174,17 +261,8 @@ class WebUI:
         preview = (result.output or result.error or "")[:600]
         if eid:
             self.patch(thread, eid, status=status, output=preview)
-        if call.name == "files" and result.ok:
-            args = call.arguments if isinstance(call.arguments, dict) else {}
-            if args.get("action") in ("write", "append") and args.get("path"):
-                self.emit(
-                    {
-                        "type": "artifact",
-                        "path": str(args["path"]),
-                        "name": str(args["path"]).rsplit("/", 1)[-1],
-                        "action": args["action"],
-                    }
-                )
+        if result.ok and call.name not in _READ_ONLY_TOOLS:
+            self._announce_new_files(thread, call)
         # Let the Goals / Memory tabs refresh when the agent changed them.
         if result.ok and call.name == "goals":
             self.bus.publish({"kind": "goals"})
@@ -192,6 +270,28 @@ class WebUI:
             self.bus.publish({"kind": "memory"})
         if call.name != "terminate":
             self.set_status("working", "Thinking…", thread)
+
+    def _announce_new_files(self, thread: str, call: ToolCall) -> None:
+        """Every file a tool created or changed in the workspace becomes an artifact card:
+        a page from python_execute, a PDF from a shell command, a note from files."""
+        before = self._ws_before.pop(thread, None)
+        after = self._scan_workspace() if before is not None else None
+        if before is not None and after is not None:
+            for rel, mtime in after.items():
+                if before.get(rel) != mtime:
+                    self._announce_artifact(thread, rel, "write" if rel not in before else "update")
+            return
+        # no cheap diff available: fall back to what the files tool tells us
+        if call.name == "files":
+            args = call.arguments if isinstance(call.arguments, dict) else {}
+            path = str(args.get("path") or "")
+            if args.get("action") in ("write", "append") and path:
+                if self.workspace is not None and Path(path).is_absolute():
+                    try:
+                        path = Path(path).resolve().relative_to(self.workspace.resolve()).as_posix()
+                    except ValueError:
+                        return
+                self._announce_artifact(thread, path, str(args["action"]))
 
     def on_sentinel(self, decision: str, summary: str, reasons: list[str]) -> None:
         if decision == "deny":

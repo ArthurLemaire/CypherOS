@@ -325,6 +325,31 @@ def test_files_are_scoped_to_workspace(server, settings: Settings):
     assert client.get("/api/files/nope.txt").status_code == 404
 
 
+def test_any_tool_that_writes_a_file_yields_one_artifact_card(server, settings: Settings):
+    client, _, llm = server
+    # python_execute is auto-allowed in the test settings; it writes a page, then rewrites it
+    code = "open('report.html','w').write('<h1>{}</h1>')"
+    llm.script.extend(
+        [
+            LLMResponse(tool_calls=[tc("python_execute", code=code.format("v1"))]),
+            LLMResponse(tool_calls=[tc("python_execute", code=code.format("v2"))]),
+            LLMResponse(tool_calls=[tc("files", action="write", path="notes.md", content="hi")]),
+            LLMResponse(content="Made the report and a note."),
+        ]
+    )
+    client.post("/api/threads/main/send", json={"text": "make a report"})
+    wait_for(lambda: events_of(client, kind="assistant"))
+    cards = events_of(client, kind="artifact")
+    # the second write refreshed the first card (action → update) instead of adding another
+    assert [(c["path"], c["action"]) for c in cards] == [
+        ("report.html", "update"),
+        ("notes.md", "write"),
+    ]
+    assert cards[0]["updated_ts"]
+    assert (settings.agent.workspace / "report.html").read_text() == "<h1>v2</h1>"
+    assert client.get("/api/feed").json() == []  # your own request is not "while you were away"
+
+
 def test_html_artifacts_are_served_sandboxed(server, settings: Settings):
     client, _, _ = server
     (settings.agent.workspace / "page.html").write_text("<script>alert(1)</script>", "utf-8")
