@@ -190,7 +190,10 @@ async def test_feeds_read_files_cache_and_answer_from_the_cache(tmp_path: Path):
 async def test_feeds_fetch_over_http_and_report_a_broken_one(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
+    seen: list[str] = []
+
     def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
         if request.url.path == "/good.ics":
             return httpx.Response(200, text=FEED)
         return httpx.Response(404, text="gone")
@@ -204,13 +207,14 @@ async def test_feeds_fetch_over_http_and_report_a_broken_one(
 
     monkeypatch.setattr(httpx, "AsyncClient", client)
     feeds = CalendarFeeds(
-        settings_for("https://cal.example/good.ics", "https://cal.example/missing.ics"), tz=TZ
+        settings_for("webcal://cal.example/good.ics", "https://cal.example/missing.ics"), tz=TZ
     )
     status = await feeds.refresh()
     good, bad = status["feeds"]
     assert good["events"] == 6 and not good["error"]
     assert bad["events"] == 0 and "404" in bad["error"]
     assert len(feeds.agenda(date(2026, 9, 21))) == 1, "the good feed still answers"
+    assert seen[0] == "https://cal.example/good.ics", "a webcal:// link is fetched over https"
 
 
 async def test_calendar_tool(tmp_path: Path):
