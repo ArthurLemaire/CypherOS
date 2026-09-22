@@ -66,8 +66,8 @@ Do not expose port 8787 to the internet directly. Options that keep the token sc
 ## Updating
 
 ```bash
+uv tool upgrade openmuse                               # PyPI install (or: pip install -U openmuse)
 git pull --ff-only && uv pip install -e ".[dev]"      # source install
-uv tool upgrade openmuse                               # tool install
 docker compose build && docker compose up -d app       # Docker
 ```
 
