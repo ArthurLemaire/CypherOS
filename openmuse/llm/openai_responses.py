@@ -21,7 +21,7 @@ from tenacity import (
 from openmuse.config import LLMSettings
 from openmuse.llm.base import BaseLLM, DeltaCallback, ThinkStreamFilter, split_think
 from openmuse.logger import logger
-from openmuse.schema import Function, LLMResponse, Message, Role, ToolCall
+from openmuse.schema import Function, LLMResponse, Message, Role, ToolCall, new_id
 
 _RETRYABLE = (
     openai.APIConnectionError,
@@ -149,9 +149,7 @@ class OpenAIResponsesLLM(BaseLLM):
             elif itype == "function_call":
                 tool_calls.append(
                     ToolCall(
-                        id=getattr(item, "call_id", None)
-                        or getattr(item, "id", None)
-                        or ToolCall().id,
+                        id=getattr(item, "call_id", None) or getattr(item, "id", None) or new_id(),
                         function=Function(
                             name=getattr(item, "name", ""),
                             arguments=getattr(item, "arguments", "") or "{}",

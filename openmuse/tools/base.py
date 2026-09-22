@@ -105,7 +105,8 @@ async def safe_execute(tool: BaseTool, args: dict[str, Any] | None = None) -> To
         logger.exception("tool {} crashed", tool.name)
         return ToolResult.fail(f"{type(exc).__name__}: {exc}")
     if not isinstance(result, ToolResult):
-        result = ToolResult(output=str(result))
+        # third-party tools do not always honour the signature
+        result = ToolResult(output=str(result))  # type: ignore[unreachable]
     return result
 
 

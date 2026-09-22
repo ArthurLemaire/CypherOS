@@ -10,7 +10,7 @@
 
 ## Checks
 
-- [ ] `ruff check openmuse tests && ruff format --check openmuse tests` pass
+- [ ] `ruff check openmuse tests && ruff format --check openmuse tests && mypy` pass
 - [ ] `python -m pytest -q` passes; new behaviour has a test
 - [ ] If the web app changed: `cd web && npm run build`, and the result under `openmuse/server/static` is committed
 - [ ] If a tool or the Sentinel changed: risk level, `assess()` summary and `docs/sentinel.md` are up to date

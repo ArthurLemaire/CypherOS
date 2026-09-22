@@ -163,12 +163,12 @@ class Goals(BaseTool):
                         "`note` (why the plan should change) and `steps` (the revised remaining "
                         "steps) are required"
                     )
-                goal = self.store.propose(goal_id, note, steps)
-                if goal is None:
+                proposed = self.store.propose(goal_id, note, steps)
+                if proposed is None:
                     return ToolResult.fail(f"no goal {goal_id}")
                 return ToolResult(
                     output="Proposal recorded; the user will accept or dismiss it in the app. "
-                    "Keep working on the current plan where you can.\n" + goal.render()
+                    "Keep working on the current plan where you can.\n" + proposed.render()
                 )
             if action == "set_status":
                 if not status:
