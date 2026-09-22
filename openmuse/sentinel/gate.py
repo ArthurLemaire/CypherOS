@@ -147,7 +147,15 @@ class Sentinel:
                             "scope '{}' was not offered for {}; treating as once", scope, key
                         )
                         scope = "once"
-                    self.grants.add(tool.name, target, scope, task.id if task else None)
+                    bind = target
+                    if scope == "task" and assessment.egress_target is None:
+                        # "For this task" on a tool whose target is not a destination (shell,
+                        # where it is the list of programs) means the tool for the rest of the
+                        # run: a job that needs `git` now will need `ls` and `wc` next, and
+                        # asking for each new program is noise, not safety. Warnings still stop
+                        # every call; destinations (mail recipients, hosts) stay bound.
+                        bind = None
+                    self.grants.add(tool.name, bind, scope, task.id if task else None)
                 else:
                     decision = Decision.DENY
                     reasons.append(

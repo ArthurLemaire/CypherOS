@@ -254,6 +254,53 @@ async def test_gate_task_grant_ends_with_the_task(tmp_path: Path):
     gate.end_task(token)
 
 
+class Programs(BaseTool):
+    """Shell-like: the grant target is the list of programs, not a destination."""
+
+    name: str = "programs"
+    description: str = "runs programs"
+    parameters: dict[str, Any] = {"type": "object", "properties": {"command": {"type": "string"}}}
+    risk: RiskLevel = RiskLevel.SENSITIVE
+    egress: bool = True
+
+    def assess(self, args: dict[str, Any]) -> CallAssessment:
+        return CallAssessment(
+            risk=self.risk,
+            egress=True,
+            egress_target=None,
+            target=programs_of(str(args.get("command", ""))),
+            summary="programs",
+        )
+
+    async def execute(self, command: str = "", **_: Any) -> ToolResult:
+        return ToolResult(output=command)
+
+
+async def test_task_grant_covers_the_whole_tool_when_targets_are_programs(tmp_path: Path):
+    ui = ScopedUI(scope="task")
+    gate = Sentinel(SentinelSettings(), AuditLog(tmp_path / "a.jsonl"), ui)
+    token = gate.begin_task("count the lines")
+    await gate.guard(call("programs", command="git clone x"), Programs())
+    assert ui.requests[-1].grant_key == "programs:git"
+    await gate.guard(call("programs", command="find . -name '*.py' | wc -l"), Programs())
+    assert asks(ui) == 1, "'for this task' covers later commands with other programs"
+    assert [g.key for g in gate.active_grants()] == ["programs"]
+    gate.end_task(token)
+    token = gate.begin_task("another job")
+    await gate.guard(call("programs", command="ls"), Programs())
+    assert asks(ui) == 2, "and ends with the task"
+    gate.end_task(token)
+
+    # a destination-bound tool keeps its target even for this task
+    ui2 = ScopedUI(scope="task")
+    gate2 = Sentinel(SentinelSettings(always_ask_tools=["sender"]), AuditLog(tmp_path / "b"), ui2)
+    token = gate2.begin_task("mail people")
+    await gate2.guard(call("sender", host="a.example"), Sender())
+    await gate2.guard(call("sender", host="b.example"), Sender())
+    assert asks(ui2) == 2, "another recipient is another approval, even within the task"
+    gate2.end_task(token)
+
+
 async def test_gate_warnings_are_never_covered_by_grants(tmp_path: Path):
     class Risky(Echo):
         def assess(self, args: dict[str, Any]) -> CallAssessment:

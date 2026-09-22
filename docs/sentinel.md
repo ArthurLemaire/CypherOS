@@ -51,12 +51,12 @@ When the decision is *ask*, the UI (console, or an approval card in the app) sho
 |---|---|
 | Deny | the tool is not run; the model gets a "Sentinel blocked" result and is told not to retry the same call |
 | Once | this call only; nothing is remembered |
-| For this task | until the agent finishes what it is doing now (the current run) |
+| For this task | until the agent finishes what it is doing now (the current run); for `shell` this covers the tool, not just the programs in the current command |
 | Until restart | until the process exits |
 | For 24 hours | persisted in `<data_dir>/approvals.json` with an expiry |
 | Always | persisted until you revoke it |
 
-An approval is a capability, not a mood. It is bound to a **grant key**: the tool plus what the call touches — `web_fetch:example.com`, `send_email:alice@example.com`, `shell:git`, `browser:booking.com`. Allowing `git` commands for the session says nothing about `curl`; a pipeline such as `git status | head` needs every program covered (approving it grants each program separately), and an email to two people needs both recipients. Tools without a meaningful target (`python_execute`, an MCP tool) are granted as a whole, and the Sentinel only offers *once* and *for this task* for arbitrary code with network access. A call that carries a warning (`rm -rf`, `sudo`, `curl | sh`) is approved one at a time — standing permissions never cover it.
+An approval is a capability, not a mood. It is bound to a **grant key**: the tool plus what the call touches — `web_fetch:example.com`, `send_email:alice@example.com`, `shell:git`, `browser:booking.com`. Allowing `git` commands for the session says nothing about `curl`; a pipeline such as `git status | head` needs every program covered (approving it grants each program separately), and an email to two people needs both recipients. The one deliberate exception is *for this task* on `shell`: a job that needs `git` now will need `ls` and `wc` a moment later, so that answer covers the shell for the rest of the run — while destinations (recipients, hosts) stay bound even within a task. Tools without a meaningful target (`python_execute`, an MCP tool) are granted as a whole, and the Sentinel only offers *once* and *for this task* for arbitrary code with network access. A call that carries a warning (`rm -rf`, `sudo`, `curl | sh`) is approved one at a time — standing permissions never cover it.
 
 Everything you granted is listed under the avatar in the app (Permissions), each with its own revoke button; `DELETE /api/approvals/grants/{key}` and `DELETE /api/approvals` do the same from the API, and `openmuse chat`'s `/forget-approvals` clears them in the console.
 
