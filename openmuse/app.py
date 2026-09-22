@@ -33,10 +33,12 @@ from openmuse.tools import (
     Shell,
     Terminate,
     ToolCollection,
+    Triggers,
     WebFetch,
     WebSearch,
     playwright_available,
 )
+from openmuse.triggers import TriggerStore
 from openmuse.ui import UI
 from openmuse.vault import CredentialVault
 
@@ -57,6 +59,7 @@ class OpenMuseApp:
         self.memory = MemoryStore(settings.memory_db) if settings.memory.enabled else None
         self.goals = GoalStore(settings.goals_db)
         self.reminders = ReminderStore(settings.reminders_db)
+        self.triggers = TriggerStore(settings.triggers_db)
         self.calendar = CalendarFeeds(
             settings.connectors.calendar, vault=self.vault, cache_file=settings.calendar_cache
         )
@@ -112,6 +115,7 @@ class OpenMuseApp:
             WebFetch(),
             Goals(store=self.goals),
             Reminders(store=self.reminders),
+            Triggers(store=self.triggers, available=self.trigger_kinds),
         )
         if self.memory is not None:
             tools.add(
@@ -137,6 +141,15 @@ class OpenMuseApp:
                 )
         return tools
 
+    def trigger_kinds(self) -> dict[str, bool]:
+        """Which trigger kinds have their connector: mail needs the mailbox, event the calendar."""
+        s = self.settings
+        return {
+            "mail": bool(s.connectors.email.enabled and s.connectors.email.imap_host),
+            "event": bool(s.connectors.calendar.enabled and s.connectors.calendar.feeds),
+            "hook": True,
+        }
+
     async def start(self) -> OpenMuseApp:
         """Connect optional MCP servers. Call once before using the agent."""
         if self.mcp is not None:
@@ -153,6 +166,7 @@ class OpenMuseApp:
             self.memory.close()
         self.goals.close()
         self.reminders.close()
+        self.triggers.close()
 
     async def __aenter__(self) -> OpenMuseApp:
         return await self.start()

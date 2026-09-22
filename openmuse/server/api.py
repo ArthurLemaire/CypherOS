@@ -103,6 +103,14 @@ class ReminderBody(BaseModel):
     thread: str = ""
 
 
+class TriggerBody(BaseModel):
+    kind: str = Field(pattern="^(mail|event|hook)$")
+    text: str = Field(min_length=1, max_length=2000)
+    match: str = Field(default="", max_length=200)
+    lead_minutes: int = Field(default=30, ge=0, le=1440)
+    thread: str = ""
+
+
 class MemoryBody(BaseModel):
     content: str = Field(min_length=1, max_length=2000)
     category: str = "profile"
@@ -467,6 +475,80 @@ def create_app(settings: Settings, service: MuseService | None = None) -> FastAP
                 raise HTTPException(404, "no such reminder")
             raise HTTPException(409, "already finished")
         return item.to_dict()
+
+    # ------------------------------------------------------------------ triggers
+    @app.get("/api/triggers", dependencies=dep)
+    async def list_triggers() -> dict[str, Any]:
+        """Triggers (active and cancelled), which kinds have their connector, and how the
+        inbox watch is doing."""
+        return svc.triggers_view()
+
+    @app.post("/api/triggers", dependencies=dep)
+    async def create_trigger(body: TriggerBody) -> dict[str, Any]:
+        try:
+            item = svc.create_trigger(
+                body.kind,
+                body.text,
+                match=body.match,
+                lead_minutes=body.lead_minutes,
+                thread=body.thread,
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        out = item.to_dict()
+        if item.kind == "hook":
+            out["url"] = svc.hook_url(item)
+        return out
+
+    @app.post("/api/triggers/{trigger_id}/fire", dependencies=dep)
+    async def fire_trigger(trigger_id: str) -> dict[str, Any]:
+        """Run it now with a sample occurrence, to see what it does."""
+        item = svc.app.triggers.get(trigger_id)
+        if item is None:
+            raise HTTPException(404, "no such trigger")
+        what = {
+            "mail": "A test: you pressed Run now, as if a matching mail had just arrived (none did)",
+            "event": "A test: you pressed Run now, as if a matching event were about to start",
+            "hook": "A test: you pressed Run now, as if the webhook had been called (empty body)",
+        }[item.kind]
+        try:
+            fired = svc.fire_trigger(
+                trigger_id, what=what, key=f"test:{secrets.token_hex(4)}", title="test run"
+            )
+        except KeyError as exc:
+            raise HTTPException(404, "no such trigger") from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return (fired or item).to_dict()
+
+    @app.delete("/api/triggers/{trigger_id}", dependencies=dep)
+    async def cancel_trigger(trigger_id: str) -> dict[str, Any]:
+        item = svc.cancel_trigger(trigger_id)
+        if item is None:
+            if svc.app.triggers.get(trigger_id) is None:
+                raise HTTPException(404, "no such trigger")
+            raise HTTPException(409, "already cancelled")
+        return item.to_dict()
+
+    @app.post("/api/hooks/{trigger_id}")
+    async def deliver_hook(trigger_id: str, request: Request) -> dict[str, Any]:
+        """A trigger's webhook. No app token: the key in the URL is the credential, and a
+        wrong id or key is a 404 either way. The body (up to 64 KB, JSON or text) is what
+        the agent gets as context."""
+        key = request.query_params.get("key") or request.headers.get("x-hook-key") or ""
+        raw = await request.body()
+        if len(raw) > 64 * 1024:
+            raise HTTPException(413, "body too large (64 KB max)")
+        body = raw.decode("utf-8", errors="replace")
+        try:
+            item = svc.deliver_hook(trigger_id, key, body, request.headers.get("content-type", ""))
+        except KeyError as exc:
+            raise HTTPException(404, "not found") from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(429, str(exc)) from exc
+        return {"ok": True, "trigger": item.id, "fired": item.fired}
 
     # ------------------------------------------------------------------ memory
     @app.get("/api/memory", dependencies=dep)
