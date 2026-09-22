@@ -103,6 +103,10 @@ class Sentinel:
     # ------------------------------------------------------------------ main entry
     async def guard(self, call: ToolCall, tool: BaseTool) -> ToolResult:
         args = call.arguments
+        if "__raw__" in args:
+            # The arguments never parsed (cut off in transit): there is nothing to assess,
+            # nothing to approve and nothing to run. The result tells the model what happened.
+            return await safe_execute(tool, args)
         assessment = tool.assess(args)
         target = assessment.target if assessment.target is not None else assessment.egress_target
         key = grant_key(tool.name, target)
