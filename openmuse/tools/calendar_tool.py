@@ -78,7 +78,8 @@ class Calendar(BaseTool):
         if action == "draft":
             a.risk = RiskLevel.MODERATE
             a.reads_private_data = False
-            a.summary = f"calendar: draft “{args.get('title', '')}” {args.get('start', '')}"
+            title = html.unescape(str(args.get("title") or ""))
+            a.summary = f"calendar: draft “{title}” {args.get('start', '')}"
         elif action == "search":
             a.summary = f"calendar: search “{args.get('query', '')}”"
         elif action == "free":
@@ -127,14 +128,23 @@ class Calendar(BaseTool):
                 minutes = int(args.get("minutes") or 30)
                 s = feeds.settings
                 slots = feeds.free_slots(day, minutes, s.day_start, s.day_end)
+                # All-day events do not block hours, but the user may well be away: say so.
+                all_day = [o.summary for o in feeds.agenda(day) if o.all_day]
+                note = (
+                    f"\nAll-day that day: {', '.join(all_day)} — the gaps assume it leaves the hours free; check with the user."
+                    if all_day
+                    else ""
+                )
                 if not slots:
                     return ToolResult(
                         output=f"No free gap of {minutes}+ minutes on {day:%a %Y-%m-%d} between {s.day_start} and {s.day_end}."
+                        + note
                     )
                 lines = [f"  {sl.start:%H:%M}–{sl.end:%H:%M}  ({sl.minutes} min)" for sl in slots]
                 return ToolResult(
                     output=f"Free on {day:%a %Y-%m-%d} ({s.day_start}–{s.day_end}), gaps of {minutes}+ min:\n"
                     + "\n".join(lines)
+                    + note
                 )
             days = max(1, min(31, int(args.get("days") or 1)))
             items = feeds.agenda(day, days)

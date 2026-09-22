@@ -3,6 +3,7 @@ import {
   Ban,
   Bot,
   Brain,
+  CalendarDays,
   Check,
   ChevronDown,
   ChevronRight,
@@ -425,7 +426,17 @@ export function ArtifactCard({ event, onOpen }: { event: ArtifactEvent; onOpen: 
         className="flex items-center gap-3 rounded-3xl rounded-tl-lg border border-border bg-surface px-4 py-3 shadow-sm hover:bg-surface-2 transition max-w-full text-left"
       >
         <div className="rounded-2xl bg-accent/12 text-accent p-2.5">
-          {kind === "code" ? <Code2 size={20} /> : kind === "html" ? <Globe size={20} /> : kind === "image" ? <ImageIcon size={20} /> : <FileText size={20} />}
+          {kind === "code" ? (
+            <Code2 size={20} />
+          ) : kind === "html" ? (
+            <Globe size={20} />
+          ) : kind === "image" ? (
+            <ImageIcon size={20} />
+          ) : kind === "event" ? (
+            <CalendarDays size={20} />
+          ) : (
+            <FileText size={20} />
+          )}
         </div>
         <div className="min-w-0">
           <div className="text-[11px] uppercase tracking-wide text-muted font-semibold">{label}</div>

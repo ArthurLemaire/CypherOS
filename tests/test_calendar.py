@@ -238,6 +238,10 @@ async def test_calendar_tool(tmp_path: Path):
 
     out = (await tool.execute(action="free", day="2026-09-23", minutes=60)).output
     assert "09:00–11:00" in out and "11:30–15:00" in out and "16:00–18:00" in out
+    assert "All-day" not in out
+    # an all-day event does not block hours, but the model is told the user may be away
+    out = (await tool.execute(action="free", day="2026-09-25", minutes=60)).output
+    assert "All-day that day: 公司团建" in out
 
     out = (await tool.execute(action="search", query="团建")).output
     assert "公司团建" in out and "all day" in out

@@ -396,7 +396,7 @@ export function CalendarCard({ data, onChange, compact }: { data: ConnectionsDat
         toast(t("Added, but it could not be read: {error}", { error: view.error }));
       } else {
         const feed = view.feeds.find((f) => f.name === name.trim());
-        toast(t("Calendar connected · {n} events", { n: feed?.events ?? 0 }));
+        toast(`${t("Calendar connected")} · ${evs(feed?.events ?? 0)}`);
         setName("");
         setUrl("");
         setAdding(false);
@@ -448,6 +448,7 @@ export function CalendarCard({ data, onChange, compact }: { data: ConnectionsDat
 
   const total = c.feeds.reduce((n, f) => n + f.events, 0);
   const broken = c.feeds.filter((f) => f.error).length;
+  const evs = (n: number) => (n === 1 ? t("1 event") : t("{n} events", { n }));
   const status = c.configured
     ? broken
       ? { text: t("{n} not reading", { n: broken }), tone: "warn" }
@@ -458,7 +459,13 @@ export function CalendarCard({ data, onChange, compact }: { data: ConnectionsDat
     <Card
       icon={<CalendarDays size={19} />}
       title={t("Calendar")}
-      summary={c.configured ? t("{feeds} calendars · {n} events", { feeds: c.feeds.length, n: total }) : t("Your agenda, free time, and events it can draft")}
+      summary={
+        !c.configured
+          ? t("Your agenda, free time, and events it can draft")
+          : c.feeds.length === 1
+            ? `${c.feeds[0].name} · ${evs(total)}`
+            : `${t("{n} calendars", { n: c.feeds.length })} · ${evs(total)}`
+      }
       status={status}
       open={open}
       onToggle={compact ? undefined : () => setOpen(!open)}
@@ -477,7 +484,7 @@ export function CalendarCard({ data, onChange, compact }: { data: ConnectionsDat
                   {f.error
                     ? f.error
                     : f.fetched_at
-                      ? t("{n} events · read {when}", { n: f.events, when: relativeTime(f.fetched_at) })
+                      ? `${evs(f.events)} · ${t("read {when}", { when: relativeTime(f.fetched_at) })}`
                       : t("not read yet")}
                   {!f.from_app && ` · ${t("from config.toml")}`}
                 </div>
@@ -540,7 +547,7 @@ export function CalendarCard({ data, onChange, compact }: { data: ConnectionsDat
           <button type="button" disabled={busy === "test"} onClick={() => void runTest()} className={secondaryBtn}>
             {busy === "test" ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />} {t("Read again")}
           </button>
-          {test && <TestLine result={test} okText={t("{n} events across {feeds} calendars", { n: test.events ?? 0, feeds: c.feeds.length })} />}
+          {test && <TestLine result={test} okText={c.feeds.length === 1 ? evs(test.events ?? 0) : `${evs(test.events ?? 0)} · ${t("{n} calendars", { n: c.feeds.length })}`} />}
         </>
       )}
     </Card>

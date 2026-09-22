@@ -207,7 +207,7 @@ function eventWhen(ev: IcsEvent): string {
   if (!ev.start) return "";
   const locale = intlLocale();
   const day = (d: Date) => d.toLocaleDateString(locale, { weekday: "short", year: "numeric", month: "short", day: "numeric" });
-  const time = (d: Date) => d.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
+  const time = (d: Date) => d.toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" });
   if (ev.allDay) {
     // DTEND of an all-day event is the day after it ends
     const last = ev.end ? new Date(ev.end.getTime() - 86400000) : ev.start;
