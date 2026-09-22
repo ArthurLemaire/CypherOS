@@ -22,6 +22,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     OPENMUSE_DATA_DIR=/data \
     OPENMUSE_WORKSPACE=/workspace \
     OPENMUSE_CONFIG=/app/config/config.toml \
+    OPENMUSE_IN_CONTAINER=1 \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 RUN useradd --create-home --uid 1000 muse \

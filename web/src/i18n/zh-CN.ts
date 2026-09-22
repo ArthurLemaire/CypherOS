@@ -355,6 +355,8 @@ const zhCN: Record<string, string> = {
   "Commands run without a sandbox": "命令未在沙箱中运行",
   "Each shell or Python call gets its own namespace: only the workspace is writable, your home directory is not there, and there is no network unless the command needs it.":
     "每次 shell 或 Python 调用都有独立的命名空间：只有工作区可写，你的主目录不在其中，命令不需要网络就没有网络。",
+  "Each shell or Python call runs in the workspace with a scrubbed environment; the container is the boundary.":
+    "每次 shell 或 Python 调用都在工作区中以清洗过的环境运行；容器就是边界。",
   "Each shell or Python call runs in the workspace with a scrubbed environment. On Linux, installing bubblewrap gives each one its own namespace.":
     "每次 shell 或 Python 调用都在工作区中以清洗过的环境运行。在 Linux 上安装 bubblewrap 后，每次调用会有独立的命名空间。",
   "After reading private data, new network destinations need approval.": "读取私密数据之后，访问新的网络目标需要批准。",

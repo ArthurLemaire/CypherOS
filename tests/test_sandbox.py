@@ -35,6 +35,10 @@ def test_off_and_missing_are_not_errors(tmp_path: Path, monkeypatch: pytest.Monk
     box = Sandbox(SandboxSettings(), workspace=tmp_path)
     assert not box.active and "not installed" in box.reason
     assert box.status.startswith("off — ")
+    monkeypatch.setenv("OPENMUSE_IN_CONTAINER", "1")
+    box = Sandbox(SandboxSettings(), workspace=tmp_path)
+    assert not box.active and box.reason == "in a container, which is the box"
+    monkeypatch.delenv("OPENMUSE_IN_CONTAINER")
     monkeypatch.setattr("openmuse.sandbox.platform.system", lambda: "Darwin")
     box = Sandbox(SandboxSettings(), workspace=tmp_path)
     assert not box.active and "Linux-only" in box.reason
