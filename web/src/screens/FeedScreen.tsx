@@ -1,7 +1,7 @@
 import { ArrowRight, Bell, FileText, MessageCircleQuestion, Moon, ShieldAlert, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
-import { intlLocale, t, useLocale, useT } from "../i18n";
+import { intlLocale, localLabel, t, useLocale, useT } from "../i18n";
 import { useStore } from "../store";
 import type { FeedItem, UpcomingData } from "../types";
 import { cx, relativeTime, timeShort } from "../util";
@@ -186,7 +186,7 @@ function FeedRow({ item, unseen, onOpen }: { item: FeedItem; unseen: boolean; on
       <button type="button" onClick={onOpen} className="w-full text-left px-2 py-1.5 flex items-center gap-2 text-[12.5px] text-muted">
         <Moon size={13} className="shrink-0" />
         <span className="truncate">
-          {t("{label} — nothing new", { label: item.title.replace(/^Working on your goal: /, "") })}{item.text ? `: ${item.text}` : ""}
+          {t("{label} — nothing new", { label: localLabel(item.title.replace(/^Working on your goal: /, "")) })}{item.text ? `: ${item.text}` : ""}
         </span>
         <span className="ml-auto shrink-0">{relativeTime(item.ts)}</span>
       </button>
@@ -205,7 +205,7 @@ function FeedRow({ item, unseen, onOpen }: { item: FeedItem; unseen: boolean; on
         <div className={cx("rounded-2xl p-2 mt-0.5", tone)}>{icon}</div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <div className="font-semibold text-[14.5px] leading-snug truncate">{item.title}</div>
+            <div className="font-semibold text-[14.5px] leading-snug truncate">{localLabel(item.title)}</div>
             {unseen && <span className="h-2 w-2 rounded-full bg-accent shrink-0" />}
           </div>
           {item.text && <div className="mt-0.5 text-[13.5px] text-muted leading-snug line-clamp-3 whitespace-pre-wrap">{plain(item.text)}</div>}

@@ -94,6 +94,22 @@ export function t(key: string, vars?: Vars): string {
   return interpolate(dict[key] ?? key, vars);
 }
 
+/**
+ * The server labels background work in English ("Working on your goal: Run a 10k",
+ * "Check-in: …", "Reminder: …", "Routine: …", "Tidied memory"). Translate the fixed part
+ * and keep what the user wrote.
+ */
+export function localLabel(label: string): string {
+  const rest = (prefix: string) => ({ title: label.slice(prefix.length) });
+  if (label.startsWith("Working on your goal: ")) {
+    return t("Working on your goal: {title}", rest("Working on your goal: "));
+  }
+  if (label.startsWith("Check-in: ")) return t("Check-in: {title}", rest("Check-in: "));
+  if (label.startsWith("Reminder: ")) return t("Reminder: {title}", rest("Reminder: "));
+  if (label.startsWith("Routine: ")) return t("Routine: {title}", rest("Routine: "));
+  return label === "Tidied memory" ? t("Tidied memory") : label;
+}
+
 /** `t` bound to the live locale: the component re-renders when the language changes. */
 export function useT(): typeof t {
   useLocale();

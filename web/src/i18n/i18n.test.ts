@@ -62,3 +62,16 @@ describe("zh-CN dictionary", () => {
     expect(dictionaryKeys("zh-CN").filter((k) => !zhCN[k].trim())).toEqual([]);
   });
 });
+
+describe("localLabel", () => {
+  it("translates the fixed part of a server label and keeps the user's words", async () => {
+    const { localLabel } = await import("./index");
+    setLocaleSetting("zh-CN");
+    expect(localLabel("Working on your goal: Run a 10k")).toBe("推进目标：Run a 10k");
+    expect(localLabel("Reminder: call mum")).toBe("提醒：call mum");
+    expect(localLabel("Tidied memory")).toBe("整理了记忆");
+    expect(localLabel("Something else")).toBe("Something else");
+    setLocaleSetting("en");
+    expect(localLabel("Check-in: Japanese")).toBe("Check-in: Japanese");
+  });
+});
