@@ -40,6 +40,8 @@ export default function App() {
 
   const pendingApprovals = state.pendingApprovals.length;
   const activeGoals = state.goals.filter((g) => g.status === "active").length;
+  // a plan change waiting for your answer is worth a red badge; the count of goals is not
+  const proposals = state.goals.filter((g) => g.proposal && g.status !== "cancelled").length;
   const feedUnseen = state.pendingApprovals.filter((a) => a.ts > state.feedSeenAt).length;
 
   return (
@@ -68,7 +70,7 @@ export default function App() {
         <ul className="grid grid-cols-5">
           {TABS.map((t) => {
             const active = state.tab === t.id;
-            const badge = t.id === "chat" ? pendingApprovals : t.id === "feed" ? feedUnseen : t.id === "goals" ? activeGoals : 0;
+            const badge = t.id === "chat" ? pendingApprovals : t.id === "feed" ? feedUnseen : t.id === "goals" ? proposals || activeGoals : 0;
             return (
               <li key={t.id}>
                 <button
@@ -85,7 +87,7 @@ export default function App() {
                     <span
                       className={cx(
                         "absolute top-1 left-1/2 ml-2 min-w-[17px] h-[17px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center",
-                        t.id === "goals" ? "bg-surface-2 text-muted" : "bg-rose-500 text-white",
+                        t.id === "goals" && !proposals ? "bg-surface-2 text-muted" : "bg-rose-500 text-white",
                       )}
                     >
                       {badge}
