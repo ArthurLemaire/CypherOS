@@ -97,7 +97,7 @@ Scan the QR code with your phone (same Wi-Fi), or open the URL on this machine. 
 - *"Check how much free disk space this machine has"* — this one produces an approval card.
 - *"Set up a goal: conversational Japanese before my Kyoto trip in December, 30 minutes a day"* — then open the Goals tab.
 
-Prefer a terminal? `openmuse chat` gives you the same agent with approvals in the console, and `openmuse run "task"` runs one task and exits. See [docs/cli.md](docs/cli.md).
+Prefer a terminal? `openmuse chat` gives you the same agent with approvals in the console, and `openmuse run "task"` runs one task and exits. Something off? `openmuse doctor` checks the config, the model and the connectors and says what to fix. See [docs/cli.md](docs/cli.md).
 
 ## The app
 
