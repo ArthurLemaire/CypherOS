@@ -60,6 +60,18 @@ class Function(BaseModel):
             return {"__raw__": self.arguments}
         return data if isinstance(data, dict) else {"value": data}
 
+    def wire_arguments(self) -> str:
+        """The arguments as a provider will accept them: a JSON object string.
+
+        A call whose arguments never parsed (a gateway cut them off mid-string) stays
+        in the history as ``{}`` — strict endpoints (Ollama) reject the whole request
+        otherwise, and the tool result right after it already says the call failed.
+        """
+        parsed = self.parsed_arguments()
+        if "__raw__" in parsed or not self.arguments.strip():
+            return "{}"
+        return self.arguments
+
 
 class ToolCall(BaseModel):
     id: str = Field(default_factory=new_id)
@@ -122,7 +134,10 @@ class Message(BaseModel):
                 {
                     "id": tc.id,
                     "type": "function",
-                    "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                    "function": {
+                        "name": tc.function.name,
+                        "arguments": tc.function.wire_arguments(),
+                    },
                 }
                 for tc in self.tool_calls
             ]

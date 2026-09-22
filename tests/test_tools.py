@@ -206,3 +206,14 @@ def test_host_and_markdown():
         "<html><head><title>T</title><script>x()</script></head><body><h1>Hi</h1><p>para</p></body></html>"
     )
     assert md.startswith("# T") and "x()" not in md and "para" in md
+
+
+async def test_cut_off_arguments_tell_the_model_what_happened(tmp_path: Path):
+    from openmuse.tools.base import safe_execute
+
+    files = Files(workspace=tmp_path)
+    short = await safe_execute(files, {"__raw__": '{"action": "wri'})
+    assert not short.ok and "not valid JSON" in short.error and "cut off" not in short.error
+    long = await safe_execute(files, {"__raw__": '{"action": "write", "content": "' + "x" * 3000})
+    assert "cut off in transit" in long.error and "append" in long.error
+    assert len(long.error) < 600, "the broken payload itself is not echoed back in full"
