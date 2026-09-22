@@ -179,6 +179,25 @@ url  = "~/family.ics"
 
 The `calendar` tool reads (agenda, search, free time) and *drafts*: an event it proposes is written as `calendar/<date>-<title>.ics` in the workspace, and the app shows it as a card with an *Add to calendar* button. It never writes to your calendar itself. Today's and tomorrow's events are in the system prompt; the Feed shows them under *Today*. `openmuse calendar add NAME URL` does the same as the Connections screen.
 
+### Contacts
+
+Who is who. The agent looks people up before writing to them and never guesses an address; the approval card for an email names the recipient from the address book and warns when it does not know them. Sources are `.vcf` files — Google Contacts (*Export → vCard*), iCloud, Outlook (*People → Manage → Export*), Nextcloud, an iPhone (*Contacts → select all → Share*) and Android all export one — as a path, an upload from the phone (kept under `<data_dir>/contacts/`), or a link (kept in the vault). vCard 2.1, 3.0 and 4.0 are read, including Apple's `item1.` label groups and quoted-printable names from old phones. Link text is cached in `<data_dir>/contacts-cache.json` (mode 0600).
+
+```toml
+[connectors.contacts]
+enabled = true                    # on by default: the agent's own book needs no source
+
+[[connectors.contacts.sources]]
+name = "Google"
+url  = "~/Downloads/contacts.vcf"
+
+[[connectors.contacts.sources]]
+name = "Nextcloud"
+url  = "{{vault:CONTACTS_NEXTCLOUD}}"   # a link, kept in the vault: openmuse vault set CONTACTS_NEXTCLOUD
+```
+
+Besides the sources there is always *My contacts*, `<data_dir>/contacts.vcf`: the people the agent was told about in chat ("the landlord is Bob Li, bob@example.com") through `contacts` action=add — the only book it writes to, and the only one it can remove people from. The `contacts` tool searches by name, nickname, company, email or phone (every word must match, prefixes count, a character inside a Chinese name counts); a look-up is private data and taints the session. `openmuse contacts search | list | add | sources | add-source | remove-source` from the CLI.
+
 ## `[triggers]`
 
 Triggers are standing instructions that start work when something happens — a mail arrives, a calendar event is about to start, a program calls a webhook (see [the app](app.md#triggers)). They are set in chat or under *Upcoming*, not in the config file; this section only tunes how they are watched.

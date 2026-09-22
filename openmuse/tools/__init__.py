@@ -1,6 +1,7 @@
 from openmuse.tools.base import BaseTool, CallAssessment, ToolCollection, safe_execute
 from openmuse.tools.browser import Browser, playwright_available
 from openmuse.tools.calendar_tool import Calendar
+from openmuse.tools.contacts_tool import Contacts
 from openmuse.tools.email_tool import ReadEmails, SendEmail
 from openmuse.tools.files import Files
 from openmuse.tools.goal_tools import Goals
@@ -18,6 +19,7 @@ __all__ = [
     "Browser",
     "Calendar",
     "CallAssessment",
+    "Contacts",
     "Files",
     "Forget",
     "Goals",

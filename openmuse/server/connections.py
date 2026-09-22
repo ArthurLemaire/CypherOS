@@ -13,18 +13,28 @@ import asyncio
 import imaplib
 import re
 import smtplib
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from openmuse.config import (
     CalendarFeedSettings,
+    ContactSourceSettings,
     MCPServerSettings,
     apply_app_settings,
     load_app_settings,
     save_app_settings,
 )
+from openmuse.contacts import OWN
 from openmuse.logger import logger
 from openmuse.schema import Message
-from openmuse.tools import Calendar, MCPManager, ReadEmails, SendEmail, playwright_available
+from openmuse.tools import (
+    Calendar,
+    Contacts,
+    MCPManager,
+    ReadEmails,
+    SendEmail,
+    playwright_available,
+)
 from openmuse.tools.browser import Browser
 
 if TYPE_CHECKING:
@@ -64,8 +74,8 @@ PROVIDERS: dict[str, dict[str, Any]] = {
 }
 
 
-def _vault_name(feed_name: str) -> str:
-    return "CALENDAR_" + (re.sub(r"[^A-Z0-9]+", "_", feed_name.upper()).strip("_") or "FEED")
+def _vault_name(feed_name: str, prefix: str = "CALENDAR_") -> str:
+    return prefix + (re.sub(r"[^A-Z0-9]+", "_", feed_name.upper()).strip("_") or "FEED")
 
 
 class Connections:
@@ -78,6 +88,12 @@ class Connections:
         app_feeds = {f.get("name") for f in (self.data.get("calendar") or {}).get("feeds") or []}
         self._toml_feeds = [
             f for f in svc.settings.connectors.calendar.feeds if f.name not in app_feeds
+        ]
+        app_sources = {
+            c.get("name") for c in (self.data.get("contacts") or {}).get("sources") or []
+        }
+        self._toml_sources = [
+            c for c in svc.settings.connectors.contacts.sources if c.name not in app_sources
         ]
 
     # ------------------------------------------------------------------ helpers
@@ -140,6 +156,7 @@ class Connections:
                 "password_set": bool(self.vault.get(EMAIL_PASSWORD)),
             },
             "calendar": self._calendar_view(),
+            "contacts": self._contacts_view(),
             "browser": {"enabled": s.browser.enabled, "available": playwright_available()},
             "mcp": [
                 {
@@ -177,6 +194,29 @@ class Connections:
                     "error": status.get(f.name, {}).get("error", ""),
                 }
                 for f in cal.feeds
+            ],
+        }
+
+    def _contacts_view(self) -> dict[str, Any]:
+        settings = self.settings.connectors.contacts
+        book = self.svc.app.contacts
+        status = {s["name"]: s for s in book.status()["sources"]}
+        app_names = {c.get("name") for c in self._contacts_data().get("sources") or []}
+        return {
+            "enabled": settings.enabled,
+            "configured": settings.enabled and book.configured,
+            "count": len(book) if settings.enabled else 0,
+            "own": len(book.own),
+            "sources": [
+                {
+                    "name": c.name,
+                    "from_app": c.name in app_names,
+                    "file": not c.url.startswith(("http://", "https://", "{{")),
+                    "contacts": status.get(c.name, {}).get("contacts", 0),
+                    "fetched_at": status.get(c.name, {}).get("fetched_at"),
+                    "error": status.get(c.name, {}).get("error", ""),
+                }
+                for c in settings.sources
             ],
         }
 
@@ -284,7 +324,11 @@ class Connections:
         if enabled and "read_emails" not in tools:
             tools.add(
                 ReadEmails(settings=self.settings.connectors.email, vault=self.vault),
-                SendEmail(settings=self.settings.connectors.email, vault=self.vault),
+                SendEmail(
+                    settings=self.settings.connectors.email,
+                    vault=self.vault,
+                    book=self.svc.app.contacts,
+                ),
             )
         elif not enabled:
             tools.remove("read_emails")
@@ -422,6 +466,118 @@ class Connections:
             "events": sum(f["events"] for f in status["feeds"]),
             "feeds": len(status["feeds"]),
         }
+
+    # ------------------------------------------------------------------ contacts
+    def _contacts_data(self) -> dict[str, Any]:
+        return dict(self.data.get("contacts") or {})
+
+    def _apply_contacts(self, contacts: dict[str, Any]) -> None:
+        self.data["contacts"] = contacts
+        self._save()
+        settings = self.settings.connectors.contacts
+        app_sources = [
+            ContactSourceSettings.model_validate(c) for c in contacts.get("sources") or []
+        ]
+        app_names = {c.name for c in app_sources}
+        settings.sources = [c for c in self._toml_sources if c.name not in app_names] + app_sources
+        if contacts.get("enabled") is not None:
+            settings.enabled = bool(contacts["enabled"])
+        self.svc.app.contacts.read_files()
+        self._sync_contacts_tool()
+        self._publish()
+
+    def _sync_contacts_tool(self) -> None:
+        tools = self.svc.app.tools
+        enabled = self.settings.connectors.contacts.enabled
+        if enabled and "contacts" not in tools:
+            tools.add(Contacts(book=self.svc.app.contacts))
+        elif not enabled:
+            tools.remove("contacts")
+
+    async def add_contacts_source(self, body: dict[str, Any]) -> dict[str, Any]:
+        """A ``.vcf`` link or path. A link goes to the vault (it may be a private URL)."""
+        name = str(body.get("name") or "").strip()
+        url = str(body.get("url") or "").strip()
+        if not name:
+            raise ValueError("the address book needs a name")
+        if name == OWN:
+            raise ValueError(f"{OWN!r} is the agent's own book; pick another name")
+        if not url:
+            raise ValueError("paste a link to the .vcf file, or a path to one")
+        if not url.startswith(("http://", "https://", "file://", "/", "~")):
+            raise ValueError("the link must start with https:// (or be a path to a .vcf file)")
+        if url.startswith(("http://", "https://")):
+            secret = _vault_name(name, "CONTACTS_")
+            self.vault.set(secret, url)
+            url = f"{{{{vault:{secret}}}}}"
+        contacts = self._contacts_data()
+        sources = [c for c in contacts.get("sources") or [] if c.get("name") != name]
+        sources.append({"name": name, "url": url})
+        contacts["sources"] = sources
+        contacts["enabled"] = True
+        self._apply_contacts(contacts)
+        status = await self.svc.app.contacts.refresh(only=name)
+        state = next((c for c in status["sources"] if c["name"] == name), None)
+        self._publish()
+        if state and state.get("error"):
+            return {**self.view()["contacts"], "error": state["error"]}
+        return self.view()["contacts"]
+
+    async def import_contacts(self, name: str, text: str) -> dict[str, Any]:
+        """A ``.vcf`` file uploaded from the phone: kept under ``<data_dir>/contacts/`` and
+        added as a source."""
+        name = name.strip() or "Imported"
+        if name == OWN:
+            raise ValueError(f"{OWN!r} is the agent's own book; pick another name")
+        if "BEGIN:VCARD" not in text.upper():
+            raise ValueError("that is not a vCard (.vcf) file")
+        folder = self.settings.contacts_dir
+        folder.mkdir(parents=True, exist_ok=True)
+        stem = re.sub(r"[^A-Za-z0-9\u3400-\u9fff_-]+", "-", name).strip("-") or "contacts"
+        path = folder / f"{stem}.vcf"
+        path.write_text(text, encoding="utf-8")
+        path.chmod(0o600)
+        return await self.add_contacts_source({"name": name, "url": str(path)})
+
+    def remove_contacts_source(self, name: str) -> bool:
+        contacts = self._contacts_data()
+        sources = contacts.get("sources") or []
+        hit = next((c for c in sources if c.get("name") == name), None)
+        if hit is None:
+            return False  # from config.toml: switched off there, not here
+        contacts["sources"] = [c for c in sources if c.get("name") != name]
+        self.vault.delete(_vault_name(name, "CONTACTS_"))
+        url = str(hit.get("url") or "")
+        try:
+            uploaded = self.settings.contacts_dir.resolve()
+            path = Path(url).resolve()
+            if path.is_relative_to(uploaded) and path.is_file():
+                path.unlink()  # an upload of ours: gone with the source
+        except (OSError, ValueError):
+            pass
+        self._apply_contacts(contacts)
+        self.svc.app.contacts.states.pop(name, None)
+        self._publish()
+        return True
+
+    def set_contacts(self, body: dict[str, Any]) -> dict[str, Any]:
+        contacts = self._contacts_data()
+        if body.get("enabled") is not None:
+            contacts["enabled"] = bool(body["enabled"])
+        self._apply_contacts(contacts)
+        return self.view()["contacts"]
+
+    async def test_contacts(self) -> dict[str, Any]:
+        book = self.svc.app.contacts
+        status = await book.refresh()
+        self._publish()
+        broken = [c for c in status["sources"] if c["error"]]
+        if broken:
+            return {
+                "ok": False,
+                "error": "; ".join(f"{c['name']}: {c['error']}" for c in broken),
+            }
+        return {"ok": True, "contacts": status["count"], "sources": len(status["sources"])}
 
     # ------------------------------------------------------------------ browser
     def set_browser(self, enabled: bool) -> dict[str, Any]:

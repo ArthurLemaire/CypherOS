@@ -21,6 +21,9 @@
     GET  /api/connections                 model, email, browser, MCP servers, vault names
     PUT  /api/connections/llm|email|browser|calendar   POST /api/connections/llm|email|calendar/test
     POST /api/connections/calendar/feeds {name,url}  DELETE /api/connections/calendar/feeds/{name}
+    PUT  /api/connections/contacts {enabled}  POST /api/connections/contacts/sources {name,url}
+    POST /api/connections/contacts/import?name= (body: the .vcf text)  DELETE /api/connections/contacts/sources/{name}
+    POST /api/connections/contacts/test      GET /api/contacts?q=&limit=   look people up
     POST /api/connections/mcp  DELETE /api/connections/mcp/{name}
     GET  /api/vault  PUT|DELETE /api/vault/{name}   (names only ever come back)
     POST /api/onboarded
@@ -150,6 +153,15 @@ class BrowserBody(BaseModel):
 class CalendarFeedBody(BaseModel):
     name: str = Field(min_length=1, max_length=40)
     url: str = Field(min_length=1, max_length=2000)
+
+
+class ContactsSourceBody(BaseModel):
+    name: str = Field(min_length=1, max_length=40)
+    url: str = Field(min_length=1, max_length=2000)
+
+
+class ContactsBody(BaseModel):
+    enabled: bool | None = None
 
 
 class CalendarBody(BaseModel):
@@ -689,6 +701,55 @@ def create_app(settings: Settings, service: MuseService | None = None) -> FastAP
         else:
             await svc.app.calendar.refresh()
         return svc.calendar_view(days)
+
+    @app.put("/api/connections/contacts", dependencies=dep)
+    async def put_contacts(body: ContactsBody) -> dict[str, Any]:
+        return conn.set_contacts(body.model_dump(exclude_none=True))
+
+    @app.post("/api/connections/contacts/sources", dependencies=dep)
+    async def add_contacts_source(body: ContactsSourceBody) -> dict[str, Any]:
+        try:
+            return await conn.add_contacts_source(body.model_dump())
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/api/connections/contacts/import", dependencies=dep)
+    async def import_contacts(
+        request: Request, name: str = Query("", max_length=40)
+    ) -> dict[str, Any]:
+        """The text of a ``.vcf`` file as the request body (no multipart needed; 16 MB max)."""
+        raw = await request.body()
+        if len(raw) > 16 * 1024 * 1024:
+            raise HTTPException(413, "the file is larger than 16 MB")
+        try:
+            return await conn.import_contacts(name, raw.decode("utf-8", errors="replace"))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.delete("/api/connections/contacts/sources/{name}", dependencies=dep)
+    async def delete_contacts_source(name: str) -> dict[str, Any]:
+        if not conn.remove_contacts_source(name):
+            raise HTTPException(
+                404, "no such address book (sources from config.toml are removed there)"
+            )
+        return conn.view()["contacts"]
+
+    @app.post("/api/connections/contacts/test", dependencies=dep)
+    async def test_contacts() -> dict[str, Any]:
+        return await conn.test_contacts()
+
+    @app.get("/api/contacts", dependencies=dep)
+    async def contacts(
+        q: str = Query("", max_length=200), limit: int = Query(8, ge=1, le=50)
+    ) -> dict[str, Any]:
+        """Look people up as the agent does (``q`` empty: the first people alphabetically)."""
+        book = svc.app.contacts
+        people = (
+            book.search(q, limit=limit)
+            if q.strip()
+            else sorted(book.contacts, key=lambda c: c.name.lower())[:limit]
+        )
+        return {"count": len(book), "people": [c.to_dict() for c in people]}
 
     @app.post("/api/connections/mcp", dependencies=dep)
     async def add_mcp(body: MCPBody) -> dict[str, Any]:

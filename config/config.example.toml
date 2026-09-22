@@ -140,6 +140,14 @@ day_end = "18:00"
 # name = "Work"
 # url = "{{vault:CALENDAR_WORK}}"
 
+[connectors.contacts]
+# The address book: .vcf exports (Google Contacts, iCloud, Outlook, a phone) as files or
+# links, plus the people the agent is told about in chat (<data_dir>/contacts.vcf).
+enabled = true
+# [[connectors.contacts.sources]]
+# name = "Google"
+# url = "~/Downloads/contacts.vcf"     # or a link: "{{vault:CONTACTS_GOOGLE}}"
+
 [sandbox]
 # Linux + bubblewrap (apt install bubblewrap): every shell / python_execute call runs in its
 # own namespace — only the workspace is writable, your home directory is not there, and

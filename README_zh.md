@@ -39,7 +39,7 @@
 | 在终端里用 | [CLI](docs/cli.md) |
 | 接 DeepSeek、OpenAI、Ollama 或公司网关 | [模型](#模型) · [配置](docs/configuration.md) |
 | 搞清楚它什么会直接做、什么会先问 | [Sentinel](#sentinel) · [docs/sentinel.md](docs/sentinel.md) |
-| 接邮箱、日历、浏览器或 MCP 服务器 | [配置 → Connectors](docs/configuration.md#connectors) |
+| 接邮箱、日历、通讯录、浏览器或 MCP 服务器 | [配置 → Connectors](docs/configuration.md#connectors) |
 | 读代码 | [架构](#架构) · [docs/architecture.md](docs/architecture.md) |
 | 用 Docker 跑 | [部署](docs/deployment.md) |
 | 在（模拟）手机上把它当成一个 App 用，通知也有 | [demo/mobilegym](demo/mobilegym/README.md) |
@@ -54,7 +54,7 @@ Meta 的 Muse 不是聊天机器人，而是一个动手的 Agent：查资料、
 - Ideas：基于你的目标、记忆和近期对话给出的下一步建议。
 - 你能看、能改的记忆。Agent 记下的关于你的长期事实在页签里一览无余，点一下就能让它忘掉。事实变了就更新原条目而不是再加一条；定期整理会合并意思相同的条目、去掉并非事实的内容——每处改动都列出来，可一键撤销。
 - Sentinel 守门人、凭据保险库、污点追踪和只追加的审计日志。见 [Sentinel](#sentinel)。
-- 工具：文件、shell、Python、网页搜索与抓取、邮件（一次性验证码在模型看到之前就被抹掉）、日历（通过私密 `.ics` 链接读取；它提议的日程会变成一张卡片，点一下加入日历）、可选的 Playwright 浏览器，以及任何 [MCP](https://modelcontextprotocol.io) 服务器。
+- 工具：文件、shell、Python、网页搜索与抓取、邮件（一次性验证码在模型看到之前就被抹掉）、日历（通过私密 `.ics` 链接读取；它提议的日程会变成一张卡片，点一下加入日历）、通讯录（导入 `.vcf` 或在聊天里告诉它——写信前先查人，不猜地址）、可选的 Playwright 浏览器，以及任何 [MCP](https://modelcontextprotocol.io) 服务器。
 - 任何 OpenAI 兼容模型都能跑：DeepSeek、OpenAI、OpenRouter、Ollama、vLLM，或者带自定义请求头的公司网关。
 
 ## 为什么是 OpenMuse
@@ -120,9 +120,9 @@ openmuse serve --host 0.0.0.0        # 打印链接和二维码
 | 触发器 | 由外界事件而非时间启动的工作。“房东回信时，帮我总结并起草回复”（新邮件）、“任何评审开始前半小时给我一份简报”（日历）、“我的部署脚本调用你时，检查网站是否正常”（任何程序都能 `POST` 的 Webhook 地址）。邮件、日程或请求本身就是 agent 的上下文——只当数据、绝不当指令——结果出现在动态里。 |
 | Library | Agent 做出来的一切——网页、文档、追踪表、图片——直接在 App 里打开。网页在沙箱里渲染，拿不到你的 token，也调不了 API。 |
 | 头像 | 菜单：跨所有聊天的审批队列、活动记录、你授予的权限（可逐条撤销）、即将进行的事（后台工作、打卡、提醒、触发器）、记忆、连接，以及设置（名字、头像、性格、Sentinel 模式、后台工作、语言）。 |
-| 连接 | 在手机上接入一切：模型（服务商预设、密钥直接进 vault、一键测试）、邮箱（收发邮件，保存时校验登录）、日历（Google / Outlook / iCloud / Fastmail 的私密 `.ics` 链接，保存在 vault 里；当天日程显示在 Feed 里）、浏览器、MCP 服务器，以及 vault 本身。密钥和密码永远不会经过模型。 |
+| 连接 | 在手机上接入一切：模型（服务商预设、密钥直接进 vault、一键测试）、邮箱（收发邮件，保存时校验登录）、日历（Google / Outlook / iCloud / Fastmail 的私密 `.ics` 链接，保存在 vault 里；当天日程显示在 Feed 里）、通讯录（上传 `.vcf` 导出；写信前 agent 先查人，审批卡上直接显示收件人是谁）、浏览器、MCP 服务器，以及 vault 本身。密钥和密码永远不会经过模型。 |
 
-第一次打开时会先走一段简短的引导：你的名字、你的 Muse 的名字和风格、模型和密钥、可选的邮箱和日历。`config.toml` 已经写全的话可以直接跳过。
+第一次打开时会先走一段简短的引导：你的名字、你的 Muse 的名字和风格、模型和密钥、可选的邮箱、日历和通讯录。`config.toml` 已经写全的话可以直接跳过。
 
 把它添加到主屏幕并在设置里打开通知：agent 需要审批、有问题要问、后台做完了一件事，或者到了提醒、打卡的时间，手机就会响——走浏览器标准的 Web Push，不用在任何地方注册账号——图标上还会显示有几张卡片在等你。需要 `https://` 或 `localhost`，见 [部署说明](docs/deployment.md)。
 
@@ -192,7 +192,7 @@ flowchart LR
     G <--> V[(vault.enc)]
     T --> F[files · shell · python]
     T --> W[web_search · web_fetch · browser]
-    T --> E[email]
+    T --> E[email · calendar · contacts]
     T --> MCP[MCP 服务器]
     T <--> M[(memory.db)]
     T <--> GO[(goals.db)]
@@ -244,7 +244,7 @@ flowchart LR
 - [x] 本地模型（Ollama），自动降级到提示词工具模式
 - [x] 触发器：新邮件、日程、webhook 都能启动工作；定时的部分由例程负责
 - [x] 日历连接器：任意私密 `.ics` 链接或文件；日程、空闲时间、起草的日程以“加入日历”卡片给出
-- [ ] 联系人连接器
+- [x] 联系人连接器：`.vcf` 导出与链接、agent 自己的名册、审批卡上显示收件人是谁
 - [x] 记忆保持整洁：按稀有词召回、更新而非重复、定期整理并可撤销
 - [ ] 基于向量的记忆召回
 - [x] `shell` 与 `python_execute` 每次调用独立沙箱（Linux 上用 bubblewrap）

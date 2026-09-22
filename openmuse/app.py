@@ -10,6 +10,7 @@ from openmuse import prompts
 from openmuse.agent import MuseAgent
 from openmuse.calendar import CalendarFeeds
 from openmuse.config import Settings
+from openmuse.contacts import ContactBook
 from openmuse.goals import GoalStore
 from openmuse.llm import BaseLLM, create_llm
 from openmuse.logger import logger, setup_logging
@@ -21,6 +22,7 @@ from openmuse.tools import (
     AskUser,
     Browser,
     Calendar,
+    Contacts,
     Files,
     Forget,
     Goals,
@@ -64,6 +66,12 @@ class OpenMuseApp:
         self.calendar = CalendarFeeds(
             settings.connectors.calendar, vault=self.vault, cache_file=settings.calendar_cache
         )
+        self.contacts = ContactBook(
+            settings.connectors.contacts,
+            vault=self.vault,
+            own_file=settings.contacts_file,
+            cache_file=settings.contacts_cache,
+        )
         self.audit = AuditLog(settings.audit_file, session_id=self.session_id)
         self.sentinel = Sentinel(
             settings.sentinel,
@@ -85,6 +93,7 @@ class OpenMuseApp:
             memory=self.memory,
             goals=self.goals,
             calendar=self.calendar,
+            contacts=self.contacts,
             session_file=settings.data_dir / "sessions" / f"{self.session_id}.json",
         )
 
@@ -128,10 +137,12 @@ class OpenMuseApp:
         if s.connectors.email.enabled:
             tools.add(
                 ReadEmails(settings=s.connectors.email, vault=self.vault),
-                SendEmail(settings=s.connectors.email, vault=self.vault),
+                SendEmail(settings=s.connectors.email, vault=self.vault, book=self.contacts),
             )
         if s.connectors.calendar.enabled:
             tools.add(Calendar(feeds=self.calendar, workspace=ws))
+        if s.connectors.contacts.enabled:
+            tools.add(Contacts(book=self.contacts))
         if s.browser.enabled:
             if playwright_available():
                 tools.add(

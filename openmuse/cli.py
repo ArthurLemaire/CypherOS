@@ -34,6 +34,9 @@ memory_app = typer.Typer(help="Inspect or edit long-term memory.", no_args_is_he
 calendar_app = typer.Typer(
     help="The calendar feeds: agenda, free time, links.", no_args_is_help=True
 )
+contacts_app = typer.Typer(
+    help="The address book: look people up, connect .vcf exports.", no_args_is_help=True
+)
 vault_app = typer.Typer(help="Store credentials the model never sees.", no_args_is_help=True)
 config_app = typer.Typer(help="Configuration helpers.", no_args_is_help=True)
 app.add_typer(goals_app, name="goals")
@@ -41,6 +44,7 @@ app.add_typer(reminders_app, name="reminders")
 app.add_typer(triggers_app, name="triggers")
 app.add_typer(memory_app, name="memory")
 app.add_typer(calendar_app, name="calendar")
+app.add_typer(contacts_app, name="contacts")
 app.add_typer(vault_app, name="vault")
 app.add_typer(config_app, name="config")
 
@@ -566,6 +570,156 @@ def calendar_remove(name: str, config: ConfigOpt = None) -> None:
     data["calendar"] = cal
     save_app_settings(s.data_dir, data)
     secret = "CALENDAR_" + (re.sub(r"[^A-Z0-9]+", "_", name.upper()).strip("_") or "FEED")
+    CredentialVault(s.vault_file, s.vault_key_file).delete(secret)
+    console.print(f"removed {name}")
+
+
+# ============================================================================ contacts
+def _contacts(config: Path | None):  # noqa: ANN202
+    from openmuse.contacts import ContactBook
+    from openmuse.vault import CredentialVault
+
+    s = _settings(config)
+    vault = CredentialVault(s.vault_file, s.vault_key_file)
+    return s, ContactBook(
+        s.connectors.contacts,
+        vault=vault,
+        own_file=s.contacts_file,
+        cache_file=s.contacts_cache,
+    )
+
+
+@contacts_app.command("search")
+def contacts_search(
+    query: str,
+    config: ConfigOpt = None,
+    limit: Annotated[int, typer.Option("--limit", "-n")] = 8,
+) -> None:
+    """Find people by name, nickname, company, email or phone — as the agent does."""
+    _, book = _contacts(config)
+    hits = book.search(query, limit=limit)
+    if not hits:
+        console.print(f"[dim]no one matching '{query}' ({len(book)} people)[/dim]")
+        raise typer.Exit(1)
+    console.print(book.render(hits), markup=False)  # ids in [brackets] are not styles
+
+
+@contacts_app.command("list")
+def contacts_list(
+    config: ConfigOpt = None, limit: Annotated[int, typer.Option("--limit", "-n")] = 20
+) -> None:
+    """The first people alphabetically."""
+    _, book = _contacts(config)
+    people = sorted(book.contacts, key=lambda c: c.name.lower())[:limit]
+    if not people:
+        console.print("[dim]the address book is empty[/dim]")
+        return
+    console.print(f"[dim]{len(book)} people; the first {len(people)}[/dim]")
+    console.print(book.render(people), markup=False)
+
+
+@contacts_app.command("add")
+def contacts_add(
+    name: str,
+    config: ConfigOpt = None,
+    email: Annotated[str, typer.Option("--email", "-e")] = "",
+    phone: Annotated[str, typer.Option("--phone", "-p")] = "",
+    org: Annotated[str, typer.Option("--org")] = "",
+    note: Annotated[str, typer.Option("--note")] = "",
+    birthday: Annotated[str, typer.Option("--birthday")] = "",
+) -> None:
+    """Put a person in the agent's own book (<data_dir>/contacts.vcf), or update them."""
+    _, book = _contacts(config)
+    try:
+        contact = book.add(name, email=email, phone=phone, org=org, note=note, birthday=birthday)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    console.print(contact.render(), markup=False)
+
+
+@contacts_app.command("sources")
+def contacts_sources(config: ConfigOpt = None) -> None:
+    """The connected address books and how many people each has."""
+    from openmuse.contacts import OWN
+
+    s, book = _contacts(config)
+    asyncio.run(book.refresh())
+    status = {c["name"]: c for c in book.status()["sources"]}
+    table = Table(
+        title=f"Address books · {len(book)} people"
+        + ("" if s.connectors.contacts.enabled else " (off)")
+    )
+    table.add_column("name", style="cyan")
+    table.add_column("where")
+    table.add_column("people")
+    table.add_column("read")
+    table.add_column("error")
+    own = status.get(OWN, {})
+    table.add_row(OWN, str(s.contacts_file), str(len(book.own)), own.get("fetched_at") or "-", "")
+    for c in s.connectors.contacts.sources:
+        st = status.get(c.name, {})
+        where = c.url if "{{vault:" in c.url else (c.url[:40] + "…" if len(c.url) > 40 else c.url)
+        table.add_row(
+            c.name,
+            where,
+            str(st.get("contacts", 0)),
+            st.get("fetched_at") or "-",
+            st.get("error") or "",
+        )
+    console.print(table)
+
+
+@contacts_app.command("add-source")
+def contacts_add_source(name: str, url: str, config: ConfigOpt = None) -> None:
+    """Connect a .vcf export: a path, or a link (kept in the vault as CONTACTS_NAME)."""
+    import re
+
+    from openmuse.config import apply_app_settings, load_app_settings, save_app_settings
+    from openmuse.vault import CredentialVault
+
+    s = _settings(config)
+    url = url.strip()
+    if url.startswith(("http://", "https://")):
+        secret = "CONTACTS_" + (re.sub(r"[^A-Z0-9]+", "_", name.upper()).strip("_") or "FEED")
+        CredentialVault(s.vault_file, s.vault_key_file).set(secret, url)
+        url = f"{{{{vault:{secret}}}}}"
+    data = load_app_settings(s.data_dir)
+    contacts = dict(data.get("contacts") or {})
+    sources = [c for c in contacts.get("sources") or [] if c.get("name") != name]
+    sources.append({"name": name, "url": url})
+    contacts["sources"], contacts["enabled"] = sources, True
+    data["contacts"] = contacts
+    save_app_settings(s.data_dir, data)
+    apply_app_settings(s, {"contacts": contacts})
+    _, book = _contacts(config)
+    status = asyncio.run(book.refresh(only=name))
+    st: dict[str, Any] = next((c for c in status["sources"] if c["name"] == name), {})
+    if st.get("error"):
+        console.print(f"[yellow]added, but reading it failed: {st['error']}[/yellow]")
+        raise typer.Exit(1)
+    console.print(f"[green]added {name}: {st.get('contacts', 0)} people[/green]")
+
+
+@contacts_app.command("remove-source")
+def contacts_remove_source(name: str, config: ConfigOpt = None) -> None:
+    """Disconnect an address book added with `add-source` or in the app."""
+    import re
+
+    from openmuse.config import load_app_settings, save_app_settings
+    from openmuse.vault import CredentialVault
+
+    s = _settings(config)
+    data = load_app_settings(s.data_dir)
+    contacts = dict(data.get("contacts") or {})
+    sources = contacts.get("sources") or []
+    if not any(c.get("name") == name for c in sources):
+        console.print(f"[red]no address book '{name}' was added from the app or the CLI[/red]")
+        raise typer.Exit(1)
+    contacts["sources"] = [c for c in sources if c.get("name") != name]
+    data["contacts"] = contacts
+    save_app_settings(s.data_dir, data)
+    secret = "CONTACTS_" + (re.sub(r"[^A-Z0-9]+", "_", name.upper()).strip("_") or "FEED")
     CredentialVault(s.vault_file, s.vault_key_file).delete(secret)
     console.print(f"removed {name}")
 
@@ -1126,6 +1280,24 @@ async def _doctor(settings: Settings, check_model: bool) -> None:
             )
         else:
             line(None, "calendar: off")
+        contacts = settings.connectors.contacts
+        if contacts.enabled:
+            status = await app_.contacts.refresh()
+            broken = [c for c in status["sources"] if c["error"]]
+            line(
+                not broken,
+                f"contacts: {status['count']} people"
+                + (f" · {len(contacts.sources)} source(s)" if contacts.sources else "")
+                + (f" · {len(app_.contacts.own)} added by the agent" if app_.contacts.own else "")
+                + (
+                    " · " + "; ".join(f"{c['name']}: {c['error']}" for c in broken)
+                    if broken
+                    else ""
+                ),
+                "an address book could not be read",
+            )
+        else:
+            line(None, "contacts: off")
         triggers = app_.triggers.list("active")
         kinds = app_.trigger_kinds()
         orphans = [tr for tr in triggers if not kinds.get(tr.kind, True)]

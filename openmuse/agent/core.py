@@ -11,6 +11,7 @@ from typing import Any
 from openmuse import prompts
 from openmuse.calendar import CalendarFeeds
 from openmuse.config import Settings
+from openmuse.contacts import ContactBook
 from openmuse.goals import GoalStore
 from openmuse.llm.base import BaseLLM
 from openmuse.logger import logger
@@ -33,6 +34,7 @@ class MuseAgent:
         memory: MemoryStore | None = None,
         goals: GoalStore | None = None,
         calendar: CalendarFeeds | None = None,
+        contacts: ContactBook | None = None,
         session_file: Path | None = None,
     ):
         self.settings = settings
@@ -44,6 +46,7 @@ class MuseAgent:
         self.memory = memory
         self.goals = goals
         self.calendar = calendar
+        self.contacts = contacts
         self.session_file = session_file
         self.messages: list[Message] = []
         self.state = AgentState.IDLE
@@ -80,6 +83,17 @@ class MuseAgent:
                 "script that imports requests… are recognised; otherwise pass network=true)."
             )
         return "Commands (shell, python_execute) run in the workspace with a scrubbed environment."
+
+    def contacts_note(self) -> str:
+        """One line on the address book, when there is one (the tool does the looking up)."""
+        book = self.contacts
+        if book is None or "contacts" not in self.tools or not book.configured:
+            return ""
+        n = len(book)
+        return (
+            f"- Address book: {n} {'person' if n == 1 else 'people'} — look someone up with "
+            "`contacts` before writing to them; never guess an address\n"
+        )
 
     def build_system_prompt(self, user_input: str) -> str:
         a = self.settings.agent
@@ -140,6 +154,7 @@ class MuseAgent:
             workspace=str(a.workspace.resolve()),
             sentinel_mode=self.settings.sentinel.mode,
             sandbox=self.sandbox_note(),
+            contacts=self.contacts_note(),
             tool_names=", ".join(t.name for t in self.tools),
             user_profile=profile,
             memories=memories,

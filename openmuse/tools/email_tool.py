@@ -19,6 +19,7 @@ from email.message import EmailMessage
 from typing import Any
 
 from openmuse.config import EmailSettings
+from openmuse.contacts import ContactBook
 from openmuse.schema import RiskLevel, ToolResult
 from openmuse.tools.base import BaseTool, CallAssessment
 from openmuse.vault import CredentialVault
@@ -197,6 +198,9 @@ class SendEmail(_EmailBase):
     }
     risk: RiskLevel = RiskLevel.SENSITIVE
     egress: bool = True
+    # the address book, when there is one: the card names the recipient, and a recipient
+    # nobody knows is a warning (which asks even in auto mode)
+    book: ContactBook | None = None
 
     def assess(self, args: dict[str, Any]) -> CallAssessment:
         # A standing permission is bound to the recipient(s), never to "any email".
@@ -209,12 +213,26 @@ class SendEmail(_EmailBase):
                 if addr.strip()
             }
         )
+        to = str(args.get("to", ""))
+        warnings: list[str] = []
+        if self.book is not None and self.book.configured and recipients:
+            known = {addr: self.book.by_email(addr) for addr in recipients}
+            shown = [f"{c.name} <{a}>" if c else a for a, c in known.items()]
+            to = ", ".join(shown)
+            unknown = [a for a, c in known.items() if c is None]
+            if unknown:
+                warnings.append(
+                    "not in the address book: " + ", ".join(unknown)
+                    if len(unknown) > 1
+                    else f"{unknown[0]} is not in the address book"
+                )
         return CallAssessment(
             risk=RiskLevel.SENSITIVE,
             egress=True,
             egress_target=self.settings.smtp_host or None,
             target=",".join(recipients) or None,
-            summary=f"send_email to={args.get('to')} subject={str(args.get('subject', ''))[:80]!r}",
+            summary=f"send_email to={to} subject={str(args.get('subject', ''))[:80]!r}",
+            warnings=warnings,
         )
 
     async def execute(
