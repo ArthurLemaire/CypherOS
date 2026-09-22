@@ -119,6 +119,26 @@ class SentinelSettings(BaseModel):
 class MemorySettings(BaseModel):
     enabled: bool = True
     max_inject: int = 20
+    # Recall by meaning. Memories are embedded once and a message finds the ones that mean
+    # the same thing, in any language ("写邮件给房东" finds "the landlord is Bob Li"); the
+    # keyword recall stays and the two rankings are fused.
+    #   auto: use the endpoint's /embeddings when it has one (OpenAI, Ollama, most gateways;
+    #         DeepSeek has none) and fall back to keyword recall when it does not
+    #   on:   insist — recall stays by keyword when the call fails, and `doctor` says so
+    #   off:  keyword recall only
+    embeddings: Literal["auto", "on", "off"] = "auto"
+    # Empty → a default for the endpoint: text-embedding-3-small on OpenAI and most
+    # gateways, qwen3-embedding:0.6b on Ollama.
+    embedding_model: str = ""
+    # Empty → the model's endpoint and key (llm.base_url / llm.api_key). Set these to use a
+    # different service for embeddings than for chat — Ollama next to DeepSeek, say.
+    embedding_base_url: str = ""
+    embedding_api_key: str = ""
+
+    @field_validator("embedding_base_url")
+    @classmethod
+    def _strip_slash(cls, v: str) -> str:
+        return v.rstrip("/")
 
 
 class EmailSettings(BaseModel):
@@ -423,6 +443,14 @@ def apply_app_settings(settings: Settings, data: dict[str, Any]) -> None:
                 setattr(settings.llm, key, llm[key])
         if settings.llm.base_url:
             settings.llm.base_url = settings.llm.base_url.rstrip("/")
+    if emb := data.get("embeddings"):
+        m = settings.memory
+        if emb.get("mode") in ("auto", "on", "off"):
+            m.embeddings = emb["mode"]
+        for key in ("model", "base_url", "api_key"):
+            # "" is meaningful here: back to the default (the model's endpoint and key)
+            if key in emb and emb[key] is not None:
+                setattr(m, f"embedding_{key}", str(emb[key]).strip().rstrip("/"))
     if email := data.get("email"):
         for key in ("enabled", "imap_host", "imap_port", "smtp_host", "smtp_port", "smtp_starttls"):
             if key in email and email[key] is not None:

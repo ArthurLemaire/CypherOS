@@ -326,6 +326,27 @@ export interface ConnectionsData {
     from_app: boolean;
   };
   providers: Record<string, ProviderPreset>;
+  /** Recall by meaning: memories embedded through an OpenAI-compatible /embeddings endpoint. */
+  embeddings: {
+    mode: "auto" | "on" | "off";
+    /** "" → default_model */
+    model: string;
+    default_model: string;
+    /** "" → the model's endpoint */
+    base_url: string;
+    effective_base_url: string;
+    /** model = the model's own key on its endpoint; vault/config/missing = a key of its own */
+    key_source: "model" | "vault" | "config" | "missing";
+    from_app: boolean;
+    memory_enabled: boolean;
+    /** null until the first call of this run */
+    available: boolean | null;
+    reason: string;
+    dims: number;
+    indexed: number;
+    total: number;
+    status: string;
+  };
   email: {
     enabled: boolean;
     configured: boolean;
@@ -442,6 +463,10 @@ export interface TestResult {
   /** contacts test: people across the sources */
   contacts?: number;
   sources?: number;
+  /** embeddings test */
+  model?: string;
+  dims?: number;
+  indexed?: number;
 }
 
 export interface StateSnapshot {

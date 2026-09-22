@@ -1,5 +1,6 @@
 import {
   Bot,
+  BrainCircuit,
   CalendarDays,
   Check,
   ChevronDown,
@@ -69,6 +70,7 @@ export function ConnectionsScreen() {
         {data && (
           <>
             <ModelCard data={data} onChange={load} />
+            {data.embeddings.memory_enabled && <RecallCard data={data} onChange={load} />}
             <EmailCard data={data} onChange={load} />
             <CalendarCard data={data} onChange={load} />
             <ContactsCard data={data} onChange={load} />
@@ -215,6 +217,150 @@ export function ModelCard({ data, onChange, compact }: { data: ConnectionsData; 
         </button>
       </div>
       {test && <TestLine result={test} okText={t('Replied "{reply}" in {ms} ms', { reply: test.reply ?? "", ms: test.ms ?? 0 })} />}
+    </Card>
+  );
+}
+
+// ------------------------------------------------------------------ recall by meaning
+/**
+ * Memories embedded once, the message embedded per turn, the closest fused with the keyword
+ * hits — so "写邮件给房东" finds "the landlord is Bob Li". Works with the model's own endpoint
+ * when it has /embeddings (OpenAI, Ollama, most gateways); DeepSeek has none, so this card is
+ * where an Ollama next door gets pointed at.
+ */
+export function RecallCard({ data, onChange }: { data: ConnectionsData; onChange: () => void }) {
+  const { toast } = useStore();
+  const t = useT();
+  const e = data.embeddings;
+  const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState(e.mode);
+  const [own, setOwn] = useState(!!e.base_url);
+  const [baseUrl, setBaseUrl] = useState(e.base_url);
+  const [model, setModel] = useState(e.model);
+  const [key, setKey] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [test, setTest] = useState<TestResult | null>(null);
+  const [testing, setTesting] = useState(false);
+
+  useEffect(() => {
+    setMode(e.mode);
+    setOwn(!!e.base_url);
+    setBaseUrl(e.base_url);
+    setModel(e.model);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.embeddings]);
+
+  const status =
+    e.mode === "off"
+      ? { text: t("Off"), tone: "off" }
+      : e.available === true
+        ? { text: t("On"), tone: "ok" }
+        : e.available === false
+          ? { text: e.mode === "on" ? t("Not reachable") : t("By keyword"), tone: "warn" }
+          : { text: t("Not tried yet"), tone: "off" };
+  const summary =
+    e.mode === "off"
+      ? t("Keyword recall only")
+      : e.available === true
+        ? t("{model} · {n} of {total} memories indexed", { model: e.model || e.default_model, n: e.indexed, total: e.total })
+        : e.available === false
+          ? e.reason
+          : t("{model} at {host}", { model: e.model || e.default_model, host: hostOf(e.effective_base_url) });
+
+  const save = async () => {
+    setSaving(true);
+    setTest(null);
+    try {
+      await api.setEmbeddings({
+        mode,
+        base_url: own ? baseUrl.trim() : "",
+        model: model.trim(),
+        api_key: own ? (key ? key : undefined) : "",
+      });
+      setKey("");
+      toast(t("Saved"));
+      onChange();
+    } catch (err) {
+      toast((err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+  const runTest = async () => {
+    setTesting(true);
+    try {
+      setTest(await api.testEmbeddings());
+      onChange();
+    } catch (err) {
+      setTest({ ok: false, error: (err as Error).message });
+    } finally {
+      setTesting(false);
+    }
+  };
+  const chip = (on: boolean) => cx("rounded-full px-3 py-1.5 text-[13px] border", on ? "border-accent bg-accent/10 text-accent font-medium" : "border-border text-muted");
+
+  return (
+    <Card icon={<BrainCircuit size={19} />} title={t("Recall by meaning")} summary={summary} status={status} open={open} onToggle={() => setOpen(!open)}>
+      <p className="text-[12.5px] text-muted leading-snug">
+        {t("Memories are embedded once and a message finds the ones that mean the same thing, in any language — “写邮件给房东” finds “the landlord is Bob Li”. Keyword recall stays; the two are fused.")}
+      </p>
+      <Field label={t("Mode")} hint={t("Auto uses the model's endpoint when it has embeddings and falls back to keywords when it does not. On insists and warns. Off: keywords only.")}>
+        <div className="flex gap-1.5">
+          {(["auto", "on", "off"] as const).map((m) => (
+            <button key={m} type="button" onClick={() => setMode(m)} className={chip(mode === m)}>
+              {m === "auto" ? t("Auto") : m === "on" ? t("On") : t("Off")}
+            </button>
+          ))}
+        </div>
+      </Field>
+      {mode !== "off" && (
+        <>
+          <Field label={t("Endpoint")} hint={own ? t("Any OpenAI-compatible /embeddings: Ollama with an embedding model pulled, OpenAI, a gateway.") : t("The model's endpoint and key. DeepSeek has no embeddings — pick another endpoint.")}>
+            <div className="flex gap-1.5">
+              <button type="button" onClick={() => setOwn(false)} className={chip(!own)}>
+                {t("Same as the model")}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setOwn(true);
+                  if (!baseUrl) setBaseUrl("http://127.0.0.1:11434/v1");
+                }}
+                className={chip(own)}
+              >
+                {t("Another endpoint")}
+              </button>
+            </div>
+          </Field>
+          {own && (
+            <>
+              <Field label={t("Base URL")}>
+                <input value={baseUrl} onChange={(ev) => setBaseUrl(ev.target.value)} className={inputCls} placeholder="http://127.0.0.1:11434/v1" inputMode="url" />
+              </Field>
+              <Field label={t("API key")} hint={e.key_source === "vault" ? t("A key is in the vault. Leave blank to keep it.") : t("Stored encrypted in the vault as EMBEDDINGS_API_KEY. Ollama needs none.")}>
+                <input type="password" value={key} onChange={(ev) => setKey(ev.target.value)} className={inputCls} placeholder={e.key_source === "vault" ? "••••••••" : "sk-…"} autoComplete="off" />
+              </Field>
+            </>
+          )}
+          <Field label={t("Embedding model")} hint={t("Blank uses the endpoint's default: {model}. On Ollama: ollama pull qwen3-embedding:0.6b (reads Chinese and English).", { model: e.default_model })}>
+            <input value={model} onChange={(ev) => setModel(ev.target.value)} className={inputCls} placeholder={e.default_model} autoComplete="off" />
+          </Field>
+        </>
+      )}
+      <div className="flex gap-2 pt-1">
+        <button type="button" disabled={saving || (own && !/^https?:\/\//.test(baseUrl.trim()))} onClick={() => void save()} className={primaryBtn}>
+          {saving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} {t("Save")}
+        </button>
+        <button type="button" disabled={testing || e.mode === "off"} onClick={() => void runTest()} className={secondaryBtn}>
+          {testing ? <Loader2 size={16} className="animate-spin" /> : <Plug size={16} />} {t("Test")}
+        </button>
+      </div>
+      {test && (
+        <TestLine
+          result={test}
+          okText={t("{model} · {dims} dims · {n} memories indexed · {ms} ms", { model: test.model ?? "", dims: test.dims ?? 0, n: test.indexed ?? 0, ms: test.ms ?? 0 })}
+        />
+      )}
     </Card>
   );
 }

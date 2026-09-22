@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -14,7 +16,7 @@ from openmuse.contacts import ContactBook
 from openmuse.goals import GoalStore
 from openmuse.llm import BaseLLM, create_llm
 from openmuse.logger import logger, setup_logging
-from openmuse.memory import MemoryStore
+from openmuse.memory import Embedder, MemoryIndex, MemoryStore
 from openmuse.reminders import ReminderStore
 from openmuse.sandbox import Sandbox
 from openmuse.sentinel import AuditLog, Sentinel
@@ -62,6 +64,8 @@ class OpenMuseApp:
 
         self.vault = CredentialVault(settings.vault_file, settings.vault_key_file)
         self.memory = MemoryStore(settings.memory_db) if settings.memory.enabled else None
+        self.embedder: Embedder | None = None
+        self.attach_embedder()
         self.goals = GoalStore(settings.goals_db)
         self.reminders = ReminderStore(settings.reminders_db)
         self.triggers = TriggerStore(settings.triggers_db)
@@ -100,6 +104,36 @@ class OpenMuseApp:
             skills=self.skills,
             session_file=settings.data_dir / "sessions" / f"{self.session_id}.json",
         )
+
+    def attach_embedder(self) -> None:
+        """(Re)build the embedding client from the current settings and give the memory
+        store its index — at start, and again when the model or the embeddings endpoint is
+        changed in the app. Vectors already stored are kept per model, so a switch back is
+        free."""
+        old = self.embedder
+        self.embedder = None
+        if self.memory is not None and self.settings.memory.embeddings != "off":
+            self.embedder = Embedder(
+                self.settings.memory, self.settings.llm, api_key=self._embedding_key()
+            )
+        if self.memory is not None:
+            self.memory.index = (
+                MemoryIndex(self.memory, self.embedder) if self.embedder is not None else None
+            )
+        if old is not None:
+            with contextlib.suppress(RuntimeError):
+                asyncio.get_running_loop().create_task(old.close())
+
+    def _embedding_key(self) -> str:
+        """The key for the embeddings endpoint, resolved from the vault when it refers
+        there; the model's own key when none is set (same endpoint, same key)."""
+        m = self.settings.memory
+        key = m.embedding_api_key or self.settings.llm.api_key
+        if self.vault.has_placeholders(key):
+            key = self.vault.resolve(key, strict=False)
+            if self.vault.has_placeholders(key):
+                key = ""
+        return key
 
     # ------------------------------------------------------------------ llm
     def make_llm(self) -> BaseLLM:
@@ -188,6 +222,8 @@ class OpenMuseApp:
         if self.mcp is not None:
             await self.mcp.close()
         await self.llm.close()
+        if self.embedder is not None:
+            await self.embedder.close()
         if self.memory is not None:
             self.memory.close()
         self.goals.close()

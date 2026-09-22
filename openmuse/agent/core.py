@@ -15,7 +15,7 @@ from openmuse.contacts import ContactBook
 from openmuse.goals import GoalStore
 from openmuse.llm.base import BaseLLM
 from openmuse.logger import logger
-from openmuse.memory import MemoryStore
+from openmuse.memory import MemoryItem, MemoryStore
 from openmuse.schema import AgentState, Message, Role, ToolResult
 from openmuse.sentinel import AuditLog, Sentinel
 from openmuse.skills import SkillLibrary
@@ -109,7 +109,24 @@ class MuseAgent:
             "`contacts` before writing to them; never guess an address\n"
         )
 
-    def build_system_prompt(self, user_input: str) -> str:
+    async def recall_for(self, user_input: str) -> list[MemoryItem] | None:
+        """The memories to put in the system prompt for this message — by meaning too,
+        when an embedding endpoint is set up (that is the awaited part)."""
+        if self.memory is None or not self.settings.memory.enabled:
+            return None
+        try:
+            return await self.memory.relevant_async(
+                user_input, limit=self.settings.memory.max_inject
+            )
+        except Exception as exc:  # noqa: BLE001 — recall must never stop a turn
+            logger.warning("recall failed ({}); using the keyword ranking", exc)
+            return self.memory.relevant(user_input, limit=self.settings.memory.max_inject)
+
+    def build_system_prompt(
+        self, user_input: str, memories_: list[MemoryItem] | None = None
+    ) -> str:
+        """``memories_`` is what ``recall_for`` returned; without it the keyword ranking is
+        used on the spot."""
         a = self.settings.agent
         language_rule = (
             prompts.LANGUAGE_AUTO.format(detected=prompts.detect_language(user_input))
@@ -118,7 +135,11 @@ class MuseAgent:
         )
         memories = ""
         if self.memory is not None and self.settings.memory.enabled:
-            items = self.memory.relevant(user_input, limit=self.settings.memory.max_inject)
+            items = (
+                memories_
+                if memories_ is not None
+                else self.memory.relevant(user_input, limit=self.settings.memory.max_inject)
+            )
             if items:
                 memories = prompts.MEMORY_SECTION.format(
                     items="\n".join(f"- {m.render()}" for m in items)
@@ -216,7 +237,7 @@ class MuseAgent:
             user_input = self.skills.expand(user_input)
         self.messages.append(Message.user(user_input))
         self.audit.record("user_message", content=user_input)
-        system_prompt = self.build_system_prompt(user_input)
+        system_prompt = self.build_system_prompt(user_input, await self.recall_for(user_input))
         tool_params = self.tools.to_params()
         final: str | None = None
         step = 0
@@ -228,7 +249,8 @@ class MuseAgent:
                 if self._drain_inbox():
                     logger.debug("folded queued user message(s) into the running turn")
                     # the language rule and the memory section follow the latest message
-                    system_prompt = self.build_system_prompt(self.messages[-1].content or "")
+                    latest = self.messages[-1].content or ""
+                    system_prompt = self.build_system_prompt(latest, await self.recall_for(latest))
                 context = [Message.system(system_prompt), *self.context_messages()]
                 response = await self.llm.ask(
                     context, tools=tool_params, on_delta=self.ui.on_text_delta

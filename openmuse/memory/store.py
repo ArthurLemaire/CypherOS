@@ -2,22 +2,28 @@
 
 Stored in SQLite. Retrieval is a lightweight keyword/bigram overlap score weighted
 by how rare each word is in the store (works for English and CJK without external
-embeddings); memories can always be listed and *forgotten* by the user. Every
-change a tidy-up makes (see ``consolidate.py``) is logged with the text it replaced,
-so it can be undone.
+embeddings); when an embedding endpoint is available (``embeddings.py``) a second
+ranking by meaning is fused in. Memories can always be listed and *forgotten* by the
+user. Every change a tidy-up makes (see ``consolidate.py``) is logged with the text
+it replaced, so it can be undone.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import re
 import sqlite3
 import uuid
+from array import array
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from openmuse.memory.embeddings import MemoryIndex
 
 _WORD_RE = re.compile(r"[A-Za-z0-9_]+")
 _CJK_RE = re.compile(r"[\u3400-\u9fff]")
@@ -82,9 +88,15 @@ def similarity(a: str, b: str) -> float:
     return len(ta & tb) / len(ta | tb)
 
 
+def content_hash(text: str) -> str:
+    return hashlib.sha1(text.strip().encode("utf-8")).hexdigest()[:16]
+
+
 class MemoryStore:
     def __init__(self, path: Path | str):
         self.path = str(path)
+        # recall by meaning, when an embedding endpoint is set up (see embeddings.py)
+        self.index: MemoryIndex | None = None
         self._conn = sqlite3.connect(self.path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute(
@@ -118,6 +130,18 @@ class MemoryStore:
         )
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS memory_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+        )
+        # one vector per memory and embedding model; the hash says which text it is of
+        self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS memory_vectors (
+                memory_id TEXT NOT NULL,
+                model TEXT NOT NULL,
+                hash TEXT NOT NULL,
+                vector BLOB NOT NULL,
+                PRIMARY KEY (memory_id, model)
+            )
+            """
         )
         self._conn.commit()
 
@@ -228,7 +252,10 @@ class MemoryStore:
         items = self.all()
         if len(items) <= limit:
             return items
-        matched = self.search(context, limit=limit)
+        return self._fill(self.search(context, limit=limit), items, limit)
+
+    @staticmethod
+    def _fill(matched: list[MemoryItem], items: list[MemoryItem], limit: int) -> list[MemoryItem]:
         seen = {m.id for m in matched}
         for item in items:
             if len(matched) >= limit:
@@ -237,6 +264,21 @@ class MemoryStore:
                 matched.append(item)
                 seen.add(item.id)
         return matched
+
+    async def search_async(self, query: str, limit: int = 10) -> list[MemoryItem]:
+        """``search`` with the meaning-based ranking fused in when an index is set up."""
+        if self.index is not None:
+            return await self.index.search(query, limit=limit)
+        return self.search(query, limit=limit)
+
+    async def relevant_async(self, context: str, limit: int = 20) -> list[MemoryItem]:
+        """``relevant`` with the meaning-based ranking fused in when an index is set up."""
+        items = self.all()
+        if len(items) <= limit:
+            return items
+        if self.index is not None:
+            return self._fill(await self.index.search(context, limit=limit), items, limit)
+        return self._fill(self.search(context, limit=limit), items, limit)
 
     def similar(
         self, content: str, threshold: float = 0.5, limit: int = 3
@@ -328,6 +370,40 @@ class MemoryStore:
         )
         self._conn.commit()
 
+    # ------------------------------------------------------------------ vectors
+    def vectors(self, model: str) -> dict[str, tuple[str, list[float]]]:
+        """Stored vectors for ``model``: memory id → (hash of the text, vector)."""
+        out: dict[str, tuple[str, list[float]]] = {}
+        for row in self._conn.execute(
+            "SELECT memory_id, hash, vector FROM memory_vectors WHERE model = ?", (model,)
+        ):
+            vec = array("f")
+            vec.frombytes(row["vector"])
+            out[row["memory_id"]] = (row["hash"], vec.tolist())
+        return out
+
+    def put_vectors(self, model: str, entries: dict[str, tuple[str, list[float]]]) -> None:
+        self._conn.executemany(
+            "INSERT INTO memory_vectors (memory_id, model, hash, vector) VALUES (?,?,?,?) "
+            "ON CONFLICT(memory_id, model) DO UPDATE SET hash = excluded.hash, vector = excluded.vector",
+            [(mid, model, h, array("f", vec).tobytes()) for mid, (h, vec) in entries.items()],
+        )
+        self._conn.commit()
+
+    def drop_vectors(self, ids: list[str], model: str | None = None) -> None:
+        if not ids:
+            return
+        if model is None:
+            self._conn.executemany(
+                "DELETE FROM memory_vectors WHERE memory_id = ?", [(i,) for i in ids]
+            )
+        else:
+            self._conn.executemany(
+                "DELETE FROM memory_vectors WHERE memory_id = ? AND model = ?",
+                [(i, model) for i in ids],
+            )
+        self._conn.commit()
+
     # ------------------------------------------------------------------ helpers
     def _insert(self, item: MemoryItem) -> None:
         self._conn.execute(
@@ -383,4 +459,4 @@ class MemoryStore:
         )
 
 
-__all__ = ["MemoryChange", "MemoryItem", "MemoryStore", "similarity", "tokenize"]
+__all__ = ["MemoryChange", "MemoryItem", "MemoryStore", "content_hash", "similarity", "tokenize"]

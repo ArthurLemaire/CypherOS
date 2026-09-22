@@ -122,6 +122,7 @@ Skills are folders with a `SKILL.md` in the [Agent Skills](https://agentskills.i
 ```bash
 openmuse memory list
 openmuse memory add "Prefers short answers" --category preference
+openmuse memory recall "写邮件给房东"    # what the agent would recall for this, with closeness
 openmuse memory forget m_9f8e7d        # id or a phrase to search for
 openmuse memory clear --yes
 openmuse memory tidy --dry-run         # what a tidy-up would merge and drop
@@ -129,6 +130,8 @@ openmuse memory tidy                   # do it; every change is logged
 openmuse memory changes                # the log, newest first
 openmuse memory restore c_1a2b3c4d     # undo one change
 ```
+
+`memory recall` shows the ranking the agent would get for a message: keyword hits and, when an embedding endpoint is set up ([configuration → memory](configuration.md#memory)), hits by meaning fused in, each with its cosine closeness — the way to see whether "写邮件给房东" finds "the landlord is Bob Li" before relying on it. `doctor` says whether recall by meaning is on, with which model, and how many memories are indexed.
 
 ## Vault
 
@@ -151,4 +154,4 @@ openmuse doctor [--no-model]           # config, data dir, model, connectors —
 openmuse version                       # also: openmuse --version / -V
 ```
 
-`openmuse doctor` is the first thing to run when something is off, and what to paste into a bug report: which config file is in use, where the data lives, which model and endpoint are configured and whether a key is set, whether commands run in the sandbox (and why not, if not), the tools the agent has, connector state (mailbox, calendar feeds, address books), and a one-line call to the model with its latency (`--no-model` skips that). It exits non-zero when something needs fixing and says what.
+`openmuse doctor` is the first thing to run when something is off, and what to paste into a bug report: which config file is in use, where the data lives, which model and endpoint are configured and whether a key is set, whether recall by meaning is on and how many memories are indexed, whether commands run in the sandbox (and why not, if not), the tools the agent has, connector state (mailbox, calendar feeds, address books), and a one-line call to the model with its latency (`--no-model` skips that). It exits non-zero when something needs fixing and says what.
