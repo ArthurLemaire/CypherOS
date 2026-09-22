@@ -198,10 +198,12 @@ async def test_auto_mode_switches_to_prompt_tools_when_the_endpoint_rejects_them
     tools = [{"type": "function", "function": {"name": "echo", "parameters": {}}}]
 
     class Rejecting(MockLLM):
-        async def ask(self, messages, tools=None, tool_choice="auto", on_delta=None):
+        async def ask(
+            self, messages, tools=None, tool_choice="auto", on_delta=None, max_tokens=None
+        ):
             if tools:
                 raise ToolsUnsupported("model x does not support tools")
-            return await super().ask(messages, tools, tool_choice, on_delta)
+            return await super().ask(messages, tools, tool_choice, on_delta, max_tokens)
 
     inner = Rejecting(
         [LLMResponse(content='<tool_call>{"name": "echo", "arguments": {"x": 1}}</tool_call>')]
@@ -238,3 +240,22 @@ def test_cut_off_tool_arguments_go_to_the_provider_as_an_empty_object():
         Message.assistant(tool_calls=[fine]).to_openai()["tool_calls"][0]["function"]["arguments"]
         == '{"action": "list"}'
     )
+
+
+async def test_ask_complete_tries_again_with_room_when_the_reply_was_cut_off():
+    from openmuse.llm.mock import MockLLM
+    from openmuse.schema import LLMResponse
+
+    # a reasoning model that spent the whole budget thinking, then answered on the retry
+    llm = MockLLM(
+        [
+            LLMResponse(content="", finish_reason="length"),
+            LLMResponse(content="[]", finish_reason="stop"),
+        ]
+    )
+    resp = await llm.ask_complete([Message.user("list")], tools=None)
+    assert resp.content == "[]"
+    assert llm.calls[0]["max_tokens"] is None and llm.calls[1]["max_tokens"] == 16384
+    # a complete answer is not asked twice
+    llm.script.append(LLMResponse(content="done", finish_reason="stop"))
+    assert (await llm.ask_complete([Message.user("x")])).content == "done" and len(llm.calls) == 3

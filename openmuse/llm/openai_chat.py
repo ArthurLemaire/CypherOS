@@ -59,6 +59,7 @@ class OpenAIChatLLM(BaseLLM):
         tools: list[dict[str, Any]] | None = None,
         tool_choice: str = "auto",
         on_delta: DeltaCallback | None = None,
+        max_tokens: int | None = None,
     ) -> LLMResponse:
         params: dict[str, Any] = {
             "model": self.settings.model,
@@ -66,7 +67,7 @@ class OpenAIChatLLM(BaseLLM):
                 m.to_openai(include_reasoning=self.settings.pass_reasoning) for m in messages
             ],
             "temperature": self.settings.temperature,
-            "max_tokens": self.settings.max_tokens,
+            "max_tokens": max_tokens or self.settings.max_tokens,
         }
         if tools:
             params["tools"] = tools

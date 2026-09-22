@@ -24,8 +24,9 @@ class MockLLM(BaseLLM):
         tools: list[dict[str, Any]] | None = None,
         tool_choice: str = "auto",
         on_delta: DeltaCallback | None = None,
+        max_tokens: int | None = None,
     ) -> LLMResponse:
-        self.calls.append({"messages": list(messages), "tools": tools})
+        self.calls.append({"messages": list(messages), "tools": tools, "max_tokens": max_tokens})
         if not self.script:
             resp = LLMResponse(content="(mock) I have nothing more to say.", finish_reason="stop")
         else:

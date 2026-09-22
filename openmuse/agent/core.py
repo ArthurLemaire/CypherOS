@@ -174,6 +174,20 @@ class MuseAgent:
                 response = await self.llm.ask(
                     context, tools=tool_params, on_delta=self.ui.on_text_delta
                 )
+                if (
+                    response.finish_reason == "length"
+                    and not response.content
+                    and not response.tool_calls
+                ):
+                    # the model thought until the budget ran out (reasoning models do on a
+                    # hard step): the same call once more, with room to think and answer
+                    logger.info("reply cut off before it began; asking again with more room")
+                    response = await self.llm.ask(
+                        context,
+                        tools=tool_params,
+                        on_delta=self.ui.on_text_delta,
+                        max_tokens=self.llm.roomier_max_tokens(),
+                    )
                 assistant = response.to_message()
                 assistant.meta.update({"step": step, "usage": response.usage})
                 self.messages.append(assistant)
