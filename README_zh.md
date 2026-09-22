@@ -226,13 +226,16 @@ flowchart LR
 ## 路线图
 
 - [x] Agent 循环、Sentinel、保险库、审计、记忆、目标、工具、MCP、CLI
-- [x] 移动端优先 App：聊天、审批卡片、侧边聊天、Goals / Ideas / Memory、后台推进目标
-- [ ] 有审批等待或目标有进展时的推送通知
+- [x] 移动端优先 App：Chat · Feed · Ideas · Goals · Library、带作用域授权的审批卡片、侧边聊天、后台推进目标
+- [x] 有审批等待或目标有进展时的推送通知
+- [x] 浏览器视图：实时观看 Agent 浏览网页，登录时接管
+- [x] 本地模型（Ollama），自动降级到提示词工具模式
 - [ ] 目标触发器：cron、webhook、新邮件
 - [ ] 日历与联系人连接器（通过 MCP）
 - [ ] 更好的记忆召回（向量）与定期整理
 - [ ] `shell` 与 `python_execute` 的独立沙箱
 - [ ] Skills：可复用的任务配方
+- [ ] App 多语言界面（先做 zh-CN）
 
 ## 参与
 
