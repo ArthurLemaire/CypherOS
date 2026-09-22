@@ -1,0 +1,36 @@
+# local configuration & secrets
+config/config.toml
+config/*.local.toml
+.env
+.env.*
+!.env.example
+
+# runtime data
+workspace/
+*.db
+*.enc
+*.key
+audit.jsonl
+sessions/
+logs/
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# editors / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
