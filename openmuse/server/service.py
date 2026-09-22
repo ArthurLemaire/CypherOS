@@ -16,6 +16,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from datetime import time as time_of_day
 from pathlib import Path
 from typing import Any
 
@@ -224,6 +225,7 @@ class MuseService:
         self.watch_browser()
         self._watch_reminders()
         self._mail_polled_at: float | None = None
+        self._fired_pruned_at: float | None = None
         self.mail_checked_at: str | None = None
         self.mail_watch_error = ""
         self._watch_triggers()
@@ -871,8 +873,8 @@ class MuseService:
         thread = item.thread if item.thread in self.threads else MAIN_THREAD
         now = datetime.now().astimezone().strftime("%A, %Y-%m-%d %H:%M")
         prefix = {"mail": "New mail: ", "event": "Coming up: ", "hook": "Webhook: "}[item.kind]
-        context = context.strip()
-        block = f"```\n{context[:6000]}\n```\n\n" if context else ""
+        context = context.strip()[:6000]
+        block = f"{_fence(context)}\n{context}\n{_fence(context)}\n\n" if context else ""
         if item.kind != "hook":
             # the mail or the event is the user's private data: from here on, sending
             # anything to a host that is not allowlisted is an approval
@@ -968,8 +970,12 @@ class MuseService:
         if not triggers or not cal.configured:
             return
         now = datetime.now(cal.tz)
-        for occ in cal.agenda(now.date(), 2):
+        h, m = (int(x) for x in self.settings.connectors.calendar.day_start.split(":"))
+        for occ in cal.agenda(now.date(), 3):  # a lead can be a day
             start = occ.start.astimezone(cal.tz)
+            if occ.all_day:
+                # an all-day event "starts" when the working day does, not at midnight
+                start = datetime.combine(occ.start.date(), time_of_day(h, m), tzinfo=cal.tz)
             if start <= now:
                 continue
             for trig in triggers:
@@ -989,6 +995,16 @@ class MuseService:
                     title=occ.summary,
                 )
 
+    def _prune_fired(self) -> None:
+        """Firing records (a mail's UID, an event's start) are only needed until the
+        occurrence is long past; drop the ones older than 90 days, once a day."""
+        now = time.monotonic()
+        if self._fired_pruned_at is not None and now - self._fired_pruned_at < 86400:
+            return
+        self._fired_pruned_at = now
+        cutoff = (datetime.now(UTC) - timedelta(days=90)).isoformat(timespec="seconds")
+        self.app.triggers.forget_fired_before(cutoff)
+
     def triggers_view(self) -> dict[str, Any]:
         items = []
         for t in self.app.triggers.list(None):
@@ -996,11 +1012,17 @@ class MuseService:
             if t.kind == "hook":
                 d["url"] = self.hook_url(t) if t.status == "active" else ""
             items.append(d)
+        available = self.app.trigger_kinds()
+        mail_error = self.mail_watch_error
+        if not available["mail"] and any(
+            t.kind == "mail" and t.status == "active" for t in self.app.triggers.list("active")
+        ):
+            mail_error = "no mailbox is connected"
         return {
             "items": items,
-            "available": self.app.trigger_kinds(),
+            "available": available,
             "mail_checked_at": self.mail_checked_at,
-            "mail_error": self.mail_watch_error,
+            "mail_error": mail_error,
             "mail_poll_minutes": self.settings.triggers.mail_poll_minutes,
         }
 
@@ -1013,6 +1035,7 @@ class MuseService:
                 await self._refresh_calendar()
                 self._run_event_triggers()
                 await self._poll_mail()
+                self._prune_fired()
                 due = self.next_goal_pass_at or datetime.now(UTC)
                 remaining = (due - datetime.now(UTC)).total_seconds()
                 if remaining > 0:
@@ -1468,6 +1491,12 @@ def _tidy_summary(report: TidyReport, language: str = "auto") -> str:
         tail = "Each change can be undone under Memory → Recent changes."
     body = "\n".join(f"- {line}" for line in report.lines(zh=zh))
     return f"{head}\n{body}\n\n{tail}"
+
+
+def _fence(text: str) -> str:
+    """A code fence the text cannot close: one backtick more than its longest run."""
+    longest = max((len(m) for m in re.findall(r"`+", text)), default=0)
+    return "`" * max(3, longest + 1)
 
 
 def _short(text: str, limit: int = 60) -> str:
