@@ -846,32 +846,34 @@ def test_cards_and_background_results_reach_the_phone(server, monkeypatch):
     # the user's own turn ending is not pushed: only background results are
     assert [p["kind"] for p in pushed] == ["approval"]
 
-    # a background pass that had something to say
-    service.push.subscriptions and service._maybe_push(
-        {
-            "id": "a1",
-            "type": "assistant",
-            "thread": "main",
-            "source": "background",
-            "about": "Working on your goal: Learn Rust",
-            "text": "**Chapter 3** is done — [notes](notes.md) are in the library.",
-        }
+    # a background pass that had something to say: it narrates, works, then reports.
+    # Only the report is pushed — once — and it is the bubble flagged ``final``.
+    g = client.post("/api/goals", json={"title": "Learn Rust", "steps": ["Chapter 3"]}).json()
+    llm.script.extend(
+        [
+            LLMResponse(
+                content="Let me check my notes first.",
+                tool_calls=[tc("remember", key="rust_progress", value="chapter 3 started")],
+            ),
+            LLMResponse(content="**Chapter 3** is done — [notes](notes.md) are in the library."),
+        ]
     )
-    assert pushed[-1]["title"] == "Learn Rust" and pushed[-1]["kind"] == "background"
+    client.post(f"/api/goals/{g['id']}/advance")
+    wait_for(lambda: not service.threads["main"].busy)
+    assert [p["kind"] for p in pushed] == ["approval", "background"]
+    assert pushed[-1]["title"] == "Learn Rust" and pushed[-1]["url"] == "/"
     assert pushed[-1]["body"] == "Chapter 3 is done — notes are in the library."
+    said = [e for e in events_of(client, kind="assistant") if e.get("source") == "background"]
+    assert [e["text"][:12] for e in said] == ["Let me check", "**Chapter 3*"]
+    assert [bool(e.get("final")) for e in said] == [False, True]
+
     # a quiet pass stays in the app
-    before = len(pushed)
-    service._maybe_push(
-        {
-            "id": "a2",
-            "type": "assistant",
-            "thread": "main",
-            "source": "background",
-            "quiet": True,
-            "text": "nothing new",
-        }
-    )
-    assert len(pushed) == before
+    llm.script.append(LLMResponse(content="[quiet] Nothing new since this morning."))
+    client.post(f"/api/goals/{g['id']}/advance")
+    wait_for(lambda: not service.threads["main"].busy)
+    assert [p["kind"] for p in pushed] == ["approval", "background"]
+    last = events_of(client, kind="assistant")[-1]
+    assert last["quiet"] is True and last["final"] is True
 
     r = client.post("/api/push/unsubscribe", json={"endpoint": FAKE_SUB["endpoint"]})
     assert r.json()["subscriptions"] == 0
