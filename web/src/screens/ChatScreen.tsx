@@ -1,4 +1,4 @@
-import { ArrowUp, ChevronDown, FileText, Loader2, MessageSquarePlus, Moon, MoreHorizontal, Paperclip, Plus, Table2, Trash2, Wand2, X } from "lucide-react";
+import { ArrowUp, ChevronDown, FileText, Loader2, Menu, MessageSquarePlus, Moon, MoreHorizontal, Plus, Table2, Trash2, Wand2, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { api, fileUrl } from "../api";
 import { Avatar } from "../components/Avatar";
@@ -9,7 +9,7 @@ import { Sheet } from "../components/Sheet";
 import { localLabel, useT } from "../i18n";
 import { useStore } from "../store";
 import type { AttachmentInfo, SkillInfo, ThreadMeta, TimelineEvent, UserEvent } from "../types";
-import { cx, timeShort } from "../util";
+import { cx, timeDivider, timeShort } from "../util";
 import { MuseSheet } from "./MuseSheet";
 
 export function ChatScreen() {
@@ -26,7 +26,7 @@ export function ChatScreen() {
   const [threadsOpen, setThreadsOpen] = useState(false);
   // the browser card being watched (or driven) full-screen
   const [browserView, setBrowserView] = useState<string | null>(null);
-  const name = profile?.name ?? "Muse";
+  const name = profile?.name ?? "OpenMuse";
 
   const listRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -73,38 +73,53 @@ export function ChatScreen() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header */}
-      <header className="safe-top shrink-0 border-b border-border bg-surface/85 backdrop-blur">
-        <div className="flex items-center gap-3 px-4 py-2.5">
-          <div className="relative">
-            <Avatar profile={profile} status={status} size={42} onClick={() => setActivityOpen(true)} />
-            {queued > 0 && (
-              <span className="pointer-events-none absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10.5px] font-bold flex items-center justify-center border-2 border-bg">
-                {queued}
-              </span>
-            )}
-          </div>
-          <button type="button" className="flex-1 min-w-0 text-left" onClick={() => setActivityOpen(true)}>
-            <div className="font-semibold text-[16px] leading-tight truncate">{name}</div>
-            <div
-              className={cx(
-                "text-[12.5px] truncate",
-                status.state === "idle" && !thread?.busy ? "text-muted" : "text-accent",
-              )}
-            >
-              {statusLine}
-            </div>
-          </button>
+      {/* Header: the agent in the middle, what it is doing under its name; chats left, menu right */}
+      <header className="safe-top shrink-0 bg-bg">
+        <div className="relative flex items-start justify-between px-3 pt-2 pb-1">
           <button
             type="button"
             onClick={() => setThreadsOpen(true)}
             aria-label={t("Chats")}
-            className="p-2 rounded-full text-muted hover:bg-surface-2"
+            className={cx(
+              "relative flex h-10 w-10 items-center justify-center rounded-full bg-surface-2 text-fg/80 hover:text-fg",
+              activeThread !== "main" && "text-accent",
+            )}
           >
-            <MoreHorizontal size={22} />
+            <Menu size={20} />
+            {threads.length > 1 && <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-accent" />}
+          </button>
+          <button type="button" className="flex min-w-0 flex-1 flex-col items-center px-2 pt-0.5" onClick={() => setActivityOpen(true)}>
+            <span className="relative">
+              <Avatar profile={profile} status={status} size={48} />
+              {queued > 0 && (
+                <span className="pointer-events-none absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full border-2 border-bg bg-rose-500 px-1 text-[10.5px] font-bold text-white">
+                  {queued}
+                </span>
+              )}
+            </span>
+            <span className="mt-1 max-w-full truncate text-[13px] font-semibold leading-tight">{name}</span>
+            <span
+              className={cx(
+                "mt-0.5 flex max-w-full items-center gap-1 truncate text-[12px] leading-tight",
+                status.state === "idle" && !thread?.busy ? "text-muted" : "text-accent",
+              )}
+            >
+              {(status.state === "working" || thread?.busy) && queued === 0 && <Loader2 size={11} className="shrink-0 animate-spin" />}
+              <span className="truncate">{statusLine}</span>
+            </span>
+            {thread && thread.id !== "main" && (
+              <span className="mt-1 rounded-full bg-surface-2 px-2.5 py-0.5 text-[11.5px] font-medium text-fg/80">{thread.title}</span>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => setActivityOpen(true)}
+            aria-label={t("Menu")}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-surface-2 text-fg/80 hover:text-fg"
+          >
+            <MoreHorizontal size={20} />
           </button>
         </div>
-        <ThreadStrip threads={threads} active={activeThread} onPick={openThread} onNew={() => setThreadsOpen(true)} />
       </header>
 
       {/* Timeline */}
@@ -120,7 +135,7 @@ export function ChatScreen() {
             </button>
           </div>
         )}
-        {eventsLoaded && events.length === 0 && !stream && <EmptyChat name={name} emoji={profile?.emoji ?? "✨"} onSend={(text) => void send(activeThread, text)} />}
+        {eventsLoaded && events.length === 0 && !stream && <EmptyChat name={name} onSend={(text) => void send(activeThread, text)} />}
         {events.map((ev, i) => (
           <EventView
             key={ev.id}
@@ -176,42 +191,6 @@ export function ChatScreen() {
 }
 
 // ------------------------------------------------------------------ pieces
-function ThreadStrip({
-  threads,
-  active,
-  onPick,
-  onNew,
-}: {
-  threads: ThreadMeta[];
-  active: string;
-  onPick: (id: string) => void;
-  onNew: () => void;
-}) {
-  const t = useT();
-  if (threads.length <= 1) return null;
-  return (
-    <div className="no-scrollbar flex gap-2 overflow-x-auto px-4 pb-2.5">
-      {threads.map((th) => (
-        <button
-          key={th.id}
-          type="button"
-          onClick={() => onPick(th.id)}
-          className={cx(
-            "shrink-0 rounded-full px-3 py-1 text-[13px] flex items-center gap-1.5 border transition",
-            th.id === active ? "bg-accent text-accent-fg border-accent" : "bg-surface-2 border-transparent text-fg",
-          )}
-        >
-          {th.busy && <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />}
-          {th.id === "main" ? t(th.title) : th.title}
-        </button>
-      ))}
-      <button type="button" onClick={onNew} aria-label={t("New side chat")} className="shrink-0 rounded-full px-2.5 py-1 bg-surface-2 text-muted">
-        <Plus size={16} />
-      </button>
-    </div>
-  );
-}
-
 function EventView({
   event,
   prev,
@@ -229,39 +208,63 @@ function EventView({
   onOpenBrowser: (id: string) => void;
   files: readonly string[];
 }) {
-  switch (event.type) {
-    case "user":
-      return <UserBubble event={event} showTime={!prev || prev.type !== "user"} onOpenFile={onOpenFile} />;
-    case "assistant":
-      if (event.quiet) return <QuietLine text={event.text} about={event.about} ts={event.ts} />;
-      return (
-        <AssistantBubble
-          text={event.text}
-          reasoning={event.reasoning}
-          ts={event.ts}
-          continued={prev?.type === "assistant"}
-          files={files}
-          onOpenFile={onOpenFile}
-        />
-      );
-    case "tool":
-      return <ToolChip event={event} />;
-    case "approval":
-      return <ApprovalCard event={event} onDecide={onDecide} />;
-    case "question":
-      return <QuestionCard event={event} name={name} />;
-    case "notice":
-      return <Notice event={event} />;
-    case "artifact":
-      return <ArtifactCard event={event} onOpen={onOpenFile} />;
-    case "browser":
-      return <BrowserCard event={event} onOpen={onOpenBrowser} />;
-    default:
-      return null;
-  }
+  // a small centred time, iMessage style, when the conversation pauses for a while
+  const divider = needsDivider(prev, event) ? <TimeDivider ts={event.ts} /> : null;
+  const body = (() => {
+    switch (event.type) {
+      case "user":
+        return <UserBubble event={event} onOpenFile={onOpenFile} />;
+      case "assistant":
+        if (event.quiet) return <QuietLine text={event.text} about={event.about} ts={event.ts} />;
+        return (
+          <AssistantBubble
+            text={event.text}
+            reasoning={event.reasoning}
+            continued={prev?.type === "assistant"}
+            files={files}
+            onOpenFile={onOpenFile}
+          />
+        );
+      case "tool":
+        return <ToolChip event={event} />;
+      case "approval":
+        return <ApprovalCard event={event} onDecide={onDecide} />;
+      case "question":
+        return <QuestionCard event={event} name={name} />;
+      case "notice":
+        return <Notice event={event} />;
+      case "artifact":
+        return <ArtifactCard event={event} onOpen={onOpenFile} />;
+      case "browser":
+        return <BrowserCard event={event} onOpen={onOpenBrowser} />;
+      default:
+        return null;
+    }
+  })();
+  if (!body) return null;
+  return (
+    <>
+      {divider}
+      {body}
+    </>
+  );
 }
 
-function UserBubble({ event, showTime, onOpenFile }: { event: UserEvent; showTime: boolean; onOpenFile: (path: string) => void }) {
+const DIVIDER_GAP_MS = 10 * 60 * 1000;
+
+function needsDivider(prev: TimelineEvent | undefined, event: TimelineEvent): boolean {
+  if (!event.ts) return false;
+  if (!prev?.ts) return true;
+  return new Date(event.ts).getTime() - new Date(prev.ts).getTime() >= DIVIDER_GAP_MS;
+}
+
+function TimeDivider({ ts }: { ts?: string }) {
+  const label = timeDivider(ts);
+  if (!label) return null;
+  return <div className="pt-2 pb-0.5 text-center text-[11.5px] font-medium text-muted">{label}</div>;
+}
+
+function UserBubble({ event, onOpenFile }: { event: UserEvent; onOpenFile: (path: string) => void }) {
   const files = event.files ?? [];
   const pictures = files.filter((f) => f.kind === "image");
   const others = files.filter((f) => f.kind !== "image");
@@ -297,11 +300,10 @@ function UserBubble({ event, showTime, onOpenFile }: { event: UserEvent; showTim
         </button>
       ))}
       {event.text && (
-        <div className="bubble-user max-w-full rounded-3xl rounded-br-lg bg-accent text-accent-fg px-4 py-2.5 shadow-sm">
+        <div className="bubble-user max-w-full rounded-[20px] rounded-br-md bg-bubble-user px-4 py-2.5 text-bubble-user-fg">
           <div className="md text-[15px] leading-[1.45] whitespace-pre-wrap break-words">{event.text}</div>
         </div>
       )}
-      {showTime && <div className="mt-1 mr-1 text-[11px] text-muted">{timeShort(event.ts)}</div>}
     </div>
   );
 }
@@ -331,7 +333,6 @@ const ACCEPT = "image/*,.pdf,.txt,.md,.csv,.tsv,.json,.log,.html,.xml,.yaml,.yml
 function AssistantBubble({
   text,
   reasoning,
-  ts,
   streaming,
   continued,
   files,
@@ -339,7 +340,6 @@ function AssistantBubble({
 }: {
   text: string;
   reasoning?: string;
-  ts?: string;
   streaming?: boolean;
   continued?: boolean;
   files?: readonly string[];
@@ -348,8 +348,7 @@ function AssistantBubble({
   const [showReasoning, setShowReasoning] = useState(false);
   const t = useT();
   return (
-    <div className={cx("rise flex items-end gap-2 pr-8", continued && "-mt-1")}>
-      <div className="w-9 shrink-0" />
+    <div className={cx("rise flex items-end gap-2 pr-10", continued && "-mt-1")}>
       <div className="min-w-0 max-w-full">
         {reasoning && (
           <button type="button" className="mb-1 ml-1 text-[12px] text-muted" onClick={() => setShowReasoning((s) => !s)}>
@@ -361,11 +360,10 @@ function AssistantBubble({
             {reasoning}
           </div>
         )}
-        <div className="rounded-3xl rounded-bl-lg bg-surface border border-border/70 px-4 py-2.5 shadow-sm">
+        <div className="rounded-[20px] rounded-bl-md bg-surface-2 px-4 py-2.5">
           <Markdown text={text} files={files} onOpenFile={onOpenFile} />
           {streaming && <span className="inline-block w-1.5 h-4 ml-0.5 align-middle bg-accent/70 animate-pulse rounded-sm" />}
         </div>
-        {ts && <div className="mt-1 ml-1 text-[11px] text-muted">{timeShort(ts)}</div>}
       </div>
     </div>
   );
@@ -390,8 +388,8 @@ function QuietLine({ text, about, ts }: { text: string; about?: string; ts?: str
 
 function TypingIndicator({ label }: { label?: string }) {
   return (
-    <div className="flex items-center gap-2 pl-11">
-      <div className="rounded-3xl rounded-bl-lg bg-surface border border-border/70 px-3.5 py-2.5 flex items-center gap-1">
+    <div className="flex items-center gap-2">
+      <div className="rounded-[20px] rounded-bl-md bg-surface-2 px-3.5 py-2.5 flex items-center gap-1">
         <span className="typing-dot h-2 w-2 rounded-full bg-muted" />
         <span className="typing-dot h-2 w-2 rounded-full bg-muted" />
         <span className="typing-dot h-2 w-2 rounded-full bg-muted" />
@@ -401,7 +399,8 @@ function TypingIndicator({ label }: { label?: string }) {
   );
 }
 
-function EmptyChat({ name, emoji, onSend }: { name: string; emoji: string; onSend: (text: string) => void }) {
+function EmptyChat({ name, onSend }: { name: string; onSend: (text: string) => void }) {
+  const { state } = useStore();
   const t = useT();
   const starters = [
     t("What can you do for me?"),
@@ -410,8 +409,8 @@ function EmptyChat({ name, emoji, onSend }: { name: string; emoji: string; onSen
     t("Set up a long-term goal and track it"),
   ];
   return (
-    <div className="flex flex-col items-center text-center px-6 pt-10 pb-6 gap-3">
-      <div className="text-5xl">{emoji}</div>
+    <div className="flex flex-col items-center text-center px-6 pt-8 pb-6 gap-3">
+      <Avatar profile={state.profile} size={96} />
       <div className="text-[20px] font-semibold">{t("Hi, I'm {name}.", { name })}</div>
       <p className="text-muted text-[14.5px] leading-snug max-w-sm">
         {t("I don't just answer — I get things done: research, plans, files, code, email, long-running goals. Everything I do shows up here, and anything hard to undo waits for your approval.")}
@@ -422,7 +421,7 @@ function EmptyChat({ name, emoji, onSend }: { name: string; emoji: string; onSen
             key={s}
             type="button"
             onClick={() => onSend(s)}
-            className="rounded-full border border-border bg-surface px-3.5 py-1.5 text-[13.5px] hover:bg-surface-2"
+            className="rounded-full bg-surface-2 px-3.5 py-1.5 text-[13.5px] hover:bg-border/60"
           >
             {s}
           </button>
@@ -524,7 +523,7 @@ function Composer({
   };
 
   return (
-    <form onSubmit={submit} className="safe-bottom shrink-0 border-t border-border bg-surface/90 backdrop-blur px-3 pt-2 pb-2">
+    <form onSubmit={submit} className="shrink-0 bg-bg px-3 pt-1.5 pb-1">
       {busy && !waiting && (
         <div className="px-2 pb-1 text-[12px] text-muted">{t("{name} is working — anything you send now is picked up right away.", { name })}</div>
       )}
@@ -575,7 +574,7 @@ function Composer({
           ))}
         </div>
       )}
-      <div className="flex items-end gap-2">
+      <div className="flex items-end gap-2 rounded-[26px] border border-border bg-surface px-1.5 py-1.5 shadow-[0_2px_12px_-6px_rgba(0,0,0,0.12)] focus-within:border-fg/20">
         <input
           ref={fileRef}
           type="file"
@@ -591,9 +590,9 @@ function Composer({
           type="button"
           onClick={() => fileRef.current?.click()}
           aria-label={t("Attach a file")}
-          className="mb-0.5 h-10 w-10 shrink-0 rounded-full text-muted flex items-center justify-center hover:bg-surface-2 active:scale-95 transition"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-fg/70 transition hover:bg-surface-2 active:scale-95"
         >
-          <Paperclip size={20} />
+          <Plus size={22} />
         </button>
         <textarea
           ref={ref}
@@ -618,16 +617,20 @@ function Composer({
             }
           }}
           rows={1}
-          placeholder={waiting ? t("Answer {name}…", { name }) : pending.length > 0 ? t("Say what to do with it…") : t("Message {name}", { name })}
-          className="flex-1 resize-none rounded-3xl bg-surface-2 px-4 py-2.5 text-[15px] leading-[1.4] outline-none placeholder:text-muted focus:ring-2 focus:ring-accent/40"
+          placeholder={waiting ? t("Answer {name}…", { name }) : pending.length > 0 ? t("Say what to do with it…") : t("Message")}
+          className="flex-1 resize-none bg-transparent px-1 py-2 text-[15px] leading-[1.4] outline-none placeholder:text-muted"
         />
         <button
           type="submit"
           disabled={(!text.trim() && attached.length === 0) || uploading}
           aria-label={t("Send")}
-          className="mb-0.5 h-10 w-10 shrink-0 rounded-full bg-accent text-accent-fg flex items-center justify-center disabled:opacity-40 active:scale-95 transition"
+          className={cx(
+            "flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition active:scale-95",
+            text.trim() || attached.length > 0 ? "bg-accent text-accent-fg" : "bg-surface-2 text-muted",
+            "disabled:opacity-60",
+          )}
         >
-          <ArrowUp size={20} strokeWidth={2.5} />
+          <ArrowUp size={19} strokeWidth={2.5} />
         </button>
       </div>
     </form>

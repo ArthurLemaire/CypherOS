@@ -82,5 +82,5 @@ def _print_banner(url: str, service: MuseService, print_qr: bool) -> None:
         except Exception:  # noqa: BLE001  pragma: no cover
             pass
     console.print(
-        "[dim]Press Ctrl+C to stop. Your Muse keeps working in the background while it runs.[/dim]"
+        "[dim]Press Ctrl+C to stop. Your OpenMuse keeps working in the background while it runs.[/dim]"
     )

@@ -69,7 +69,7 @@ class LLMSettings(BaseModel):
 
 
 class AgentSettings(BaseModel):
-    name: str = "Muse"
+    name: str = "OpenMuse"
     max_steps: int = 30
     workspace: Path = Path("./workspace")
     # Directories outside the workspace the files tool may read and write (e.g. "~/Documents").

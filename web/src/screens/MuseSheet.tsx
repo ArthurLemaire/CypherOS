@@ -54,7 +54,7 @@ type View = "menu" | "activity" | "approvals" | "permissions" | "upcoming";
 export function MuseSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { state, setTab } = useStore();
   const [view, setView] = useState<View>("menu");
-  const name = state.profile?.name ?? "Muse";
+  const name = state.profile?.name ?? "OpenMuse";
   const pending = state.pendingApprovals.length;
   const t = useT();
 
@@ -225,7 +225,7 @@ function ApprovalsView({ onDone }: { onDone: () => void }) {
   return (
     <div className="space-y-4 pb-2">
       <p className="text-[12.5px] text-muted">
-        {t("Actions your Muse wants to take but cannot without you. Each one shows what will run and why; a permission you grant is bound to that exact tool and target.")}
+        {t("Actions your OpenMuse wants to take but cannot without you. Each one shows what will run and why; a permission you grant is bound to that exact tool and target.")}
       </p>
       {list.map((ev) => (
         <div key={ev.id}>
@@ -246,7 +246,7 @@ function UpcomingView({ onSettings }: { onSettings: () => void }) {
   const { state, refreshSettings, toast } = useStore();
   const [data, setData] = useState<UpcomingData | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const name = state.profile?.name ?? "Muse";
+  const name = state.profile?.name ?? "OpenMuse";
   const t = useT();
 
   const load = () => api.upcoming().then(setData).catch((e: Error) => toast(e.message));
@@ -890,7 +890,7 @@ function PermissionsView({ open }: { open: boolean }) {
   const [data, reload] = useActivity(open);
 
   const reset = async () => {
-    if (!window.confirm(t("Forget every permission you granted? Your Muse will ask again next time."))) return;
+    if (!window.confirm(t("Forget every permission you granted? Your OpenMuse will ask again next time."))) return;
     try {
       await api.resetApprovals();
       await reload();

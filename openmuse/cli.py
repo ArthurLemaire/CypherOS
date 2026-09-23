@@ -142,7 +142,7 @@ async def _chat(settings: Settings, show_thinking: bool, resume: bool) -> None:
     from openmuse.app import OpenMuseApp
     from openmuse.console import ConsoleUI
 
-    ui = ConsoleUI(console, show_thinking=show_thinking)
+    ui = ConsoleUI(console, show_thinking=show_thinking, name=settings.agent.name)
     _banner(settings)
     async with OpenMuseApp(settings, ui) as muse:
         if resume:
@@ -238,7 +238,9 @@ def run(
         from openmuse.app import OpenMuseApp
         from openmuse.console import ConsoleUI
 
-        ui = ConsoleUI(console, show_thinking=show_thinking or settings.agent.show_thinking)
+        ui = ConsoleUI(
+            console, show_thinking=show_thinking or settings.agent.show_thinking, name=settings.agent.name
+        )
         _banner(settings)
         async with OpenMuseApp(settings, ui) as muse:
             await muse.run(task)
@@ -293,7 +295,7 @@ def serve(
     no_qr: Annotated[bool, typer.Option("--no-qr", help="Do not print the QR code")] = False,
     auto: AutoOpt = False,
 ) -> None:
-    """Run the always-on Muse with the mobile-first web app (chat, goals, ideas, memory, approvals)."""
+    """Run the always-on OpenMuse with the mobile-first web app (chat, goals, ideas, memory, approvals)."""
     settings = _settings(config, auto=auto)
     if no_auth:
         settings.server.auth = False
@@ -403,7 +405,7 @@ def goals_run(
         from openmuse.app import OpenMuseApp
         from openmuse.console import ConsoleUI
 
-        ui = ConsoleUI(console, show_thinking=show_thinking)
+        ui = ConsoleUI(console, show_thinking=show_thinking, name=settings.agent.name)
         _banner(settings)
         async with OpenMuseApp(settings, ui) as muse:
             await muse.advance_goal(goal_id)

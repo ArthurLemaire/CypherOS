@@ -27,7 +27,7 @@ export function LibraryScreen() {
   const [files, setFiles] = useState<FileInfo[] | null>(null);
   const [group, setGroup] = useState<Kind | "all">("all");
   const [query, setQuery] = useState("");
-  const name = state.profile?.name ?? "Muse";
+  const name = state.profile?.name ?? "OpenMuse";
   const t = useT();
 
   // Reload whenever the agent finishes a step (the timeline moves) or the tab is opened.

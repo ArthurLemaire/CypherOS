@@ -1,5 +1,26 @@
 @import "tailwindcss";
 
+/* Figtree (SIL Open Font License, public/fonts/OFL.txt): a geometric sans close to the one
+   Muse uses. Latin only; CJK and everything else falls through to the system font. */
+@font-face {
+  font-family: "Figtree";
+  font-style: normal;
+  font-weight: 300 900;
+  font-display: swap;
+  src: url(/fonts/figtree-latin.woff2) format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+    U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Figtree";
+  font-style: normal;
+  font-weight: 300 900;
+  font-display: swap;
+  src: url(/fonts/figtree-latin-ext.woff2) format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
 @theme {
   --color-bg: var(--om-bg);
   --color-surface: var(--om-surface);
@@ -9,30 +30,39 @@
   --color-muted: var(--om-muted);
   --color-accent: var(--om-accent);
   --color-accent-fg: #ffffff;
+  --color-bubble-user: var(--om-bubble-user);
+  --color-bubble-user-fg: var(--om-bubble-user-fg);
   --font-sans:
-    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    "Figtree", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
     "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
 }
 
+/* The palette is Muse's: near-white and near-black surfaces, one blue, grey for the agent's
+   bubbles and light blue for yours. */
 :root {
-  --om-bg: #f4f3fa;
+  --om-bg: #fcfcfc;
   --om-surface: #ffffff;
-  --om-surface-2: #ecebf4;
-  --om-border: #e2e0ee;
-  --om-fg: #17161d;
-  --om-muted: #6f6d80;
-  --om-accent: #7c3aed;
+  --om-surface-2: #f2f2f4;
+  --om-border: #e7e7ea;
+  --om-fg: #111112;
+  --om-muted: #6b6b71;
+  --om-accent: #0064d4;
+  --om-bubble-user: #d8e9ff;
+  --om-bubble-user-fg: #111112;
   color-scheme: light dark;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --om-bg: #0f0f14;
-    --om-surface: #1a1a22;
-    --om-surface-2: #23232d;
-    --om-border: #2c2c38;
-    --om-fg: #f2f1f7;
-    --om-muted: #9a98ad;
+    --om-bg: #181819;
+    --om-surface: #202022;
+    --om-surface-2: #2a2a2d;
+    --om-border: #333337;
+    --om-fg: #ffffff;
+    --om-muted: #9d9da4;
+    --om-accent: #1793ff;
+    --om-bubble-user: #1c3d66;
+    --om-bubble-user-fg: #ffffff;
   }
 }
 
@@ -141,7 +171,7 @@ body {
   word-break: break-all;
 }
 .bubble-user .md a {
-  color: #fff;
+  color: var(--om-accent);
 }
 .md code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -219,6 +249,85 @@ body {
 }
 .pulse {
   animation: om-pulse 1.6s ease-out infinite;
+}
+
+/* The avatar is a plush doll, and a doll that never moves is a photograph. Idle: a slow
+   breath. Working: a gentle sway, side to side, like someone thinking at a desk. Waiting for
+   you: a small hop every few seconds. Tap: a wiggle. Off entirely for reduced motion. */
+@keyframes om-breathe {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-1.5%) scale(1.025);
+  }
+}
+@keyframes om-sway {
+  0%,
+  100% {
+    transform: rotate(-4deg) translateY(0);
+  }
+  25% {
+    transform: rotate(0deg) translateY(-2%);
+  }
+  50% {
+    transform: rotate(4deg) translateY(0);
+  }
+  75% {
+    transform: rotate(0deg) translateY(-2%);
+  }
+}
+@keyframes om-hop {
+  0%,
+  70%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  78% {
+    transform: translateY(-9%) scale(1.04, 0.97);
+  }
+  86% {
+    transform: translateY(0) scale(0.98, 1.03);
+  }
+  92% {
+    transform: translateY(-3%) scale(1);
+  }
+}
+@keyframes om-wiggle {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  20% {
+    transform: rotate(-10deg) scale(1.06);
+  }
+  45% {
+    transform: rotate(9deg) scale(1.06);
+  }
+  70% {
+    transform: rotate(-5deg);
+  }
+}
+.avatar-idle {
+  animation: om-breathe 4.5s ease-in-out infinite;
+}
+.avatar-working {
+  animation: om-sway 2.6s ease-in-out infinite;
+}
+.avatar-waiting {
+  animation: om-hop 3.2s ease-in-out infinite;
+}
+.avatar-wiggle {
+  animation: om-wiggle 0.6s ease-in-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .avatar-idle,
+  .avatar-working,
+  .avatar-waiting,
+  .avatar-wiggle {
+    animation: none;
+  }
 }
 
 @keyframes om-blink {

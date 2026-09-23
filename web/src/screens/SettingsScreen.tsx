@@ -3,15 +3,13 @@ import { useEffect, useState, type ReactNode } from "react";
 import { androidApp } from "../android";
 import { api, setToken } from "../api";
 import { Avatar } from "../components/Avatar";
+import { AVATAR_COLORS, AvatarPicker } from "../components/AvatarPicker";
 import { BackBar } from "../components/BackBar";
 import { LOCALES, setLocaleSetting, useLocaleSetting, useT } from "../i18n";
 import { disablePush, enablePush, pushState, type PushState } from "../push";
 import { useStore } from "../store";
 import type { Proactivity, PushInfo } from "../types";
 import { cx } from "../util";
-
-const EMOJI = ["✨", "🌙", "🪐", "🌿", "🔥", "🌊", "🦉", "🦊", "🐙", "🎯", "🧭", "💎", "🍀", "🎈", "🤖", "🧠"];
-const COLORS = ["#7c3aed", "#2563eb", "#0891b2", "#059669", "#d97706", "#dc2626", "#db2777", "#4b5563"];
 
 const MODES: Array<{ id: "ask" | "strict" | "auto"; title: string; text: string; icon: ReactNode }> = [
   {
@@ -38,8 +36,7 @@ export function SettingsScreen() {
   const { state, refreshSettings, setTab, toast } = useStore();
   const s = state.settings;
   const [name, setName] = useState("");
-  const [emoji, setEmoji] = useState("✨");
-  const [color, setColor] = useState(COLORS[0]);
+  const [look, setLook] = useState({ avatar: "sunny", emoji: "✨", color: AVATAR_COLORS[0] });
   const [style, setStyle] = useState("");
   const [userName, setUserName] = useState("");
   const [saving, setSaving] = useState(false);
@@ -53,8 +50,7 @@ export function SettingsScreen() {
   useEffect(() => {
     if (state.profile) {
       setName(state.profile.name);
-      setEmoji(state.profile.emoji);
-      setColor(state.profile.color);
+      setLook({ avatar: state.profile.avatar ?? "", emoji: state.profile.emoji, color: state.profile.color });
       setStyle(state.profile.style);
       setUserName(state.profile.user_name ?? "");
     }
@@ -76,24 +72,25 @@ export function SettingsScreen() {
   const dirty =
     !!state.profile &&
     (name !== state.profile.name ||
-      emoji !== state.profile.emoji ||
-      color !== state.profile.color ||
+      look.avatar !== (state.profile.avatar ?? "") ||
+      look.emoji !== state.profile.emoji ||
+      look.color !== state.profile.color ||
       style !== state.profile.style ||
       userName !== (state.profile.user_name ?? ""));
 
-  const preview = state.profile ? { ...state.profile, name, emoji, color } : null;
+  const preview = state.profile ? { ...state.profile, name, ...look } : null;
 
   return (
     <div className="flex h-full flex-col">
       <header className="safe-top shrink-0 px-5 pt-2 pb-3">
         <BackBar />
-        <h1 className="text-[24px] font-bold tracking-tight">{t("You & {name}", { name: state.profile?.name ?? "Muse" })}</h1>
+        <h1 className="text-[24px] font-bold tracking-tight">{t("You & {name}", { name: state.profile?.name ?? "OpenMuse" })}</h1>
         <p className="text-[13px] text-muted">{t("Make it yours, and decide how careful it should be.")}</p>
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 pb-8 space-y-5">
         {/* Your Muse */}
-        <Section title={t("Your Muse")}>
+        <Section title={t("Your OpenMuse")}>
           <div className="flex items-center gap-4">
             <Avatar profile={preview} size={64} />
             <div className="flex-1">
@@ -108,34 +105,8 @@ export function SettingsScreen() {
           </div>
           <div>
             <label className="text-[12px] text-muted">{t("Avatar")}</label>
-            <div className="mt-1.5 grid grid-cols-8 gap-1.5">
-              {EMOJI.map((e) => (
-                <button
-                  key={e}
-                  type="button"
-                  onClick={() => setEmoji(e)}
-                  className={cx("aspect-square rounded-2xl text-[22px] flex items-center justify-center bg-surface-2", emoji === e && "ring-2 ring-accent")}
-                >
-                  {e}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <label className="text-[12px] text-muted">{t("Colour")}</label>
-            <div className="mt-1.5 flex gap-2">
-              {COLORS.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  aria-label={c}
-                  onClick={() => setColor(c)}
-                  className="h-8 w-8 rounded-full flex items-center justify-center text-white"
-                  style={{ background: c }}
-                >
-                  {color === c && <Check size={16} />}
-                </button>
-              ))}
+            <div className="mt-1.5">
+              <AvatarPicker value={look} onChange={setLook} />
             </div>
           </div>
           <div>
@@ -161,7 +132,7 @@ export function SettingsScreen() {
           <button
             type="button"
             disabled={!dirty || saving}
-            onClick={() => void update({ profile: { name, emoji, color, style, user_name: userName } }, t("Saved"))}
+            onClick={() => void update({ profile: { name, ...look, style, user_name: userName } }, t("Saved"))}
             className="w-full rounded-2xl bg-accent text-accent-fg py-2.5 font-medium disabled:opacity-40"
           >
             {t("Save")}
@@ -291,7 +262,7 @@ export function SettingsScreen() {
           <div className="flex items-center gap-3">
             <label className="text-[13.5px] flex-1">
               {t("Reply language")}
-              <span className="block text-[12px] text-muted">{t("What {name} writes in", { name: state.profile?.name ?? "Muse" })}</span>
+              <span className="block text-[12px] text-muted">{t("What {name} writes in", { name: state.profile?.name ?? "OpenMuse" })}</span>
             </label>
             <select
               value={s?.agent.language ?? "auto"}

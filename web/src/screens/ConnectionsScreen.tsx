@@ -35,7 +35,7 @@ export function ConnectionsScreen() {
   const { state } = useStore();
   const [data, setData] = useState<ConnectionsData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const name = state.profile?.name ?? "Muse";
+  const name = state.profile?.name ?? "OpenMuse";
   const t = useT();
 
   const load = useCallback(async () => {

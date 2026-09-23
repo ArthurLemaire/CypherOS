@@ -19,11 +19,16 @@ RISK_STYLE = {"safe": "green", "moderate": "yellow", "sensitive": "bold red"}
 
 class ConsoleUI:
     def __init__(
-        self, console: Console | None = None, show_thinking: bool = False, quiet: bool = False
+        self,
+        console: Console | None = None,
+        show_thinking: bool = False,
+        quiet: bool = False,
+        name: str = "OpenMuse",
     ):
         self.console = console or Console()
         self.show_thinking = show_thinking
         self.quiet = quiet
+        self.name = name
         self._streaming = False
         self._streamed_chars = 0
 
@@ -32,7 +37,7 @@ class ConsoleUI:
         if not text:
             return
         if not self._streaming:
-            self.console.print(Text("Muse › ", style="bold magenta"), end="")
+            self.console.print(Text(f"{self.name} › ", style="bold blue"), end="")
             self._streaming = True
         self.console.print(text, end="", markup=False, highlight=False, soft_wrap=True)
         self._streamed_chars += len(text)
@@ -55,7 +60,7 @@ class ConsoleUI:
                 )
             )
         if content and not streamed:
-            self.console.print(Text("Muse › ", style="bold magenta"), end="")
+            self.console.print(Text(f"{self.name} › ", style="bold blue"), end="")
             self.console.print(Markdown(content))
 
     def on_tool_call(self, call: ToolCall, summary: str) -> None:
@@ -137,7 +142,7 @@ class ConsoleUI:
 
     async def ask_user(self, question: str) -> str:
         self._end_stream()
-        self.console.print(Panel(Markdown(question), title="Muse asks", border_style="magenta"))
+        self.console.print(Panel(Markdown(question), title=f"{self.name} asks", border_style="blue"))
         return await asyncio.to_thread(
             Prompt.ask, "[bold green]You[/bold green]", console=self.console
         )

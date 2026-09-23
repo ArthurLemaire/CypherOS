@@ -11,6 +11,20 @@ export function timeShort(ts: string | undefined): string {
   return `${d.toLocaleDateString(intlLocale(), { month: "short", day: "numeric" })} ${time}`;
 }
 
+/** The small centred time between groups of messages: "Today 9:02 AM", "Yesterday 4:01 PM", "Sep 12, 4:01 PM". */
+export function timeDivider(ts: string | undefined): string {
+  if (!ts) return "";
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return "";
+  const time = d.toLocaleTimeString(intlLocale(), { hour: "numeric", minute: "2-digit" });
+  const now = new Date();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (d.toDateString() === now.toDateString()) return `${t("Today")} ${time}`;
+  if (d.toDateString() === yesterday.toDateString()) return `${t("Yesterday")} ${time}`;
+  return `${dateShort(ts)} ${time}`;
+}
+
 /** A date in the UI language: "Sep 12" / "9月12日", with the year when it is not this one. */
 export function dateShort(ts: string | null | undefined, opts: Intl.DateTimeFormatOptions = {}): string {
   if (!ts) return "";

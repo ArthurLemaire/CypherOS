@@ -1,4 +1,4 @@
-"""The always-on Muse: threads, background workers, goals scheduler, ideas, profile.
+"""The always-on OpenMuse: threads, background workers, goals scheduler, ideas, profile.
 
 This is the piece that keeps working after you close the app. It owns one
 :class:`~openmuse.app.OpenMuseApp` (LLM, tools, Sentinel, vault, memory, goals)
@@ -85,9 +85,11 @@ _QUIET_HOURS_RE = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)-([01]?\d|2[0-3]):([0-
 
 @dataclass
 class Profile:
-    name: str = "Muse"
+    name: str = "OpenMuse"
+    # the face: one of the plush dolls shipped with the app (web/public/avatars), or "" for the emoji
+    avatar: str = "sunny"
     emoji: str = "✨"
-    color: str = "#7c3aed"
+    color: str = "#0064d4"
     style: str = ""
     # what the user wants to be called
     user_name: str = ""
@@ -131,6 +133,7 @@ class Profile:
     def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
+            "avatar": self.avatar,
             "emoji": self.emoji,
             "color": self.color,
             "style": self.style,
@@ -152,9 +155,13 @@ class Profile:
             p.proactivity = "default" if data["proactive"] else "off"
         if p.proactivity not in PROACTIVITY:
             p.proactivity = "default"
-        p.name = (str(p.name).strip() or "Muse")[:40]
+        p.name = (str(p.name).strip() or "OpenMuse")[:40]
+        if "avatar" not in data:
+            # a profile from before the dolls: keep the emoji it has
+            p.avatar = ""
+        p.avatar = re.sub(r"[^a-z0-9-]", "", str(p.avatar).lower())[:32]
         p.emoji = str(p.emoji)[:8] or "✨"
-        p.color = str(p.color)[:16] or "#7c3aed"
+        p.color = str(p.color)[:16] or "#0064d4"
         p.style = str(p.style)[:1000]
         p.user_name = str(p.user_name).strip()[:60]
         p.goal_interval_minutes = max(5, min(int(p.goal_interval_minutes), 24 * 60))

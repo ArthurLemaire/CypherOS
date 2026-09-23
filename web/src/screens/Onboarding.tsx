@@ -1,15 +1,14 @@
-import { ArrowRight, Check, Loader2, ShieldCheck } from "lucide-react";
+import { ArrowRight, Loader2, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { Avatar } from "../components/Avatar";
+import { AVATAR_COLORS, AvatarPicker } from "../components/AvatarPicker";
 import { useT } from "../i18n";
 import { useStore } from "../store";
 import type { ConnectionsData } from "../types";
 import { cx } from "../util";
 import { CalendarCard, ContactsCard, EmailCard, ModelCard, inputCls, primaryBtn, secondaryBtn } from "./ConnectionsScreen";
 
-const EMOJI = ["✨", "🌙", "🪐", "🌿", "🔥", "🌊", "🦉", "🦊", "🐙", "🎯", "🧭", "💎", "🍀", "🎈", "🤖", "🧠"];
-const COLORS = ["#7c3aed", "#2563eb", "#0891b2", "#059669", "#d97706", "#dc2626", "#db2777", "#4b5563"];
 const STYLES = ["Warm and concise", "Direct, no small talk", "Playful and curious", "Calm and thorough"];
 
 const FIRST_ASKS = [
@@ -23,7 +22,7 @@ type Step = "welcome" | "you" | "muse" | "model" | "connect" | "tips";
 const ORDER: Step[] = ["welcome", "you", "muse", "model", "connect", "tips"];
 
 /**
- * First run, the way Muse does it: who you are, who your Muse is, which model runs it,
+ * First run, the way Muse does it: who you are, who your OpenMuse is, which model runs it,
  * what it may reach — then a few things to try. Everything here can be changed later
  * under the avatar (Settings, Connections).
  */
@@ -31,9 +30,12 @@ export function Onboarding() {
   const { state, send, setTab, dismissOnboarding, refreshSettings, toast } = useStore();
   const [step, setStep] = useState<Step>("welcome");
   const [userName, setUserName] = useState(state.profile?.user_name ?? "");
-  const [name, setName] = useState(state.profile?.name ?? "Muse");
-  const [emoji, setEmoji] = useState(state.profile?.emoji ?? "✨");
-  const [color, setColor] = useState(state.profile?.color ?? COLORS[0]);
+  const [name, setName] = useState(state.profile?.name ?? "OpenMuse");
+  const [look, setLook] = useState({
+    avatar: state.profile?.avatar ?? "sunny",
+    emoji: state.profile?.emoji ?? "✨",
+    color: state.profile?.color ?? AVATAR_COLORS[0],
+  });
   const [style, setStyle] = useState(state.profile?.style ?? "");
   const [conn, setConn] = useState<ConnectionsData | null>(null);
   const [saving, setSaving] = useState(false);
@@ -57,7 +59,7 @@ export function Onboarding() {
   const saveProfile = async () => {
     setSaving(true);
     try {
-      await api.updateSettings({ profile: { name: name.trim() || "Muse", emoji, color, style: style.trim(), user_name: userName.trim() } });
+      await api.updateSettings({ profile: { name: name.trim() || "OpenMuse", ...look, style: style.trim(), user_name: userName.trim() } });
       await refreshSettings();
       next();
     } catch (e) {
@@ -81,8 +83,7 @@ export function Onboarding() {
 
   const preview = {
     name,
-    emoji,
-    color,
+    ...look,
     style,
     user_name: userName,
     proactivity: "default" as const,
@@ -111,7 +112,7 @@ export function Onboarding() {
         {step === "welcome" && (
           <div className="flex h-full flex-col items-center justify-center text-center">
             <Avatar profile={preview} size={96} />
-            <h1 className="mt-6 text-[28px] font-bold tracking-tight">{t("Meet your Muse")}</h1>
+            <h1 className="mt-6 text-[28px] font-bold tracking-tight">{t("Meet your OpenMuse")}</h1>
             <p className="mt-3 max-w-sm text-[15px] text-muted leading-relaxed">
               {t("A personal agent that does the work: it searches, browses, writes files and code, reads and sends mail, and keeps going on long goals while you are away.")}
             </p>
@@ -147,27 +148,14 @@ export function Onboarding() {
         {step === "muse" && (
           <div className="pt-6 space-y-5">
             <div>
-              <h1 className="text-[26px] font-bold tracking-tight">{t("Now, your Muse")}</h1>
+              <h1 className="text-[26px] font-bold tracking-tight">{t("Now, your OpenMuse")}</h1>
               <p className="mt-1 text-[14px] text-muted">{t("Give it a name, a look and a way of talking.")}</p>
             </div>
             <div className="flex items-center gap-4">
-              <Avatar profile={preview} size={64} />
-              <input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} className={cx(inputCls, "text-[17px] font-medium")} placeholder="Muse" />
+              <Avatar profile={preview} size={72} />
+              <input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} className={cx(inputCls, "text-[17px] font-medium")} placeholder="OpenMuse" />
             </div>
-            <div className="grid grid-cols-8 gap-1.5">
-              {EMOJI.map((e) => (
-                <button key={e} type="button" onClick={() => setEmoji(e)} className={cx("aspect-square rounded-2xl text-[22px] flex items-center justify-center bg-surface-2", emoji === e && "ring-2 ring-accent")}>
-                  {e}
-                </button>
-              ))}
-            </div>
-            <div className="flex gap-2">
-              {COLORS.map((c) => (
-                <button key={c} type="button" aria-label={c} onClick={() => setColor(c)} className="h-8 w-8 rounded-full flex items-center justify-center text-white" style={{ background: c }}>
-                  {color === c && <Check size={16} />}
-                </button>
-              ))}
-            </div>
+            <AvatarPicker value={look} onChange={setLook} />
             <div>
               <div className="flex flex-wrap gap-1.5">
                 {STYLES.map((s) => (
