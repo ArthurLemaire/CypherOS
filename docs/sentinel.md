@@ -25,7 +25,7 @@ Subprocesses started by `shell` and `python_execute` get a scrubbed environment:
 
 ## The sandbox
 
-Muse gives each user's agent a VM of its own. OpenMuse runs on your machine, so it does the next best thing on Linux: every `shell` and `python_execute` call runs in its own namespace, made with [bubblewrap](https://github.com/containers/bubblewrap) (the tool behind Flatpak; unprivileged, `apt install bubblewrap` / `dnf install bubblewrap`). Inside the box:
+Meta Muse gives each user's agent a VM of its own. OpenMuse runs on your machine, so it does the next best thing on Linux: every `shell` and `python_execute` call runs in its own namespace, made with [bubblewrap](https://github.com/containers/bubblewrap) (the tool behind Flatpak; unprivileged, `apt install bubblewrap` / `dnf install bubblewrap`). Inside the box:
 
 - the workspace (and `agent.extra_roots`) are the only writable places — `/usr`, `/etc`, `/opt`, `/var` are read-only, `/tmp` is private to the call, `/proc` and `/dev` are fresh;
 - your home directory does not exist, and with it the vault, the data directory, ssh keys, cloud credentials and browser profiles. The only exceptions are the directory the running Python lives in (a venv or a `uv`-managed interpreter is often under home), read-only, so `python_execute` runs with the same interpreter and packages as OpenMuse, and the skill folders (built-in and yours), read-only, so a skill's scripts and reference files can be run and read from inside. A data directory that sits inside the workspace is masked;
@@ -114,7 +114,7 @@ The app's activity sheet (tap the avatar) reads the same file.
 
 ## What this does and does not protect against
 
-Muse runs each user's agent in its own cloud VM with the Sentinel outside it. OpenMuse runs on your machine, as your user, and its Sentinel is a module in the same process. That changes what the safeguards can promise. Honest summary:
+Meta Muse runs each user's agent in its own cloud VM with the Sentinel outside it. OpenMuse runs on your machine, as your user, and its Sentinel is a module in the same process. That changes what the safeguards can promise. Honest summary:
 
 **Covered**
 

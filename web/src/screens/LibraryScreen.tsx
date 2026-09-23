@@ -18,7 +18,7 @@ const GROUPS: Array<{ id: Kind | "all"; label: string }> = [
 ];
 
 /**
- * Everything your Muse has made — pages, documents, trackers, images — in one place,
+ * Everything your OpenMuse has made — pages, documents, trackers, images — in one place,
  * newest first, viewable in the app. This is the agent's workspace, so files you drop
  * there yourself show up too.
  */

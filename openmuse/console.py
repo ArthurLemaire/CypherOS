@@ -142,7 +142,9 @@ class ConsoleUI:
 
     async def ask_user(self, question: str) -> str:
         self._end_stream()
-        self.console.print(Panel(Markdown(question), title=f"{self.name} asks", border_style="blue"))
+        self.console.print(
+            Panel(Markdown(question), title=f"{self.name} asks", border_style="blue")
+        )
         return await asyncio.to_thread(
             Prompt.ask, "[bold green]You[/bold green]", console=self.console
         )

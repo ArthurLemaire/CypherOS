@@ -5,7 +5,7 @@ interface BaseEvent {
   ts: string;
   thread: string;
   updated_ts?: string;
-  /** "user" for things you said; "goal" / "background" for work your Muse did on its own. */
+  /** "user" for things you said; "goal" / "background" for work your OpenMuse did on its own. */
   source?: string;
   /** For background events: the short label of the work being done. */
   about?: string;

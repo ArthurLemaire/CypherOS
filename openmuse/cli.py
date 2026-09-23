@@ -239,7 +239,9 @@ def run(
         from openmuse.console import ConsoleUI
 
         ui = ConsoleUI(
-            console, show_thinking=show_thinking or settings.agent.show_thinking, name=settings.agent.name
+            console,
+            show_thinking=show_thinking or settings.agent.show_thinking,
+            name=settings.agent.name,
         )
         _banner(settings)
         async with OpenMuseApp(settings, ui) as muse:

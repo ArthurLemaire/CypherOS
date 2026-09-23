@@ -60,6 +60,8 @@ jobs:
           version="$(sed -n 's/^ *versionName = "\(.*\)"/\1/p' app/build.gradle.kts)"
           out="openmuse-${version}.apk"
           cp app/build/outputs/apk/release/app-release.apk "$out"
+          # a second copy under a fixed name, so /releases/latest/download/openmuse.apk always works
+          cp "$out" openmuse.apk
           echo "path=android/$out" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
@@ -81,5 +83,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.apk.outputs.path }}
+          files: |
+            ${{ steps.apk.outputs.path }}
+            android/openmuse.apk
           generate_release_notes: false

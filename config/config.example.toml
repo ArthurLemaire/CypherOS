@@ -64,7 +64,7 @@ pass_reasoning = false
 
 # ------------------------------------------------------------------------------
 [agent]
-name = "Muse"
+name = "OpenMuse"
 max_steps = 30
 workspace = "./workspace"       # the agent's files live here
 # Directories outside the workspace the files tool may use. Reads there count as
