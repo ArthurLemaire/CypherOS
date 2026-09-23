@@ -27,6 +27,10 @@ The token is generated once and stored in `<data_dir>/server_token`; set `server
 
 ## First run
 
+<p align="center">
+  <img src="screenshots/onboarding.png" width="24%" alt="First run: meet your OpenMuse">
+</p>
+
 On a fresh data directory the app opens with setup instead of the chat: your name; the agent's name, avatar, colour and style; the model (pick a provider, paste a key — it goes into the vault on the server and the model never sees it; or keep what `config.toml` already says); optionally your mailbox and calendar; then a few things to try. *Skip setup* at any point. Everything here can be changed later under the avatar. Setup does not reappear once finished, or once a conversation exists.
 
 ## What is on the screen
