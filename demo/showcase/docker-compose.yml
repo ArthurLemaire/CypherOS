@@ -4,7 +4,8 @@
 #
 #   cp .env.example .env && $EDITOR .env
 #   docker pull ghcr.io/nano-muse/nanomuse:latest        # what the visitors' sessions run
-#   docker compose up -d --build
+#   docker compose pull && docker compose up -d          # published images (see showcase.yml)
+#   docker compose up -d --build                         # or build both images here
 #
 # Sessions are started by the gateway on the `nanomuse-sessions` network, which has no way out:
 # the only thing a visitor's Muse can talk to is the gateway (and through it, the model).
@@ -17,7 +18,7 @@ services:
       args:
         MOBILEGYM_REF: ${MOBILEGYM_REF:-main}
         GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
-    image: nanomuse-showcase-caddy
+    image: ghcr.io/nano-muse/showcase-caddy:${SHOWCASE_TAG:-latest}
     restart: unless-stopped
     ports:
       - "80:80"
@@ -40,7 +41,7 @@ services:
 
   gateway:
     build: ./gateway
-    image: nanomuse-showcase-gateway
+    image: ghcr.io/nano-muse/showcase-gateway:${SHOWCASE_TAG:-latest}
     restart: unless-stopped
     env_file: .env
     environment:

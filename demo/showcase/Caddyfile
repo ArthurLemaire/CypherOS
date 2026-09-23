@@ -3,14 +3,31 @@
 #   SITE_HOST         the phone in the browser (MobileGym + the nanoMuse app), plus /api/demo/*
 #   *.SESSION_DOMAIN  one hostname per visitor session, everything relayed to the gateway
 #
-# Certificates come from Let's Encrypt on their own: HTTP-01 for the site, DNS-01 through
-# Cloudflare for the wildcard (a wildcard cannot be had any other way).
+# Certificates come from Let's Encrypt through Cloudflare's DNS API for both names: the wildcard
+# cannot be had any other way, and the site may sit behind Cloudflare's proxy, where HTTP-01
+# is not dependable. Behind the proxy the visitor's address arrives in X-Forwarded-For; Caddy
+# believes it only from Cloudflare's own ranges (fetched by the cloudflare-ip module), so the
+# gateway's per-visitor limits see visitors, not Cloudflare.
 
 {
 	email {$ACME_EMAIL}
+	servers {
+		trusted_proxies cloudflare {
+			interval 12h
+			timeout 15s
+		}
+	}
+}
+
+(cloudflare_dns) {
+	tls {
+		dns cloudflare {$CLOUDFLARE_API_TOKEN}
+		resolvers 1.1.1.1 1.0.0.1
+	}
 }
 
 {$SITE_HOST} {
+	import cloudflare_dns
 	encode zstd gzip
 
 	header {
@@ -40,9 +57,7 @@
 }
 
 *.{$SESSION_DOMAIN} {
-	tls {
-		dns cloudflare {$CLOUDFLARE_API_TOKEN}
-	}
+	import cloudflare_dns
 	header -Server
 	reverse_proxy gateway:8000
 }

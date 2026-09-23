@@ -49,20 +49,22 @@ the Cloudflare DNS module.
   the container never sees the key. Only `https://` to hosts in `BYOK_ALLOWED_HOSTS` (the usual
   providers), never to an address inside the server's network.
 
-Two lanes: `main` (the model that talks to the visitor; DeepSeek by default) and `gui` (the one
-that reads screens and taps; many small calls, so a fast one — 阿里云百炼 `qwen3.8-27b` in the
-example). Leave `GUI_*` empty and `main` does both.
+Two lanes: `main` (the model that talks to the visitor) and `gui` (the one that reads screens
+and taps; many small calls with a screenshot each). The default is 阿里云百炼's `qwen3.8-27b`
+for both — it reads screenshots, so one key does everything. Set `GUI_*` to split the lanes.
 
 ## Deploying
 
 You need: a Linux box with Docker (4 cores / 8 GB is plenty for `MAX_SESSIONS=20` — a session
-idles at ~150 MB), a domain on Cloudflare (DNS only is enough, the proxy is not needed), a
-DeepSeek key, and — recommended — a 百炼 key for the phone operator.
+idles at ~150 MB), a domain on Cloudflare, and a 百炼 key (or any OpenAI-compatible provider
+that takes images).
 
 ```bash
-# 1. DNS (Cloudflare, "DNS only"):   demo.nanomuse.dev  A  <server>
-#                                    *.s.nanomuse.dev   A  <server>
-#    Cloudflare → My Profile → API Tokens → "Edit zone DNS" template for the zone.
+# 1. DNS on Cloudflare:   demo.nanomuse.dev  A  <server>   proxied — Cloudflare caches the phone,
+#                                                          which is most of the bytes
+#                         *.s.nanomuse.dev   A  <server>   DNS only — sessions are WebSockets to Caddy
+#    Cloudflare → My Profile → API Tokens: Zone → DNS → Edit and Zone → Zone → Read on the zone.
+#    SSL/TLS mode "Full (strict)": the origin has a real Let's Encrypt certificate.
 
 # 2. the code
 git clone https://github.com/nano-muse/nanoMuse.git && cd nanoMuse/demo/showcase
@@ -76,7 +78,9 @@ docker pull ghcr.io/nano-muse/nanomuse:latest  # or: docker build -t nanomuse:la
 mkdir -p data && curl -L https://github.com/Purewhiter/mobilegym/releases/download/data-v0.1.0/mobilegym-data-v0.1.0.tar.gz | tar -xz -C data
 #    CC BY-NC 4.0 — non-commercial use only (see MobileGym's LICENSE-DATA).
 
-# 5. up (the first build clones MobileGym and compiles Caddy; a few minutes)
+# 5. up — the published images (.github/workflows/showcase.yml builds them from main) …
+docker compose pull && docker compose up -d
+#    … or build them here (clones MobileGym and compiles Caddy; a few minutes):
 docker compose up -d --build
 docker compose logs -f gateway
 ```
@@ -84,9 +88,14 @@ docker compose logs -f gateway
 Open `https://demo.nanomuse.dev`, find nanoMuse in the launcher (search works), and it starts.
 `curl https://demo.nanomuse.dev/api/demo/info` shows sessions in use and today's spend.
 
-Updating: `git pull && docker pull ghcr.io/nano-muse/nanomuse:latest && docker compose up -d --build`.
+Updating: `git pull && docker pull ghcr.io/nano-muse/nanomuse:latest && docker compose pull && docker compose up -d`.
 Sessions in flight end when the gateway restarts; visitors get *Your Muse on the showcase server
 has ended* and a button for a new one.
+
+Behind Cloudflare's proxy the visitor's address arrives in `X-Forwarded-For`. Caddy is built
+with the [cloudflare-ip](https://github.com/WeidiDeng/caddy-cloudflare-ip) module and trusts
+that header from Cloudflare's ranges only, so `PER_IP_*` still counts visitors rather than
+Cloudflare's edges. Both certificates are obtained through Cloudflare's DNS API (`CLOUDFLARE_API_TOKEN`).
 
 ### Running it on your machine
 
