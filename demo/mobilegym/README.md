@@ -33,12 +33,14 @@ shell around the real nanoMuse web app:
 - **The phone as the agent's hands** — with *Let nanoMuse operate this phone* ticked on the
   setup page (on by default), the module also announces the simulator as a *device*: it lists
   the installed apps, and answers the server's requests for the screen and for actions. The
-  screen is read from the simulator's DOM into the element list the agent works from — buttons,
-  fields and their text, what is scrollable, what the keyboard covers, coordinates in the
-  phone's 360×800 — and actions go through MobileGym's own input API, so a tap lands the way a
-  finger would. Nothing is touched unless the server's own *Phone* switch is on too
-  (`[gui] enabled`, or Connections → Phone in the app); [docs/gui.md](../../docs/gui.md) has the
-  rest, including what asks for approval first.
+  screen is a picture: the simulator's DOM is rendered to a 360×800 PNG in the page
+  (`modern-screenshot`), with the app and route read off the simulator's OS — no element list,
+  the agent taps by position like a finger would — and actions go through MobileGym's own input
+  API. While Muse works, a ripple marks each tap, a line each swipe, and a caption under the
+  screen says what it is doing; the marks are left out of the screenshots. Nothing is touched
+  unless the server's own *Phone* switch is on too (`[gui] enabled`, or Connections → Phone in
+  the app); [docs/gui.md](../../docs/gui.md) has the rest, including what asks for approval
+  first.
 
 - **The hosted showcase** — built with `VITE_NANOMUSE_DEMO=/api/demo`, the setup page first
   offers a Muse on the showcase server: one tap (or none, the first time) and the *showcase
@@ -105,7 +107,7 @@ apps/nanoMuse/
 ├── state.ts                  Zustand store: server URL, token, notify and GUI switches, showcase session; wires the bridge
 ├── bridge.ts                 WebSocket → NotificationService; device announce, screen/act requests
 ├── demo.ts                   the showcase gateway's API (start/end a hosted session), used on the public site
-├── gui.ts                    the simulator as a device: DOM → element list, actions → __SIM_INPUT__
+├── gui.ts                    the simulator as a device: DOM → PNG screenshot, actions → __SIM_INPUT__, the finger overlay
 ├── pages/MusePage.tsx        the web app, full screen
 ├── pages/SetupPage.tsx       hosted Muse (showcase), or server address + token; the operate-this-phone switch
 ├── hooks/useNanoMuseGestures.ts

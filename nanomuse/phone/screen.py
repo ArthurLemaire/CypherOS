@@ -1,24 +1,25 @@
-"""What the agent sees of the phone: one screen, as a list of elements and a picture.
+"""What the agent sees of the phone: one screen, as a picture.
 
 The device sends::
 
-    {"app": "alipay", "app_name": "支付宝", "route": "/transfer/confirm",
-     "width": 390, "height": 844, "keyboard": false,
-     "elements": [{"id": 1, "role": "button", "text": "确认付款", "desc": "",
-                   "bounds": [40, 760, 350, 808], "clickable": true, "editable": false,
-                   "scrollable": false, "focused": false, "checked": null, "value": ""}],
-     "screenshot": "<base64 JPEG or PNG>" | null}
+    {"app": "com.eg.android.AlipayGphone", "app_name": "支付宝",
+     "width": 1080, "height": 2400, "keyboard": false,
+     "screenshot": "<base64 JPEG or PNG>",
+     "note": "permission dialog open"}
 
-Element ids are per screen (the device numbers what it reports, top to bottom); the agent
-taps by id when it can, by coordinates when it must. The rendering below is what the model
-reads — compact, one line per element — and the screenshot, when there is one, is saved to
-the workspace and shown to models that take images.
+That is the whole observation: a screenshot and the little a device can always say about
+it (which app, how big, is the keyboard up). Nothing is read from an accessibility tree —
+a real phone does not reliably offer one (WebViews, Flutter, games, FLAG_SECURE), and the
+simulated phone has none — so the model that operates the phone looks, and taps by
+coordinates, the way a person does. The screenshot is saved to the workspace, shown to the
+model, and kept for the trace.
 """
 
 from __future__ import annotations
 
 import base64
 import binascii
+import struct
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -29,101 +30,19 @@ from nanomuse.logger import logger
 if TYPE_CHECKING:
     from nanomuse.phone.link import Device
 
-MAX_ELEMENTS = 150
-MAX_TEXT = 80
-KEEP_SHOTS = 40
-
-
-@dataclass
-class Element:
-    id: int
-    role: str = "view"
-    text: str = ""
-    desc: str = ""
-    bounds: tuple[int, int, int, int] = (0, 0, 0, 0)
-    clickable: bool = False
-    editable: bool = False
-    scrollable: bool = False
-    focused: bool = False
-    checked: bool | None = None
-    value: str = ""
-
-    @property
-    def center(self) -> tuple[int, int]:
-        x1, y1, x2, y2 = self.bounds
-        return (x1 + x2) // 2, (y1 + y2) // 2
-
-    @property
-    def label(self) -> str:
-        """The words a person would use for it: its text, else its description."""
-        return (self.text or self.desc or "").strip()
-
-    def render(self) -> str:
-        flags = [
-            f
-            for f, on in (
-                ("clickable", self.clickable),
-                ("editable", self.editable),
-                ("scrollable", self.scrollable),
-                ("focused", self.focused),
-            )
-            if on
-        ]
-        if self.checked is not None:
-            flags.append("checked" if self.checked else "unchecked")
-        parts = [f"[{self.id}] {self.role}"]
-        if self.text:
-            parts.append(f'"{_clip(self.text)}"')
-        if self.desc and self.desc != self.text:
-            parts.append(f"({_clip(self.desc)})")
-        if self.value:
-            parts.append(f'value="{_clip(self.value)}"')
-        if flags:
-            parts.append("{" + ", ".join(flags) + "}")
-        x, y = self.center
-        parts.append(f"@({x},{y})")
-        return " ".join(parts)
-
-    @classmethod
-    def from_raw(cls, raw: dict[str, Any], idx: int) -> Element:
-        b = raw.get("bounds") or [0, 0, 0, 0]
-        try:
-            bounds = tuple(int(float(v)) for v in b[:4])
-            if len(bounds) != 4:
-                bounds = (0, 0, 0, 0)
-        except (TypeError, ValueError):
-            bounds = (0, 0, 0, 0)
-        checked = raw.get("checked")
-        return cls(
-            id=int(raw.get("id", idx)),
-            role=str(raw.get("role") or "view")[:24],
-            text=str(raw.get("text") or "")[:400],
-            desc=str(raw.get("desc") or "")[:200],
-            bounds=bounds,  # type: ignore[arg-type]
-            clickable=bool(raw.get("clickable")),
-            editable=bool(raw.get("editable")),
-            scrollable=bool(raw.get("scrollable")),
-            focused=bool(raw.get("focused")),
-            checked=None if checked is None else bool(checked),
-            value=str(raw.get("value") or "")[:200],
-        )
-
-
-def _clip(text: str, limit: int = MAX_TEXT) -> str:
-    text = " ".join(str(text).split())
-    return text if len(text) <= limit else text[: limit - 1] + "…"
+KEEP_SHOTS = 400  # a 30-step task is 30 pictures; traces point at these files
 
 
 @dataclass
 class Screen:
     app: str = ""
     app_name: str = ""
-    route: str = ""
+    route: str = ""  # what the device knows about where it is (a URL path, an activity)
     width: int = 0
     height: int = 0
     keyboard: bool = False
-    elements: list[Element] = field(default_factory=list)
     image_path: str | None = None
+    image_size: tuple[int, int] | None = None  # the picture's own pixels, if known
     taken_at: float = field(default_factory=time.time)
     note: str = ""  # anything the device wants to add ("permission dialog open", ...)
 
@@ -132,10 +51,6 @@ class Screen:
     def from_device(
         cls, raw: dict[str, Any], device: Device | None = None, shots_dir: Path | None = None
     ) -> Screen:
-        elements = []
-        for i, item in enumerate((raw.get("elements") or [])[:MAX_ELEMENTS], start=1):
-            if isinstance(item, dict):
-                elements.append(Element.from_raw(item, i))
         screen = cls(
             app=str(raw.get("app") or "")[:80],
             app_name=str(raw.get("app_name") or "")[:80],
@@ -143,29 +58,16 @@ class Screen:
             width=int(raw.get("width") or (device.width if device else 0) or 0),
             height=int(raw.get("height") or (device.height if device else 0) or 0),
             keyboard=bool(raw.get("keyboard")),
-            elements=elements,
             note=str(raw.get("note") or "")[:300],
         )
-        shot = raw.get("screenshot")
+        shot = raw.get("screenshot") or raw.get("image")
         if shot and shots_dir is not None:
-            screen.image_path = _save_screenshot(str(shot), shots_dir)
+            screen.image_path, screen.image_size = _save_screenshot(str(shot), shots_dir)
+        if screen.image_size and all(screen.image_size) and not (screen.width and screen.height):
+            screen.width, screen.height = screen.image_size
         return screen
 
     # ------------------------------------------------------------------ reading
-    def element(self, element_id: int) -> Element | None:
-        for el in self.elements:
-            if el.id == element_id:
-                return el
-        return None
-
-    def texts(self) -> list[str]:
-        return [t for el in self.elements for t in (el.text, el.desc, el.value) if t]
-
-    def find_words(self, words: list[str]) -> list[str]:
-        """Which of ``words`` appear on this screen (case-insensitive, substring)."""
-        haystack = "\n".join(self.texts()).lower()
-        return [w for w in words if w and w.lower() in haystack]
-
     @property
     def title(self) -> str:
         name = self.app_name or self.app or "phone"
@@ -175,7 +77,12 @@ class Screen:
             else name
         )
 
-    def render(self, max_elements: int = MAX_ELEMENTS) -> str:
+    @property
+    def has_image(self) -> bool:
+        return bool(self.image_path)
+
+    def render(self) -> str:
+        """The words that go with the picture (and all a text-only model gets)."""
         head = [self.title]
         if self.route:
             head.append(self.route)
@@ -185,36 +92,25 @@ class Screen:
         lines = [" · ".join(head)]
         if self.note:
             lines.append(f"note: {self.note}")
-        if not self.elements:
-            lines.append(
-                "(no elements reported — the screen may be empty, still loading, or the device cannot read it)"
-            )
-        for el in self.elements[:max_elements]:
-            lines.append(el.render())
-        if len(self.elements) > max_elements:
-            lines.append(
-                f"… {len(self.elements) - max_elements} more elements (scroll to see them)"
-            )
+        if not self.image_path:
+            lines.append("(the device sent no screenshot)")
         return "\n".join(lines)
 
-    def to_dict(self, brief: bool = False) -> dict[str, Any]:
-        data: dict[str, Any] = {
+    def to_dict(self) -> dict[str, Any]:
+        return {
             "app": self.app,
             "app_name": self.app_name,
             "route": self.route,
             "width": self.width,
             "height": self.height,
             "keyboard": self.keyboard,
-            "elements": len(self.elements),
             "image": self.image_path,
             "taken_at": self.taken_at,
+            "note": self.note,
         }
-        if not brief:
-            data["items"] = [el.render() for el in self.elements]
-        return data
 
 
-def _save_screenshot(encoded: str, shots_dir: Path) -> str | None:
+def _save_screenshot(encoded: str, shots_dir: Path) -> tuple[str | None, tuple[int, int] | None]:
     """Decode the device's picture into ``shots_dir`` and keep only the newest few."""
     if "," in encoded[:64] and encoded.lstrip().startswith("data:"):
         encoded = encoded.split(",", 1)[1]
@@ -222,9 +118,9 @@ def _save_screenshot(encoded: str, shots_dir: Path) -> str | None:
         data = base64.b64decode(encoded, validate=False)
     except (binascii.Error, ValueError) as exc:
         logger.debug("phone screenshot not decodable: {}", exc)
-        return None
+        return None, None
     if len(data) < 64:
-        return None
+        return None, None
     suffix = ".png" if data[:8] == b"\x89PNG\r\n\x1a\n" else ".jpg"
     try:
         shots_dir.mkdir(parents=True, exist_ok=True)
@@ -238,8 +134,45 @@ def _save_screenshot(encoded: str, shots_dir: Path) -> str | None:
             stale.unlink(missing_ok=True)
     except OSError as exc:
         logger.warning("could not save phone screenshot: {}", exc)
-        return None
-    return str(path)
+        return None, None
+    return str(path), image_size(data)
 
 
-__all__ = ["Element", "Screen"]
+def image_size(data: bytes) -> tuple[int, int] | None:
+    """Width and height of a PNG or JPEG from its header; None when it is neither."""
+    if data[:8] == b"\x89PNG\r\n\x1a\n" and len(data) >= 24:
+        w, h = struct.unpack(">II", data[16:24])
+        return int(w), int(h)
+    if data[:2] == b"\xff\xd8":
+        i = 2
+        while i + 9 < len(data):
+            if data[i] != 0xFF:
+                i += 1
+                continue
+            marker = data[i + 1]
+            if marker in (0xD8, 0x01) or 0xD0 <= marker <= 0xD7:
+                i += 2
+                continue
+            length = struct.unpack(">H", data[i + 2 : i + 4])[0]
+            if marker in (
+                0xC0,
+                0xC1,
+                0xC2,
+                0xC3,
+                0xC5,
+                0xC6,
+                0xC7,
+                0xC9,
+                0xCA,
+                0xCB,
+                0xCD,
+                0xCE,
+                0xCF,
+            ):
+                h, w = struct.unpack(">HH", data[i + 5 : i + 9])
+                return int(w), int(h)
+            i += 2 + length
+    return None
+
+
+__all__ = ["Screen", "image_size"]

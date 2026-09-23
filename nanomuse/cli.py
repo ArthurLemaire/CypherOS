@@ -42,6 +42,9 @@ skills_app = typer.Typer(
 )
 vault_app = typer.Typer(help="Store credentials the model never sees.", no_args_is_help=True)
 config_app = typer.Typer(help="Configuration helpers.", no_args_is_help=True)
+phone_app = typer.Typer(
+    help="The phone: traces of what the GUI operator saw and did.", no_args_is_help=True
+)
 app.add_typer(goals_app, name="goals")
 app.add_typer(reminders_app, name="reminders")
 app.add_typer(triggers_app, name="triggers")
@@ -51,6 +54,7 @@ app.add_typer(contacts_app, name="contacts")
 app.add_typer(skills_app, name="skills")
 app.add_typer(vault_app, name="vault")
 app.add_typer(config_app, name="config")
+app.add_typer(phone_app, name="phone")
 
 console = Console()
 
@@ -1334,9 +1338,10 @@ def config_show(config: ConfigOpt = None) -> None:
     """Print the effective configuration (secrets masked)."""
     s = _settings(config)
     data = s.model_dump(mode="json")
-    if data["llm"].get("api_key"):
-        key = data["llm"]["api_key"]
-        data["llm"]["api_key"] = key[:4] + "…" + key[-2:] if len(key) > 8 else "***"
+    for section in ("llm", "gui"):
+        key = (data.get(section) or {}).get("api_key")
+        if key:
+            data[section]["api_key"] = key[:4] + "…" + key[-2:] if len(key) > 8 else "***"
     console.print_json(json.dumps(data, ensure_ascii=False, default=str))
 
 
@@ -1349,6 +1354,86 @@ def config_path() -> None:
         if found
         else f"[dim]none found (defaults + env). Data dir: {DEFAULT_DATA_DIR}[/dim]"
     )
+
+
+# ============================================================================ phone
+def _traces_dir(s: Settings) -> Path:
+    return s.data_dir / "phone-traces"
+
+
+@phone_app.command("traces")
+def phone_traces(config: ConfigOpt = None, limit: int = 20) -> None:
+    """The phone tasks on record, newest first: what was asked, how it ended, how many steps."""
+    from nanomuse.phone.trace import list_traces
+
+    s = _settings(config)
+    items = list_traces(_traces_dir(s))[:limit]
+    if not items:
+        console.print(
+            "[dim]No phone traces yet. They appear once phone_task has run; "
+            f"they live in {_traces_dir(s)}[/dim]"
+        )
+        return
+    table = Table(title="Phone traces")
+    table.add_column("id", style="cyan", no_wrap=True)
+    table.add_column("when", no_wrap=True)
+    table.add_column("status")
+    table.add_column("steps", justify="right")
+    table.add_column("goal")
+    for item in items:
+        started = item.get("started")
+        when = datetime.fromtimestamp(started).strftime("%m-%d %H:%M") if started else ""
+        goal = item["goal"] if len(item["goal"]) <= 70 else item["goal"][:69] + "…"
+        table.add_row(item["id"], when, item["status"], str(item["steps"]), goal)
+    console.print(table)
+
+
+@phone_app.command("trace")
+def phone_trace(
+    trace_id: Annotated[str, typer.Argument(help="A trace id from `nanomuse phone traces`.")],
+    config: ConfigOpt = None,
+    out: Annotated[
+        Path | None,
+        typer.Option(
+            "--out", "-o", help="Write a self-contained HTML page here instead of a summary."
+        ),
+    ] = None,
+) -> None:
+    """One phone task step by step; with --out, an HTML page with every screen and where it tapped."""
+    from nanomuse.phone.trace import read_trace, render_html
+
+    s = _settings(config)
+    path = _traces_dir(s) / f"{trace_id}.jsonl"
+    records = read_trace(path) if path.exists() else []
+    if not records:
+        console.print(f"[red]No trace {trace_id!r} in {_traces_dir(s)}[/red]")
+        raise typer.Exit(1)
+    if out is not None:
+        out.write_text(render_html(records), encoding="utf-8")
+        console.print(f"wrote {out}")
+        return
+    for rec in records:
+        kind = rec.get("kind")
+        if kind == "task":
+            console.print(f"[bold]{rec.get('goal', '')}[/bold]")
+            if rec.get("app"):
+                console.print(f"[dim]app: {rec['app']}[/dim]")
+        elif kind == "step":
+            screen = rec.get("screen") or {}
+            shown = rec.get("params") or (rec.get("tool_call") or {}).get("arguments") or {}
+            line = (
+                f"[cyan]{rec.get('step', '?'):>3}[/cyan] {screen.get('app_name') or screen.get('app') or '?'}"
+                f" · {rec.get('latency_ms', 0)} ms · {rec.get('action') or '(no action)'}"
+            )
+            console.print(line)
+            console.print(f"      [dim]{json.dumps(shown, ensure_ascii=False)}[/dim]")
+            if rec.get("error"):
+                console.print(f"      [red]{rec['error']}[/red]")
+        elif kind == "end":
+            console.print(
+                f"[bold]{rec.get('status')}[/bold] after {rec.get('steps')} steps, "
+                f"{rec.get('seconds')} s — {rec.get('message', '')}"
+            )
 
 
 @app.command()

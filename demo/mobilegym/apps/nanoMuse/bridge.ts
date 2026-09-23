@@ -13,7 +13,8 @@ import { manifest } from './manifest';
  *
  * The same socket makes this simulated phone a device the agent can operate (see `gui.ts`):
  * after `hello` the module announces itself with `{"kind": "device", "gui": true}` and answers
- * the server's `device_request` messages — its screen, or one action — with `device_result`.
+ * the server's `device_request` messages — its screen as a picture, or one action by
+ * coordinates — with `device_result`.
  */
 
 type LinkState = 'off' | 'connecting' | 'online' | 'unauthorized' | 'unreachable';
@@ -197,7 +198,7 @@ class MuseBridge {
     }
     try {
       let result: unknown;
-      if (msg.op === 'screen') result = readScreen();
+      if (msg.op === 'screen') result = await readScreen();
       else if (msg.op === 'act') result = await act((msg.params ?? {}) as unknown as ActParams);
       else throw new Error(`unknown op '${msg.op}'`);
       this.send({ kind: 'device_result', id: msg.id, ok: true, result });

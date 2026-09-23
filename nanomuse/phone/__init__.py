@@ -8,14 +8,15 @@ the person would: look at the screen, tap, type, swipe. Two things provide that 
 * the MobileGym module (a simulated phone in a browser tab, for the showcase and tests).
 
 Both speak the same small protocol over the server's WebSocket (:mod:`nanomuse.phone.link`).
-The agent sees a :class:`~nanomuse.phone.screen.Screen` — the app, the visible elements with
-ids and positions, a screenshot when the device can take one — and acts through the
-``phone_*`` tools (:mod:`nanomuse.tools.phone`). Multi-step work on the screen runs in
-:class:`~nanomuse.phone.operator.PhoneOperator`, a loop with its own model, with every
-action still passing through the Sentinel.
+The agent sees a :class:`~nanomuse.phone.screen.Screen` — a screenshot, which app, how big,
+keyboard or not; no accessibility tree, because a real phone cannot be relied on to have one
+— and acts by coordinates through the ``phone_*`` tools (:mod:`nanomuse.tools.phone`).
+Multi-step work on the screen runs in :class:`~nanomuse.phone.operator.PhoneOperator`, a
+loop with its own model speaking the Qwen-VL ``mobile_use`` dialect, with every action still
+passing through the Sentinel and every run leaving a trace (:mod:`nanomuse.phone.trace`).
 """
 
 from nanomuse.phone.link import Device, PhoneLink
-from nanomuse.phone.screen import Element, Screen
+from nanomuse.phone.screen import Screen
 
-__all__ = ["Device", "Element", "PhoneLink", "Screen"]
+__all__ = ["Device", "PhoneLink", "Screen"]

@@ -1,3 +1,4 @@
+import json
 import re
 
 from typer.testing import CliRunner
@@ -102,3 +103,64 @@ def test_triggers_commands(tmp_path, monkeypatch):
     assert runner.invoke(app, ["triggers", "cancel", trigger_id]).exit_code == 1
     assert "no triggers" in plain(runner.invoke(app, ["triggers", "list"]).output)
     assert trigger_id in plain(runner.invoke(app, ["triggers", "list", "--all"]).output)
+
+
+def test_phone_trace_commands(tmp_path, monkeypatch):
+    for var in ("DEEPSEEK_API_KEY", "OPENAI_API_KEY", "NANOMUSE_CONFIG"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(config_module, "DEFAULT_DATA_DIR", tmp_path / "home")
+    monkeypatch.setenv("NANOMUSE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("NANOMUSE_WORKSPACE", str(tmp_path / "ws"))
+    (tmp_path / "ws").mkdir()
+
+    assert "No phone traces yet" in plain(runner.invoke(app, ["phone", "traces"]).output)
+    assert runner.invoke(app, ["phone", "trace", "pt-nope"]).exit_code == 1
+
+    traces = tmp_path / "data" / "phone-traces"
+    traces.mkdir(parents=True)
+    records = [
+        {
+            "kind": "task",
+            "id": "pt-1",
+            "goal": "查明天的高铁",
+            "app": "铁路12306",
+            "t": 1758600000.0,
+        },
+        {
+            "kind": "step",
+            "step": 1,
+            "t": 1758600002.0,
+            "latency_ms": 1200,
+            "screen": {"app": "railway12306", "app_name": "铁路12306", "width": 360, "height": 800},
+            "thought": "先点出发地",
+            "action": "点击「上海」。",
+            "tool_call": {
+                "name": "mobile_use",
+                "arguments": {"action": "click", "coordinate": [0.1, 0.2]},
+            },
+            "params": {"action": "tap", "x": 36, "y": 160, "label": "点击「上海」。"},
+        },
+        {
+            "kind": "end",
+            "status": "done",
+            "message": "G1 06:30",
+            "steps": 1,
+            "seconds": 3.1,
+            "t": 1758600004.0,
+        },
+    ]
+    (traces / "pt-1.jsonl").write_text(
+        "\n".join(json.dumps(r, ensure_ascii=False) for r in records) + "\n", encoding="utf-8"
+    )
+
+    out = plain(runner.invoke(app, ["phone", "traces"]).output)
+    assert "pt-1" in out and "done" in out and "查明天的高铁" in out
+
+    out = plain(runner.invoke(app, ["phone", "trace", "pt-1"]).output)
+    assert "点击「上海」。" in out and '"x": 36' in out and "G1 06:30" in out
+
+    page = tmp_path / "trace.html"
+    assert runner.invoke(app, ["phone", "trace", "pt-1", "-o", str(page)]).exit_code == 0
+    html = page.read_text(encoding="utf-8")
+    assert "查明天的高铁" in html and "点击「上海」。" in html and "G1 06:30" in html
