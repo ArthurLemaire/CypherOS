@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "openmuse"
-version = "0.5.0"
+version = "0.6.0"
 description = "Open-source version of Meta's Muse: a personal agent with a phone app, a Sentinel gatekeeper, a credential vault, memory and goals. Bring your own model."
 readme = "README.md"
 license = { text = "MIT" }
@@ -12,7 +12,7 @@ requires-python = ">=3.11"
 authors = [{ name = "OpenMuse Contributors" }]
 keywords = ["agent", "ai", "llm", "personal-assistant", "muse", "meta-muse", "deepseek", "mcp"]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",
   "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",

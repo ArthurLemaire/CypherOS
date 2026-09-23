@@ -23,6 +23,7 @@ import re
 import tomllib
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -388,6 +389,20 @@ def find_config_file(explicit: str | Path | None = None) -> Path | None:
     return None
 
 
+def _provider_key_vars(base_url: str) -> tuple[str, ...]:
+    """The environment variables that may stand in for a missing ``llm.api_key``.
+
+    A key belongs to one provider: DeepSeek's key is only tried for ``api.deepseek.com``
+    and OpenAI's only for ``api.openai.com``, so a config pointed at one provider never
+    sends the other's key. Any other OpenAI-compatible host (a gateway, vLLM, OpenRouter)
+    gets ``OPENAI_API_KEY`` alone — the convention such endpoints share.
+    """
+    host = (urlparse(base_url).hostname or "").lower()
+    if host == "deepseek.com" or host.endswith(".deepseek.com"):
+        return ("DEEPSEEK_API_KEY",)
+    return ("OPENAI_API_KEY",)
+
+
 def _apply_env_overrides(raw: dict[str, Any]) -> None:
     llm = raw.setdefault("llm", {})
     mapping = {
@@ -402,7 +417,8 @@ def _apply_env_overrides(raw: dict[str, Any]) -> None:
         if (val := os.environ.get(env)) not in (None, ""):
             llm[key] = val
     if not llm.get("api_key"):
-        for env in ("DEEPSEEK_API_KEY", "OPENAI_API_KEY"):
+        base_url = llm.get("base_url") or LLMSettings.model_fields["base_url"].default or ""
+        for env in _provider_key_vars(str(base_url)):
             if val := os.environ.get(env):
                 llm["api_key"] = val
                 break
