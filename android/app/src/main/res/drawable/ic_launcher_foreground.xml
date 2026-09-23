@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- the sparkle from web/public/icon.svg, fitted to the adaptive-icon safe zone -->
+    <group
+        android:scaleX="0.15"
+        android:scaleY="0.15"
+        android:translateX="15.6"
+        android:translateY="15.6">
+        <path
+            android:fillColor="#F2FFFFFF"
+            android:pathData="M256 96c12 0 22 8 25 20l14 62c6 26 26 46 52 52l62 14c12 3 20 13 20 25s-8 22-20 25l-62 14c-26 6-46 26-52 52l-14 62c-3 12-13 20-25 20s-22-8-25-20l-14-62c-6-26-26-46-52-52l-62-14c-12-3-20-13-20-25s8-22 20-25l62-14c26-6 46-26 52-52l14-62c3-12 13-20 25-20z" />
+        <path
+            android:fillColor="#CCFFFFFF"
+            android:pathData="M392 94a26 26 0 1 1 0 52a26 26 0 1 1 0-52z" />
+    </group>
+</vector>

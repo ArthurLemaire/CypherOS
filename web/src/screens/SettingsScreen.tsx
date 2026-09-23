@@ -1,5 +1,6 @@
 import { Box, Check, ChevronRight, LogOut, Moon, Shield, ShieldAlert, ShieldCheck } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
+import { androidApp } from "../android";
 import { api, setToken } from "../api";
 import { Avatar } from "../components/Avatar";
 import { BackBar } from "../components/BackBar";
@@ -251,7 +252,7 @@ export function SettingsScreen() {
 
         {/* Notifications */}
         <Section title={t("Notifications")}>
-          <PushSettings name={state.profile?.name ?? "Muse"} />
+          {androidApp() ? <PhoneAppSettings name={state.profile?.name ?? "OpenMuse"} /> : <PushSettings name={state.profile?.name ?? "OpenMuse"} />}
         </Section>
 
         {/* Model */}
@@ -328,16 +329,43 @@ export function SettingsScreen() {
           <button
             type="button"
             onClick={() => {
+              const phone = androidApp();
+              if (phone) {
+                phone.disconnect();
+                return;
+              }
               setToken("");
               window.location.reload();
             }}
             className="w-full rounded-2xl border border-border py-2.5 text-[14px] font-medium flex items-center justify-center gap-2 text-muted"
           >
-            <LogOut size={16} /> {t("Forget this device's access token")}
+            <LogOut size={16} /> {androidApp() ? t("Disconnect from this server") : t("Forget this device's access token")}
           </button>
         </Section>
       </div>
     </div>
+  );
+}
+
+/** Inside the Android app: the app's own background connection stands in for Web Push. */
+function PhoneAppSettings({ name }: { name: string }) {
+  const t = useT();
+  const phone = androidApp();
+  const [on, setOn] = useState(() => phone?.notificationsEnabled() ?? false);
+  if (!phone) return null;
+  return (
+    <>
+      <Toggle
+        label={t("Let {name} notify this phone", { name })}
+        hint={t("The app stays connected to your server in the background. Approvals, questions and finished background work arrive as notifications and open the right chat.")}
+        checked={on}
+        onChange={(v) => {
+          phone.setNotificationsEnabled(v);
+          setOn(v);
+        }}
+      />
+      <div className="text-[12.5px] text-muted">{t("OpenMuse for Android {version}", { version: phone.version() })}</div>
+    </>
   );
 }
 

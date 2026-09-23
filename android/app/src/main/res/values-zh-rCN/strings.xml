@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">OpenMuse</string>
+
+    <string name="connect_title">连接你的 OpenMuse</string>
+    <string name="connect_body">在电脑上运行 <b>openmuse serve --host 0.0.0.0</b>，扫描它打印的二维码，或直接输入地址。</string>
+    <string name="connect_scan">扫描二维码</string>
+    <string name="connect_or">或</string>
+    <string name="connect_url_hint">http://192.168.1.20:8787/?token=…</string>
+    <string name="connect_button">连接</string>
+    <string name="connect_checking">正在连接…</string>
+    <string name="connect_bad_url">这不是服务器地址。地址形如 http://主机:8787/?token=…</string>
+    <string name="connect_no_token">地址里没有令牌。请使用 openmuse serve 打印的链接（末尾是 ?token=…）。</string>
+    <string name="connect_unreachable">无法连接 %1$s。服务器在运行吗？手机和电脑在同一个网络吗？</string>
+    <string name="connect_unauthorized">服务器拒绝了这个令牌。请从 openmuse serve 复制当前链接。</string>
+    <string name="connect_scan_prompt">把摄像头对准 openmuse serve 打印的二维码</string>
+
+    <string name="channel_attention">需要你处理</string>
+    <string name="channel_attention_desc">来自智能体的审批和提问</string>
+    <string name="channel_updates">更新</string>
+    <string name="channel_updates_desc">后台工作的结果</string>
+    <string name="channel_link">连接</string>
+    <string name="channel_link_desc">保持应用与服务器的连接</string>
+    <string name="link_online">已连接 %1$s</string>
+    <string name="link_connecting">正在连接 %1$s…</string>
+    <string name="link_offline">服务器无法访问，正在重试…</string>
+    <string name="link_unauthorized">服务器拒绝了令牌。打开应用重新连接。</string>
+    <string name="notify_approval_title">%1$s 需要你的批准</string>
+    <string name="notify_question_title">%1$s 有个问题</string>
+    <string name="notify_for">用于：%1$s</string>
+    <string name="notify_checkin">%1$s · 签到</string>
+
+    <string name="offline_title">连不上你的 OpenMuse</string>
+    <string name="offline_body">%1$s 没有响应。请确认服务器在运行，并且手机和电脑在同一个网络。</string>
+    <string name="retry">重试</string>
+    <string name="change_server">更换服务器</string>
+</resources>

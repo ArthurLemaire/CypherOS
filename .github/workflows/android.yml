@@ -1,0 +1,85 @@
+name: Android
+
+# Builds the Android app (android/) and, on version tags, attaches the APK to the GitHub
+# release. Signing: set the ANDROID_KEYSTORE_B64 / ANDROID_KEYSTORE_PASSWORD /
+# ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD secrets (see docs/android.md). Without them the
+# APK is signed with a throwaway debug key, which installs but cannot update a signed build.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths:
+      - "android/**"
+      - ".github/workflows/android.yml"
+  pull_request:
+    paths:
+      - "android/**"
+      - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    name: build APK
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v5
+
+      - name: Release keystore
+        if: ${{ secrets.ANDROID_KEYSTORE_B64 != '' }}
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          {
+            echo "storeFile=$RUNNER_TEMP/release.jks"
+            echo "storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
+            echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}"
+            echo "keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}"
+          } > keystore.properties
+
+      - name: Build
+        run: ./gradlew --no-daemon assembleRelease lint
+
+      - name: Name the APK
+        id: apk
+        run: |
+          version="$(sed -n 's/^ *versionName = "\(.*\)"/\1/p' app/build.gradle.kts)"
+          out="openmuse-${version}.apk"
+          cp app/build/outputs/apk/release/app-release.apk "$out"
+          echo "path=android/$out" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: openmuse-apk
+          path: ${{ steps.apk.outputs.path }}
+          if-no-files-found: error
+
+      - name: Tag matches the app version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$tag" != "${{ steps.apk.outputs.version }}" ]; then
+            echo "tag v$tag does not match android versionName ${{ steps.apk.outputs.version }}"; exit 1
+          fi
+
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.apk.outputs.path }}
+          generate_release_notes: false

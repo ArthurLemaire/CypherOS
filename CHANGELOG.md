@@ -4,6 +4,10 @@ All notable changes to OpenMuse. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+### Added
+
+- **An Android app.** `android/` is a native shell around the web app: connect by scanning the QR code `openmuse serve` prints (or paste the link), then the same app in a WebView — with the file picker for attachments, downloads to the phone, links opening in the real browser, and plain HTTP on the LAN. What the browser could not do: a foreground service keeps one WebSocket open to your server while the app is closed, so approvals, questions and the last word of background work arrive as notifications that open the right chat; a resolved approval takes its notification down; reconnects after a network change or a reboot. Inside the app, *Settings → Notifications* shows the phone's switch instead of Web Push, and *About* has *Disconnect from this server*. Built by `.github/workflows/android.yml` and attached to each release as `openmuse-<version>.apk` (Android 8.0+). See [docs/android.md](docs/android.md).
+
 ## [0.5.0] — 2026-09-23
 
 The agent sees what you send it and finds what it knows. Photos and files go from the phone into a message and the agent works from what is in them — a picture to a model that takes images, a PDF read as text; memories come back by what they mean, not only by the words they share with the message; and web search has a provider with an API behind it when DuckDuckGo's scraping is not enough.

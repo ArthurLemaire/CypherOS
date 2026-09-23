@@ -35,6 +35,18 @@ web/dist/
 web/.vite/
 npm-debug.log*
 
+# android app (the signing key lives outside the repo; see docs/android.md)
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/keystore.properties
+android/.kotlin/
+*.jks
+*.keystore
+*.apk
+*.aab
+
 # editors / OS
 .vscode/
 .idea/
