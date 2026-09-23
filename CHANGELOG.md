@@ -10,7 +10,7 @@ The app as Meta Muse looks, and an Android app. A plush avatar that moves while 
 
 ### Added
 
-- **An Android app.** `android/` is a native shell around the web app: connect by scanning the QR code `openmuse serve` prints (or paste the link), then the same app in a WebView — with the file picker for attachments, downloads to the phone, links opening in the real browser, and plain HTTP on the LAN. What the browser could not do: a foreground service keeps one WebSocket open to your server while the app is closed, so approvals, questions and the last word of background work arrive as notifications that open the right chat; a resolved approval takes its notification down; reconnects after a network change or a reboot. Inside the app, *Settings → Notifications* shows the phone's switch instead of Web Push, and *About* has *Disconnect from this server*. Built by `.github/workflows/android.yml` and attached to each release as `openmuse-<version>.apk` and as `openmuse.apk`, so `https://github.com/OpenMuseAgent/OpenMuse/releases/latest/download/openmuse.apk` always points at the current one (Android 8.0+). See [docs/android.md](docs/android.md).
+- **An Android app.** `android/` is a native shell around the web app: connect by scanning the QR code `openmuse serve` prints (or paste the link), then the same app in a WebView — with the file picker for attachments, downloads to the phone, links opening in the real browser, and plain HTTP on the LAN. What the browser could not do: a foreground service keeps one WebSocket open to your server while the app is closed, so approvals, questions and the last word of background work arrive as notifications that open the right chat; a resolved approval takes its notification down; reconnects after a network change or a reboot. Inside the app, *Settings → Notifications* shows the phone's switch instead of Web Push, and *About* has *Disconnect from this server*. Built by `.github/workflows/android.yml` and attached to each release as `openmuse-<version>.apk` and as `openmuse.apk`, so `https://github.com/nano-muse/nanoMuse/releases/latest/download/openmuse.apk` always points at the current one (Android 8.0+). See [docs/android.md](docs/android.md).
 - **A feed written for you.** The Feed tab opens with *Feed instructions* — one prompt in your words: topics to follow, nudges on your goals, a morning plan, the tone — and posts the agent writes from that and what it knows about you (memory, goals, today's calendar, the last conversation): a few short Markdown posts a day, in your language, each with a follow-up you can send to the chat. A new batch is written once a day while background work is on and outside quiet hours, or on demand (*New posts*); the phone gets one notification per batch. What happened while you were away stays below, as before. `GET /api/feed/posts`, `PUT /api/feed/instructions`, `POST /api/feed/posts/refresh`, `DELETE /api/feed/posts/{id}`.
 - **A stop button.** The status sheet (tap the avatar) shows *Stop* while a run is on: the run ends, a card waiting on you expires, what was queued behind it is dropped, and the transcript is left in a shape the model can continue from. `POST /api/threads/{id}/stop`.
 - **Plush avatars.** Six dolls to pick from in setup and in Settings, with an idle breath, a sway while working and a hop while waiting for you (still under *reduce motion*); tap one and it wiggles. An emoji on a colour is still there for anyone who prefers it. `profile.avatar` in the settings API; old profiles keep their emoji.
@@ -96,7 +96,7 @@ The first release meant for other people's phones: the Muse-style app with Feed,
 - `tool_mode = "auto"` (the new default): the API's function calling, and when the endpoint rejects the `tools` field — Ollama for a model without a tool template, vLLM without a tool parser — tools are described in the prompt for the rest of the run. Prompt mode also accepts the ```` ```tool_call ```` / ```` ```json ```` fences small models emit instead of the tags.
 - `scripts/provider_check.py`: five everyday tasks against any model, one line each; results for Ollama models in `docs/configuration.md`.
 - Small-model repairs: a reply that is a bare JSON object naming a tool counts as a tool call in native mode too (Llama 3.x); JSON arguments may contain real newlines; `files.write` turns a one-line text with spelled-out `\n` into lines. `qwen3:8b`, `llama3.2:3b` and `gemma3:4b` all pass the provider check.
-- CI runs on Ubuntu (Python 3.11–3.13), macOS and Windows, type-checks with mypy, lints and unit-tests the web app (ESLint, Vitest), and publishes `ghcr.io/openmuseagent/openmuse` for amd64 and arm64.
+- CI runs on Ubuntu (Python 3.11–3.13), macOS and Windows, type-checks with mypy, lints and unit-tests the web app (ESLint, Vitest), and publishes `ghcr.io/nano-muse/openmuse` for amd64 and arm64.
 
 ### Changed
 
@@ -128,10 +128,10 @@ First public release.
 - Mobile-first web app built with React, Vite and Tailwind, shipped inside the package.
 - Docker image and Compose file; GitHub Actions CI; PyPI publishing through Trusted Publishing.
 
-[Unreleased]: https://github.com/OpenMuseAgent/OpenMuse/compare/v0.6.0...HEAD
-[0.6.0]: https://github.com/OpenMuseAgent/OpenMuse/compare/v0.5.0...v0.6.0
-[0.5.0]: https://github.com/OpenMuseAgent/OpenMuse/compare/v0.4.0...v0.5.0
-[0.4.0]: https://github.com/OpenMuseAgent/OpenMuse/compare/v0.3.0...v0.4.0
-[0.3.0]: https://github.com/OpenMuseAgent/OpenMuse/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/OpenMuseAgent/OpenMuse/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/OpenMuseAgent/OpenMuse/releases/tag/v0.1.0
+[Unreleased]: https://github.com/nano-muse/nanoMuse/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/nano-muse/nanoMuse/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/nano-muse/nanoMuse/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/nano-muse/nanoMuse/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/nano-muse/nanoMuse/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/nano-muse/nanoMuse/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.0

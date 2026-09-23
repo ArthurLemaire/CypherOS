@@ -20,7 +20,7 @@ from openmuse.tools import WebSearch
 from openmuse.vault import CredentialVault
 
 DDG_ROWS = [
-    {"title": "OpenMuse", "href": "https://github.com/OpenMuseAgent/OpenMuse", "body": "An agent."},
+    {"title": "OpenMuse", "href": "https://github.com/nano-muse/nanoMuse", "body": "An agent."},
     {"title": "Muse", "href": "https://example.com/muse", "body": "Something else."},
 ]
 

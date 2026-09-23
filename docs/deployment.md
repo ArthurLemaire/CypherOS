@@ -26,7 +26,7 @@ Without cloning — the published image (linux/amd64 and linux/arm64, so a Raspb
 ```bash
 docker run -d --name muse -p 8787:8787 --env-file .env \
   -v openmuse-data:/data -v "$PWD/workspace:/workspace" \
-  ghcr.io/openmuseagent/openmuse:latest
+  ghcr.io/nano-muse/openmuse:latest
 docker logs muse                          # the URL with the access token
 ```
 

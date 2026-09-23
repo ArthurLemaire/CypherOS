@@ -13,7 +13,7 @@ Everything else is the same web app, served by your `openmuse serve`.
 
 ## Install
 
-Download [`openmuse.apk`](https://github.com/OpenMuseAgent/OpenMuse/releases/latest/download/openmuse.apk) (always the current release; the same file is also there as `openmuse-<version>.apk`) and open it on the phone. Android asks once to allow installs from your browser or file manager. Android 8.0 (API 26) or newer, any CPU. Every release is signed with the same key, so a newer APK installs over the old one and keeps its connection.
+Download [`openmuse.apk`](https://github.com/nano-muse/nanoMuse/releases/latest/download/openmuse.apk) (always the current release; the same file is also there as `openmuse-<version>.apk`) and open it on the phone. Android asks once to allow installs from your browser or file manager. Android 8.0 (API 26) or newer, any CPU. Every release is signed with the same key, so a newer APK installs over the old one and keeps its connection.
 
 Then:
 

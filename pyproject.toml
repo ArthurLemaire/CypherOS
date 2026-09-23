@@ -54,9 +54,9 @@ all = ["openmuse[browser,dev]"]
 openmuse = "openmuse.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/OpenMuseAgent/OpenMuse"
-Repository = "https://github.com/OpenMuseAgent/OpenMuse"
-Issues = "https://github.com/OpenMuseAgent/OpenMuse/issues"
+Homepage = "https://github.com/nano-muse/nanoMuse"
+Repository = "https://github.com/nano-muse/nanoMuse"
+Issues = "https://github.com/nano-muse/nanoMuse/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["openmuse"]
