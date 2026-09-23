@@ -4,6 +4,8 @@ A session's container is told its model lives at ``http://gateway/llm/<id>/main`
 a per-session key. Calls come here, the budget is checked, the demo key is put on, and the
 request goes out unchanged otherwise — streaming included. The reply's ``usage`` (asked for
 explicitly on streams) is what the budget counts; when a provider sends none, size stands in.
+Trial credentials (``/llm/trial/<id>/<lane>/...``, see ``trials.py``) ride the same code with
+their own budget check.
 """
 
 from __future__ import annotations
@@ -11,13 +13,14 @@ from __future__ import annotations
 import json
 import logging
 import re
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 
 import httpx
 from starlette.background import BackgroundTask
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response, StreamingResponse
 
+from .config import Lane
 from .sessions import Refused, Session, SessionManager
 
 log = logging.getLogger("showcase.llm")
@@ -109,11 +112,29 @@ async def forward(
     lane: str,
     path: str,
 ) -> Response:
-    try:
+    """A session container's model call."""
+
+    def pick() -> Lane:
         upstream = manager.llm_lane(sess, bearer(request), lane)
+        manager.touch(sess)
+        return upstream
+
+    return await relay(request, client, path, pick, lambda used: manager.record(sess, used))
+
+
+async def relay(
+    request: Request,
+    client: httpx.AsyncClient,
+    path: str,
+    pick: Callable[[], Lane],
+    record: Callable[[int], None],
+) -> Response:
+    """Send the request on to the lane ``pick`` returns (or refuse as it says), and hand the
+    tokens used to ``record`` once the reply — streamed or not — is through."""
+    try:
+        upstream = pick()
     except Refused as exc:
         return refusal(exc)
-    manager.touch(sess)
     body = prepare_body(await request.body(), path)
     headers = {k: v for k, v in request.headers.items() if k.lower() not in _SKIP_REQUEST_HEADERS}
     headers["authorization"] = f"Bearer {upstream.api_key}"
@@ -140,7 +161,7 @@ async def forward(
                     yield chunk
             finally:
                 payload = b"".join(chunks)
-                manager.record(sess, extract_usage(payload) or (sent + len(payload)) // 4)
+                record(extract_usage(payload) or (sent + len(payload)) // 4)
 
         return StreamingResponse(
             stream(),
@@ -152,5 +173,5 @@ async def forward(
     payload = await resp.aread()
     await resp.aclose()
     if resp.status_code < 400:
-        manager.record(sess, extract_usage(payload) or (sent + len(payload)) // 4)
+        record(extract_usage(payload) or (sent + len(payload)) // 4)
     return Response(payload, status_code=resp.status_code, headers=out_headers)

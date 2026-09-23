@@ -5,8 +5,9 @@ Two kinds of host reach this process:
 - ``<session-id>.<SESSION_DOMAIN>`` — the phone talking to its Muse. Everything on such a host
   is relayed to that session's container (HTTP and ``/ws``).
 - everything else — the showcase itself: ``/api/demo/*`` to start and inspect sessions,
-  ``/llm/*`` for the containers' model calls (they reach us over the sessions network), and,
-  in development, the built MobileGym as static files.
+  ``/api/trial`` for the phone app's trial credentials, ``/llm/*`` for the containers' model
+  calls (they reach us over the sessions network) and the trials' (they come from the
+  internet, through Caddy), and, in development, the built MobileGym as static files.
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ from .config import Settings
 from .proxy import proxy_http, proxy_ws
 from .runner import DockerRunner
 from .sessions import Provider, Refused, SessionManager, check_provider
+from .trials import TrialManager, TrialStore
 
 log = logging.getLogger("showcase")
 
@@ -54,6 +56,11 @@ class ProviderIn(BaseModel):
 
 class SessionIn(BaseModel):
     provider: ProviderIn | None = None
+
+
+class TrialIn(BaseModel):
+    # a random id the app makes once and keeps; long enough that guessing one is not a plan
+    device: str = Field(min_length=16, max_length=128, pattern=r"^[A-Za-z0-9_.:-]+$")
 
 
 def client_ip(request: Request, trust_proxy: bool) -> str:
@@ -84,10 +91,17 @@ def create_app(
     settings: Settings,
     manager: SessionManager,
     client: httpx.AsyncClient | None = None,
+    trials: TrialManager | None = None,
 ) -> FastAPI:
     http = client or httpx.AsyncClient(
         timeout=httpx.Timeout(300, connect=10), follow_redirects=False
     )
+    if trials is None:
+        trials = TrialManager(
+            settings,
+            TrialStore(settings.trial_db if settings.trial_enabled else ":memory:"),
+            clock=manager.clock,
+        )
 
     @contextlib.asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -149,6 +163,7 @@ def create_app(
             "byok_hosts": list(settings.byok_hosts) if settings.byok_enabled else [],
             "quota": {"requests": settings.session_requests, "tokens": settings.session_tokens},
             **manager.stats(),
+            "trial": trials.stats(),
         }
 
     @app.post("/api/demo/session", status_code=201)
@@ -183,6 +198,37 @@ def create_app(
             return _refused(exc)
         await manager.end(sess.id, reason="ended by the visitor")
         return Response(status_code=204)
+
+    # ------------------------------------------------------------- trial credentials
+    @app.post("/api/trial", status_code=201)
+    async def trial_issue(body: TrialIn, request: Request) -> Response:
+        try:
+            trial, key = trials.issue(body.device, client_ip(request, settings.trust_proxy))
+        except Refused as exc:
+            return _refused(exc)
+        return JSONResponse(trial.public(settings, key), status_code=201)
+
+    @app.get("/api/trial/{tid}")
+    async def trial_show(tid: str, request: Request) -> Response:
+        try:
+            trial = trials.authenticate(tid, llm.bearer(request))
+        except Refused as exc:
+            return _refused(exc)
+        return JSONResponse(trial.public(settings))
+
+    @app.api_route("/llm/trial/{tid}/{lane}/{path:path}", methods=["GET", "POST"])
+    async def trial_model(tid: str, lane: str, path: str, request: Request) -> Response:
+        try:
+            trial = trials.authenticate(tid, llm.bearer(request))
+        except Refused as exc:
+            return llm.refusal(exc)
+        return await llm.relay(
+            request,
+            http,
+            path,
+            lambda: trials.lane(trial, lane),
+            lambda used: trials.record(trial, used),
+        )
 
     # ------------------------------------------------------------- the containers' model calls
     @app.api_route("/llm/{sid}/{lane}/{path:path}", methods=["GET", "POST"])
