@@ -27,12 +27,14 @@ from openmuse.config import (
 from openmuse.contacts import OWN
 from openmuse.logger import logger
 from openmuse.schema import Message
+from openmuse.search import WebSearchProvider
 from openmuse.tools import (
     Calendar,
     Contacts,
     MCPManager,
     ReadEmails,
     SendEmail,
+    WebSearch,
     playwright_available,
 )
 from openmuse.tools.browser import Browser
@@ -42,6 +44,7 @@ if TYPE_CHECKING:
 
 LLM_KEY = "LLM_API_KEY"
 EMBEDDINGS_KEY = "EMBEDDINGS_API_KEY"
+SEARCH_KEY = "SEARCH_API_KEY"
 EMAIL_ADDRESS = "EMAIL_ADDRESS"
 EMAIL_PASSWORD = "EMAIL_PASSWORD"
 
@@ -153,6 +156,7 @@ class Connections:
             },
             "providers": PROVIDERS,
             "embeddings": self._embeddings_view(),
+            "search": self._search_view(),
             "email": {
                 "enabled": email.enabled,
                 "configured": configured,
@@ -305,6 +309,76 @@ class Connections:
             "total": status["total"] if status else (app_.memory.count() if app_.memory else 0),
             "status": status["status"] if status else "off",
         }
+
+    def _search_view(self) -> dict[str, Any]:
+        from openmuse.search import PROVIDERS as SEARCH_PROVIDERS
+
+        web = self.settings.connectors.search
+        key = web.api_key
+        if not key:
+            key_source = "none"
+        elif self.vault.has_placeholders(key):
+            key_source = "vault" if self.vault.get(SEARCH_KEY) else "missing"
+        else:
+            key_source = "config"
+        provider = self._search_provider()
+        return {
+            "provider": web.provider,
+            "base_url": web.base_url,
+            "key_source": key_source,
+            "configured": provider.configured if provider else True,
+            "from_app": bool(self.data.get("search")),
+            "providers": [
+                {
+                    "id": pid,
+                    "label": p["label"],
+                    "needs_key": p["needs_key"],
+                    "keys_url": p.get("keys_url", ""),
+                }
+                for pid, p in SEARCH_PROVIDERS.items()
+            ],
+        }
+
+    def _search_provider(self) -> WebSearchProvider | None:
+        tool = self.svc.app.tools.get("web_search")
+        return tool.provider if isinstance(tool, WebSearch) else None
+
+    def set_search(self, body: dict[str, Any]) -> dict[str, Any]:
+        """Who answers web searches: DuckDuckGo (nothing to set), Brave or Tavily with a
+        key, or a SearXNG instance by URL."""
+        from openmuse.search import PROVIDERS as SEARCH_PROVIDERS
+
+        web = dict(self.data.get("search") or {})
+        if body.get("provider") is not None:
+            if body["provider"] not in SEARCH_PROVIDERS:
+                raise ValueError("provider must be one of " + ", ".join(SEARCH_PROVIDERS))
+            web["provider"] = body["provider"]
+        if body.get("base_url") is not None:
+            web["base_url"] = str(body["base_url"]).strip().rstrip("/")
+            if web["base_url"] and not re.match(r"^https?://", web["base_url"]):
+                raise ValueError("base_url must start with http:// or https://")
+        api_key = body.get("api_key")
+        if api_key:
+            self.vault.set(SEARCH_KEY, str(api_key).strip())
+            web["api_key"] = "{{vault:" + SEARCH_KEY + "}}"
+        elif api_key == "":
+            self.vault.delete(SEARCH_KEY)
+            web["api_key"] = ""
+        self.data["search"] = web
+        self._save()
+        apply_app_settings(self.settings, {"search": web})
+        self._publish()
+        return self._search_view()
+
+    async def test_search(self) -> dict[str, Any]:
+        """One search against the configured provider, no fallback."""
+        provider = self._search_provider() or WebSearchProvider(
+            self.settings.connectors.search, vault=self.vault
+        )
+        if not provider.configured:
+            what = "an API key" if provider.name in ("brave", "tavily") else "the instance URL"
+            return {"ok": False, "error": f"{provider.label} needs {what} first"}
+        return await provider.probe()
 
     def set_embeddings(self, body: dict[str, Any]) -> dict[str, Any]:
         """Recall by meaning: the mode, and where the vectors come from — the model's own

@@ -184,6 +184,9 @@ export const api = {
   setEmbeddings: (body: Record<string, unknown>) =>
     request<ConnectionsData["embeddings"]>("/api/connections/embeddings", { method: "PUT", body: JSON.stringify(body) }),
   testEmbeddings: () => request<TestResult>("/api/connections/embeddings/test", { method: "POST" }),
+  setSearch: (body: Record<string, unknown>) =>
+    request<ConnectionsData["search"]>("/api/connections/search", { method: "PUT", body: JSON.stringify(body) }),
+  testSearch: () => request<TestResult>("/api/connections/search/test", { method: "POST" }),
   setEmail: (body: Record<string, unknown>) =>
     request<ConnectionsData["email"]>("/api/connections/email", { method: "PUT", body: JSON.stringify(body) }),
   disconnectEmail: () => request<ConnectionsData["email"]>("/api/connections/email", { method: "DELETE" }),

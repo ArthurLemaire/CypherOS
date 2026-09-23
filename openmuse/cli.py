@@ -1446,6 +1446,16 @@ async def _doctor(settings: Settings, check_model: bool) -> None:
                 "memory.embeddings = on, but the embeddings endpoint cannot be used",
             )
     if app_ is not None:
+        from openmuse.search import WebSearchProvider
+
+        web = WebSearchProvider(settings.connectors.search, vault=app_.vault)
+        line(
+            None if web.configured else False,
+            f"web search: {web.describe()}"
+            + ("" if web.configured else " · searches fall back to DuckDuckGo"),
+            f"connectors.search.provider = {web.name}, but it is not configured",
+        )
+    if app_ is not None:
         box = app_.sandbox
         line(
             True if box.active else (False if settings.sandbox.mode == "bwrap" else None),

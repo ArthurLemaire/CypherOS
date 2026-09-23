@@ -122,6 +122,7 @@ class Policy:
             and s.taint_tracking
             and tainted
             and assessment.egress
+            and not assessment.egress_configured
             and not host_allowed(assessment.egress_target, s.egress_allowlist)
         ):
             target = assessment.egress_target or "an unknown destination"

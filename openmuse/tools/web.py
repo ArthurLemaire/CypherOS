@@ -1,4 +1,5 @@
-"""Web tools: search (DuckDuckGo, no API key) and fetch (read-only GET → markdown)."""
+"""Web tools: search (DuckDuckGo by default, Brave / Tavily / SearXNG by settings) and fetch
+(read-only GET → markdown)."""
 
 from __future__ import annotations
 
@@ -10,8 +11,11 @@ from typing import Any
 from urllib.parse import urlparse
 
 import httpx
+from pydantic import Field
 
+from openmuse.config import SearchSettings
 from openmuse.schema import RiskLevel, ToolResult
+from openmuse.search import WebSearchProvider
 from openmuse.tools.base import BaseTool, CallAssessment
 
 USER_AGENT = (
@@ -82,10 +86,13 @@ async def fetch_public(
 
 
 class WebSearch(BaseTool):
+    """``web_search``: whichever provider ``[connectors.search]`` names (DuckDuckGo when
+    none is), with DuckDuckGo as the fallback when that one fails."""
+
     name: str = "web_search"
     description: str = (
-        "Search the web (DuckDuckGo). Returns titles, URLs and snippets. Use `web_fetch` to read a "
-        "result in full."
+        "Search the web. Returns titles, URLs and snippets. Use `web_fetch` to read a result in "
+        "full."
     )
     parameters: dict[str, Any] = {
         "type": "object",
@@ -101,12 +108,15 @@ class WebSearch(BaseTool):
     }
     risk: RiskLevel = RiskLevel.SAFE
     egress: bool = True
+    # Reads the settings live, so a provider picked in the app applies to the next search.
+    provider: WebSearchProvider = Field(default_factory=lambda: WebSearchProvider(SearchSettings()))
 
     def assess(self, args: dict[str, Any]) -> CallAssessment:
         return CallAssessment(
             risk=RiskLevel.SAFE,
             egress=True,
-            egress_target="duckduckgo.com",
+            egress_target=self.provider.host,
+            egress_configured=True,  # the owner picked the provider; the model cannot redirect it
             summary=f"web_search: {str(args.get('query', ''))[:120]}",
         )
 
@@ -116,25 +126,15 @@ class WebSearch(BaseTool):
         if not query.strip():
             return ToolResult.fail("empty query")
         max_results = max(1, min(int(max_results or 6), 20))
-
-        def _search() -> list[dict[str, Any]]:
-            from ddgs import DDGS
-
-            with DDGS() as ddgs:
-                return list(ddgs.text(query, region=region or "wt-wt", max_results=max_results))
-
         try:
-            results = await asyncio.to_thread(_search)
+            results, note = await self.provider.search(query, max_results, region or "")
         except Exception as exc:  # noqa: BLE001
             return ToolResult.fail(f"search failed: {exc}")
         if not results:
-            return ToolResult(output="No results.")
-        lines = []
-        for i, r in enumerate(results, 1):
-            title = r.get("title") or "(no title)"
-            url = r.get("href") or r.get("url") or ""
-            body = (r.get("body") or "").strip()
-            lines.append(f"{i}. {title}\n   {url}\n   {body}")
+            return ToolResult(output=f"({note})\nNo results." if note else "No results.")
+        lines = [r.render(i) for i, r in enumerate(results, 1)]
+        if note:
+            lines.insert(0, f"({note})")
         return ToolResult(output="\n".join(lines))
 
 

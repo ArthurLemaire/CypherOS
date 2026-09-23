@@ -46,6 +46,14 @@ def test_doctor_reports_the_setup_without_calling_the_model(tmp_path, monkeypatc
     assert "qwen3:8b" in out and "all good" in out
     assert "reminders" in out and "shell" in out  # the tool list
     assert "skipped" in out
+    assert "web search: DuckDuckGo (no key needed)" in out
+
+    # a search provider without what it needs is a problem, said plainly
+    monkeypatch.setenv("OPENMUSE_SEARCH_PROVIDER", "brave")
+    out = plain(runner.invoke(app, ["doctor", "--no-model"]).output)
+    assert "web search: Brave Search (no key) · searches fall back to DuckDuckGo" in out
+    assert "connectors.search.provider = brave, but it is not configured" in out
+    monkeypatch.delenv("OPENMUSE_SEARCH_PROVIDER")
 
     # a hosted endpoint without a key is a problem worth exit code 1
     monkeypatch.setenv("OPENMUSE_LLM_BASE_URL", "https://api.deepseek.com")

@@ -146,6 +146,12 @@ class EmbeddingsBody(BaseModel):
     api_key: str | None = None  # into the vault; "" → the model's key; None keeps it
 
 
+class SearchBody(BaseModel):
+    provider: str | None = None  # duckduckgo | brave | tavily | searxng
+    api_key: str | None = None  # into the vault; "" removes it; None keeps it
+    base_url: str | None = None  # SearXNG instance
+
+
 class EmailBody(BaseModel):
     enabled: bool | None = None
     address: str | None = None
@@ -687,6 +693,17 @@ def create_app(settings: Settings, service: MuseService | None = None) -> FastAP
     @app.post("/api/connections/embeddings/test", dependencies=dep)
     async def test_embeddings() -> dict[str, Any]:
         return await conn.test_embeddings()
+
+    @app.put("/api/connections/search", dependencies=dep)
+    async def put_search(body: SearchBody) -> dict[str, Any]:
+        try:
+            return conn.set_search(body.model_dump(exclude_none=True))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/api/connections/search/test", dependencies=dep)
+    async def test_search() -> dict[str, Any]:
+        return await conn.test_search()
 
     @app.put("/api/connections/email", dependencies=dep)
     async def put_email(body: EmailBody) -> dict[str, Any]:

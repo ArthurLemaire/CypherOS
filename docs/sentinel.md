@@ -89,7 +89,7 @@ In the app an unanswered card times out after `server.approval_timeout` seconds 
 
 Reading private data (`read_emails`, `recall`, `contacts`, files outside the workspace, MCP servers marked `reads_private_data`) marks the session as tainted. From then on, any call that sends data to a host outside `egress_allowlist` needs approval, whatever its risk level. This is the practical defence against prompt injection: a web page cannot instruct the agent to post your inbox somewhere without you seeing the destination first.
 
-`openmuse chat` shows the state with `/tainted`; `/reset` clears it with the conversation. The default allowlist covers search, Wikipedia, GitHub and PyPI; edit `egress_allowlist` to fit your own connectors.
+`openmuse chat` shows the state with `/tainted`; `/reset` clears it with the conversation. The default allowlist covers search, Wikipedia, GitHub and PyPI; edit `egress_allowlist` to fit your own connectors. A destination you set yourself in the settings — the search provider under `[connectors.search]`, whichever it is — counts like the allowlist: the model cannot redirect it, so a search after private data was read goes through as it does with DuckDuckGo.
 
 ## Credential vault
 
