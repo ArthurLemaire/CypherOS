@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from openmuse.config import Settings
+from nanomuse.config import Settings
 
 
 @pytest.fixture()

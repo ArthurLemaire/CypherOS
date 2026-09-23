@@ -9,10 +9,10 @@ from pathlib import Path
 
 import pytest
 
-from openmuse.config import SandboxSettings, Settings
-from openmuse.sandbox import Sandbox, interpreter_roots, needs_network
-from openmuse.schema import RiskLevel
-from openmuse.tools.shell import PythonExecute, Shell, programs_of
+from nanomuse.config import SandboxSettings, Settings
+from nanomuse.sandbox import Sandbox, interpreter_roots, needs_network
+from nanomuse.schema import RiskLevel
+from nanomuse.tools.shell import PythonExecute, Shell, programs_of
 
 
 def test_needs_network_by_program_or_url():
@@ -30,16 +30,16 @@ def test_off_and_missing_are_not_errors(tmp_path: Path, monkeypatch: pytest.Monk
     box = Sandbox(SandboxSettings(mode="off"), workspace=tmp_path)
     assert not box.active and box.reason == "sandbox.mode = off"
     assert "no sandbox" in box.describe()
-    monkeypatch.setattr("openmuse.sandbox.shutil.which", lambda _name: None)
-    monkeypatch.setattr("openmuse.sandbox.platform.system", lambda: "Linux")
+    monkeypatch.setattr("nanomuse.sandbox.shutil.which", lambda _name: None)
+    monkeypatch.setattr("nanomuse.sandbox.platform.system", lambda: "Linux")
     box = Sandbox(SandboxSettings(), workspace=tmp_path)
     assert not box.active and "not installed" in box.reason
     assert box.status.startswith("off — ")
-    monkeypatch.setenv("OPENMUSE_IN_CONTAINER", "1")
+    monkeypatch.setenv("NANOMUSE_IN_CONTAINER", "1")
     box = Sandbox(SandboxSettings(), workspace=tmp_path)
     assert not box.active and box.reason == "in a container, which is the box"
-    monkeypatch.delenv("OPENMUSE_IN_CONTAINER")
-    monkeypatch.setattr("openmuse.sandbox.platform.system", lambda: "Darwin")
+    monkeypatch.delenv("NANOMUSE_IN_CONTAINER")
+    monkeypatch.setattr("nanomuse.sandbox.platform.system", lambda: "Darwin")
     box = Sandbox(SandboxSettings(), workspace=tmp_path)
     assert not box.active and "Linux-only" in box.reason
     with pytest.raises(ValueError):
@@ -48,11 +48,11 @@ def test_off_and_missing_are_not_errors(tmp_path: Path, monkeypatch: pytest.Monk
 
 def test_wrap_builds_the_box(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """The argv, without running it: what is writable, what is hidden, what is masked."""
-    monkeypatch.setattr("openmuse.sandbox.shutil.which", lambda _name: "/usr/bin/bwrap")
-    monkeypatch.setattr("openmuse.sandbox.platform.system", lambda: "Linux")
+    monkeypatch.setattr("nanomuse.sandbox.shutil.which", lambda _name: "/usr/bin/bwrap")
+    monkeypatch.setattr("nanomuse.sandbox.platform.system", lambda: "Linux")
     ws = tmp_path / "ws"
     extra = tmp_path / "extra"
-    data = ws / ".openmuse"  # a data dir inside the workspace must be masked
+    data = ws / ".nanomuse"  # a data dir inside the workspace must be masked
     box = Sandbox(SandboxSettings(), workspace=ws, extra_roots=[extra], data_dir=data, probe=False)
     assert box.active
     argv = box.wrap(["/bin/sh", "-c", "echo hi"], network=False, cwd=ws)
@@ -63,7 +63,7 @@ def test_wrap_builds_the_box(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     assert f"--tmpfs {data}" in joined  # the vault and sessions are not readable from inside
     assert "--ro-bind-try /usr /usr" in joined and "--ro-bind-try /etc /etc" in joined
     assert "--tmpfs /tmp" in joined and "--setenv HOME /tmp/home" in joined
-    assert "--setenv OPENMUSE_SANDBOX bwrap" in joined and f"--chdir {ws}" in joined
+    assert "--setenv NANOMUSE_SANDBOX bwrap" in joined and f"--chdir {ws}" in joined
     # the home directory is not bound (only interpreter directories may reach into it)
     home = str(Path.home())
     bound = [argv[i + 1] for i, a in enumerate(argv) if a in ("--bind-try", "--ro-bind-try")]
@@ -84,8 +84,8 @@ def test_wrap_builds_the_box(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 
 def test_data_dir_outside_the_roots_needs_no_mask(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr("openmuse.sandbox.shutil.which", lambda _name: "/usr/bin/bwrap")
-    monkeypatch.setattr("openmuse.sandbox.platform.system", lambda: "Linux")
+    monkeypatch.setattr("nanomuse.sandbox.shutil.which", lambda _name: "/usr/bin/bwrap")
+    monkeypatch.setattr("nanomuse.sandbox.platform.system", lambda: "Linux")
     box = Sandbox(
         SandboxSettings(), workspace=tmp_path / "ws", data_dir=tmp_path / "data", probe=False
     )
@@ -99,8 +99,8 @@ def test_settings_default_and_shell_assessment(tmp_path: Path, monkeypatch: pyte
     plain = Shell(workspace=tmp_path, sandbox=None)
     assert plain.assess({"command": "ls"}).egress
     # with one, only commands that say so
-    monkeypatch.setattr("openmuse.sandbox.shutil.which", lambda _name: "/usr/bin/bwrap")
-    monkeypatch.setattr("openmuse.sandbox.platform.system", lambda: "Linux")
+    monkeypatch.setattr("nanomuse.sandbox.shutil.which", lambda _name: "/usr/bin/bwrap")
+    monkeypatch.setattr("nanomuse.sandbox.platform.system", lambda: "Linux")
     box = Sandbox(SandboxSettings(), workspace=tmp_path, probe=False)
     shell = Shell(workspace=tmp_path, sandbox=box)
     assert not shell.assess({"command": "ls -la"}).egress
@@ -120,8 +120,8 @@ def test_a_box_that_cannot_take_the_network_away(tmp_path: Path, monkeypatch: py
     system; commands are judged as reaching the network, like without a box."""
     import subprocess
 
-    monkeypatch.setattr("openmuse.sandbox.shutil.which", lambda _name: "/usr/bin/bwrap")
-    monkeypatch.setattr("openmuse.sandbox.platform.system", lambda: "Linux")
+    monkeypatch.setattr("nanomuse.sandbox.shutil.which", lambda _name: "/usr/bin/bwrap")
+    monkeypatch.setattr("nanomuse.sandbox.platform.system", lambda: "Linux")
     calls: list[list[str]] = []
 
     def fake_run(argv, **_kw):
@@ -133,7 +133,7 @@ def test_a_box_that_cannot_take_the_network_away(tmp_path: Path, monkeypatch: py
             return subprocess.CompletedProcess(argv, 1, stdout="", stderr=err)
         return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
 
-    monkeypatch.setattr("openmuse.sandbox.subprocess.run", fake_run)
+    monkeypatch.setattr("nanomuse.sandbox.subprocess.run", fake_run)
     box = Sandbox(SandboxSettings(), workspace=tmp_path)
     assert box.active and not box.blocks_network and box.reason == ""
     assert len(calls) == 3  # version, with --unshare-net (refused), without (works)
@@ -153,11 +153,11 @@ def test_a_box_that_cannot_take_the_network_away(tmp_path: Path, monkeypatch: py
         err = "bwrap: setting up uid map: Permission denied\n"
         return subprocess.CompletedProcess(argv, 1, stdout="", stderr=err)
 
-    monkeypatch.setattr("openmuse.sandbox.subprocess.run", fake_run_fail)
-    monkeypatch.setattr("openmuse.sandbox.userns_restricted", lambda: False)
+    monkeypatch.setattr("nanomuse.sandbox.subprocess.run", fake_run_fail)
+    monkeypatch.setattr("nanomuse.sandbox.userns_restricted", lambda: False)
     box = Sandbox(SandboxSettings(), workspace=tmp_path)
     assert not box.active and box.reason.endswith("(bwrap: setting up uid map: Permission denied)")
-    monkeypatch.setattr("openmuse.sandbox.userns_restricted", lambda: True)
+    monkeypatch.setattr("nanomuse.sandbox.userns_restricted", lambda: True)
     box = Sandbox(SandboxSettings(), workspace=tmp_path)
     assert not box.active and "apparmor_restrict_unprivileged_userns=1" in box.reason
     assert box.reason.endswith("see docs/sentinel.md → The sandbox")
@@ -192,7 +192,7 @@ async def test_boxed_shell_sees_only_the_workspace(tmp_path: Path):
     r = await shell.execute(command=f"cat {tmp_path / 'secret.txt'}")
     assert not r.ok and "outside" not in r.output and "secret.txt" in r.output
     r = await shell.execute(
-        command="ls $HOME/.ssh 2>&1; echo HOME=$HOME; echo BOX=$OPENMUSE_SANDBOX"
+        command="ls $HOME/.ssh 2>&1; echo HOME=$HOME; echo BOX=$NANOMUSE_SANDBOX"
     )
     assert r.ok and "HOME=/tmp/home" in r.output and "BOX=bwrap" in r.output
     # system paths are read-only

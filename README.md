@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/cover.png" width="160" alt="OpenMuse">
+  <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/cover.png" width="160" alt="nanoMuse">
 </p>
 
-<h1 align="center">OpenMuse</h1>
+<h1 align="center">nanoMuse</h1>
 
 <div align="center">
   <p>
@@ -11,15 +11,17 @@
   </p>
   <p>
     <a href="https://github.com/nano-muse/nanoMuse"><img src="https://img.shields.io/github/stars/nano-muse/nanoMuse?style=flat&logo=github" alt="GitHub stars"></a>
-    <a href="https://pypi.org/project/openmuse/"><img src="https://img.shields.io/pypi/v/openmuse" alt="PyPI version"></a>
-    <a href="https://github.com/nano-muse/nanoMuse/releases/latest/download/openmuse.apk"><img src="https://img.shields.io/badge/Android-APK-3DDC84?logo=android&logoColor=white" alt="Android APK"></a>
+    <a href="https://pypi.org/project/nanomuse/"><img src="https://img.shields.io/pypi/v/nanomuse" alt="PyPI version"></a>
+    <a href="https://github.com/nano-muse/nanoMuse/releases/latest/download/nanomuse.apk"><img src="https://img.shields.io/badge/Android-APK-3DDC84?logo=android&logoColor=white" alt="Android APK"></a>
     <a href="https://github.com/nano-muse/nanoMuse/actions/workflows/ci.yml"><img src="https://github.com/nano-muse/nanoMuse/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
-    <a href="https://pypi.org/project/openmuse/"><img src="https://img.shields.io/badge/python-%3E%3D3.11-blue" alt="Python 3.11 or newer"></a>
+    <a href="https://pypi.org/project/nanomuse/"><img src="https://img.shields.io/badge/python-%3E%3D3.11-blue" alt="Python 3.11 or newer"></a>
     <a href="https://github.com/nano-muse/nanoMuse/blob/main/LICENSE"><img src="https://img.shields.io/github/license/nano-muse/nanoMuse" alt="MIT License"></a>
   </p>
 </div>
 
-🧸 **OpenMuse** is an open-source, self-hosted personal agent in the shape of Meta's [Muse](https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/): one agent with a name and a face, on your phone, that does things rather than answering questions, keeps working while the app is closed, and asks before anything you could not undo. Any OpenAI-compatible model. One Python package, a web app inside it, and an Android app.
+🧸 **nanoMuse** is an open-source, self-hosted personal agent in the shape of Meta's [Muse](https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/), made to work in China: one agent with a name and a face, on your phone, that does things rather than answering questions, keeps working while the app is closed, and asks before anything you could not undo. Where Muse leans on Western services with APIs, nanoMuse will also work the apps on your phone through their screens (12306, WeChat, Alipay…) as a GUI agent, so the same agent works where those APIs do not exist. Any OpenAI-compatible model. One Python package, a web app inside it, and an Android app.
+
+> nanoMuse was called **OpenMuse** until 0.6.0. It is not related to CopilotKit's project of that name.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/screenshots/chat-approval.png" width="24%" alt="Chat: the agent stops before a shell command and asks">
@@ -41,9 +43,9 @@
 | Run it in Docker or keep it running on a server | [Deploy](#%EF%B8%8F-deploy) |
 | Read the code | [Architecture](#architecture) |
 
-## What can OpenMuse do?
+## What can nanoMuse do?
 
-OpenMuse is a personal agent you talk to from your phone. It can:
+nanoMuse is a personal agent you talk to from your phone. It can:
 
 - research, write pages and documents, run shell commands and Python, send mail, read your calendar and your contacts, browse the web
 - stop and ask before anything hard to undo, with an approval you scope (once, this task, always) and can revoke
@@ -53,7 +55,7 @@ OpenMuse is a personal agent you talk to from your phone. It can:
 - follow skills in the [Agent Skills](https://agentskills.io) format and use any [MCP](https://modelcontextprotocol.io) server
 - run on any OpenAI-compatible model: DeepSeek, OpenAI, OpenRouter, Ollama, vLLM, a gateway with its own headers
 
-## 💡 Why OpenMuse
+## 💡 Why nanoMuse
 
 - **The Muse shape, in the open**: chat, feed, ideas, goals and library on a phone; a plush avatar that moves while it works; one agent, not a bot framework.
 - **Safety is the architecture**: the agent never touches a tool directly. A `Sentinel` decides allow / ask / deny per call, keeps secrets out of the model, tracks where private data goes, and logs everything. On Linux every command runs in its own [bubblewrap](https://github.com/containers/bubblewrap) sandbox.
@@ -66,23 +68,23 @@ Python 3.11 or newer, on Linux, macOS or Windows. The phone app ships inside the
 
 | Track | Install with | Update with |
 |---|---|---|
-| Stable | `uv tool install openmuse` or `pip install openmuse` | the same tool, `--upgrade` |
+| Stable | `uv tool install nanomuse` or `pip install nanomuse` | the same tool, `--upgrade` |
 | Latest | `uv tool install git+https://github.com/nano-muse/nanoMuse.git` | run it again |
 | Source | `git clone` + `uv pip install -e ".[dev]"` | `git pull` |
 
 ```bash
-uv tool install openmuse
-openmuse version
+uv tool install nanomuse
+nanomuse version
 ```
 
-Optional: `openmuse[browser]` adds the Playwright browser tool (then `playwright install chromium`).
+Optional: `nanomuse[browser]` adds the Playwright browser tool (then `playwright install chromium`).
 
 ## 🚀 Quick Start
 
 ```bash
-openmuse config init                 # writes config/config.toml
+nanomuse config init                 # writes config/config.toml
 export DEEPSEEK_API_KEY=sk-...       # the default config uses DeepSeek; see Models below
-openmuse serve --host 0.0.0.0        # prints a URL and a QR code
+nanomuse serve --host 0.0.0.0        # prints a URL and a QR code
 ```
 
 Scan the QR code with your phone on the same Wi-Fi, or open the URL here. The link carries the access token. Setup runs the first time: your name, the agent's name and face, the model. Then try:
@@ -91,13 +93,13 @@ Scan the QR code with your phone on the same Wi-Fi, or open the URL here. The li
 2. *"Check how much free disk space this machine has"*, which stops on an approval card
 3. *"Set up a goal: conversational Japanese before my Kyoto trip in December, 30 minutes a day"*, then open Goals
 
-Prefer the terminal? `openmuse chat` is the same agent with approvals in the console; `openmuse run "task"` does one task and exits. Something off? `openmuse doctor` checks the config, the model and the connectors and says what to fix.
+Prefer the terminal? `nanomuse chat` is the same agent with approvals in the console; `nanomuse run "task"` does one task and exits. Something off? `nanomuse doctor` checks the config, the model and the connectors and says what to fix.
 
 ## 📱 Android
 
-[**Download openmuse.apk**](https://github.com/nano-muse/nanoMuse/releases/latest/download/openmuse.apk) from the latest release and open it on the phone. Android 8.0 or newer, any CPU. It is not from a store, so Android asks once to allow the install.
+[**Download nanomuse.apk**](https://github.com/nano-muse/nanoMuse/releases/latest/download/nanomuse.apk) from the latest release and open it on the phone. Android 8.0 or newer, any CPU. It is not from a store, so Android asks once to allow the install.
 
-Then `openmuse serve --host 0.0.0.0` on your computer, tap **Scan QR code** in the app and point the camera at the terminal. Same Wi-Fi, a VPN such as Tailscale, or your server behind TLS all work.
+Then `nanomuse serve --host 0.0.0.0` on your computer, tap **Scan QR code** in the app and point the camera at the terminal. Same Wi-Fi, a VPN such as Tailscale, or your server behind TLS all work.
 
 What the app adds over the browser tab:
 
@@ -110,17 +112,17 @@ No Android? Add the web app to the home screen instead; it installs as a PWA and
 ## ☁️ Deploy
 
 ```bash
-docker run -d --name openmuse -p 8787:8787 -e DEEPSEEK_API_KEY=sk-... \
-  -v openmuse-data:/data -v "$PWD/workspace:/workspace" \
-  ghcr.io/nano-muse/openmuse:latest
-docker logs openmuse            # the URL with the access token
+docker run -d --name nanomuse -p 8787:8787 -e DEEPSEEK_API_KEY=sk-... \
+  -v nanomuse-data:/data -v "$PWD/workspace:/workspace" \
+  ghcr.io/nano-muse/nanomuse:latest
+docker logs nanomuse            # the URL with the access token
 ```
 
 The image is linux/amd64 and linux/arm64; `:latest-browser` bundles Chromium for the browser tool. From a checkout, `docker compose up -d app` does the same and `docker compose up -d daemon` advances goals with no UI. To reach it from outside your network, put it behind Tailscale or a reverse proxy with TLS rather than opening the port. Details, including a systemd unit: [docs/deployment.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/deployment.md).
 
 ## 🌐 The app
 
-`openmuse serve` runs the agent and serves the app from one process: FastAPI with a WebSocket for live events, React on the phone, built into the package.
+`nanomuse serve` runs the agent and serves the app from one process: FastAPI with a WebSocket for live events, React on the phone, built into the package.
 
 | Screen | What you get |
 |---|---|
@@ -156,7 +158,7 @@ match  = { command = "*rm -rf*" }
 action = "deny"
 ```
 
-Secrets live in an encrypted vault (`openmuse vault set EMAIL_PASSWORD`, or the Connections screen) and are referenced as `{{vault:EMAIL_PASSWORD}}`; Sentinel fills them in right before a call and redacts them from the output, so the model never sees one. Every decision goes to `audit.jsonl`. What is and is not covered: [docs/sentinel.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/sentinel.md); reporting: [SECURITY.md](https://github.com/nano-muse/nanoMuse/blob/main/SECURITY.md).
+Secrets live in an encrypted vault (`nanomuse vault set EMAIL_PASSWORD`, or the Connections screen) and are referenced as `{{vault:EMAIL_PASSWORD}}`; Sentinel fills them in right before a call and redacts them from the output, so the model never sees one. Every decision goes to `audit.jsonl`. What is and is not covered: [docs/sentinel.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/sentinel.md); reporting: [SECURITY.md](https://github.com/nano-muse/nanoMuse/blob/main/SECURITY.md).
 
 ## 🧠 Models
 
@@ -172,11 +174,11 @@ api_key  = "${DEEPSEEK_API_KEY}"
 # OpenAI:      model = "gpt-5.6-sol"  base_url = "https://api.openai.com/v1"   api_key = "${OPENAI_API_KEY}"
 # Ollama:      model = "qwen3:8b"     base_url = "http://localhost:11434/v1"   api_key = "ollama"
 # OpenRouter:  model = "deepseek/deepseek-flash"  base_url = "https://openrouter.ai/api/v1"
-# A gateway that needs headers:  extra_headers = { "X-End-User-Id" = "openmuse" }
+# A gateway that needs headers:  extra_headers = { "X-End-User-Id" = "nanomuse" }
 # An endpoint that ignores `tools`:  tool_mode = "prompt"
 ```
 
-Or `OPENMUSE_LLM_MODEL`, `OPENMUSE_LLM_BASE_URL`, `OPENMUSE_LLM_API_KEY`, `OPENMUSE_LLM_PROVIDER`. Local models work: `qwen3:8b` on Ollama passes the [provider check](https://github.com/nano-muse/nanoMuse/blob/main/scripts/provider_check.py) with native tool calling, `gemma3:4b` through the prompt fallback. Full reference: [docs/configuration.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/configuration.md).
+Or `NANOMUSE_LLM_MODEL`, `NANOMUSE_LLM_BASE_URL`, `NANOMUSE_LLM_API_KEY`, `NANOMUSE_LLM_PROVIDER`. Local models work: `qwen3:8b` on Ollama passes the [provider check](https://github.com/nano-muse/nanoMuse/blob/main/scripts/provider_check.py) with native tool calling, `gemma3:4b` through the prompt fallback. Full reference: [docs/configuration.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/configuration.md).
 
 ## Architecture
 
@@ -201,22 +203,22 @@ flowchart LR
 
 | Area | Files |
 |---|---|
-| Agent loop, system prompt, context window | `openmuse/agent/core.py`, `openmuse/prompts.py` |
-| Sentinel: policy, approvals, taint, audit; the sandbox | `openmuse/sentinel/`, `openmuse/sandbox.py` |
-| Credential vault | `openmuse/vault/` |
-| Tools and the MCP adapter | `openmuse/tools/` |
-| LLM providers, `<think>` filter, prompt-based tool calling | `openmuse/llm/` |
-| Memory, goals, skills | `openmuse/memory/`, `openmuse/goals/`, `openmuse/skills/` |
-| App server: service, REST/WebSocket API, timeline | `openmuse/server/` |
-| Phone app (React, Vite, Tailwind) | `web/` → built into `openmuse/server/static/` |
+| Agent loop, system prompt, context window | `nanomuse/agent/core.py`, `nanomuse/prompts.py` |
+| Sentinel: policy, approvals, taint, audit; the sandbox | `nanomuse/sentinel/`, `nanomuse/sandbox.py` |
+| Credential vault | `nanomuse/vault/` |
+| Tools and the MCP adapter | `nanomuse/tools/` |
+| LLM providers, `<think>` filter, prompt-based tool calling | `nanomuse/llm/` |
+| Memory, goals, skills | `nanomuse/memory/`, `nanomuse/goals/`, `nanomuse/skills/` |
+| App server: service, REST/WebSocket API, timeline | `nanomuse/server/` |
+| Phone app (React, Vite, Tailwind) | `web/` → built into `nanomuse/server/static/` |
 | Android app (Kotlin, WebView, notification service) | `android/` |
-| Terminal UI and CLI | `openmuse/console.py`, `openmuse/cli.py` |
+| Terminal UI and CLI | `nanomuse/console.py`, `nanomuse/cli.py` |
 
 More in [docs/architecture.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/architecture.md).
 
-## OpenMuse and Meta Muse
+## nanoMuse and Meta Muse
 
-| Meta Muse | OpenMuse |
+| Meta Muse | nanoMuse |
 |---|---|
 | Runs in a per-user secure VM | Runs on your machine or in Docker; on Linux each `shell` / Python call gets its own bubblewrap namespace |
 | Sentinel approves sensitive actions | `Sentinel`: allow / ask / deny, rules, taint tracking, egress allowlist, scoped approvals |
@@ -238,23 +240,23 @@ More in [docs/architecture.md](https://github.com/nano-muse/nanoMuse/blob/main/d
 - [Architecture](https://github.com/nano-muse/nanoMuse/blob/main/docs/architecture.md): source map and extension points
 - [Deployment](https://github.com/nano-muse/nanoMuse/blob/main/docs/deployment.md): Docker, Compose, systemd, TLS
 - [Troubleshooting](https://github.com/nano-muse/nanoMuse/blob/main/docs/troubleshooting.md)
-- [A simulated phone](https://github.com/nano-muse/nanoMuse/blob/main/demo/mobilegym/README.md): OpenMuse as a native app on MobileGym, notifications included, in one browser tab
+- [A simulated phone](https://github.com/nano-muse/nanoMuse/blob/main/demo/mobilegym/README.md): nanoMuse as a native app on MobileGym, notifications included, in one browser tab
 
 ## Releases
 
-**Latest release: [v0.6.0](https://github.com/nano-muse/nanoMuse/releases/tag/v0.6.0)**
+**Latest release: [v0.7.0](https://github.com/nano-muse/nanoMuse/releases/tag/v0.7.0)**
 
-v0.6.0 is the app as Meta Muse looks, and the Android app.
+v0.7.0 is the rename: OpenMuse became nanoMuse.
 
-- The look after Muse: plush avatars that move, one blue accent, the floating tab bar, Figtree.
-- A feed written for you from your instructions, a stop button, live previews in the Library.
-- The Android app: connect by QR code, notifications while the app is closed. `openmuse.apk` on every release.
-- Sandboxed commands work from a relative workspace path (they failed with "Can't chdir" before).
+- Package `nanomuse`, command `nanomuse`, environment variables `NANOMUSE_*` (`OPENMUSE_*` still read), data in `~/.nanomuse` (an existing `~/.openmuse` is kept).
+- The Android app has a new application id, so it installs next to the old one; the phone stays paired after the web app migrates its storage.
+- Docker image `ghcr.io/nano-muse/nanomuse`.
 
 Every version: [CHANGELOG.md](https://github.com/nano-muse/nanoMuse/blob/main/CHANGELOG.md) · [GitHub releases](https://github.com/nano-muse/nanoMuse/releases)
 
 ## Recent Updates
 
+- **v0.7.0** 🏷️ Renamed to nanoMuse, moved to [nano-muse/nanoMuse](https://github.com/nano-muse/nanoMuse).
 - **v0.6.0** 🧸 The Muse look, plush avatars, feed posts, a stop button, the Android app.
 - **v0.5.0** 📎 Attachments from the phone, recall by meaning through any `/embeddings`, Brave / Tavily / SearXNG search.
 - **v0.4.0** 🧩 Skills in the `SKILL.md` format, triggers (mail, calendar, webhooks), contacts, a sandbox for every command.
@@ -269,7 +271,7 @@ Every version: [CHANGELOG.md](https://github.com/nano-muse/nanoMuse/blob/main/CH
 
 ## 🤝 Contribute
 
-Use OpenMuse for a real task, report what broke, then pick something focused.
+Use nanoMuse for a real task, report what broke, then pick something focused.
 
 - [CONTRIBUTING.md](https://github.com/nano-muse/nanoMuse/blob/main/CONTRIBUTING.md) has the development setup; CI runs `ruff`, `pytest`, the web build and the Android build.
 - [Open issues](https://github.com/nano-muse/nanoMuse/issues) for problems to look into.
@@ -277,13 +279,13 @@ Use OpenMuse for a real task, report what broke, then pick something focused.
 
 ## Related projects
 
-- [nanobot](https://github.com/HKUDS/nanobot): a personal assistant framework that lives in chat apps (Telegram, Discord, Slack, WeChat). Pick it for a bot in the channels you already use; OpenMuse is one agent with Muse's product shape and safety model.
+- [nanobot](https://github.com/HKUDS/nanobot): a personal assistant framework that lives in chat apps (Telegram, Discord, Slack, WeChat). Pick it for a bot in the channels you already use; nanoMuse is one agent with Muse's product shape and safety model.
 - [OpenClaw](https://github.com/openclaw/openclaw): the always-on gateway approach many assistant projects follow.
 - [browser-use](https://github.com/browser-use/browser-use): the element-annotation idea behind the browser tool.
 
 ## Disclaimer
 
-OpenMuse is an independent community project. It is not affiliated with, endorsed by, or derived from Meta Platforms, Inc. or its Muse product. The plush avatars are the project's own; the name and the design ideas are used for comparison.
+nanoMuse is an independent community project. It is not affiliated with, endorsed by, or derived from Meta Platforms, Inc. or its Muse product. The plush avatars are the project's own; the name and the design ideas are used for comparison.
 
 ## License
 

@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from openmuse.tools import Triggers
-from openmuse.triggers import TriggerStore, matches
+from nanomuse.tools import Triggers
+from nanomuse.triggers import TriggerStore, matches
 
 
 def test_matches_needs_every_word_anywhere():
@@ -187,8 +187,8 @@ def _mail(sender: str, subject: str, body: str) -> bytes:
 
 
 async def test_mail_watcher_reads_new_messages_by_uid(monkeypatch: pytest.MonkeyPatch):
-    from openmuse.config import EmailSettings
-    from openmuse.triggers.mail import MailWatcher
+    from nanomuse.config import EmailSettings
+    from nanomuse.triggers.mail import MailWatcher
 
     messages = {
         40: _mail("Old <old@example.com>", "Before you connected", "not replayed"),

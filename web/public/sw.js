@@ -1,6 +1,6 @@
-/* OpenMuse service worker: Web Push and the app badge.
+/* nanoMuse service worker: Web Push and the app badge.
  *
- * The server (openmuse/server/push.py) sends {title, body, tag, url, badge, kind}. If the
+ * The server (nanomuse/server/push.py) sends {title, body, tag, url, badge, kind}. If the
  * app is on screen the card is already there, so nothing is shown; the badge is kept in
  * step either way. Tapping a notification focuses the app on the right chat.
  */
@@ -23,7 +23,7 @@ self.addEventListener("push", (event) => {
   try {
     data = event.data ? event.data.json() : {};
   } catch {
-    data = { title: "OpenMuse", body: event.data ? event.data.text() : "" };
+    data = { title: "nanoMuse", body: event.data ? event.data.text() : "" };
   }
   event.waitUntil(
     (async () => {
@@ -31,7 +31,7 @@ self.addEventListener("push", (event) => {
       const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
       const onScreen = windows.some((c) => c.visibilityState === "visible");
       if (onScreen && data.kind !== "test") return;
-      await self.registration.showNotification(data.title || "OpenMuse", {
+      await self.registration.showNotification(data.title || "nanoMuse", {
         body: data.body || "",
         tag: data.tag || undefined,
         renotify: !!data.tag,

@@ -2,9 +2,9 @@ import re
 
 from typer.testing import CliRunner
 
-from openmuse import __version__
-from openmuse import config as config_module
-from openmuse.cli import app
+from nanomuse import __version__
+from nanomuse import config as config_module
+from nanomuse.cli import app
 
 runner = CliRunner()
 _ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
@@ -19,7 +19,7 @@ def test_version_flag_and_command_agree():
     for args in (["--version"], ["-V"], ["version"]):
         result = runner.invoke(app, args)
         assert result.exit_code == 0, result.output
-        assert plain(result.output).strip() == f"openmuse {__version__}"
+        assert plain(result.output).strip() == f"nanomuse {__version__}"
 
 
 def test_help_lists_the_version_flag():
@@ -29,14 +29,14 @@ def test_help_lists_the_version_flag():
 
 
 def test_doctor_reports_the_setup_without_calling_the_model(tmp_path, monkeypatch):
-    for var in ("DEEPSEEK_API_KEY", "OPENAI_API_KEY", "OPENMUSE_CONFIG"):
+    for var in ("DEEPSEEK_API_KEY", "OPENAI_API_KEY", "NANOMUSE_CONFIG"):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.chdir(tmp_path)  # no ./config/config.toml here…
-    monkeypatch.setattr(config_module, "DEFAULT_DATA_DIR", tmp_path / "home")  # …nor ~/.openmuse/
-    monkeypatch.setenv("OPENMUSE_DATA_DIR", str(tmp_path / "data"))
-    monkeypatch.setenv("OPENMUSE_WORKSPACE", str(tmp_path / "ws"))
-    monkeypatch.setenv("OPENMUSE_LLM_BASE_URL", "http://localhost:11434/v1")
-    monkeypatch.setenv("OPENMUSE_LLM_MODEL", "qwen3:8b")
+    monkeypatch.setattr(config_module, "DEFAULT_DATA_DIR", tmp_path / "home")  # …nor ~/.nanomuse/
+    monkeypatch.setenv("NANOMUSE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("NANOMUSE_WORKSPACE", str(tmp_path / "ws"))
+    monkeypatch.setenv("NANOMUSE_LLM_BASE_URL", "http://localhost:11434/v1")
+    monkeypatch.setenv("NANOMUSE_LLM_MODEL", "qwen3:8b")
     (tmp_path / "ws").mkdir()
 
     # a local model needs no key: everything checks out
@@ -49,14 +49,14 @@ def test_doctor_reports_the_setup_without_calling_the_model(tmp_path, monkeypatc
     assert "web search: DuckDuckGo (no key needed)" in out
 
     # a search provider without what it needs is a problem, said plainly
-    monkeypatch.setenv("OPENMUSE_SEARCH_PROVIDER", "brave")
+    monkeypatch.setenv("NANOMUSE_SEARCH_PROVIDER", "brave")
     out = plain(runner.invoke(app, ["doctor", "--no-model"]).output)
     assert "web search: Brave Search (no key) · searches fall back to DuckDuckGo" in out
     assert "connectors.search.provider = brave, but it is not configured" in out
-    monkeypatch.delenv("OPENMUSE_SEARCH_PROVIDER")
+    monkeypatch.delenv("NANOMUSE_SEARCH_PROVIDER")
 
     # a hosted endpoint without a key is a problem worth exit code 1
-    monkeypatch.setenv("OPENMUSE_LLM_BASE_URL", "https://api.deepseek.com")
+    monkeypatch.setenv("NANOMUSE_LLM_BASE_URL", "https://api.deepseek.com")
     result = runner.invoke(app, ["doctor", "--no-model"])
     out = plain(result.output)
     assert result.exit_code == 1, out
@@ -64,12 +64,12 @@ def test_doctor_reports_the_setup_without_calling_the_model(tmp_path, monkeypatc
 
 
 def test_triggers_commands(tmp_path, monkeypatch):
-    for var in ("DEEPSEEK_API_KEY", "OPENAI_API_KEY", "OPENMUSE_CONFIG"):
+    for var in ("DEEPSEEK_API_KEY", "OPENAI_API_KEY", "NANOMUSE_CONFIG"):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(config_module, "DEFAULT_DATA_DIR", tmp_path / "home")
-    monkeypatch.setenv("OPENMUSE_DATA_DIR", str(tmp_path / "data"))
-    monkeypatch.setenv("OPENMUSE_WORKSPACE", str(tmp_path / "ws"))
+    monkeypatch.setenv("NANOMUSE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("NANOMUSE_WORKSPACE", str(tmp_path / "ws"))
     (tmp_path / "ws").mkdir()
 
     assert "no triggers" in plain(runner.invoke(app, ["triggers", "list"]).output)

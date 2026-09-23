@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "OpenMuse"
+rootProject.name = "nanoMuse"
 include(":app")

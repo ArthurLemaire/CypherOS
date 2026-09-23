@@ -20,7 +20,7 @@ body:
     attributes:
       label: Steps to reproduce
       placeholder: |
-        1. openmuse serve
+        1. nanomuse serve
         2. In the app, ask "…"
         3. Approve the shell call
         4. See …
@@ -29,8 +29,8 @@ body:
   - type: input
     id: version
     attributes:
-      label: OpenMuse version
-      description: "`openmuse --version`, or the commit hash if you run from source. The output of `openmuse doctor --no-model` in the description helps."
+      label: nanoMuse version
+      description: "`nanomuse --version`, or the commit hash if you run from source. The output of `nanomuse doctor --no-model` in the description helps."
     validations:
       required: true
   - type: dropdown
@@ -38,9 +38,9 @@ body:
     attributes:
       label: Where
       options:
-        - Phone / web app (openmuse serve)
-        - Terminal (openmuse chat / run)
-        - Daemon (openmuse daemon / goals run)
+        - Phone / web app (nanomuse serve)
+        - Terminal (nanomuse chat / run)
+        - Daemon (nanomuse daemon / goals run)
         - Docker
         - Library / API
     validations:

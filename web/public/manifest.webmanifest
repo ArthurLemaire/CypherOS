@@ -1,6 +1,6 @@
 {
-  "name": "OpenMuse",
-  "short_name": "OpenMuse",
+  "name": "nanoMuse",
+  "short_name": "nanoMuse",
   "description": "Your open-source personal AI agent.",
   "start_url": "/",
   "scope": "/",

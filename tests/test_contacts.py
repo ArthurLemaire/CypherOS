@@ -11,20 +11,20 @@ import pytest
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
-from openmuse.cli import app as cli_app
-from openmuse.config import (
+from nanomuse.cli import app as cli_app
+from nanomuse.config import (
     ContactSourceSettings,
     ContactsSettings,
     EmailSettings,
     Settings,
     load_app_settings,
 )
-from openmuse.contacts import OWN, ContactBook, parse_vcards, render_vcard
-from openmuse.llm import MockLLM
-from openmuse.schema import RiskLevel
-from openmuse.server import create_app
-from openmuse.server.service import MuseService
-from openmuse.tools import Contacts, SendEmail
+from nanomuse.contacts import OWN, ContactBook, parse_vcards, render_vcard
+from nanomuse.llm import MockLLM
+from nanomuse.schema import RiskLevel
+from nanomuse.server import create_app
+from nanomuse.server.service import MuseService
+from nanomuse.tools import Contacts, SendEmail
 
 
 def private(path: Path) -> bool:

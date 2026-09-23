@@ -12,20 +12,20 @@ val keystoreProps = Properties().apply {
     val f = rootProject.file("keystore.properties")
     if (f.exists()) f.inputStream().use { load(it) }
 }
-fun signing(key: String): String? = keystoreProps.getProperty(key) ?: System.getenv("OPENMUSE_" + key.uppercase())
+fun signing(key: String): String? = keystoreProps.getProperty(key) ?: System.getenv("NANOMUSE_" + key.uppercase())
 val storeFilePath = signing("storeFile")
 val hasReleaseKey = storeFilePath != null && rootProject.file(storeFilePath).exists()
 
 android {
-    namespace = "io.github.openmuseagent.openmuse"
+    namespace = "io.github.nanomuse.app"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "io.github.openmuseagent.openmuse"
+        applicationId = "io.github.nanomuse.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 600
-        versionName = "0.6.0"
+        versionCode = 700
+        versionName = "0.7.0"
     }
 
     signingConfigs {

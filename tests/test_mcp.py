@@ -3,9 +3,9 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from openmuse.config import MCPServerSettings
-from openmuse.schema import RiskLevel
-from openmuse.tools import MCPManager, ToolCollection
+from nanomuse.config import MCPServerSettings
+from nanomuse.schema import RiskLevel
+from nanomuse.tools import MCPManager, ToolCollection
 
 SERVER = Path(__file__).with_name("mcp_echo_server.py")
 

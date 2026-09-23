@@ -1,8 +1,8 @@
-# OpenMuse in a container. The agent sees two mounts: /data (memory, goals,
+# nanoMuse in a container. The agent sees two mounts: /data (memory, goals,
 # vault, audit log, threads) and /workspace (its files). config/config.toml is
-# mounted read-only — run `openmuse config init` on the host first.
+# mounted read-only — run `nanomuse config init` on the host first.
 #
-#   cp .env.example .env && $EDITOR .env             # API key, OPENMUSE_SERVER_TOKEN
+#   cp .env.example .env && $EDITOR .env             # API key, NANOMUSE_SERVER_TOKEN
 #   docker compose up -d app                         # phone app on http://<host>:8787/?token=...
 #   docker compose run --rm muse                     # terminal chat
 #   docker compose run --rm muse run "plan my week"  # one task
@@ -11,7 +11,7 @@
 services:
   muse:
     build: .
-    image: openmuse:latest
+    image: nanomuse:latest
     env_file:
       - path: .env
         required: false
@@ -19,7 +19,7 @@ services:
     tty: true
     command: ["chat"]
     volumes:
-      - openmuse-data:/data
+      - nanomuse-data:/data
       - ./workspace:/workspace
       - ./config/config.toml:/app/config/config.toml:ro
     # Uncomment to make the container filesystem immutable apart from the mounts.
@@ -47,4 +47,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  openmuse-data:
+  nanomuse-data:

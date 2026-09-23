@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Start with `openmuse doctor`: it prints the config file in use, the data directory, the model and endpoint (and whether a key is set), the tools and connectors, and makes one call to the model. Most of the problems below show up there first.
+Start with `nanomuse doctor`: it prints the config file in use, the data directory, the model and endpoint (and whether a key is set), the tools and connectors, and makes one call to the model. Most of the problems below show up there first.
 
 **The phone cannot open the URL.** Start with `--host 0.0.0.0` (the default binds to localhost only), make sure both devices are on the same network, and allow the port through the machine's firewall. The URL shown uses the LAN address the server could detect; if it is wrong, use the machine's address from `ip addr` / `ipconfig` with the same `?token=`.
 
@@ -14,16 +14,16 @@ Start with `openmuse doctor`: it prints the config file in use, the data directo
 
 **"does not support tools" in the log, then the agent carries on.** That is `auto` doing its job: Ollama refused function calling for this model, so tools are described in the prompt from then on. Pick a model with a tool template (`qwen3:8b`, `llama3.1:8b`) for better results on long tasks.
 
-**Empty replies, or Ideas that stay on the starter list, with a reasoning model.** DeepSeek's thinking variants and the OpenAI o-series count their reasoning against `max_tokens`; on a hard prompt they can spend the whole budget thinking and return nothing (`finish_reason = "length"`). OpenMuse asks once more with four times the budget when that happens. If it keeps happening, raise `max_tokens` under `[llm]` (16384 is a sensible value for these models).
+**Empty replies, or Ideas that stay on the starter list, with a reasoning model.** DeepSeek's thinking variants and the OpenAI o-series count their reasoning against `max_tokens`; on a hard prompt they can spend the whole budget thinking and return nothing (`finish_reason = "length"`). nanoMuse asks once more with four times the budget when that happens. If it keeps happening, raise `max_tokens` under `[llm]` (16384 is a sensible value for these models).
 
 **429 / rate limits.** Requests retry with exponential back-off (`max_retries`, default 5). Lower `agent.max_steps`, or add `web_fetch` to `always_ask_tools` to slow the loop down.
 
-**An approval card never appears in the terminal.** `openmuse daemon` and `--auto` run in Sentinel `auto` mode by design. Use `openmuse chat` or the app for interactive approvals.
+**An approval card never appears in the terminal.** `nanomuse daemon` and `--auto` run in Sentinel `auto` mode by design. Use `nanomuse chat` or the app for interactive approvals.
 
-**"Sentinel blocked" for something you wanted.** Check `openmuse audit -n 20` for the reason: a deny rule, `deny_tools`, or taint (private data read earlier in the session plus a new network destination). Add the host to `egress_allowlist` or approve once.
+**"Sentinel blocked" for something you wanted.** Check `nanomuse audit -n 20` for the reason: a deny rule, `deny_tools`, or taint (private data read earlier in the session plus a new network destination). Add the host to `egress_allowlist` or approve once.
 
-**Email tool returns nothing useful.** With `scrub_secrets = true` one-time codes and reset links are removed before the model reads a mail; that is intentional. Check IMAP settings with `openmuse config show` and the vault entries with `openmuse vault list`.
+**Email tool returns nothing useful.** With `scrub_secrets = true` one-time codes and reset links are removed before the model reads a mail; that is intentional. Check IMAP settings with `nanomuse config show` and the vault entries with `nanomuse vault list`.
 
 **Playwright fails to install Chromium.** Older distributions are not supported by recent Playwright builds. Use the Docker image or leave `browser.enabled = false`; `web_fetch` covers most reading tasks.
 
-**Reset everything.** Stop the server and delete `~/.openmuse` (or your `data_dir`). The vault key lives there too, so export secrets first if you need them.
+**Reset everything.** Stop the server and delete `~/.nanomuse` (or your `data_dir`). The vault key lives there too, so export secrets first if you need them.

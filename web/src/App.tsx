@@ -31,7 +31,7 @@ export default function App() {
 
   // The document title follows the agent's name.
   useEffect(() => {
-    document.title = state.profile?.name ? `${state.profile.name} · OpenMuse` : "OpenMuse";
+    document.title = state.profile?.name ? `${state.profile.name} · nanoMuse` : "nanoMuse";
   }, [state.profile?.name]);
 
   if (state.authError) return <TokenGate />;
@@ -49,7 +49,7 @@ export default function App() {
     <div className="mx-auto flex h-[100dvh] max-w-[760px] flex-col bg-bg sm:border-x sm:border-border">
       {!state.connected && state.loaded && (
         <div className="flex items-center justify-center gap-2 bg-amber-500/15 text-amber-700 dark:text-amber-300 text-[12.5px] py-1">
-          <WifiOff size={14} /> {t("Reconnecting to your OpenMuse…")}
+          <WifiOff size={14} /> {t("Reconnecting to your nanoMuse…")}
         </div>
       )}
       {state.error && !state.loaded && (
@@ -113,10 +113,10 @@ function TokenGate() {
   return (
     <div className="mx-auto flex h-[100dvh] max-w-md flex-col items-center justify-center px-6 text-center">
       <img src="/avatars/sunny.webp" alt="" className="avatar-idle h-24 w-24 rounded-full object-cover" />
-      <h1 className="mt-4 text-[22px] font-bold">{t("Connect to your OpenMuse")}</h1>
+      <h1 className="mt-4 text-[22px] font-bold">{t("Connect to your nanoMuse")}</h1>
       <p className="mt-2 text-[14px] text-muted">
-        {t("This app talks to the OpenMuse server you run yourself. Scan the QR code printed by")}{" "}
-        <code className="rounded bg-surface-2 px-1">openmuse serve</code>{t(", or paste the access token below.")}
+        {t("This app talks to the nanoMuse server you run yourself. Scan the QR code printed by")}{" "}
+        <code className="rounded bg-surface-2 px-1">nanomuse serve</code>{t(", or paste the access token below.")}
       </p>
       <form
         className="mt-5 w-full flex gap-2"

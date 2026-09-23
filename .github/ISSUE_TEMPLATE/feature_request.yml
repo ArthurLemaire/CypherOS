@@ -1,11 +1,11 @@
 name: Feature request
-description: Something Muse does that OpenMuse does not yet, or something OpenMuse should do.
+description: Something Muse does that nanoMuse does not yet, or something nanoMuse should do.
 labels: ["enhancement"]
 body:
   - type: markdown
     attributes:
       value: |
-        OpenMuse follows Meta's Muse closely. If your request is "Muse does X", say so and link to
+        nanoMuse follows Meta's Muse closely. If your request is "Muse does X", say so and link to
         where it is described — those are the requests most likely to land. Ideas outside Muse are
         welcome too; just say what problem they solve.
   - type: textarea

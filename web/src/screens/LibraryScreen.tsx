@@ -18,7 +18,7 @@ const GROUPS: Array<{ id: Kind | "all"; label: string }> = [
 ];
 
 /**
- * Everything your OpenMuse has made — pages, documents, trackers, images — in one place,
+ * Everything your nanoMuse has made — pages, documents, trackers, images — in one place,
  * newest first, viewable in the app. This is the agent's workspace, so files you drop
  * there yourself show up too.
  */
@@ -27,7 +27,7 @@ export function LibraryScreen() {
   const [files, setFiles] = useState<FileInfo[] | null>(null);
   const [group, setGroup] = useState<Kind | "all">("all");
   const [query, setQuery] = useState("");
-  const name = state.profile?.name ?? "OpenMuse";
+  const name = state.profile?.name ?? "nanoMuse";
   const t = useT();
 
   // Reload whenever the agent finishes a step (the timeline moves) or the tab is opened.

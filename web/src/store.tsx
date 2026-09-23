@@ -26,7 +26,7 @@ import type {
 export type Tab = "chat" | "feed" | "ideas" | "goals" | "library" | "memory" | "connections" | "skills" | "you";
 const TAB_NAMES: Tab[] = ["chat", "feed", "ideas", "goals", "library", "memory", "connections", "skills", "you"];
 
-const FEED_SEEN_KEY = "openmuse_feed_seen";
+const FEED_SEEN_KEY = "nanomuse_feed_seen";
 
 export interface Stream {
   id: string;

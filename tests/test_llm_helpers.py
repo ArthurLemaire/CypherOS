@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 
-from openmuse.llm.base import ThinkStreamFilter, ToolsUnsupported, says_no_tools, split_think
-from openmuse.llm.prompt_tools import convert_messages, parse_tool_calls
-from openmuse.schema import Function, Message, ToolCall
+from nanomuse.llm.base import ThinkStreamFilter, ToolsUnsupported, says_no_tools, split_think
+from nanomuse.llm.prompt_tools import convert_messages, parse_tool_calls
+from nanomuse.schema import Function, Message, ToolCall
 
 
 def test_think_filter_handles_split_tags():
@@ -97,7 +97,7 @@ def test_parse_tool_calls_accepts_fenced_calls_from_small_models():
     assert [c.function.name for c in calls] == ["files"]
     assert calls[0].arguments == {"action": "list"}
     # JSON the model is merely quoting stays text: not a known tool / no arguments
-    quoted = 'The config is:\n```json\n{"name": "openmuse", "version": "0.1.0"}\n```'
+    quoted = 'The config is:\n```json\n{"name": "nanomuse", "version": "0.1.0"}\n```'
     visible, calls = parse_tool_calls(quoted, known)
     assert calls == [] and visible == quoted
     _, calls = parse_tool_calls('```json\n{"name": "rm", "arguments": {}}\n```', known)
@@ -125,9 +125,9 @@ def test_parse_tool_calls_accepts_fenced_calls_from_small_models():
 
 
 async def test_native_mode_rescues_a_call_written_as_text():
-    from openmuse.llm.mock import MockLLM
-    from openmuse.llm.prompt_tools import PromptToolAdapter
-    from openmuse.schema import LLMResponse
+    from nanomuse.llm.mock import MockLLM
+    from nanomuse.llm.prompt_tools import PromptToolAdapter
+    from nanomuse.schema import LLMResponse
 
     tools = [{"type": "function", "function": {"name": "files", "parameters": {}}}]
     inner = MockLLM(
@@ -191,9 +191,9 @@ def test_says_no_tools_matches_real_endpoint_errors():
 
 
 async def test_auto_mode_switches_to_prompt_tools_when_the_endpoint_rejects_them():
-    from openmuse.llm.mock import MockLLM
-    from openmuse.llm.prompt_tools import PromptToolAdapter
-    from openmuse.schema import LLMResponse
+    from nanomuse.llm.mock import MockLLM
+    from nanomuse.llm.prompt_tools import PromptToolAdapter
+    from nanomuse.schema import LLMResponse
 
     tools = [{"type": "function", "function": {"name": "echo", "parameters": {}}}]
 
@@ -243,8 +243,8 @@ def test_cut_off_tool_arguments_go_to_the_provider_as_an_empty_object():
 
 
 async def test_ask_complete_tries_again_with_room_when_the_reply_was_cut_off():
-    from openmuse.llm.mock import MockLLM
-    from openmuse.schema import LLMResponse
+    from nanomuse.llm.mock import MockLLM
+    from nanomuse.schema import LLMResponse
 
     # a reasoning model that spent the whole budget thinking, then answered on the retry
     llm = MockLLM(

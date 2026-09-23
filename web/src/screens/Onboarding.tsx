@@ -22,7 +22,7 @@ type Step = "welcome" | "you" | "muse" | "model" | "connect" | "tips";
 const ORDER: Step[] = ["welcome", "you", "muse", "model", "connect", "tips"];
 
 /**
- * First run, the way Muse does it: who you are, who your OpenMuse is, which model runs it,
+ * First run, the way Muse does it: who you are, who your nanoMuse is, which model runs it,
  * what it may reach — then a few things to try. Everything here can be changed later
  * under the avatar (Settings, Connections).
  */
@@ -30,7 +30,7 @@ export function Onboarding() {
   const { state, send, setTab, dismissOnboarding, refreshSettings, toast } = useStore();
   const [step, setStep] = useState<Step>("welcome");
   const [userName, setUserName] = useState(state.profile?.user_name ?? "");
-  const [name, setName] = useState(state.profile?.name ?? "OpenMuse");
+  const [name, setName] = useState(state.profile?.name ?? "nanoMuse");
   const [look, setLook] = useState({
     avatar: state.profile?.avatar ?? "sunny",
     emoji: state.profile?.emoji ?? "✨",
@@ -59,7 +59,7 @@ export function Onboarding() {
   const saveProfile = async () => {
     setSaving(true);
     try {
-      await api.updateSettings({ profile: { name: name.trim() || "OpenMuse", ...look, style: style.trim(), user_name: userName.trim() } });
+      await api.updateSettings({ profile: { name: name.trim() || "nanoMuse", ...look, style: style.trim(), user_name: userName.trim() } });
       await refreshSettings();
       next();
     } catch (e) {
@@ -112,7 +112,7 @@ export function Onboarding() {
         {step === "welcome" && (
           <div className="flex h-full flex-col items-center justify-center text-center">
             <Avatar profile={preview} size={96} />
-            <h1 className="mt-6 text-[28px] font-bold tracking-tight">{t("Meet your OpenMuse")}</h1>
+            <h1 className="mt-6 text-[28px] font-bold tracking-tight">{t("Meet your nanoMuse")}</h1>
             <p className="mt-3 max-w-sm text-[15px] text-muted leading-relaxed">
               {t("A personal agent that does the work: it searches, browses, writes files and code, reads and sends mail, and keeps going on long goals while you are away.")}
             </p>
@@ -148,12 +148,12 @@ export function Onboarding() {
         {step === "muse" && (
           <div className="pt-6 space-y-5">
             <div>
-              <h1 className="text-[26px] font-bold tracking-tight">{t("Now, your OpenMuse")}</h1>
+              <h1 className="text-[26px] font-bold tracking-tight">{t("Now, your nanoMuse")}</h1>
               <p className="mt-1 text-[14px] text-muted">{t("Give it a name, a look and a way of talking.")}</p>
             </div>
             <div className="flex items-center gap-4">
               <Avatar profile={preview} size={72} />
-              <input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} className={cx(inputCls, "text-[17px] font-medium")} placeholder="OpenMuse" />
+              <input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} className={cx(inputCls, "text-[17px] font-medium")} placeholder="nanoMuse" />
             </div>
             <AvatarPicker value={look} onChange={setLook} />
             <div>

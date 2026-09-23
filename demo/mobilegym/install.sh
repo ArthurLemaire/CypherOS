@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# Install the OpenMuse app into a MobileGym checkout.
+# Install the nanoMuse app into a MobileGym checkout.
 #
 #   demo/mobilegym/install.sh /path/to/mobilegym
 #
@@ -19,7 +19,7 @@ if [ ! -f "$target/os/createAppStore.ts" ] || [ ! -d "$target/apps" ]; then
   exit 1
 fi
 
-rm -rf "$target/apps/OpenMuse"
-cp -R "$here/apps/OpenMuse" "$target/apps/OpenMuse"
-echo "installed apps/OpenMuse into $target"
-echo "next: (cd $target && npm install && npm run dev), then open the OpenMuse app on the phone."
+rm -rf "$target/apps/nanoMuse"
+cp -R "$here/apps/nanoMuse" "$target/apps/nanoMuse"
+echo "installed apps/nanoMuse into $target"
+echo "next: (cd $target && npm install && npm run dev), then open the nanoMuse app on the phone."

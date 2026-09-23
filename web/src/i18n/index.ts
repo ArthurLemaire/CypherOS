@@ -18,7 +18,7 @@ export const LOCALES: Array<{ value: LocaleSetting; label: string }> = [
   { value: "zh-CN", label: "简体中文" },
 ];
 
-const STORAGE_KEY = "openmuse_locale";
+const STORAGE_KEY = "nanomuse_locale";
 const DICTS: Record<Locale, Record<string, string>> = { en: {}, "zh-CN": zhCN };
 
 function load(): LocaleSetting {

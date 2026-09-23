@@ -1,8 +1,8 @@
 {
-  "name": "openmuse-web",
+  "name": "nanomuse-web",
   "private": true,
-  "version": "0.6.0",
-  "description": "OpenMuse mobile-first web app (chat, goals, ideas, memory, approvals)",
+  "version": "0.7.0",
+  "description": "nanoMuse mobile-first web app (chat, goals, ideas, memory, approvals)",
   "type": "module",
   "scripts": {
     "dev": "vite",

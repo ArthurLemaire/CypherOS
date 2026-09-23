@@ -3,13 +3,13 @@ requires = ["hatchling>=1.24"]
 build-backend = "hatchling.build"
 
 [project]
-name = "openmuse"
-version = "0.6.0"
+name = "nanomuse"
+version = "0.7.0"
 description = "Open-source version of Meta's Muse: a personal agent with a phone app, a Sentinel gatekeeper, a credential vault, memory and goals. Bring your own model."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"
-authors = [{ name = "OpenMuse Contributors" }]
+authors = [{ name = "nanoMuse Contributors" }]
 keywords = ["agent", "ai", "llm", "personal-assistant", "muse", "meta-muse", "deepseek", "mcp"]
 classifiers = [
   "Development Status :: 4 - Beta",
@@ -48,10 +48,10 @@ dependencies = [
 [project.optional-dependencies]
 browser = ["playwright>=1.45"]
 dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.5", "mypy>=1.10", "httpx>=0.27", "types-python-dateutil"]
-all = ["openmuse[browser,dev]"]
+all = ["nanomuse[browser,dev]"]
 
 [project.scripts]
-openmuse = "openmuse.cli:app"
+nanomuse = "nanomuse.cli:app"
 
 [project.urls]
 Homepage = "https://github.com/nano-muse/nanoMuse"
@@ -59,13 +59,13 @@ Repository = "https://github.com/nano-muse/nanoMuse"
 Issues = "https://github.com/nano-muse/nanoMuse/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["openmuse"]
+packages = ["nanomuse"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"config/config.example.toml" = "openmuse/config.example.toml"
+"config/config.example.toml" = "nanomuse/config.example.toml"
 
 [tool.hatch.build.targets.sdist]
-include = ["openmuse", "config/config.example.toml", "README.md", "README_zh.md", "LICENSE"]
+include = ["nanomuse", "config/config.example.toml", "README.md", "README_zh.md", "LICENSE"]
 
 [tool.ruff]
 line-length = 100
@@ -77,7 +77,7 @@ ignore = ["E501", "B008", "UP042"]
 
 [tool.mypy]
 python_version = "3.11"
-files = ["openmuse"]
+files = ["nanomuse"]
 ignore_missing_imports = true
 check_untyped_defs = true
 warn_redundant_casts = true
@@ -88,4 +88,4 @@ warn_unused_ignores = false
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-markers = ["live: tests that call a real LLM endpoint (set OPENMUSE_LIVE=1)"]
+markers = ["live: tests that call a real LLM endpoint (set NANOMUSE_LIVE=1)"]

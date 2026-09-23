@@ -1,5 +1,5 @@
 /**
- * The agent's face. Muse gives its agent a plush doll; so does OpenMuse — six knitted
+ * The agent's face. Muse gives its agent a plush doll; so does nanoMuse — six knitted
  * characters shipped with the app (public/avatars/*.webp), or an emoji on a colour for
  * anyone who prefers it. `profile.avatar` names the doll; empty means the emoji.
  */

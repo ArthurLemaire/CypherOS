@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from openmuse.config import load_settings
+from nanomuse.config import load_settings
 
 
 def test_env_expansion_and_overrides(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -29,7 +29,7 @@ action = "deny"
     )
     monkeypatch.setenv("TEST_KEY", "sk-test")
     monkeypatch.delenv("TEST_URL", raising=False)
-    monkeypatch.delenv("OPENMUSE_LLM_MODEL", raising=False)
+    monkeypatch.delenv("NANOMUSE_LLM_MODEL", raising=False)
     s = load_settings(cfg)
     assert s.llm.api_key == "sk-test"
     assert s.llm.base_url == "https://api.deepseek.com"  # trailing slash stripped
@@ -37,15 +37,15 @@ action = "deny"
     assert s.sentinel.mode == "strict"
     assert s.sentinel.rules[0].action == "deny"
 
-    monkeypatch.setenv("OPENMUSE_LLM_MODEL", "other-model")
-    monkeypatch.setenv("OPENMUSE_SENTINEL_MODE", "auto")
+    monkeypatch.setenv("NANOMUSE_LLM_MODEL", "other-model")
+    monkeypatch.setenv("NANOMUSE_SENTINEL_MODE", "auto")
     s = load_settings(cfg)
     assert s.llm.model == "other-model"
     assert s.sentinel.mode == "auto"
 
     # container-style overrides win over values set in the file
-    monkeypatch.setenv("OPENMUSE_DATA_DIR", str(tmp_path / "data"))
-    monkeypatch.setenv("OPENMUSE_WORKSPACE", str(tmp_path / "ws"))
+    monkeypatch.setenv("NANOMUSE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("NANOMUSE_WORKSPACE", str(tmp_path / "ws"))
     s = load_settings(cfg)
     assert s.data_dir == tmp_path / "data"
     assert s.agent.workspace == tmp_path / "ws"
@@ -58,7 +58,7 @@ def test_missing_explicit_config_raises(tmp_path: Path):
 
 def test_defaults_without_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("OPENMUSE_CONFIG", raising=False)
+    monkeypatch.delenv("NANOMUSE_CONFIG", raising=False)
     monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-from-env")
     monkeypatch.setenv("HOME", str(tmp_path))
     s = load_settings()
@@ -70,7 +70,7 @@ def test_provider_key_fallback_follows_the_host(tmp_path: Path, monkeypatch: pyt
     """A missing api_key is filled from the provider's own variable, never another's."""
     monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-deepseek")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
-    monkeypatch.delenv("OPENMUSE_LLM_API_KEY", raising=False)
+    monkeypatch.delenv("NANOMUSE_LLM_API_KEY", raising=False)
     cfg = tmp_path / "config.toml"
 
     def key_for(base_url: str | None) -> str | None:
@@ -85,3 +85,29 @@ def test_provider_key_fallback_follows_the_host(tmp_path: Path, monkeypatch: pyt
     monkeypatch.delenv("OPENAI_API_KEY")
     assert not key_for("https://api.openai.com/v1")  # DeepSeek's key does not stand in
     assert key_for("https://api.deepseek.com") == "sk-deepseek"
+
+
+def test_pre_rename_environment_still_counts():
+    """OPENMUSE_* (the name until 0.6.0) is read as NANOMUSE_* unless the new one is set."""
+    from nanomuse import alias_legacy_env
+
+    env = {
+        "OPENMUSE_LLM_MODEL": "old",
+        "OPENMUSE_DATA_DIR": "/old",
+        "NANOMUSE_DATA_DIR": "/new",
+        "HOME": "/h",
+    }
+    assert alias_legacy_env(env) == ["NANOMUSE_LLM_MODEL"]
+    assert env["NANOMUSE_LLM_MODEL"] == "old"
+    assert env["NANOMUSE_DATA_DIR"] == "/new"
+
+
+def test_pre_rename_data_dir_is_kept(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from nanomuse.config import _default_data_dir
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert _default_data_dir() == tmp_path / ".nanomuse"  # a fresh machine
+    (tmp_path / ".openmuse").mkdir()
+    assert _default_data_dir() == tmp_path / ".openmuse"  # an upgrade keeps its data
+    (tmp_path / ".nanomuse").mkdir()
+    assert _default_data_dir() == tmp_path / ".nanomuse"  # the new one wins once it exists

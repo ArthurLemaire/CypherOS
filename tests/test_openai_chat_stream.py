@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace as NS
 
-from openmuse.config import LLMSettings
-from openmuse.llm.openai_chat import OpenAIChatLLM
+from nanomuse.config import LLMSettings
+from nanomuse.llm.openai_chat import OpenAIChatLLM
 
 
 def _chunk(content=None, tool_calls=None, finish=None, reasoning=None, usage=None):
@@ -80,8 +80,8 @@ async def test_tools_rejection_becomes_tools_unsupported():
     import openai
     import pytest
 
-    from openmuse.llm.base import ToolsUnsupported
-    from openmuse.schema import Message
+    from nanomuse.llm.base import ToolsUnsupported
+    from nanomuse.schema import Message
 
     def bad_request(message: str):
         req = httpx.Request("POST", "http://localhost/chat/completions")

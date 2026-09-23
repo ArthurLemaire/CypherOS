@@ -84,13 +84,13 @@ export function SettingsScreen() {
     <div className="flex h-full flex-col">
       <header className="safe-top shrink-0 px-5 pt-2 pb-3">
         <BackBar />
-        <h1 className="text-[24px] font-bold tracking-tight">{t("You & {name}", { name: state.profile?.name ?? "OpenMuse" })}</h1>
+        <h1 className="text-[24px] font-bold tracking-tight">{t("You & {name}", { name: state.profile?.name ?? "nanoMuse" })}</h1>
         <p className="text-[13px] text-muted">{t("Make it yours, and decide how careful it should be.")}</p>
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 pb-8 space-y-5">
-        {/* Your OpenMuse */}
-        <Section title={t("Your OpenMuse")}>
+        {/* Your nanoMuse */}
+        <Section title={t("Your nanoMuse")}>
           <div className="flex items-center gap-4">
             <Avatar profile={preview} size={64} />
             <div className="flex-1">
@@ -223,7 +223,7 @@ export function SettingsScreen() {
 
         {/* Notifications */}
         <Section title={t("Notifications")}>
-          {androidApp() ? <PhoneAppSettings name={state.profile?.name ?? "OpenMuse"} /> : <PushSettings name={state.profile?.name ?? "OpenMuse"} />}
+          {androidApp() ? <PhoneAppSettings name={state.profile?.name ?? "nanoMuse"} /> : <PushSettings name={state.profile?.name ?? "nanoMuse"} />}
         </Section>
 
         {/* Model */}
@@ -262,7 +262,7 @@ export function SettingsScreen() {
           <div className="flex items-center gap-3">
             <label className="text-[13.5px] flex-1">
               {t("Reply language")}
-              <span className="block text-[12px] text-muted">{t("What {name} writes in", { name: state.profile?.name ?? "OpenMuse" })}</span>
+              <span className="block text-[12px] text-muted">{t("What {name} writes in", { name: state.profile?.name ?? "nanoMuse" })}</span>
             </label>
             <select
               value={s?.agent.language ?? "auto"}
@@ -292,7 +292,7 @@ export function SettingsScreen() {
         {/* About */}
         <Section title={t("About")}>
           <div className="text-[13px] text-muted space-y-1">
-            <div>OpenMuse {state.version}</div>
+            <div>nanoMuse {state.version}</div>
             {s && <div className="break-all">{t("Data:")} {s.data_dir}</div>}
             {s && <div className="break-all">{t("Workspace:")} {s.agent.workspace}</div>}
             <div>{state.connected ? t("Connected") : t("Reconnecting…")}</div>
@@ -335,7 +335,7 @@ function PhoneAppSettings({ name }: { name: string }) {
           setOn(v);
         }}
       />
-      <div className="text-[12.5px] text-muted">{t("OpenMuse for Android {version}", { version: phone.version() })}</div>
+      <div className="text-[12.5px] text-muted">{t("nanoMuse for Android {version}", { version: phone.version() })}</div>
     </>
   );
 }

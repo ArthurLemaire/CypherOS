@@ -1,6 +1,6 @@
-"""Live smoke test against the configured model (skipped unless OPENMUSE_LIVE=1).
+"""Live smoke test against the configured model (skipped unless NANOMUSE_LIVE=1).
 
-OPENMUSE_LIVE=1 OPENMUSE_CONFIG=config/config.toml pytest -m live -s
+NANOMUSE_LIVE=1 NANOMUSE_CONFIG=config/config.toml pytest -m live -s
 """
 
 from __future__ import annotations
@@ -9,14 +9,14 @@ import os
 
 import pytest
 
-from openmuse.app import OpenMuseApp
-from openmuse.config import load_settings
-from openmuse.ui import HeadlessUI
+from nanomuse.app import NanoMuseApp
+from nanomuse.config import load_settings
+from nanomuse.ui import HeadlessUI
 
 pytestmark = pytest.mark.live
 
 
-@pytest.mark.skipif(os.environ.get("OPENMUSE_LIVE") != "1", reason="set OPENMUSE_LIVE=1 to run")
+@pytest.mark.skipif(os.environ.get("NANOMUSE_LIVE") != "1", reason="set NANOMUSE_LIVE=1 to run")
 async def test_live_tool_use(tmp_path):
     settings = load_settings()
     settings.data_dir = tmp_path / "data"
@@ -24,7 +24,7 @@ async def test_live_tool_use(tmp_path):
     settings.sentinel.mode = "auto"
     settings.agent.max_steps = 8
     ui = HeadlessUI(verbose=True)
-    async with OpenMuseApp(settings, ui) as muse:
+    async with NanoMuseApp(settings, ui) as muse:
         answer = await muse.run(
             "Use python_execute to compute the 25th Fibonacci number (F(1)=F(2)=1), "
             "then finish with terminate and put only the number in the summary."

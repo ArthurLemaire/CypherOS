@@ -6,11 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from openmuse.llm import MockLLM
-from openmuse.memory import MemoryStore, tidy
-from openmuse.memory.consolidate import plan
-from openmuse.schema import LLMResponse
-from openmuse.tools.memory_tools import Remember
+from nanomuse.llm import MockLLM
+from nanomuse.memory import MemoryStore, tidy
+from nanomuse.memory.consolidate import plan
+from nanomuse.schema import LLMResponse
+from nanomuse.tools.memory_tools import Remember
 
 
 def seeded(tmp_path: Path) -> MemoryStore:
@@ -134,8 +134,8 @@ async def test_remember_updates_instead_of_duplicating(tmp_path: Path):
 
 
 def test_tidy_summary_follows_the_reply_language():
-    from openmuse.memory import MemoryChange, MemoryItem, TidyReport
-    from openmuse.server.service import _tidy_summary
+    from nanomuse.memory import MemoryChange, MemoryItem, TidyReport
+    from nanomuse.server.service import _tidy_summary
 
     def item(content: str) -> MemoryItem:
         return MemoryItem(

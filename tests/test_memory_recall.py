@@ -21,19 +21,19 @@ import pytest
 from fastapi.testclient import TestClient
 from openai import AsyncOpenAI
 
-from openmuse.agent import MuseAgent
-from openmuse.config import LLMSettings, MemorySettings, Settings, apply_app_settings
-from openmuse.llm import MockLLM
-from openmuse.memory import Embedder, MemoryIndex, MemoryStore
-from openmuse.memory import embeddings as emb_mod
-from openmuse.memory.embeddings import cosine, default_model, fuse, standouts
-from openmuse.memory.store import MemoryItem
-from openmuse.schema import LLMResponse
-from openmuse.sentinel import AuditLog, Sentinel
-from openmuse.server.api import create_app
-from openmuse.server.service import MuseService
-from openmuse.tools import Recall, Terminate, ToolCollection
-from openmuse.ui import HeadlessUI
+from nanomuse.agent import MuseAgent
+from nanomuse.config import LLMSettings, MemorySettings, Settings, apply_app_settings
+from nanomuse.llm import MockLLM
+from nanomuse.memory import Embedder, MemoryIndex, MemoryStore
+from nanomuse.memory import embeddings as emb_mod
+from nanomuse.memory.embeddings import cosine, default_model, fuse, standouts
+from nanomuse.memory.store import MemoryItem
+from nanomuse.schema import LLMResponse
+from nanomuse.sentinel import AuditLog, Sentinel
+from nanomuse.server.api import create_app
+from nanomuse.server.service import MuseService
+from nanomuse.tools import Recall, Terminate, ToolCollection
+from nanomuse.ui import HeadlessUI
 
 AXES = {
     0: ("flight", "fly", "seat", "window", "机票", "飞机", "tokyo", "trip"),
@@ -477,12 +477,12 @@ def test_connections_embeddings(settings: Settings, fake: FakeEmbeddings):
 def test_embeddings_key_from_the_vault(settings: Settings):
     from rich.console import Console
 
-    from openmuse.app import OpenMuseApp
-    from openmuse.console import ConsoleUI
+    from nanomuse.app import NanoMuseApp
+    from nanomuse.console import ConsoleUI
 
     settings.memory.embedding_base_url = "https://emb.example/v1"
     settings.memory.embedding_api_key = "{{vault:EMB}}"
-    app_ = OpenMuseApp(settings, ConsoleUI(Console()))
+    app_ = NanoMuseApp(settings, ConsoleUI(Console()))
     assert app_.embedder is not None and app_.embedder.client.api_key == "EMPTY"  # not set yet
     app_.vault.set("EMB", "sk-real")
     app_.attach_embedder()
@@ -496,7 +496,7 @@ def test_embeddings_key_from_the_vault(settings: Settings):
 def test_cli_memory_recall(settings: Settings, tmp_path: Path, fake: FakeEmbeddings):
     from typer.testing import CliRunner
 
-    from openmuse.cli import app as cli_app
+    from nanomuse.cli import app as cli_app
 
     settings.memory.embedding_base_url = "http://127.0.0.1:11434/v1"
     seed(MemoryStore(settings.memory_db))

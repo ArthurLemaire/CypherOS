@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- OpenMuse servers usually live on the home network and speak plain HTTP. -->
+<!-- nanoMuse servers usually live on the home network and speak plain HTTP. -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="true">
         <trust-anchors>

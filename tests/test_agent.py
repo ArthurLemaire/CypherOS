@@ -3,16 +3,16 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from openmuse.agent import MuseAgent
-from openmuse.config import Settings
-from openmuse.goals import GoalStore
-from openmuse.llm import MockLLM
-from openmuse.memory import MemoryStore
-from openmuse.schema import Function, LLMResponse, Message, Role, ToolCall, ToolResult
-from openmuse.sentinel import AuditLog, Sentinel
-from openmuse.tools import Goals, Remember, Terminate, ToolCollection
-from openmuse.tools.base import BaseTool
-from openmuse.ui import HeadlessUI
+from nanomuse.agent import MuseAgent
+from nanomuse.config import Settings
+from nanomuse.goals import GoalStore
+from nanomuse.llm import MockLLM
+from nanomuse.memory import MemoryStore
+from nanomuse.schema import Function, LLMResponse, Message, Role, ToolCall, ToolResult
+from nanomuse.sentinel import AuditLog, Sentinel
+from nanomuse.tools import Goals, Remember, Terminate, ToolCollection
+from nanomuse.tools.base import BaseTool
+from nanomuse.ui import HeadlessUI
 
 
 class Adder(BaseTool):
@@ -142,7 +142,7 @@ async def test_stuck_detection_nudges(settings: Settings):
 async def test_context_window_trims_at_user_boundary(settings: Settings):
     settings.agent.max_context_messages = 4
     agent, *_ = make_agent(settings, [])
-    from openmuse.schema import Message
+    from nanomuse.schema import Message
 
     agent.messages = [
         Message.user("u1"),
