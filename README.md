@@ -29,6 +29,10 @@
   <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/screenshots/library.png" width="24%" alt="Library: pages and files the agent made, with previews">
 </p>
 
+<p align="center">
+  <a href="https://nano-muse.github.io/nanoMuse/#video">▶ Watch the 66-second film</a> · <a href="https://nano-muse.github.io/nanoMuse/">the website</a> · <a href="https://demo.nanomuse.dev">the hosted demo</a>
+</p>
+
 ## Start Here
 
 | You want to... | Go to |

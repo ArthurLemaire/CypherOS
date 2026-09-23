@@ -243,6 +243,14 @@ h1 { font-size: clamp(40px, 6vw, 68px); font-weight: 800; }
 .tab.on { background: var(--surface-2); color: var(--fg); }
 .tab svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }
 
+/* the film */
+.film { max-width: 960px; margin: 0 auto; padding: 0 clamp(16px, 4vw, 40px) clamp(40px, 6vw, 80px); }
+.film video {
+  display: block; width: 100%; aspect-ratio: 16 / 9; background: var(--surface-2);
+  border-radius: 24px; border: 1px solid var(--border); box-shadow: 0 40px 90px -50px rgba(0, 0, 0, 0.45);
+}
+.film .sub { margin: 18px auto 0; font-size: 15px; }
+
 /* three beats */
 .beats {
   max-width: 1120px; margin: 0 auto; padding: 0 clamp(16px, 4vw, 40px) clamp(40px, 6vw, 80px);
