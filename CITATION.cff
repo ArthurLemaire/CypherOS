@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: "If you use nanoMuse in your work, please cite it as below."
-title: "nanoMuse: an open-source personal agent in the spirit of Meta's Muse"
+title: "nanoMuse: an open-source personal AI agent inspired by Meta's Muse"
 type: software
 authors:
   - name: "nanoMuse Contributors"

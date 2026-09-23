@@ -1,7 +1,7 @@
 {
   "name": "nanoMuse",
   "short_name": "nanoMuse",
-  "description": "Your open-source personal AI agent.",
+  "description": "An open-source personal AI agent: it does things for you, keeps working while the app is closed, and asks before anything you could not undo.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
