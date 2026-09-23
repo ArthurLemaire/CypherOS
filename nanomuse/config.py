@@ -29,16 +29,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from nanomuse.schema import RiskLevel
 
-
-def _default_data_dir() -> Path:
-    """``~/.nanomuse``, unless only the pre-rename ``~/.openmuse`` exists: then keep using it."""
-    new, old = Path.home() / ".nanomuse", Path.home() / ".openmuse"
-    if not new.exists() and old.is_dir():
-        return old
-    return new
-
-
-DEFAULT_DATA_DIR = _default_data_dir()
+DEFAULT_DATA_DIR = Path.home() / ".nanomuse"
 _ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
 
 

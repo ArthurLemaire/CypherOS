@@ -24,8 +24,8 @@ android {
         applicationId = "io.github.nanomuse.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 700
-        versionName = "0.7.0"
+        versionCode = 100
+        versionName = "0.1.0"
     }
 
     signingConfigs {

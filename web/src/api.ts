@@ -32,22 +32,6 @@ import type {
 
 const TOKEN_KEY = "nanomuse_token";
 
-// The app was called OpenMuse until 0.6.0: carry its localStorage over once so an
-// existing phone stays paired (token, language, seen feed posts) after the rename.
-try {
-  for (const key of Object.keys(localStorage)) {
-    if (key.startsWith("openmuse_")) {
-      const renamed = "nanomuse_" + key.slice("openmuse_".length);
-      if (localStorage.getItem(renamed) === null) {
-        localStorage.setItem(renamed, localStorage.getItem(key) ?? "");
-      }
-      localStorage.removeItem(key);
-    }
-  }
-} catch {
-  // storage disabled: nothing to migrate
-}
-
 export class AuthError extends Error {
   constructor() {
     super("unauthorized");

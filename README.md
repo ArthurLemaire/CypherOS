@@ -21,8 +21,6 @@
 
 🧸 **nanoMuse** is an open-source, self-hosted personal agent in the shape of Meta's [Muse](https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/), made to work in China: one agent with a name and a face, on your phone, that does things rather than answering questions, keeps working while the app is closed, and asks before anything you could not undo. Where Muse leans on Western services with APIs, nanoMuse will also work the apps on your phone through their screens (12306, WeChat, Alipay…) as a GUI agent, so the same agent works where those APIs do not exist. Any OpenAI-compatible model. One Python package, a web app inside it, and an Android app.
 
-> nanoMuse was called **OpenMuse** until 0.6.0. It is not related to CopilotKit's project of that name.
-
 <p align="center">
   <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/screenshots/chat-approval.png" width="24%" alt="Chat: the agent stops before a shell command and asks">
   <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/screenshots/feed.png" width="24%" alt="Feed: posts written for you from your instructions">
@@ -248,29 +246,17 @@ More in [docs/architecture.md](https://github.com/nano-muse/nanoMuse/blob/main/d
 
 ## Releases
 
-**Latest release: [v0.7.0](https://github.com/nano-muse/nanoMuse/releases/tag/v0.7.0)**
+**v0.1.0 is the first release** and is being prepared: the agent and its Sentinel, the web app, the Android app, the phone operator on the simulated phone, the hosted showcase. Until it is tagged, `main` is the version to run — `pip install git+https://github.com/nano-muse/nanoMuse.git` or the `ghcr.io/nano-muse/nanomuse:edge` image.
 
-v0.7.0 is the rename: OpenMuse became nanoMuse.
-
-- Package `nanomuse`, command `nanomuse`, environment variables `NANOMUSE_*` (`OPENMUSE_*` still read), data in `~/.nanomuse` (an existing `~/.openmuse` is kept).
-- The Android app has a new application id, so it installs next to the old one; the phone stays paired after the web app migrates its storage.
-- Docker image `ghcr.io/nano-muse/nanomuse`.
-
-Every version: [CHANGELOG.md](https://github.com/nano-muse/nanoMuse/blob/main/CHANGELOG.md) · [GitHub releases](https://github.com/nano-muse/nanoMuse/releases)
-
-## Recent Updates
-
-- **v0.7.0** 🏷️ Renamed to nanoMuse, moved to [nano-muse/nanoMuse](https://github.com/nano-muse/nanoMuse).
-- **v0.6.0** 🧸 The Muse look, plush avatars, feed posts, a stop button, the Android app.
-- **v0.5.0** 📎 Attachments from the phone, recall by meaning through any `/embeddings`, Brave / Tavily / SearXNG search.
-- **v0.4.0** 🧩 Skills in the `SKILL.md` format, triggers (mail, calendar, webhooks), contacts, a sandbox for every command.
-- **v0.3.0** 📅 Calendar connector, memory that stays tidy with undo.
-- **v0.2.0** 📱 Scoped approvals, the phone app shell, artifacts, connections from the phone, proactivity, push notifications, browser view, 简体中文.
+[CHANGELOG.md](https://github.com/nano-muse/nanoMuse/blob/main/CHANGELOG.md) · [GitHub releases](https://github.com/nano-muse/nanoMuse/releases)
 
 ## Roadmap
 
+- [ ] Android executor: the nanoMuse app operates real apps through an accessibility service (screenshots, gestures, the finger overlay), with Shizuku as an option
+- [ ] Local build: the brain inside the APK, so the phone needs no server
+- [ ] Free starter quota through the showcase gateway, then your own key
+- [ ] Muse features still missing: durable tasks with a take-over hand-off, watches that trigger on the world, ideas with evidence, a follow-up queue
 - [ ] Voice: speak a message and see it as text before it goes, through any OpenAI-compatible `/audio/transcriptions`
-- [ ] Evals: a small set of everyday tasks with pass rates per model, so a model choice is a measured one
 - [ ] iOS: the same shell as the Android app
 
 ## 🤝 Contribute
