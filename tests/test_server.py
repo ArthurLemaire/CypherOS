@@ -179,6 +179,34 @@ def test_denied_approval_blocks_tool(server):
     assert "Sentinel blocked" in notices[0]["text"]
 
 
+def test_stop_ends_the_run_and_closes_the_pending_card(server):
+    """The stop button: the run ends, the approval waiting on the user expires, the
+    transcript is left in a shape the model can continue from, and the next message runs."""
+    client, service, llm = server
+    llm.script.extend(
+        [
+            LLMResponse(content="Running.", tool_calls=[tc("shell", command="echo never")]),
+            LLMResponse(content="Second run went fine."),
+        ]
+    )
+    client.post("/api/threads/main/send", json={"text": "run it"})
+    card = wait_for(
+        lambda: [e for e in events_of(client, kind="approval") if e["status"] == "pending"]
+    )[0]
+    assert client.post("/api/threads/main/stop").status_code == 200
+    wait_idle(service)
+    assert [e for e in events_of(client, kind="approval")][0]["status"] == "expired"
+    assert any(e["text"] == "Stopped." for e in events_of(client, kind="notice"))
+    assert client.get("/api/state").json()["pending_approvals"] == []
+    msgs = service.threads["main"].agent.messages
+    assert msgs[-1].role.value == "tool" and "Stopped by the user" in msgs[-1].content
+    # nothing running: stop says so instead of failing
+    assert client.post("/api/threads/main/stop").json() == {"ok": False}
+    client.post("/api/threads/main/send", json={"text": "again"})
+    wait_for(lambda: [e for e in events_of(client, kind="assistant") if "Second run" in e["text"]])
+    assert card["id"] not in [a["id"] for a in client.get("/api/state").json()["pending_approvals"]]
+
+
 def test_ask_user_question_is_answered_by_next_message(server):
     client, _, llm = server
     llm.script.extend(

@@ -30,7 +30,7 @@ from openmuse.llm import BaseLLM
 from openmuse.logger import logger
 from openmuse.memory.consolidate import TidyReport, tidy
 from openmuse.reminders import Reminder
-from openmuse.schema import Attachment, Message
+from openmuse.schema import Attachment, Message, Role
 from openmuse.sentinel.grants import SCOPES
 from openmuse.server.connections import Connections
 from openmuse.server.events import MAIN_THREAD, EventBus, Timeline, new_id, now_iso
@@ -46,33 +46,40 @@ IDEAS_PROMPT = """You are {name}, the user's personal agent. Based on what you k
 What you know:
 {context}
 
-Answer with a JSON array only, no prose. Each item: {{"title": "<short title, max 8 words>", "detail": "<one sentence on what you would do and why it helps>", "prompt": "<the exact request the user could send you to start>"}}. Write in the user's language ({language})."""
+Answer with a JSON array only, no prose. Each item: {{"title": "<short title, max 8 words>", "detail": "<one sentence on what you would do and why it helps>", "prompt": "<the exact request the user could send you to start>", "area": "<one of: planning, research, goals, money, health, home, learning, people, files, fun>"}}. Write in the user's language ({language})."""
+
+IDEA_AREAS = ("planning", "research", "goals", "money", "health", "home", "learning", "people", "files", "fun")
 
 STARTER_IDEAS = [
     {
         "title": "Plan my week",
         "detail": "Tell me what's on your plate and I'll turn it into a realistic plan with the important things first.",
         "prompt": "Help me plan my week. Ask me what I need to get done, then propose a schedule.",
+        "area": "planning",
     },
     {
         "title": "Research & compare options",
         "detail": "Laptops, flights, insurance, a new phone plan — I'll gather the facts and compare them for you.",
         "prompt": "I need to make a purchase decision. Ask me what I'm choosing between, then research and compare the options.",
+        "area": "research",
     },
     {
         "title": "Set up a long-term goal",
         "detail": "Share a goal (learn a language, run a 10k, save for a trip) and I'll break it into steps and keep track.",
         "prompt": "I want to set up a long-term goal. Ask me about it, then create a plan with concrete steps and track it.",
+        "area": "goals",
     },
     {
         "title": "Tell me about yourself",
         "detail": "The more I know about your preferences, routines and constraints, the more useful I get. I'll remember what matters.",
         "prompt": "Ask me a few questions about myself so you can help me better, and remember the answers.",
+        "area": "people",
     },
     {
         "title": "Build a quick tracker",
         "detail": "Spending, habits, workouts, reading — I can write a small script or document to track it for you.",
         "prompt": "Build me a simple tracker. Ask me what I want to track and how, then create it in the workspace.",
+        "area": "files",
     },
 ]
 
@@ -190,6 +197,7 @@ class Thread:
     agent: MuseAgent
     inbox: asyncio.Queue[str | Incoming] = field(default_factory=asyncio.Queue)
     worker: asyncio.Task[None] | None = None
+    stopping: bool = False
     busy: bool = False
     # background prompts (goal work, ideas) → the short label shown as the approval purpose
     purposes: dict[str, str] = field(default_factory=dict)
@@ -473,6 +481,36 @@ class MuseService:
         self.bus.publish({"kind": "thread_deleted", "thread": thread_id})
         return True
 
+    def stop_thread(self, thread_id: str) -> bool:
+        """The stop button: end the run in progress and drop what was queued behind it.
+        The conversation stays; a pending approval or question closes unanswered."""
+        thread = self.threads.get(thread_id)
+        if thread is None or not thread.busy or thread.worker is None or thread.worker.done():
+            return False
+        while not thread.inbox.empty():
+            thread.inbox.get_nowait()
+        for ev in list(thread.timeline.tail(50)):
+            if ev.get("type") in ("approval", "question") and ev.get("status") == "pending":
+                self.ui.patch(thread_id, ev["id"], status="expired")
+        thread.stopping = True
+        thread.worker.cancel()
+        return True
+
+    def _settle_stopped(self, thread: Thread) -> None:
+        """After a cancelled run: the transcript must not end on a tool call the model never
+        saw answered, and the agent goes back to idle so the next message runs cleanly."""
+        agent = thread.agent
+        msgs = agent.messages
+        while msgs and msgs[-1].role == Role.TOOL:
+            msgs.pop()
+        if msgs and msgs[-1].role == Role.ASSISTANT and msgs[-1].tool_calls:
+            for tc in msgs[-1].tool_calls:
+                msgs.append(Message.tool("Stopped by the user before this ran.", tc.id, tc.function.name))
+        agent.state = agent.state.__class__.IDLE
+        agent._save_session()
+        thread.stopping = False
+        self.ui.emit({"type": "notice", "level": "info", "text": "Stopped.", "thread": thread.id})
+
     def clear_thread(self, thread_id: str) -> bool:
         thread = self.threads.get(thread_id)
         if thread is None or thread.busy:
@@ -586,6 +624,8 @@ class MuseService:
                     )
                     self._finish_run(thread, purpose, final.strip(), quiet)
                 except asyncio.CancelledError:
+                    if thread.stopping:
+                        self._settle_stopped(thread)
                     raise
                 except Exception as exc:  # noqa: BLE001
                     logger.exception("thread {} failed", thread.id)
@@ -1702,11 +1742,13 @@ def _parse_ideas(text: str) -> list[dict[str, str]]:
         title = str(item.get("title", "")).strip()
         prompt = str(item.get("prompt", "")).strip()
         if title and prompt:
+            area = str(item.get("area", "")).strip().lower()
             ideas.append(
                 {
                     "title": title[:80],
                     "detail": str(item.get("detail", "")).strip()[:300],
                     "prompt": prompt[:1000],
+                    "area": area if area in IDEA_AREAS else "fun",
                 }
             )
     return ideas[:8]

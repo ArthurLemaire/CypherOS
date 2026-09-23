@@ -111,6 +111,7 @@ export const api = {
     request<ThreadMeta>(`/api/threads/${id}`, { method: "PATCH", body: JSON.stringify({ title }) }),
   deleteThread: (id: string) => request<{ ok: boolean }>(`/api/threads/${id}`, { method: "DELETE" }),
   clearThread: (id: string) => request<{ ok: boolean }>(`/api/threads/${id}/clear`, { method: "POST" }),
+  stopThread: (id: string) => request<{ ok: boolean }>(`/api/threads/${id}/stop`, { method: "POST" }),
   events: (thread: string, limit = 200, before?: string) =>
     request<{ thread: ThreadMeta; events: TimelineEvent[]; has_more: boolean }>(
       `/api/threads/${thread}/events?limit=${limit}${before ? `&before=${before}` : ""}`,

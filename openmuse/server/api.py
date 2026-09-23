@@ -328,6 +328,11 @@ def create_app(settings: Settings, service: MuseService | None = None) -> FastAP
             raise HTTPException(404, "no such thread")
         return {"ok": True}
 
+    @app.post("/api/threads/{thread_id}/stop", dependencies=dep)
+    async def stop_thread(thread_id: str) -> dict[str, Any]:
+        _thread_or_404(thread_id)
+        return {"ok": svc.stop_thread(thread_id)}
+
     @app.post("/api/threads/{thread_id}/clear", dependencies=dep)
     async def clear_thread(thread_id: str) -> dict[str, Any]:
         _thread_or_404(thread_id)

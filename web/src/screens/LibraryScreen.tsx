@@ -1,6 +1,6 @@
 import { CalendarDays, Code2, FileImage, FileSpreadsheet, FileText, Globe, Loader2, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { api } from "../api";
+import { api, fileUrl } from "../api";
 import { useT } from "../i18n";
 import { useStore } from "../store";
 import type { FileInfo } from "../types";
@@ -96,10 +96,10 @@ export function LibraryScreen() {
               : t("No files match.")}
           </div>
         )}
-        <ul className="space-y-2">
-          {shown.map((f) => (
+        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {shown.map((f, i) => (
             <li key={f.path}>
-              <FileRow file={f} onOpen={() => openFile(f.path)} />
+              <FileTile file={f} preview={i < 12} onOpen={() => openFile(f.path)} />
             </li>
           ))}
         </ul>
@@ -108,35 +108,56 @@ export function LibraryScreen() {
   );
 }
 
-function FileRow({ file, onOpen }: { file: FileInfo; onOpen: () => void }) {
+/** A card per file, the way Muse shows artifacts: pages and pictures as a small live preview,
+ * everything else as an icon tile. Previews are capped so a long library stays light. */
+function FileTile({ file, preview, onOpen }: { file: FileInfo; preview: boolean; onOpen: () => void }) {
   const kind = fileKind(file.name);
   const icon =
     kind === "html" ? (
-      <Globe size={19} />
+      <Globe size={26} />
     ) : kind === "image" ? (
-      <FileImage size={19} />
+      <FileImage size={26} />
     ) : kind === "data" ? (
-      <FileSpreadsheet size={19} />
+      <FileSpreadsheet size={26} />
     ) : kind === "code" ? (
-      <Code2 size={19} />
+      <Code2 size={26} />
     ) : kind === "event" ? (
-      <CalendarDays size={19} />
+      <CalendarDays size={26} />
     ) : (
-      <FileText size={19} />
+      <FileText size={26} />
     );
   const dir = file.path.includes("/") ? file.path.slice(0, file.path.lastIndexOf("/")) : "";
+  const live = preview && (kind === "html" || kind === "image");
   return (
     <button
       type="button"
       onClick={onOpen}
-      className="w-full text-left rounded-3xl border border-border/70 bg-surface shadow-sm px-4 py-3 flex items-center gap-3 active:scale-[0.99] transition"
+      className="flex w-full flex-col overflow-hidden rounded-[20px] border border-border/70 bg-surface text-left shadow-[0_4px_20px_-12px_rgba(0,0,0,0.2)] transition active:scale-[0.98]"
     >
-      <div className="rounded-2xl bg-accent/12 text-accent p-2.5">{icon}</div>
-      <div className="flex-1 min-w-0">
-        <div className="font-medium text-[14.5px] truncate">{file.name}</div>
-        <div className="text-[12px] text-muted truncate">
-          {relativeTime(file.modified)} · {formatSize(file.size)}
-          {dir && ` · ${dir}`}
+      <div className="relative aspect-[4/3] w-full overflow-hidden bg-surface-2">
+        {live && kind === "image" ? (
+          <img src={fileUrl(file.path)} alt="" loading="lazy" className="h-full w-full object-cover" />
+        ) : live ? (
+          <div className="pointer-events-none absolute inset-0 bg-white">
+            <iframe
+              title={file.path}
+              src={fileUrl(file.path)}
+              sandbox=""
+              tabIndex={-1}
+              loading="lazy"
+              scrolling="no"
+              className="absolute left-0 top-0 h-[600px] w-[800px] origin-top-left scale-[0.25] border-0 sm:scale-[0.3]"
+            />
+          </div>
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-accent">{icon}</div>
+        )}
+      </div>
+      <div className="min-w-0 px-3 py-2.5">
+        <div className="truncate text-[13.5px] font-medium">{file.name}</div>
+        <div className="truncate text-[11.5px] text-muted">
+          {relativeTime(file.modified)}
+          {dir ? ` · ${dir}` : ` · ${formatSize(file.size)}`}
         </div>
       </div>
     </button>

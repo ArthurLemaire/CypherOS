@@ -228,7 +228,7 @@ function EventView({
       case "tool":
         return <ToolChip event={event} />;
       case "approval":
-        return <ApprovalCard event={event} onDecide={onDecide} />;
+        return <ApprovalCard event={event} name={name} onDecide={onDecide} />;
       case "question":
         return <QuestionCard event={event} name={name} />;
       case "notice":
