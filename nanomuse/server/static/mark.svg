@@ -1,6 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#2f7a5a"/>
-  <g transform="translate(26 24) scale(2.3)">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <g transform="translate(0 0) scale(1)">
     <path d="M26 62a26 26 0 1 1 52 0a26 26 0 1 1 -52 0z" fill="#2a1a14"/>
     <path d="M122 62a26 26 0 1 1 52 0a26 26 0 1 1 -52 0z" fill="#2a1a14"/>
     <path d="M31 62a21 21 0 1 1 42 0a21 21 0 1 1 -42 0z" fill="#bf4f23"/>

@@ -72,6 +72,10 @@ export interface AppState {
   onboardingDismissed: boolean;
   tab: Tab;
   toast: string | null;
+  /** When the agent last went from working to idle (ms since epoch; 0 = never). The face is pleased for a moment. */
+  finishedAt: number;
+  /** When a tool call last failed or was refused (ms since epoch; 0 = never). The face is worried for a moment. */
+  mishapAt: number;
 }
 
 type Action =
@@ -120,6 +124,8 @@ const initial: AppState = {
   onboardingDismissed: false,
   tab: "chat",
   toast: null,
+  finishedAt: 0,
+  mishapAt: 0,
 };
 
 function upsertApproval(list: ApprovalEvent[], ev: TimelineEvent): ApprovalEvent[] {
@@ -233,6 +239,7 @@ function applyWs(state: AppState, msg: WsMessage): AppState {
       // Only threads whose history has been loaded get the event merged in; the rest are
       // fetched when opened. The approvals queue and the Feed follow every thread.
       const loaded = state.events[ev.thread] !== undefined;
+      const mishap = (ev.type === "tool" && (ev.status === "error" || ev.status === "blocked")) || (ev.type === "notice" && ev.level === "error");
       return {
         ...state,
         streams,
@@ -240,6 +247,7 @@ function applyWs(state: AppState, msg: WsMessage): AppState {
         events: loaded ? { ...state.events, [ev.thread]: upsertEvent(state.events[ev.thread], ev) } : state.events,
         pendingApprovals: upsertApproval(state.pendingApprovals, ev),
         feedVersion: isFeedWorthy(ev) ? state.feedVersion + 1 : state.feedVersion,
+        mishapAt: mishap ? Date.now() : state.mishapAt,
       };
     }
     case "stream_start":
@@ -269,7 +277,8 @@ function applyWs(state: AppState, msg: WsMessage): AppState {
       const s = streams[st.thread];
       if (s?.ended && st.state !== "working") streams[st.thread] = undefined;
       const overall = pickOverall(state.status, st);
-      return { ...state, status: overall, streams };
+      const finished = state.status.state === "working" && overall.state === "idle";
+      return { ...state, status: overall, streams, finishedAt: finished ? Date.now() : state.finishedAt };
     }
     case "thread":
       return { ...state, threads: upsertThread(state.threads, msg.thread) };

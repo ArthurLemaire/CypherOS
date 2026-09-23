@@ -2,6 +2,7 @@ import { LayoutGrid, Lightbulb, MessageCircle, Newspaper, SquareCheckBig, WifiOf
 import { useEffect, useState, type ReactNode } from "react";
 import { setToken } from "./api";
 import { FileViewer } from "./components/FileViewer";
+import { RedPanda } from "./components/RedPanda";
 import { ChatScreen } from "./screens/ChatScreen";
 import { ConnectionsScreen } from "./screens/ConnectionsScreen";
 import { FeedScreen } from "./screens/FeedScreen";
@@ -112,7 +113,7 @@ function TokenGate() {
   const t = useT();
   return (
     <div className="mx-auto flex h-[100dvh] max-w-md flex-col items-center justify-center px-6 text-center">
-      <img src="/avatars/sunny.webp" alt="" className="avatar-idle h-24 w-24 rounded-full object-cover" />
+      <RedPanda mood="sleepy" size={96} />
       <h1 className="mt-4 text-[22px] font-bold">{t("Connect to your nanoMuse")}</h1>
       <p className="mt-2 text-[14px] text-muted">
         {t("This app talks to the nanoMuse server you run yourself. Scan the QR code printed by")}{" "}

@@ -15,7 +15,7 @@ nanomuse serve --port 9000 --no-qr
   <img src="screenshots/library.png" width="24%" alt="Library: pages with live previews">
 </p>
 
-The look follows Meta Muse: near-white and near-black surfaces, one blue accent, grey bubbles for the agent and light blue for you, a plush avatar at the top of the chat that moves while it works, and a floating bar with five icons. The font is [Figtree](https://github.com/erikdkennedy/figtree) (OFL), bundled.
+The look follows Meta Muse: near-white and near-black surfaces, one blue accent, grey bubbles for the agent and light blue for you, a red panda at the top of the chat that changes pose with what the agent is doing, and a floating bar with five icons. The font is [Figtree](https://github.com/erikdkennedy/figtree) (OFL), bundled. The study behind these choices is in [design.md](design.md).
 
 ## Getting it onto your phone
 
@@ -59,7 +59,7 @@ Five tabs — Chat, Feed, Ideas, Goals, Library — and a menu behind the avatar
 
 **Library.** Every file in the agent's workspace, newest first, filtered by kind (pages, documents, images, data, code) and searchable. Files open in the app: pages render live, Markdown is formatted, CSV becomes a table, images and PDFs display inline. A page the agent wrote runs in a sandboxed frame with an opaque origin — it cannot read the access token or call the API — and the server sends `Content-Security-Policy: sandbox` with every HTML file for the same reason.
 
-**Avatar.** The plush avatar sits at the top of the chat with a status line under it — what the agent is doing right now in this chat, or that it is waiting for you — and moves while it works; the chat tab carries a badge with the approvals waiting anywhere. Tap the avatar for the status sheet: the avatar large, the same status line, a *Stop* button while something runs (the run ends, pending cards in that chat close, and the conversation stays usable), the model and the Sentinel mode, then:
+**Avatar.** The red panda sits at the top of the chat with a status line under it — what the agent is doing right now in this chat, or that it is waiting for you. It is drawn live (an SVG, `web/src/components/RedPanda.tsx`) and holds a pose for each state: breathing, blinking and glancing about while idle; typing at a small laptop while it works; a raised paw and a "!" while it waits for you; a bounce when a run finishes; a worried shake when a tool call fails or is refused; asleep when the server is unreachable. Tap it and it is pleased about it. Settings offers six plush dolls and an emoji instead; those move as a whole (breathe, sway, hop) rather than changing pose. All of it stops under `prefers-reduced-motion`. The chat tab carries a badge with the approvals waiting anywhere. Tap the avatar for the status sheet: the avatar large, the same status line, a *Stop* button while something runs (the run ends, pending cards in that chat close, and the conversation stays usable), the model and the Sentinel mode, then:
 
 - *Approvals* — the queue of cards waiting for you across all chats, answerable right there. Opens first when something is pending.
 - *Activity* — the audit trail: every tool call, decision and approval, including refused ones.

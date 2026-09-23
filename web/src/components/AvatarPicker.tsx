@@ -1,7 +1,8 @@
 import { Check } from "lucide-react";
-import { PLUSH, plushUrl } from "../avatars";
+import { MASCOT, PLUSH, plushUrl } from "../avatars";
 import { useT } from "../i18n";
 import { cx } from "../util";
+import { RedPanda } from "./RedPanda";
 
 const EMOJI = ["✨", "🌙", "🪐", "🌿", "🔥", "🌊", "🦉", "🦊", "🐙", "🎯", "🧭", "💎", "🍀", "🎈", "🤖", "🧠"];
 export const AVATAR_COLORS = ["#0064d4", "#7c3aed", "#0891b2", "#059669", "#d97706", "#dc2626", "#db2777", "#4b5563"];
@@ -12,13 +13,23 @@ export interface AvatarChoice {
   color: string;
 }
 
-/** The dolls, plus an emoji on a colour for anyone who would rather. Used in setup and in Settings. */
+/** The red panda, the dolls, plus an emoji on a colour for anyone who would rather. Used in setup and in Settings. */
 export function AvatarPicker({ value, onChange }: { value: AvatarChoice; onChange: (v: AvatarChoice) => void }) {
   const t = useT();
   const emojiMode = value.avatar === "";
+  const ring = "ring-[2.5px] ring-accent ring-offset-2 ring-offset-bg";
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-7 gap-2">
+      <div className="grid grid-cols-4 gap-3">
+        <button
+          type="button"
+          aria-label={t("The red panda")}
+          aria-pressed={value.avatar === MASCOT}
+          onClick={() => onChange({ ...value, avatar: MASCOT })}
+          className={cx("relative aspect-square overflow-hidden rounded-full transition", value.avatar === MASCOT ? ring : "opacity-90 hover:opacity-100")}
+        >
+          <RedPanda mood={value.avatar === MASCOT ? "happy" : "idle"} size={200} still className="h-full w-full" />
+        </button>
         {PLUSH.map((p) => {
           const on = value.avatar === p.id;
           return (
@@ -28,7 +39,7 @@ export function AvatarPicker({ value, onChange }: { value: AvatarChoice; onChang
               aria-label={p.label}
               aria-pressed={on}
               onClick={() => onChange({ ...value, avatar: p.id })}
-              className={cx("relative aspect-square overflow-hidden rounded-full bg-[#eadfcd] transition", on ? "ring-[2.5px] ring-accent ring-offset-2 ring-offset-bg" : "opacity-90 hover:opacity-100")}
+              className={cx("relative aspect-square overflow-hidden rounded-full bg-[#eadfcd] transition", on ? ring : "opacity-90 hover:opacity-100")}
             >
               <img src={plushUrl(p.id)} alt="" draggable={false} className="h-full w-full object-cover" />
             </button>
@@ -39,10 +50,7 @@ export function AvatarPicker({ value, onChange }: { value: AvatarChoice; onChang
           aria-label={t("An emoji instead")}
           aria-pressed={emojiMode}
           onClick={() => onChange({ ...value, avatar: "" })}
-          className={cx(
-            "flex aspect-square items-center justify-center rounded-full text-[20px] transition",
-            emojiMode ? "ring-[2.5px] ring-accent ring-offset-2 ring-offset-bg" : "opacity-90 hover:opacity-100",
-          )}
+          className={cx("flex aspect-square items-center justify-center rounded-full text-[26px] transition", emojiMode ? ring : "opacity-90 hover:opacity-100")}
           style={{ background: `linear-gradient(135deg, ${value.color}, color-mix(in srgb, ${value.color} 60%, #ffffff))` }}
         >
           {value.emoji}
