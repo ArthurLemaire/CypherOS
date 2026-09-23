@@ -266,11 +266,18 @@ flowchart LR
 - [Issues](https://github.com/nano-muse/nanoMuse/issues) 里有待查的问题。
 - 一个专注的修复就开一个 [Pull Request](https://github.com/nano-muse/nanoMuse/pulls)。给 App 加一种语言只需 `web/src/i18n/` 里的一个词典文件。
 
-## 相关项目
+## 致谢
 
-- [nanobot](https://github.com/HKUDS/nanobot)：住在聊天软件（Telegram、Discord、Slack、微信）里的个人助理框架。想在已有的频道里放一个机器人，选它；nanoMuse 是一个有 Muse 产品形态和安全模型的 Agent。
-- [OpenClaw](https://github.com/openclaw/openclaw)：许多助理项目采用的常驻网关思路。
-- [browser-use](https://github.com/browser-use/browser-use)：浏览器工具借鉴的元素标注做法。
+nanoMuse 站在别人的工作之上。条款见 [THIRD_PARTY_NOTICES.md](https://github.com/nano-muse/nanoMuse/blob/main/THIRD_PARTY_NOTICES.md)，这里是短名单：
+
+- [MobileGym](https://github.com/Purewhiter/mobilegym)——演示站跑在上面的模拟安卓手机，国内常用 App 以 React 应用的形式在浏览器里运行；手指动效沿用它的触控反馈。
+- [MemGUI-Bench](https://github.com/lgy0404/MemGUI-Bench)——手机操作员移植自它的 `mobile_use` 提示词与循环。
+- [PhoneHarness](https://github.com/lsdefine/PhoneHarness)——"能用工具精确完成的绝不走 GUI"的路由原则，以及 JSONL 轨迹渲染成 HTML 的做法。
+- [CopilotKit/OpenMuse](https://github.com/CopilotKit/OpenMuse)——持久任务、watch、有依据的 Ideas、追问队列等产品设计。
+- [Open-AutoGLM](https://github.com/zai-org/Open-AutoGLM) 与 [ClawGUI](https://github.com/ClawGUI/ClawGUI-APP)——Android 执行器的参照。
+- [modern-screenshot](https://github.com/qq15725/modern-screenshot)、[Caddy](https://github.com/caddyserver/caddy) 及其 Cloudflare 模块、[Figtree](https://github.com/erikdkennedy/figtree)、[bubblewrap](https://github.com/containers/bubblewrap)。
+
+相关项目：[nanobot](https://github.com/HKUDS/nanobot) 是住在聊天软件（Telegram、Discord、Slack、微信）里的个人助理框架，想在已有频道里放一个机器人选它；浏览器工具的元素标注做法来自 [browser-use](https://github.com/browser-use/browser-use)。
 
 ## 声明
 
