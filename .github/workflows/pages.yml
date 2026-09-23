@@ -1,0 +1,57 @@
+name: Website
+
+# Publishes site/ to GitHub Pages: https://nano-muse.github.io/nanoMuse/
+# The page's generated parts (the mascot as static SVG, icons, fonts, the app screenshots)
+# are built here from web/ and docs/, so they never go stale in git. See site/README.md.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "web/src/components/RedPanda.*"
+      - "web/public/icon.svg"
+      - "web/public/mark.svg"
+      - "web/scripts/site-mascot.mjs"
+      - "docs/screenshots/**"
+      - "docs/cover.png"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
+      - run: npm run site:mascot
+        working-directory: web
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

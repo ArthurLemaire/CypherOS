@@ -36,6 +36,7 @@ The first release: an open-source personal AI agent inspired by Meta's Muse. One
 - **The red panda**: the agent's face is an SVG drawn live that changes pose with its state — idle (breathing, blinking, glancing about), working (typing at a laptop), waiting for you (a raised paw and a "!"), done (a bounce), failed (a shake), offline (asleep). It is also the logo: the web icon, the README cover and the Android launcher, monochrome and status-bar icons. Six plush dolls and an emoji remain as alternatives.
 - **The Android app**: a native shell around the web app — scan the QR code `nanomuse serve` prints, then the same app in a WebView with notifications. Signed APK on every release.
 - **The showcase** (`demo/showcase/`): a gateway that starts a private nanoMuse per visitor next to the simulated phone, with metered model access and bring-your-own-key; images published from CI.
+- **Website**: `site/`, one static page in English and 中文 with the red panda playing a task end to end, published to GitHub Pages from `.github/workflows/pages.yml`.
 
 ### Command line
 
