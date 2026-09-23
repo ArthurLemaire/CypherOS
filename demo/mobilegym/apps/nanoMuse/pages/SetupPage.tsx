@@ -13,6 +13,8 @@ export default function SetupPage() {
   const current = useNanoMuseStore((s) => s.serverUrl);
   const currentToken = useNanoMuseStore((s) => s.token);
   const configure = useNanoMuseStore((s) => s.configure);
+  const gui = useNanoMuseStore((s) => s.gui);
+  const setGui = useNanoMuseStore((s) => s.setGui);
   const { go } = useNanoMuseGestures();
 
   const [address, setAddress] = useState(current || 'http://127.0.0.1:8787');
@@ -101,7 +103,21 @@ export default function SetupPage() {
           </button>
         </form>
 
-        <div className="mt-8 rounded-2xl bg-app-surface border border-app-border p-4 text-[13px] text-app-text-muted leading-relaxed">
+        <label className="mt-6 rounded-2xl bg-app-surface border border-app-border p-4 flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={gui}
+            onChange={(e) => setGui(e.target.checked)}
+            className="mt-1 h-4 w-4 accent-app-primary"
+          />
+          <span className="text-[13px] leading-relaxed text-app-text-muted">
+            <span className="font-medium text-app-text block mb-0.5">Let nanoMuse operate this phone</span>
+            The agent may read this screen and tap, type and swipe in the apps here — when its own
+            GUI switch (Settings → Phone) is on. It asks before paying, sending or deleting.
+          </span>
+        </label>
+
+        <div className="mt-4 rounded-2xl bg-app-surface border border-app-border p-4 text-[13px] text-app-text-muted leading-relaxed">
           <p className="font-medium text-app-text mb-1">On the computer</p>
           <p>
             <code className="font-mono">nanomuse serve</code> prints a link with a one-time token

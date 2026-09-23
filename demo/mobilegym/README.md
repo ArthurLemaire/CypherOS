@@ -30,6 +30,15 @@ shell around the real nanoMuse web app:
 - **Setup** — on first launch the app asks for the server address; paste the link
   `nanomuse serve` prints (it carries the access token). The token is checked by opening the
   server's WebSocket once, so the server needs no CORS configuration.
+- **The phone as the agent's hands** — with *Let nanoMuse operate this phone* ticked on the
+  setup page (on by default), the module also announces the simulator as a *device*: it lists
+  the installed apps, and answers the server's requests for the screen and for actions. The
+  screen is read from the simulator's DOM into the element list the agent works from — buttons,
+  fields and their text, what is scrollable, what the keyboard covers, coordinates in the
+  phone's 360×800 — and actions go through MobileGym's own input API, so a tap lands the way a
+  finger would. Nothing is touched unless the server's own *Phone* switch is on too
+  (`[gui] enabled`, or Connections → Phone in the app); [docs/gui.md](../../docs/gui.md) has the
+  rest, including what asks for approval first.
 
 The lighter variant needs nothing installed: open the simulator's own Browser app and go to the
 link `nanomuse serve` prints. That is the web app as any phone browser gets it — full screen, tab
@@ -56,6 +65,12 @@ step 1, *Connect*. Then go back to the home screen and give the agent something 
 another tab or the CLI — `nanomuse chat`, or the web app in a normal browser tab: the phone
 lights up when it needs you.
 
+To watch it operate the phone, turn the *Phone* switch on (Connections → Phone in the web app,
+or `NANOMUSE_GUI_ENABLED=1` for step 1) and ask, in the chat, for something that lives in one of
+the simulated apps — "打开微信，看看最新一条消息是谁发的", "用 12306 查一下明天北京到上海最早的
+高铁", "给 blank. 回一句「好的，明天见」". The agent opens the app on the simulated phone, works
+through its screens, and stops at the send button until you approve.
+
 `install.sh` only copies files; MobileGym discovers apps by directory convention, nothing in the
 checkout is edited. Run it again after pulling a newer nanoMuse.
 
@@ -81,10 +96,11 @@ apps/nanoMuse/
 ├── navigation.declaration.ts routes (/ and /setup), transitions, UI states
 ├── navigation.ts             go()/back() over the declaration
 ├── navigation.types.ts       re-exports the platform's shared types
-├── state.ts                  Zustand store: server URL, token, notify switch; wires the bridge
-├── bridge.ts                 WebSocket → NotificationService
+├── state.ts                  Zustand store: server URL, token, notify and GUI switches; wires the bridge
+├── bridge.ts                 WebSocket → NotificationService; device announce, screen/act requests
+├── gui.ts                    the simulator as a device: DOM → element list, actions → __SIM_INPUT__
 ├── pages/MusePage.tsx        the web app, full screen
-├── pages/SetupPage.tsx       server address and token
+├── pages/SetupPage.tsx       server address, token, the operate-this-phone switch
 ├── hooks/useNanoMuseGestures.ts
 ├── data/                     defaults
 └── res/icons.tsx

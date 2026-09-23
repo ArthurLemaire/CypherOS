@@ -4,6 +4,19 @@ All notable changes to nanoMuse (OpenMuse until 0.6.0). The format follows [Keep
 
 ## [Unreleased]
 
+The agent gets hands. With the *Phone* switch on it reads a connected phone's screen and taps, types and swipes in its apps — the way to reach 12306, WeChat or Alipay, which have no API. The first device is the simulated phone from MobileGym; Android follows.
+
+### Added
+
+- **Operating the phone** (`[gui]`, off by default; Connections → Phone in the app; `NANOMUSE_GUI_*`). Three tools appear when it is on: `phone_screen` reads the screen as an element list, `phone_act` does one action, `phone_task` hands a goal to a *phone operator* — a loop with its own, optionally cheaper, model (阿里云百炼's Qwen works) that looks, acts and looks again until the goal is met or it needs you. The system prompt tells the agent which phone is connected and what apps are on it. Screenshots go to the model when the device sends them and the model takes images. [docs/gui.md](docs/gui.md).
+- **Sentinel rules for the screen.** Reading a screen taints the session. A tap on 确认支付, 转账, 提交订单, 发送, 删除 and the like (configurable `sensitive_words`), a blind tap or `enter` on a screen showing them, or typing-and-submitting in one step, is SENSITIVE with a warning — an approval every time, never a standing grant. The operator itself never types passwords or codes and stops before paying.
+- **Devices.** A phone connects over the app's WebSocket, announces its apps and screen size, and answers `screen` and `act` requests; `GET /api/phone` shows what is connected. The protocol is documented for other executors.
+- **MobileGym as a device.** The nanoMuse module for the simulator reads the simulated phone's DOM into that element list — buttons, fields and their text, what scrolls, what the keyboard covers, MobileGym's own action ids for unlabelled icons — and drives the simulator's input API for the actions. *Let nanoMuse operate this phone* on its setup page turns it off.
+
+### Fixed
+
+- **The rename commit was incomplete.** 0.7.0's tag pointed at a tree that still had the `openmuse` package next to `nanomuse` and a `pyproject.toml` that said `openmuse 0.6.0`; the release workflow refused it, so nothing wrong was published. The tag was moved to the completed tree.
+
 ## [0.7.0] — 2026-09-23
 
 The rename. OpenMuse became **nanoMuse** and moved to [nano-muse/nanoMuse](https://github.com/nano-muse/nanoMuse); the old repository is no longer maintained. The project is also taking a clearer direction: a Muse that works in China, where the agent operates the apps on your phone through their screens when no API exists — that part starts in the next release.

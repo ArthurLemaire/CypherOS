@@ -166,6 +166,9 @@ Everything the app does goes through this API, so another front-end (a Telegram 
 | POST | `/api/connections/contacts/test` | re-read every book: `{ok, contacts, sources}` or `{ok: false, error}` |
 | GET | `/api/contacts?q=&limit=` | look people up as the agent does: `[{id, name, emails[], phones[], org, …}]` |
 | PUT | `/api/connections/browser` `{enabled}` | turn the browser tool on or off |
+| PUT | `/api/connections/gui` `{enabled, provider, model, base_url, api_key}` | operating the phone ([gui.md](gui.md)): the switch adds or removes the phone tools at once; the model fields are the operator's own model (`""` → the main model's); `api_key` set → vault (`GUI_API_KEY`), `""` → the main key, omitted → unchanged |
+| POST | `/api/connections/gui/test` | one short round trip to the operator's model: `{ok, reply, ms}` or `{ok: false, error}` |
+| GET | `/api/phone` | `{connected, device{id, name, platform, gui, apps, width, height}, gui_enabled, last_screen, screen}` — which phone is connected and the last screen it sent |
 | POST · DELETE | `/api/connections/mcp` `{name, command, args[], env{}, url, risk}` · `/api/connections/mcp/{name}` | connect a server now (502 if it does not come up) / disconnect and remove one added from the app |
 | GET | `/api/skills` | `{count, built_in, yours, dir, errors{}, skills[{name, description, source (built-in · yours), enabled, path, files[], metadata{}, updated_at}]}` |
 | GET / PUT / DELETE | `/api/skills/{name}` | one skill with `body` and `content` (the whole `SKILL.md`) / write it from `{content}` — a built-in name creates your copy / delete one of yours |
@@ -192,9 +195,11 @@ On connect the server sends `{"kind": "hello", "state": …}` (the same payload 
 | `status` | idle / working / waiting, with a short detail line |
 | `thread`, `thread_cleared`, `thread_deleted` | thread list changes |
 | `goals`, `memory`, `ideas`, `feed_posts`, `profile`, `settings`, `connections`, `skills`, `approvals_reset` | refresh hints for the tabs |
+| `phone` | a phone connected or left: the `/api/phone` view |
+| `device_ack`, `device_request` | to a connected phone: the answer to its announcement, and a request for its screen or an action ([gui.md](gui.md#the-device-protocol)) |
 | `error`, `pong` | replies to client messages |
 
-Client → server: `{"kind": "send", "thread": "main", "text": "…"}`, `{"kind": "approval", "id": "…", "approved": true, "scope": "once"}`, `{"kind": "ping"}`.
+Client → server: `{"kind": "send", "thread": "main", "text": "…"}`, `{"kind": "approval", "id": "…", "approved": true, "scope": "once"}`, `{"kind": "ping"}`. A phone that lets the agent operate it also sends `{"kind": "device", …}` once and `{"kind": "device_result", …}` in answer to each request.
 
 Timeline events are persisted per thread in `<data_dir>/threads/<id>.json`, so the history survives restarts.
 

@@ -11,14 +11,17 @@ interface NanoMuseState {
   token: string;
   /** Mirror approvals, questions and background results into the notification shade. */
   notify: boolean;
+  /** Let nanoMuse operate this phone through its screen (its own GUI switch must be on too). */
+  gui: boolean;
   /** Live state of the notification bridge's WebSocket. Not persisted. */
   link: LinkState;
 }
 
-interface nanoMuseActions {
+interface NanoMuseActions {
   configure: (serverUrl: string, token: string) => void;
   disconnect: () => void;
   setNotify: (on: boolean) => void;
+  setGui: (on: boolean) => void;
   setLink: (link: LinkState) => void;
 }
 
@@ -26,6 +29,7 @@ const initialState: NanoMuseState = {
   serverUrl: NANOMUSE_CONFIG.serverUrl,
   token: NANOMUSE_CONFIG.token,
   notify: NANOMUSE_CONFIG.notify,
+  gui: NANOMUSE_CONFIG.gui,
   link: 'off',
 };
 
@@ -43,7 +47,7 @@ export function parseServerInput(raw: string): { serverUrl: string; token: strin
   }
 }
 
-export const useNanoMuseStore = createAppStoreWithActions<NanoMuseState, nanoMuseActions>(
+export const useNanoMuseStore = createAppStoreWithActions<NanoMuseState, NanoMuseActions>(
   'nanomuse',
   initialState,
   (set) => ({
@@ -56,13 +60,16 @@ export const useNanoMuseStore = createAppStoreWithActions<NanoMuseState, nanoMus
     setNotify(on) {
       set({ notify: on });
     },
+    setGui(on) {
+      set({ gui: on });
+    },
     setLink(link) {
       set({ link });
     },
   }),
   {
     // `link` is runtime state: it always starts as 'off' and the bridge sets it
-    partialize: (s) => ({ serverUrl: s.serverUrl, token: s.token, notify: s.notify }),
+    partialize: (s) => ({ serverUrl: s.serverUrl, token: s.token, notify: s.notify, gui: s.gui }),
     afterHydration: () => bridge.sync(),
   },
 );
@@ -71,8 +78,8 @@ export const useNanoMuseStore = createAppStoreWithActions<NanoMuseState, nanoMus
 // or not the app is open — that is what makes notifications arrive while you are in another app.
 bridge.attach({
   get: () => {
-    const { serverUrl, token, notify } = useNanoMuseStore.getState();
-    return { serverUrl, token, notify };
+    const { serverUrl, token, notify, gui } = useNanoMuseStore.getState();
+    return { serverUrl, token, notify, gui };
   },
   setLink: (link) => useNanoMuseStore.getState().setLink(link),
 });

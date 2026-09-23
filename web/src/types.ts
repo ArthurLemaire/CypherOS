@@ -5,7 +5,7 @@ interface BaseEvent {
   ts: string;
   thread: string;
   updated_ts?: string;
-  /** "user" for things you said; "goal" / "background" for work your OpenMuse did on its own. */
+  /** "user" for things you said; "goal" / "background" for work your nanoMuse did on its own. */
   source?: string;
   /** For background events: the short label of the work being done. */
   about?: string;
@@ -94,6 +94,13 @@ export interface ArtifactEvent extends BaseEvent {
   path: string;
   name: string;
   action: string;
+}
+
+/** The phone that is connected for GUI operation (the Android app or the MobileGym module). */
+export interface PhoneStatus {
+  connected: boolean;
+  device: { id: string; name: string; platform: string; gui: boolean; apps: number; width: number; height: number } | null;
+  last_screen: { app: string; app_name: string; route: string; elements: number; image: string | null; taken_at: number } | null;
 }
 
 /** The browser as the agent sees it: one card per run, updated frame after frame. */
@@ -292,7 +299,8 @@ export interface SettingsView {
   sandbox: { mode: "auto" | "bwrap" | "off"; active: boolean; status: string };
   llm: { provider: string; model: string; stream: boolean };
   agent: { language: string; max_steps: number; show_thinking: boolean; workspace: string };
-  connectors: { email: boolean; calendar: boolean; contacts: boolean; browser: boolean; mcp: string[] };
+  connectors: { email: boolean; calendar: boolean; contacts: boolean; browser: boolean; gui: boolean; mcp: string[] };
+  phone: PhoneStatus & { gui_enabled: boolean };
   tools: ToolInfo[];
   memory_enabled: boolean;
   /** Skills: recipes for jobs (SKILL.md folders); count = the ones switched on. */
@@ -401,6 +409,16 @@ export interface ConnectionsData {
     password_set: boolean;
   };
   browser: { enabled: boolean; available: boolean };
+  /** Operating the phone through its screen (the GUI agent) and the operator's model. */
+  gui: {
+    enabled: boolean;
+    provider: string;
+    model: string;
+    base_url: string;
+    key_source: "none" | "vault" | "config" | "missing";
+    max_steps: number;
+    phone: PhoneStatus;
+  };
   calendar: {
     enabled: boolean;
     configured: boolean;
@@ -678,6 +696,7 @@ export type WsMessage =
   | { kind: "ideas"; ideas: IdeasData }
   | { kind: "profile"; profile: Profile }
   | { kind: "settings"; settings: SettingsView }
+  | { kind: "phone"; phone: PhoneStatus & { gui_enabled: boolean } }
   | { kind: "connections"; connections: ConnectionsData }
   | { kind: "skills"; skills: SkillsData }
   | { kind: "approvals_reset" }

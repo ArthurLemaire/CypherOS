@@ -45,6 +45,7 @@ if TYPE_CHECKING:
 LLM_KEY = "LLM_API_KEY"
 EMBEDDINGS_KEY = "EMBEDDINGS_API_KEY"
 SEARCH_KEY = "SEARCH_API_KEY"
+GUI_KEY = "GUI_API_KEY"
 EMAIL_ADDRESS = "EMAIL_ADDRESS"
 EMAIL_PASSWORD = "EMAIL_PASSWORD"
 
@@ -171,6 +172,7 @@ class Connections:
             "calendar": self._calendar_view(),
             "contacts": self._contacts_view(),
             "browser": {"enabled": s.browser.enabled, "available": playwright_available()},
+            "gui": self._gui_view(),
             "mcp": [
                 {
                     "name": m.name,
@@ -753,6 +755,81 @@ class Connections:
                 "error": "; ".join(f"{c['name']}: {c['error']}" for c in broken),
             }
         return {"ok": True, "contacts": status["count"], "sources": len(status["sources"])}
+
+    # ------------------------------------------------------------------ phone (GUI)
+    def _gui_view(self) -> dict[str, Any]:
+        gui = self.settings.gui
+        key = gui.api_key
+        if not key:
+            key_source = "none"  # the main model's key is used
+        elif self.vault.has_placeholders(key):
+            key_source = "vault" if self.vault.get(GUI_KEY) else "missing"
+        else:
+            key_source = "config"
+        return {
+            "enabled": gui.enabled,
+            "provider": gui.provider,
+            "model": gui.model,
+            "base_url": gui.base_url or "",
+            "key_source": key_source,
+            "max_steps": gui.max_steps,
+            "phone": self.svc.phone.status(),
+        }
+
+    def set_gui(self, body: dict[str, Any]) -> dict[str, Any]:
+        """The switch for operating the phone, and the operator's model.
+
+        ``enabled`` adds or removes the ``phone_*`` tools on the spot; the model fields are
+        optional and default to the main model's endpoint and key.
+        """
+        gui = dict(self.data.get("gui") or {})
+        if body.get("enabled") is not None:
+            gui["enabled"] = bool(body["enabled"])
+        for key in ("provider", "model", "base_url"):
+            if body.get(key) is not None:
+                gui[key] = str(body[key]).strip()
+        if gui.get("provider") not in (None, "", "openai", "openai_responses"):
+            raise ValueError("provider must be 'openai' or 'openai_responses'")
+        api_key = body.get("api_key")
+        if api_key:
+            self.vault.set(GUI_KEY, str(api_key).strip())
+            gui["api_key"] = "{{vault:" + GUI_KEY + "}}"
+        elif api_key == "":
+            self.vault.delete(GUI_KEY)
+            gui["api_key"] = ""
+        self.data["gui"] = gui
+        self._save()
+        apply_app_settings(self.settings, {"gui": gui})
+        if "enabled" in gui:
+            self.svc.app.set_gui_enabled(bool(gui["enabled"]))
+        operator = getattr(self.svc.app, "phone_operator", None)
+        if operator is not None:
+            operator.reset_llm()
+        self._publish()
+        self.svc.publish_phone()
+        return self._gui_view()
+
+    async def test_gui(self) -> dict[str, Any]:
+        """One tiny call to the operator's model, so a wrong key or model shows up here."""
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        llm = self.svc.app.make_gui_llm()
+        try:
+            response = await asyncio.wait_for(
+                llm.ask([Message.user("Reply with the single word OK.")], tools=None), timeout=45
+            )
+        except TimeoutError:
+            return {"ok": False, "error": "no answer within 45 s"}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:400]}
+        finally:
+            await llm.close()
+        return {
+            "ok": True,
+            "reply": (response.content or "").strip()[:200],
+            "model": self.settings.gui.model or self.settings.llm.model,
+            "ms": int((loop.time() - started) * 1000),
+        }
 
     # ------------------------------------------------------------------ browser
     def set_browser(self, enabled: bool) -> dict[str, Any]:

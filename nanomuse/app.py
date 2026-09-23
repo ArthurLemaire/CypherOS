@@ -11,12 +11,14 @@ from pathlib import Path
 from nanomuse import prompts
 from nanomuse.agent import MuseAgent
 from nanomuse.calendar import CalendarFeeds
-from nanomuse.config import Settings
+from nanomuse.config import LLMSettings, Settings
 from nanomuse.contacts import ContactBook
 from nanomuse.goals import GoalStore
 from nanomuse.llm import BaseLLM, create_llm
 from nanomuse.logger import logger, setup_logging
 from nanomuse.memory import Embedder, MemoryIndex, MemoryStore
+from nanomuse.phone import PhoneLink
+from nanomuse.phone.operator import PhoneOperator
 from nanomuse.reminders import ReminderStore
 from nanomuse.sandbox import Sandbox
 from nanomuse.search import WebSearchProvider
@@ -46,6 +48,7 @@ from nanomuse.tools import (
     WebSearch,
     playwright_available,
 )
+from nanomuse.tools.phone import PhoneAct, PhoneScreen, PhoneTask
 from nanomuse.triggers import TriggerStore
 from nanomuse.ui import UI
 from nanomuse.vault import CredentialVault
@@ -53,10 +56,17 @@ from nanomuse.vault import CredentialVault
 
 class NanoMuseApp:
     def __init__(
-        self, settings: Settings, ui: UI, llm: BaseLLM | None = None, session_id: str | None = None
+        self,
+        settings: Settings,
+        ui: UI,
+        llm: BaseLLM | None = None,
+        session_id: str | None = None,
+        phone: PhoneLink | None = None,
     ):
         self.settings = settings
         self.ui = ui
+        # The phone, when a server is around to hold its socket (the CLI has none).
+        self.phone = phone
         setup_logging(settings.log_level, settings.data_dir / "logs")
         settings.ensure_dirs()
         self.session_id = (
@@ -150,6 +160,32 @@ class NanoMuseApp:
             llm_settings = llm_settings.model_copy(update={"api_key": key})
         return create_llm(llm_settings)
 
+    def make_gui_llm(self) -> BaseLLM:
+        """The model for the GUI operator: ``[gui]`` where set, the main model's settings
+        for the rest — so one provider and one key can serve both."""
+        gui, llm = self.settings.gui, self.settings.llm
+        key = gui.api_key or (
+            llm.api_key if not gui.base_url or gui.base_url == llm.base_url else ""
+        )
+        if self.vault.has_placeholders(key):
+            key = self.vault.resolve(key, strict=False)
+            if self.vault.has_placeholders(key):
+                logger.warning("gui.api_key refers to a vault secret that is not set: {}", key)
+                key = ""
+        merged = LLMSettings(
+            provider=gui.provider if gui.model else llm.provider,
+            model=gui.model or llm.model,
+            base_url=gui.base_url or llm.base_url,
+            api_key=key,
+            tool_mode="native",
+            stream=False,
+            temperature=min(llm.temperature, 0.3),
+            max_tokens=llm.max_tokens,
+            timeout=llm.timeout,
+            extra_headers=dict(llm.extra_headers) if not gui.base_url else {},
+        )
+        return create_llm(merged)
+
     # ------------------------------------------------------------------ tools
     def _build_tools(self) -> ToolCollection:
         s = self.settings
@@ -189,6 +225,8 @@ class NanoMuseApp:
             tools.add(Contacts(book=self.contacts))
         if s.skills.enabled:
             tools.add(Skills(library=self.skills))
+        if s.gui.enabled and self.phone is not None:
+            tools.add(*self.phone_tools())
         if s.browser.enabled:
             if playwright_available():
                 tools.add(
@@ -201,6 +239,40 @@ class NanoMuseApp:
                     "browser.enabled=true but playwright is missing: pip install 'nanomuse[browser]'"
                 )
         return tools
+
+    def phone_tools(self) -> list[PhoneScreen | PhoneAct | PhoneTask]:
+        """The three phone tools, sharing one link and one operator."""
+        assert self.phone is not None
+        gui = self.settings.gui
+        act = PhoneAct(link=self.phone, gui=gui)
+
+        def language() -> str:
+            lang = self.settings.agent.language
+            return "the language of the goal" if lang in ("", "auto") else lang
+
+        operator = PhoneOperator(
+            self.phone,
+            gui,
+            self.sentinel,
+            act,
+            self.ui,
+            make_llm=self.make_gui_llm,
+            language=language,
+        )
+        self.phone_operator = operator
+        return [PhoneScreen(link=self.phone), act, PhoneTask(link=self.phone, operator=operator)]
+
+    def set_gui_enabled(self, enabled: bool) -> None:
+        """Turn the phone tools on or off while running (the switch in the app)."""
+        self.settings.gui.enabled = bool(enabled)
+        if self.phone is None:
+            return
+        present = "phone_act" in self.tools
+        if enabled and not present:
+            self.tools.add(*self.phone_tools())
+        elif not enabled and present:
+            for name in ("phone_screen", "phone_act", "phone_task"):
+                self.tools.remove(name)
 
     def trigger_kinds(self) -> dict[str, bool]:
         """Which trigger kinds have their connector: mail needs the mailbox, event the calendar."""

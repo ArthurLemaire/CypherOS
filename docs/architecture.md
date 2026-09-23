@@ -40,6 +40,7 @@ sequenceDiagram
 | Tool base | `nanomuse/tools/base.py` | `BaseTool`, `CallAssessment`, `ToolCollection`, `safe_execute` |
 | Built-in tools | `nanomuse/tools/files.py`, `shell.py`, `web.py`, `email_tool.py`, `browser.py`, `memory_tools.py`, `goal_tools.py`, `terminate.py` | |
 | MCP | `nanomuse/tools/mcp_tools.py` | stdio / streamable HTTP / SSE clients, one `MCPTool` per remote tool |
+| The phone | `nanomuse/phone/link.py`, `screen.py`, `operator.py`, `nanomuse/tools/phone.py` | connected devices and request/response over the app's WebSocket; the screen model; the operator loop with its own model; `phone_screen` / `phone_act` / `phone_task` and their Sentinel assessment ([gui.md](gui.md)) |
 | LLM | `nanomuse/llm/base.py`, `openai_chat.py`, `openai_responses.py`, `prompt_tools.py`, `factory.py`, `mock.py` | `BaseLLM`, streaming with `<think>` filter, retries, prompt-based tool calling, `MockLLM` for tests |
 | Memory, goals | `nanomuse/memory/store.py`, `nanomuse/memory/consolidate.py`, `nanomuse/goals/store.py` | SQLite; rare-word (IDF) ranking for memory injection; the tidy-up planner and its checks; a change log with undo |
 | App server | `nanomuse/server/service.py`, `api.py`, `webui.py`, `events.py` | threads and workers, REST + WebSocket, `UI` implementation that turns callbacks into events, timeline persistence |
