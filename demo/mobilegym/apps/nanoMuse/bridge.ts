@@ -155,8 +155,9 @@ class MuseBridge {
       if (this.ws !== ws) return;
       this.ws = null;
       if (!this.hooks || this.key !== settingsKey) return;
-      if (ev.code === 4401) {
-        // the server rejected the token: no point retrying until the settings change
+      if (ev.code === 4401 || ev.code === 4404) {
+        // the server rejected the token (4401), or the showcase gateway says this session is
+        // gone (4404): no point retrying until the settings change
         this.hooks.setLink('unauthorized');
         return;
       }
