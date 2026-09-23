@@ -5,6 +5,7 @@ import type {
   ConnectionsData,
   Contact,
   FeedItem,
+  FeedPostsData,
   FileInfo,
   Goal,
   IdeasData,
@@ -152,6 +153,11 @@ export const api = {
   ideas: (refresh = false) => request<IdeasData>(`/api/ideas${refresh ? "?refresh=1" : ""}`),
   activity: (n = 150) => request<ActivityData>(`/api/activity?n=${n}`),
   feed: (limit = 60) => request<FeedItem[]>(`/api/feed?limit=${limit}`),
+  feedPosts: () => request<FeedPostsData>("/api/feed/posts"),
+  setFeedInstructions: (instructions: string) =>
+    request<FeedPostsData>("/api/feed/instructions", { method: "PUT", body: JSON.stringify({ instructions }) }),
+  refreshFeedPosts: () => request<FeedPostsData>("/api/feed/posts/refresh", { method: "POST" }),
+  deleteFeedPost: (id: string) => request<{ ok: boolean }>(`/api/feed/posts/${id}`, { method: "DELETE" }),
   upcoming: () => request<UpcomingData>("/api/upcoming"),
   reminders: (all = false) => request<Reminder[]>(`/api/reminders${all ? "?all=1" : ""}`),
   createReminder: (body: { text: string; kind?: ReminderKind; at?: string; repeat?: string; thread?: string }) =>

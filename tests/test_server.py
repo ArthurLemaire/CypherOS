@@ -207,6 +207,40 @@ def test_stop_ends_the_run_and_closes_the_pending_card(server):
     assert card["id"] not in [a["id"] for a in client.get("/api/state").json()["pending_approvals"]]
 
 
+def test_feed_posts_written_for_the_user(server):
+    """The Feed: instructions from the user, a batch of posts written from what the agent
+    knows, newest first; a post can be removed; a bad model answer leaves the feed as it was."""
+    client, service, llm = server
+    r = client.get("/api/feed/posts")
+    assert r.json() == {"instructions": "", "generated_at": None, "posts": []}
+    assert not service.feed_posts_due()  # nothing known yet, nothing to write from
+    r = client.put("/api/feed/instructions", json={"instructions": "Short. Cycling and Rust."})
+    assert r.json()["instructions"] == "Short. Cycling and Rust."
+    assert service.feed_posts_due()
+
+    llm.script.append(
+        LLMResponse(
+            content='[{"title": "Ride before the rain", "body": "Dry until noon, then showers.", '
+            '"area": "health", "prompt": "Plan a 40 km loop"}, '
+            '{"title": "Rust 1.90", "body": "Notable: ...", "area": "learning"}]'
+        )
+    )
+    data = client.post("/api/feed/posts/refresh").json()
+    assert [p["title"] for p in data["posts"]] == ["Ride before the rain", "Rust 1.90"]
+    assert data["posts"][0]["area"] == "health" and data["posts"][0]["prompt"] == "Plan a 40 km loop"
+    assert data["posts"][1]["prompt"] == ""
+    assert data["generated_at"] and not service.feed_posts_due()  # fresh: not due for a day
+
+    llm.script.append(LLMResponse(content="Sorry, no."))
+    again = client.post("/api/feed/posts/refresh").json()
+    assert len(again["posts"]) == 2  # nothing parsable → nothing added
+
+    post_id = data["posts"][1]["id"]
+    assert client.delete(f"/api/feed/posts/{post_id}").status_code == 200
+    assert client.delete(f"/api/feed/posts/{post_id}").status_code == 404
+    assert [p["title"] for p in client.get("/api/feed/posts").json()["posts"]] == ["Ride before the rain"]
+
+
 def test_ask_user_question_is_answered_by_next_message(server):
     client, _, llm = server
     llm.script.extend(

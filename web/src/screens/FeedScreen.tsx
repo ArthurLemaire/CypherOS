@@ -1,19 +1,39 @@
-import { ArrowRight, Bell, CalendarClock, CalendarDays, FileText, Mail, MapPin, MessageCircleQuestion, Moon, ShieldAlert, Sparkles, Webhook } from "lucide-react";
+import {
+  ArrowRight,
+  Bell,
+  CalendarClock,
+  CalendarDays,
+  ChevronDown,
+  FileText,
+  Loader2,
+  Mail,
+  MapPin,
+  MessageCircleQuestion,
+  Moon,
+  PenLine,
+  RefreshCw,
+  ShieldAlert,
+  Sparkles,
+  Trash2,
+  Webhook,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
+import { Markdown } from "../components/Markdown";
 import { intlLocale, localLabel, t, useLocale, useT } from "../i18n";
 import { useStore } from "../store";
-import type { CalendarData, CalendarEvent, FeedItem, UpcomingData } from "../types";
+import type { CalendarData, CalendarEvent, FeedItem, FeedPost, FeedPostsData, UpcomingData } from "../types";
 import { cx, relativeTime, timeShort } from "../util";
 
 /**
- * What happened while you were away. Muse works in the background and only interrupts
- * when something is worth it; everything else lands here — replies from background
- * passes, files it made, cards still waiting for you.
+ * The Feed, the way Muse does it: posts written for you from what it knows, steered by
+ * your "feed instructions" — and, below them, what happened while you were away: replies
+ * from background passes, files it made, cards still waiting for you.
  */
 export function FeedScreen() {
-  const { state, openThread, openFile, markFeedSeen, setTab, toast } = useStore();
+  const { state, send, openThread, openFile, markFeedSeen, setTab, toast } = useStore();
   const [items, setItems] = useState<FeedItem[] | null>(null);
+  const [posts, setPosts] = useState<FeedPostsData | null>(null);
   const [upcoming, setUpcoming] = useState<UpcomingData | null>(null);
   const [calendar, setCalendar] = useState<CalendarData | null>(null);
   const name = state.profile?.name ?? "OpenMuse";
@@ -27,6 +47,9 @@ export function FeedScreen() {
       .catch((e: Error) => toast(e.message));
     api.upcoming()
       .then((d) => alive && setUpcoming(d))
+      .catch(() => undefined);
+    api.feedPosts()
+      .then((d) => alive && setPosts(d))
       .catch(() => undefined);
     return () => {
       alive = false;
@@ -57,20 +80,48 @@ export function FeedScreen() {
     <div className="flex h-full flex-col">
       <header className="safe-top shrink-0 px-5 pt-4 pb-3">
         <h1 className="text-[24px] font-bold tracking-tight">{t("Feed")}</h1>
-        <p className="text-[13px] text-muted">{t("What {name} did while you were away, and what it is waiting on.", { name })}</p>
+        <p className="text-[13px] text-muted">{t("Written for you by {name}, from what it knows — plus what it did while you were away.", { name })}</p>
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 pb-6 space-y-4">
+        <FeedInstructions data={posts} name={name} onChange={setPosts} />
+        {posts && posts.posts.length > 0 && (
+          <section className="space-y-3">
+            {posts.posts.map((p) => (
+              <PostCard
+                key={p.id}
+                post={p}
+                name={name}
+                onAsk={() => {
+                  void send("main", p.prompt);
+                  openThread("main");
+                }}
+                onDelete={async () => {
+                  try {
+                    await api.deleteFeedPost(p.id);
+                    setPosts((d) => (d ? { ...d, posts: d.posts.filter((x) => x.id !== p.id) } : d));
+                  } catch (e) {
+                    toast((e as Error).message);
+                  }
+                }}
+              />
+            ))}
+          </section>
+        )}
+
         {upcoming && <NextUp data={upcoming} name={name} onSettings={() => setTab("you")} onGoals={() => setTab("goals")} />}
         {calendar?.configured && <TodayBlock data={calendar} onAsk={() => openThread("main")} />}
 
-        {items && items.length === 0 && (
+        {items && items.length === 0 && (!posts || posts.posts.length === 0) && (
           <div className="py-10 text-center text-muted text-[14px] px-6">
             <Moon size={28} className="mx-auto mb-2 opacity-60" />
             {t("Nothing yet. Once {name} works on a goal in the background or needs your approval, it shows up here.", { name })}
           </div>
         )}
 
+        {items && items.length > 0 && (
+          <div className="px-1 pt-1 text-[12px] font-semibold uppercase tracking-wide text-muted">{t("While you were away")}</div>
+        )}
         {groups.map(([day, list]) => (
           <section key={day}>
             <div className="px-1 mb-1.5 text-[12px] uppercase tracking-wide text-muted font-semibold">{day}</div>
@@ -92,6 +143,124 @@ export function FeedScreen() {
         ))}
       </div>
     </div>
+  );
+}
+
+/** "Feed instructions": one prompt that steers what gets written here, and a way to ask for a batch now. */
+function FeedInstructions({ data, name, onChange }: { data: FeedPostsData | null; name: string; onChange: (d: FeedPostsData) => void }) {
+  const { toast } = useStore();
+  const t = useT();
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState<"save" | "write" | null>(null);
+  useEffect(() => {
+    if (data && !editing) setText(data.instructions);
+  }, [data, editing]);
+  const save = async () => {
+    setBusy("save");
+    try {
+      onChange(await api.setFeedInstructions(text));
+      setEditing(false);
+    } catch (e) {
+      toast((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+  const write = async () => {
+    setBusy("write");
+    try {
+      const d = await api.refreshFeedPosts();
+      onChange(d);
+      if (d.error) toast(t("Could not write posts: {error}", { error: d.error }));
+    } catch (e) {
+      toast((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+  const empty = !data?.instructions;
+  return (
+    <section className="rounded-[22px] border border-border/70 bg-surface px-4 py-3">
+      <div className="flex items-center gap-2">
+        <PenLine size={16} className="text-accent" />
+        <div className="flex-1 text-[14.5px] font-semibold">{t("Feed instructions")}</div>
+        <button
+          type="button"
+          onClick={() => void write()}
+          disabled={busy !== null || !data}
+          className="flex items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1.5 text-[12.5px] font-medium text-fg disabled:opacity-60"
+        >
+          {busy === "write" ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+          {busy === "write" ? t("Writing…") : data?.posts.length ? t("New posts") : t("Write my feed")}
+        </button>
+      </div>
+      {editing ? (
+        <div className="mt-2.5">
+          <textarea
+            autoFocus
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            rows={4}
+            maxLength={2000}
+            placeholder={t("e.g. Keep me up to date on cycling and Rust. A nudge on my goals every morning. Short posts, no fluff.")}
+            className="w-full resize-none rounded-2xl bg-surface-2 px-3.5 py-2.5 text-[14px] leading-snug outline-none focus:ring-2 focus:ring-accent/40"
+          />
+          <div className="mt-2 flex justify-end gap-2">
+            <button type="button" onClick={() => setEditing(false)} className="rounded-full px-3.5 py-1.5 text-[13px] text-muted">
+              {t("Cancel")}
+            </button>
+            <button
+              type="button"
+              onClick={() => void save()}
+              disabled={busy !== null}
+              className="rounded-full bg-accent px-4 py-1.5 text-[13px] font-semibold text-accent-fg disabled:opacity-60"
+            >
+              {t("Save")}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button type="button" onClick={() => setEditing(true)} className="mt-1.5 block w-full text-left">
+          <div className={cx("text-[13.5px] leading-snug", empty ? "text-muted" : "text-fg/90 line-clamp-3")}>
+            {empty ? t("Tell {name} what you would like to read here — topics to follow, nudges on your goals, a morning plan, the tone. It writes a few posts a day from that and what it knows about you.", { name }) : data?.instructions}
+          </div>
+          <div className="mt-1 text-[12.5px] font-medium text-accent">{empty ? t("Write instructions") : t("Edit")}</div>
+        </button>
+      )}
+    </section>
+  );
+}
+
+function PostCard({ post, name, onAsk, onDelete }: { post: FeedPost; name: string; onAsk: () => void; onDelete: () => void }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const long = post.body.length > 320;
+  return (
+    <article className="rounded-[22px] border border-border/70 bg-surface px-4 pt-3.5 pb-3 shadow-[0_4px_20px_-12px_rgba(0,0,0,0.18)]">
+      <div className="flex items-start gap-2">
+        <h3 className="flex-1 text-[16px] font-semibold leading-snug">{post.title}</h3>
+        <button type="button" onClick={onDelete} aria-label={t("Remove")} className="-mr-1.5 -mt-1 rounded-full p-1.5 text-muted/70 hover:bg-surface-2 hover:text-fg">
+          <Trash2 size={15} />
+        </button>
+      </div>
+      <div className={cx("md mt-1.5 text-[14.5px] leading-[1.5]", !open && long && "line-clamp-6")}>
+        <Markdown text={post.body} />
+      </div>
+      {long && !open && (
+        <button type="button" onClick={() => setOpen(true)} className="mt-1 flex items-center gap-0.5 text-[13px] font-medium text-accent">
+          {t("Read more")} <ChevronDown size={14} />
+        </button>
+      )}
+      <div className="mt-2.5 flex items-center gap-2 text-[12px] text-muted">
+        <span>{relativeTime(post.ts)}</span>
+        {post.prompt && (
+          <button type="button" onClick={onAsk} className="ml-auto flex items-center gap-1 font-medium text-accent">
+            {t("Ask {name}", { name })} <ArrowRight size={13} />
+          </button>
+        )}
+      </div>
+    </article>
   );
 }
 

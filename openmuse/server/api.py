@@ -14,6 +14,9 @@
     GET  /api/ideas (?refresh=1)
     GET  /api/activity                   audit tail + approvals granted
     GET  /api/feed                        what happened without you asking
+    GET  /api/feed/posts                  posts written for you, and your feed instructions
+    PUT  /api/feed/instructions           what you want to read there
+    POST /api/feed/posts/refresh          write a new batch now
     GET  /api/upcoming                    next background pass and the goals in line
     GET  /api/calendar (?days&refresh=1)  today's and tomorrow's events from the calendar feeds
     GET  /api/files  GET /api/files/{path}  POST /api/files/upload?name=  (body: the bytes)
@@ -67,6 +70,10 @@ class SendBody(BaseModel):
 
 class ThreadBody(BaseModel):
     title: str = ""
+
+
+class FeedInstructionsBody(BaseModel):
+    instructions: str = ""
 
 
 class ApprovalBody(BaseModel):
@@ -940,6 +947,29 @@ def create_app(settings: Settings, service: MuseService | None = None) -> FastAP
     @app.get("/api/feed", dependencies=dep)
     async def feed(limit: int = Query(60, ge=1, le=500)) -> list[dict[str, Any]]:
         return svc.feed(limit)
+
+    @app.get("/api/feed/posts", dependencies=dep)
+    async def feed_posts() -> dict[str, Any]:
+        return svc.feed_posts()
+
+    @app.put("/api/feed/instructions", dependencies=dep)
+    async def feed_instructions(body: FeedInstructionsBody) -> dict[str, Any]:
+        return svc.set_feed_instructions(body.instructions)
+
+    @app.post("/api/feed/posts/refresh", dependencies=dep)
+    async def feed_refresh() -> dict[str, Any]:
+        try:
+            return await svc.write_feed_posts()
+        except Exception as exc:  # noqa: BLE001 — the model may be down; the app shows why
+            data = svc.feed_posts()
+            data["error"] = f"{type(exc).__name__}: {exc}"
+            return data
+
+    @app.delete("/api/feed/posts/{post_id}", dependencies=dep)
+    async def feed_delete(post_id: str) -> dict[str, Any]:
+        if not svc.delete_feed_post(post_id):
+            raise HTTPException(404, "no such post")
+        return {"ok": True}
 
     @app.get("/api/upcoming", dependencies=dep)
     async def upcoming() -> dict[str, Any]:
