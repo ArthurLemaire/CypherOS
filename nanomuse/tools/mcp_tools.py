@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from contextlib import AsyncExitStack
 from typing import Any
 
@@ -80,19 +81,38 @@ class MCPTool(BaseTool):
 
 
 class MCPManager:
-    """Connects to configured MCP servers and keeps the sessions alive."""
+    """Connects to configured MCP servers and keeps the sessions alive.
 
-    def __init__(self, servers: list[MCPServerSettings]):
+    ``resolve`` fills ``{{vault:NAME}}`` placeholders in a server's ``url``, ``args`` and
+    ``env`` right before connecting, so a key (``?key={{vault:AMAP_KEY}}``) can stay in
+    the vault instead of the config file.
+    """
+
+    def __init__(
+        self, servers: list[MCPServerSettings], resolve: Callable[[Any], Any] | None = None
+    ):
         self.servers = servers
+        self._resolve = resolve
         self._stack = AsyncExitStack()
         self.tools: list[MCPTool] = []
+
+    def _resolved(self, cfg: MCPServerSettings) -> MCPServerSettings:
+        if self._resolve is None:
+            return cfg
+        return cfg.model_copy(
+            update={
+                "url": self._resolve(cfg.url) if cfg.url else cfg.url,
+                "args": [str(a) for a in self._resolve(list(cfg.args))],
+                "env": {k: str(v) for k, v in self._resolve(dict(cfg.env)).items()},
+            }
+        )
 
     async def connect(self) -> list[MCPTool]:
         from mcp import ClientSession
 
         for cfg in self.servers:
             try:
-                read, write = await self._open_transport(cfg)
+                read, write = await self._open_transport(self._resolved(cfg))
                 session = await self._stack.enter_async_context(ClientSession(read, write))
                 await session.initialize()
                 listed = await session.list_tools()

@@ -170,7 +170,7 @@ provider = "duckduckgo"               # duckduckgo | brave | tavily | searxng
 
 [skills]
 # How a job is done, written down once: folders with a SKILL.md (the Agent Skills format).
-# Five are built in; yours go in <data_dir>/skills (or `dir`), and a folder with the same
+# Nine are built in; yours go in <data_dir>/skills (or `dir`), and a folder with the same
 # name as a built-in replaces it. In chat, "/trip-plan Kyoto in November" runs one.
 enabled = true
 # dir = "~/my-skills"
@@ -182,6 +182,11 @@ enabled = true
 # there is no network unless the command needs it. auto: use it when it works here (default);
 # bwrap: insist; off: run commands unboxed with the scrubbed environment only.
 mode = "auto"
+# Directories the box may use — the home directory as a whole stays out. share_read_only
+# for the programs, share for state a tool also writes (its login, a token it refreshes);
+# a directory under your home is also visible at the same place under the box's home.
+# share_read_only = ["~/.nvm"]        # e.g. node and the Feishu CLI (lark-cli), see docs/showcase.md
+# share = ["~/.lark-cli"]             # and its login
 
 [triggers]
 # Work that starts when something happens (set in chat or under Upcoming): a mail trigger
@@ -222,6 +227,15 @@ device_timeout_s = 20.0  # how long to wait for the phone to answer one request
 # url = "http://localhost:8000/mcp"
 # risk = "sensitive"
 # reads_private_data = true
+#
+# 高德地图 (Amap): places, routes, weather, distance — twelve tools, no browser, no phone.
+# Get a key at https://console.amap.com (Web 服务), keep it in the vault
+# (`nanomuse vault set AMAP_KEY`); url, args and env accept {{vault:NAME}}.
+# [[mcp.servers]]
+# name = "amap"
+# url = "https://mcp.amap.com/mcp?key={{vault:AMAP_KEY}}"
+# risk = "safe"
+# egress = true
 
 # ------------------------------------------------------------------------------
 # App server — `nanomuse serve` (the phone app)

@@ -40,3 +40,39 @@ async def test_unavailable_server_is_skipped():
         assert await manager.connect() == []
     finally:
         await manager.close()
+
+
+async def test_vault_placeholders_are_resolved_before_connecting():
+    """A key kept in the vault reaches the server through url, args or env; the config
+    object itself keeps the placeholder."""
+    secrets = {"ECHO_MODE": "loud", "AMAP_KEY": "k-123"}
+
+    def resolve(value):
+        import re
+
+        if isinstance(value, str):
+            return re.sub(r"\{\{vault:(\w+)\}\}", lambda m: secrets[m.group(1)], value)
+        if isinstance(value, list):
+            return [resolve(v) for v in value]
+        if isinstance(value, dict):
+            return {k: resolve(v) for k, v in value.items()}
+        return value
+
+    cfg = MCPServerSettings(
+        name="echo",
+        command=sys.executable,
+        args=[str(SERVER), "{{vault:ECHO_MODE}}"],
+        env={"ECHO_KEY": "{{vault:AMAP_KEY}}"},
+        url=None,
+    )
+    manager = MCPManager([cfg], resolve=resolve)
+    resolved = manager._resolved(cfg)
+    assert resolved.args == [str(SERVER), "loud"] and resolved.env == {"ECHO_KEY": "k-123"}
+    assert cfg.args[1] == "{{vault:ECHO_MODE}}" and cfg.env["ECHO_KEY"] == "{{vault:AMAP_KEY}}"
+    url = MCPServerSettings(name="amap", url="https://mcp.amap.com/mcp?key={{vault:AMAP_KEY}}")
+    assert manager._resolved(url).url == "https://mcp.amap.com/mcp?key=k-123"
+    try:
+        tools = await manager.connect()  # the echo server ignores its extra argument
+        assert sorted(t.name for t in tools) == ["echo__add", "echo__echo"]
+    finally:
+        await manager.close()
