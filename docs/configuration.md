@@ -162,7 +162,7 @@ dir      = ""                        # your skills; empty → <data_dir>/skills
 disabled = ["inbox-triage"]          # built-in ones to leave out of the model's list
 ```
 
-A skill is a folder with a `SKILL.md` — YAML front matter with `name` and `description`, then the steps in Markdown — in the [Agent Skills](https://agentskills.io) format, so skills written for other agents work here. Five are built in (`weekly-review`, `trip-plan`, `inbox-triage`, `compare-options`, `meeting-prep`); a folder in `dir` with the same name as a built-in replaces it. The model gets the index (name and description of every enabled skill) in its system prompt and reads a skill's steps with the `skills` tool when a request fits; `/name` at the start of a chat message runs one directly. Saving or removing a skill from chat is a sensitive call — it asks first, whatever the Sentinel mode. Skills switched off in the app are remembered in `app-settings.json`; the list here and that one are merged. Inside the [sandbox](sentinel.md#the-sandbox) a skill's folder (its scripts and reference files) is visible read-only. See [the app → Skills](app.md#skills) and `nanomuse skills` in the [CLI](cli.md#skills).
+A skill is a folder with a `SKILL.md` — YAML front matter with `name` and `description`, then the steps in Markdown — in the [Agent Skills](https://agentskills.io) format, so skills written for other agents work here. Seven are built in (`weekly-review`, `trip-plan`, `inbox-triage`, `compare-options`, `meeting-prep`, and two for the phone: `train-tickets`, `phone-messages`); a folder in `dir` with the same name as a built-in replaces it. The model gets the index (name and description of every enabled skill) in its system prompt and reads a skill's steps with the `skills` tool when a request fits; `/name` at the start of a chat message runs one directly. Saving or removing a skill from chat is a sensitive call — it asks first, whatever the Sentinel mode. Skills switched off in the app are remembered in `app-settings.json`; the list here and that one are merged. Inside the [sandbox](sentinel.md#the-sandbox) a skill's folder (its scripts and reference files) is visible read-only. See [the app → Skills](app.md#skills) and `nanomuse skills` in the [CLI](cli.md#skills).
 
 ## Connectors
 
@@ -260,13 +260,13 @@ timeout_ms = 30000
 
 ### The phone (`[gui]`)
 
-With this on, the agent can read a connected phone's screen and tap, type and swipe in its apps — the way to reach 12306, WeChat or Alipay, which have no API. Off by default; the *Phone* card on the Connections screen is the same switch. How it works and what Sentinel does with it: [gui.md](gui.md).
+With this on, the agent can look at a connected phone's screen and tap, type and swipe in its apps — the way to reach 12306, 微信 or 支付宝, which have no API. Off by default; the *Phone* card on the Connections screen is the same switch. How it works and what Sentinel does with it: [gui.md](gui.md).
 
 ```toml
 [gui]
 enabled          = false
 provider         = "openai"          # the operator's own model; openai | openai_responses
-model            = ""                # empty: the main [llm] model does it
+model            = ""                # empty: the main [llm] model does it — it must take images, the screen is a picture
 base_url         = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 api_key          = "{{vault:GUI_API_KEY}}"
 max_steps        = 30                # the most one phone_task may take
@@ -274,7 +274,7 @@ device_timeout_s = 20.0              # how long to wait for the phone to answer
 sensitive_words  = ["确认支付", "立即付款", "转账", "提交订单", "发送", "删除", "pay now", "place order", "send", "delete"]  # a tap on these asks first
 ```
 
-`model`, `base_url` and `api_key` fall back to `[llm]` when empty; a key is only needed when the operator's `base_url` is a different service.
+`model`, `base_url` and `api_key` fall back to `[llm]` when empty; a key is only needed when the operator's `base_url` is a different service. Traces of every phone task go to `<data_dir>/phone-traces/` (the last 200 are kept; `nanomuse phone traces`).
 
 ### MCP servers
 
@@ -321,4 +321,4 @@ max_upload_mb    = 25            # largest file the app may attach to a message
 | `sessions/` | CLI conversation history |
 | `skills/<name>/SKILL.md` | your skills (the Agent Skills format); a name that matches a built-in replaces it |
 | `threads/`, `profile.json`, `ideas.json`, `server_token`, `logs/` | app state |
-| `./workspace` (`agent.workspace`) | files the agent reads and writes; `screenshots/` holds the last forty screens a phone sent |
+| `./workspace` (`agent.workspace`) | files the agent reads and writes; `screenshots/` holds the last 400 screens a phone sent (the phone traces point at them) |
