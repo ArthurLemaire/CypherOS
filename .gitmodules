@@ -1,0 +1,4 @@
+[submodule "android/deps/proot"]
+	path = android/deps/proot
+	url = https://github.com/nano-muse/proot.git
+	branch = master
