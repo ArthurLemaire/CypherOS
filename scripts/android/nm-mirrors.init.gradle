@@ -1,0 +1,11 @@
+// nanoMuse build: prefer CN mirrors, fall through to the originals.
+def mirrors = { RepositoryHandler h ->
+    h.maven { url = uri("https://maven.aliyun.com/repository/google"); name = "aliyun-google" }
+    h.maven { url = uri("https://maven.aliyun.com/repository/public"); name = "aliyun-public" }
+    h.maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin"); name = "aliyun-plugin" }
+    h.maven { url = uri("https://repo.huaweicloud.com/repository/maven/"); name = "huawei" }
+}
+settingsEvaluated { settings ->
+    settings.pluginManagement.repositories { mirrors(it) }
+    settings.dependencyResolutionManagement.repositories { mirrors(it) }
+}
