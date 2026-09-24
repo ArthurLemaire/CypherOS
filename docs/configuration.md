@@ -56,11 +56,18 @@ Provider recipes:
 | Provider | `model` | `base_url` | Notes |
 |---|---|---|---|
 | DeepSeek | `deepseek-flash` | `https://api.deepseek.com` | default |
+| Kimi (Moonshot) | `kimi-k2.6` | `https://api.moonshot.cn/v1` | |
+| Qwen (阿里云百炼) | `qwen3.7-plus` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | |
+| GLM (智谱) | `glm-5.2` | `https://open.bigmodel.cn/api/paas/v4` | |
+| 豆包 (火山方舟) | your endpoint id | `https://ark.cn-beijing.volces.com/api/v3` | models are versioned deployments; the app lists yours |
+| MiniMax | `MiniMax-M3` | `https://api.minimaxi.com/v1` | |
 | OpenAI | `gpt-5.6-sol` | `https://api.openai.com/v1` | `provider = "openai_responses"` also works |
 | OpenRouter | `deepseek/deepseek-flash` | `https://openrouter.ai/api/v1` | |
 | Ollama | `qwen3:8b` | `http://localhost:11434/v1` | `api_key = "ollama"`; see [Local models](#local-models) |
 | vLLM / LM Studio | your served name | `http://localhost:8000/v1` | set `tool_mode = "prompt"` if the server ignores `tools` |
 | Company gateway | as required | as required | use `extra_headers` / `extra_body`; pick the provider by the API shape the gateway speaks |
+
+The same presets are offered in the app (*Connections → Model*, and on first run), each with a link to where its key comes from; the exact hostnames live in `PROVIDERS` in `nanomuse/server/connections.py`. A `base_url` saved from the app that has no path gains `/v1` (`http://host:8000` → `http://host:8000/v1`); the presets' own hosts are kept as they are. Ollama and custom endpoints may have no key.
 
 ### Tool calling modes
 

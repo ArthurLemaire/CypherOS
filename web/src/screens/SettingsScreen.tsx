@@ -3,14 +3,16 @@ import { useEffect, useState, type ReactNode } from "react";
 import { androidApp } from "../android";
 import { api, setToken } from "../api";
 import { MASCOT } from "../avatars";
-import { Avatar } from "../components/Avatar";
-import { AVATAR_COLORS, AvatarPicker } from "../components/AvatarPicker";
+import { AVATAR_COLORS } from "../components/AvatarPicker";
+import { IdentityForm, identityBody, identityOf, type Identity } from "../components/IdentityForm";
 import { BackBar } from "../components/BackBar";
 import { LOCALES, setLocaleSetting, useLocaleSetting, useT } from "../i18n";
 import { disablePush, enablePush, pushState, type PushState } from "../push";
 import { useStore } from "../store";
 import type { Proactivity, PushInfo } from "../types";
 import { cx } from "../util";
+
+const settingsInput = "w-full rounded-2xl bg-surface-2 px-3.5 py-2.5 outline-none focus:ring-2 focus:ring-accent/40";
 
 const MODES: Array<{ id: "ask" | "strict" | "auto"; title: string; text: string; icon: ReactNode }> = [
   {
@@ -36,10 +38,7 @@ const MODES: Array<{ id: "ask" | "strict" | "auto"; title: string; text: string;
 export function SettingsScreen() {
   const { state, refreshSettings, setTab, toast } = useStore();
   const s = state.settings;
-  const [name, setName] = useState("");
-  const [look, setLook] = useState({ avatar: MASCOT, emoji: "✨", color: AVATAR_COLORS[0] });
-  const [style, setStyle] = useState("");
-  const [userName, setUserName] = useState("");
+  const [identity, setIdentity] = useState<Identity>(() => identityOf(state.profile, MASCOT, AVATAR_COLORS[0]));
   const [saving, setSaving] = useState(false);
   const t = useT();
   const localeSetting = useLocaleSetting();
@@ -49,12 +48,7 @@ export function SettingsScreen() {
   }, [s, refreshSettings]);
 
   useEffect(() => {
-    if (state.profile) {
-      setName(state.profile.name);
-      setLook({ avatar: state.profile.avatar ?? "", emoji: state.profile.emoji, color: state.profile.color });
-      setStyle(state.profile.style);
-      setUserName(state.profile.user_name ?? "");
-    }
+    if (state.profile) setIdentity(identityOf(state.profile, "", AVATAR_COLORS[0]));
   }, [state.profile]);
 
   const update = async (body: Record<string, unknown>, msg?: string) => {
@@ -70,16 +64,9 @@ export function SettingsScreen() {
     }
   };
 
-  const dirty =
-    !!state.profile &&
-    (name !== state.profile.name ||
-      look.avatar !== (state.profile.avatar ?? "") ||
-      look.emoji !== state.profile.emoji ||
-      look.color !== state.profile.color ||
-      style !== state.profile.style ||
-      userName !== (state.profile.user_name ?? ""));
-
-  const preview = state.profile ? { ...state.profile, name, ...look } : null;
+  const saved = identityOf(state.profile, "", AVATAR_COLORS[0]);
+  const dirty = !!state.profile && (Object.keys(identity) as (keyof Identity)[]).some((k) => identity[k] !== saved[k]);
+  const name = state.profile?.name ?? "nanoMuse";
 
   return (
     <div className="flex h-full flex-col">
@@ -90,50 +77,13 @@ export function SettingsScreen() {
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 pb-8 space-y-5">
-        {/* Your nanoMuse */}
-        <Section title={t("Your nanoMuse")}>
-          <div className="flex items-center gap-4">
-            <Avatar profile={preview} size={64} />
-            <div className="flex-1">
-              <label className="text-[12px] text-muted">{t("Name")}</label>
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                maxLength={40}
-                className="mt-0.5 w-full rounded-2xl bg-surface-2 px-3.5 py-2.5 text-[15px] font-medium outline-none focus:ring-2 focus:ring-accent/40"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="text-[12px] text-muted">{t("Avatar")}</label>
-            <div className="mt-1.5">
-              <AvatarPicker value={look} onChange={setLook} />
-            </div>
-          </div>
-          <div>
-            <label className="text-[12px] text-muted">{t("Personality & style")}</label>
-            <textarea
-              value={style}
-              onChange={(e) => setStyle(e.target.value)}
-              rows={2}
-              placeholder={t("e.g. Warm, concise, a little witty. Uses metric units. Calls me Sam.")}
-              className="mt-0.5 w-full resize-none rounded-2xl bg-surface-2 px-3.5 py-2.5 text-[14px] outline-none focus:ring-2 focus:ring-accent/40"
-            />
-          </div>
-          <div>
-            <label className="text-[12px] text-muted">{t("What it calls you")}</label>
-            <input
-              value={userName}
-              onChange={(e) => setUserName(e.target.value)}
-              maxLength={60}
-              placeholder={t("Your name")}
-              className="mt-0.5 w-full rounded-2xl bg-surface-2 px-3.5 py-2.5 text-[14px] outline-none focus:ring-2 focus:ring-accent/40"
-            />
-          </div>
+        {/* who it is */}
+        <Section title={name}>
+          <IdentityForm value={identity} onChange={setIdentity} suggestions={false} inputCls={settingsInput} />
           <button
             type="button"
             disabled={!dirty || saving}
-            onClick={() => void update({ profile: { name, ...look, style, user_name: userName } }, t("Saved"))}
+            onClick={() => void update({ profile: identityBody(identity) }, t("Saved"))}
             className="w-full rounded-2xl bg-accent text-accent-fg py-2.5 font-medium disabled:opacity-40"
           >
             {t("Save")}

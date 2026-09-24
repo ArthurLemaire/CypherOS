@@ -188,6 +188,9 @@ export const api = {
   setLLM: (body: Record<string, unknown>) =>
     request<ConnectionsData["llm"]>("/api/connections/llm", { method: "PUT", body: JSON.stringify(body) }),
   testLLM: () => request<TestResult>("/api/connections/llm/test", { method: "POST" }),
+  /** the models an endpoint offers: its own /models when it answers, else the preset's catalogue */
+  llmModels: (body: { preset?: string; base_url?: string; api_key?: string }) =>
+    request<{ models: string[]; source: "live" | "catalogue"; error?: string }>("/api/llm/models", json(body)),
   setEmbeddings: (body: Record<string, unknown>) =>
     request<ConnectionsData["embeddings"]>("/api/connections/embeddings", { method: "PUT", body: JSON.stringify(body) }),
   testEmbeddings: () => request<TestResult>("/api/connections/embeddings/test", { method: "POST" }),

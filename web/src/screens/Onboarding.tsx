@@ -1,16 +1,15 @@
-import { ArrowRight, Loader2, ShieldCheck } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ArrowRight, Check, ChevronRight, Loader2, Lock } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
 import { api } from "../api";
 import { MASCOT } from "../avatars";
 import { Avatar } from "../components/Avatar";
-import { AVATAR_COLORS, AvatarPicker } from "../components/AvatarPicker";
+import { AVATAR_COLORS } from "../components/AvatarPicker";
+import { IdentityForm, identityBody, identityOf, type Identity } from "../components/IdentityForm";
 import { useT } from "../i18n";
 import { useStore } from "../store";
-import type { ConnectionsData } from "../types";
+import type { ConnectionsData, Profile } from "../types";
 import { cx } from "../util";
 import { CalendarCard, ContactsCard, EmailCard, ModelCard, inputCls, primaryBtn, secondaryBtn } from "./ConnectionsScreen";
-
-const STYLES = ["Warm and concise", "Direct, no small talk", "Playful and curious", "Calm and thorough"];
 
 const FIRST_ASKS = [
   "Plan a 3-day trip to Kyoto in November on a mid-range budget",
@@ -19,25 +18,26 @@ const FIRST_ASKS = [
   "Find this week's top stories about small language models and summarise them",
 ];
 
-type Step = "welcome" | "you" | "muse" | "model" | "connect" | "tips";
-const ORDER: Step[] = ["welcome", "you", "muse", "model", "connect", "tips"];
+type Step = "welcome" | "list" | "muse" | "model" | "connect" | "tips";
 
 /**
- * First run, the way Muse does it: who you are, who your nanoMuse is, which model runs it,
- * what it may reach — then a few things to try. Everything here can be changed later
- * under the avatar (Settings, Connections).
+ * First run, the way Muse does it: meet it and name it, give it a model, start. A short
+ * list in that order — done items ticked, the start locked until a model answers — and
+ * three optional connections under it. Everything here can be changed later under the
+ * avatar (Settings, Connections).
  */
 export function Onboarding() {
   const { state, send, setTab, dismissOnboarding, refreshSettings, toast } = useStore();
   const [step, setStep] = useState<Step>("welcome");
-  const [userName, setUserName] = useState(state.profile?.user_name ?? "");
-  const [name, setName] = useState(state.profile?.name ?? "nanoMuse");
-  const [look, setLook] = useState({
-    avatar: state.profile?.avatar ?? MASCOT,
-    emoji: state.profile?.emoji ?? "✨",
-    color: state.profile?.color ?? AVATAR_COLORS[0],
-  });
-  const [style, setStyle] = useState(state.profile?.style ?? "");
+  const [identity, setIdentity] = useState<Identity>(() => identityOf(state.profile, MASCOT, AVATAR_COLORS[0]));
+  // "named" survives a reload: a profile that differs from the defaults was saved by the user
+  const [named, setNamed] = useState(() => customised(state.profile));
+  useEffect(() => {
+    if (step === "muse") return; // never clobber what is being typed
+    setIdentity(identityOf(state.profile, MASCOT, AVATAR_COLORS[0]));
+    setNamed(customised(state.profile));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.profile]);
   const [conn, setConn] = useState<ConnectionsData | null>(null);
   const [saving, setSaving] = useState(false);
   const t = useT();
@@ -53,16 +53,13 @@ export function Onboarding() {
     void loadConn();
   }, [state.connectionsVersion]);
 
-  const idx = ORDER.indexOf(step);
-  const next = () => setStep(ORDER[Math.min(idx + 1, ORDER.length - 1)]);
-  const back = () => setStep(ORDER[Math.max(idx - 1, 0)]);
-
-  const saveProfile = async () => {
+  const saveIdentity = async () => {
     setSaving(true);
     try {
-      await api.updateSettings({ profile: { name: name.trim() || "nanoMuse", ...look, style: style.trim(), user_name: userName.trim() } });
+      await api.updateSettings({ profile: identityBody(identity) });
       await refreshSettings();
-      next();
+      setNamed(true);
+      setStep("list");
     } catch (e) {
       toast((e as Error).message);
     } finally {
@@ -82,23 +79,18 @@ export function Onboarding() {
     if (firstAsk) void send("main", firstAsk);
   };
 
-  const preview = {
-    name,
-    ...look,
-    style,
-    user_name: userName,
-    proactivity: "default" as const,
-    proactive: true,
-    goal_interval_minutes: 60,
-    quiet_hours: "",
-  };
+  const preview = { ...identity, proactivity: "default" as const, proactive: true, goal_interval_minutes: 60, quiet_hours: "" };
+  const name = identity.name.trim() || "nanoMuse";
   const modelReady = conn ? conn.llm.key_source === "vault" || conn.llm.key_source === "config" || !!conn.providers[presetOf(conn)]?.no_key : false;
+  const connected = !!conn && (conn.email.configured || conn.calendar.feeds.length > 0 || conn.contacts.sources.length > 0);
+  const progress: Step[] = ["welcome", "list", "tips"];
+  const idx = step === "welcome" ? 0 : step === "tips" ? 2 : 1;
 
   return (
     <div className="mx-auto flex h-[100dvh] max-w-[760px] flex-col bg-bg sm:border-x sm:border-border">
       <header className="safe-top shrink-0 px-5 pt-4 pb-2 flex items-center justify-between">
         <div className="flex gap-1">
-          {ORDER.map((s, i) => (
+          {progress.map((s, i) => (
             <span key={s} className={cx("h-1.5 rounded-full transition-all", i <= idx ? "w-5 bg-accent" : "w-1.5 bg-border")} />
           ))}
         </div>
@@ -114,65 +106,40 @@ export function Onboarding() {
           <div className="flex h-full flex-col items-center justify-center text-center">
             <Avatar profile={preview} size={96} />
             <h1 className="mt-6 text-[28px] font-bold tracking-tight">{t("Meet your nanoMuse")}</h1>
-            <p className="mt-3 max-w-sm text-[15px] text-muted leading-relaxed">
-              {t("A personal agent that does the work: it searches, browses, writes files and code, reads and sends mail, and keeps going on long goals while you are away.")}
-            </p>
-            <div className="mt-6 max-w-sm rounded-3xl bg-surface border border-border/70 p-4 text-left text-[13.5px] leading-relaxed">
-              <div className="flex items-center gap-2 font-medium">
-                <ShieldCheck size={18} className="text-accent" /> {t("Yours, on your machine")}
-              </div>
-              <p className="mt-1.5 text-muted">
-                {t("It runs on the server you started. A separate Sentinel checks every action, asks before anything hard to undo, and keeps your keys and passwords in an encrypted vault the model cannot read.")}
-              </p>
-            </div>
+            <p className="mt-2 text-[15px] text-muted">{t("A personal agent of your own. Three things to know:")}</p>
+            <ul className="mt-6 w-full max-w-sm space-y-2.5 text-left">
+              <Point n={1} title={t("It does things for you.")} body={t("Searches, browses, writes, books, reads mail — and hands you the result, not a list of links.")} />
+              <Point n={2} title={t("It keeps working when you close the app.")} body={t("Goals move forward between your visits; it reports in the Feed and notifies you when something is worth it.")} />
+              <Point n={3} title={t("It asks you first where it matters.")} body={t("A separate Sentinel reviews every action. Sending, paying, deleting — it stops and asks; your keys stay in a vault the model cannot read.")} />
+            </ul>
           </div>
         )}
 
-        {step === "you" && (
+        {step === "list" && (
           <div className="pt-6">
-            <h1 className="text-[26px] font-bold tracking-tight">{t("First, you")}</h1>
-            <p className="mt-1 text-[14px] text-muted">{t("What should it call you?")}</p>
-            <input
-              autoFocus
-              value={userName}
-              onChange={(e) => setUserName(e.target.value)}
-              maxLength={60}
-              placeholder={t("Your name")}
-              className={cx(inputCls, "mt-5 text-[18px] py-3")}
-            />
-            <p className="mt-3 text-[12.5px] text-muted">
-              {t("Anything else it should know about you — where you live, what you do, what you like — you can just tell it in the chat. It remembers.")}
-            </p>
+            <div className="flex items-center gap-3">
+              <Avatar profile={preview} size={56} />
+              <div className="min-w-0">
+                <h1 className="text-[24px] font-bold tracking-tight truncate">{named ? name : t("Set it up")}</h1>
+                <p className="text-[13.5px] text-muted truncate">{named && identity.tagline ? identity.tagline : t("Three steps, two minutes.")}</p>
+              </div>
+            </div>
+            <ol className="mt-6 space-y-2">
+              <Item done={named} title={t("Meet your nanoMuse")} body={named ? t("Named {name}. Tap to change.", { name }) : t("Give it a name, a face and a way of talking.")} onClick={() => setStep("muse")} />
+              <Item done={modelReady} title={t("Add a model")} body={modelReady ? `${conn?.llm.model} · ${hostOf(conn?.llm.base_url ?? "")}` : t("Pick a provider and paste a key. Yours, stored in the vault.")} onClick={() => setStep("model")} />
+              <Item done={connected} optional title={t("Connect mail, calendar, contacts")} body={connected ? t("Connected. Tap to add more.") : t("Optional — it can read what came in, know your day, and who is who.")} onClick={() => setStep("connect")} />
+              <Item locked={!modelReady} done={false} title={t("Start")} body={modelReady ? t("Open the chat and ask for the first thing.") : t("Needs a model first.")} onClick={() => modelReady && setStep("tips")} />
+            </ol>
           </div>
         )}
 
         {step === "muse" && (
           <div className="pt-6 space-y-5">
             <div>
-              <h1 className="text-[26px] font-bold tracking-tight">{t("Now, your nanoMuse")}</h1>
-              <p className="mt-1 text-[14px] text-muted">{t("Give it a name, a look and a way of talking.")}</p>
+              <h1 className="text-[26px] font-bold tracking-tight">{t("Meet your nanoMuse")}</h1>
+              <p className="mt-1 text-[14px] text-muted">{t("The name comes first. Then a face, a tagline and how it talks — and what it should call you.")}</p>
             </div>
-            <div className="flex items-center gap-4">
-              <Avatar profile={preview} size={72} />
-              <input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} className={cx(inputCls, "text-[17px] font-medium")} placeholder="nanoMuse" />
-            </div>
-            <AvatarPicker value={look} onChange={setLook} />
-            <div>
-              <div className="flex flex-wrap gap-1.5">
-                {STYLES.map((s) => (
-                  <button key={s} type="button" onClick={() => setStyle(t(s))} className={cx("rounded-full px-3 py-1.5 text-[13px] border", style === t(s) ? "border-accent bg-accent/10 text-accent font-medium" : "border-border text-muted")}>
-                    {t(s)}
-                  </button>
-                ))}
-              </div>
-              <textarea
-                value={style}
-                onChange={(e) => setStyle(e.target.value)}
-                rows={2}
-                placeholder={t("…or describe it: e.g. Warm, concise, a little witty. Uses metric units.")}
-                className={cx(inputCls, "mt-2 resize-none text-[14px]")}
-              />
-            </div>
+            <IdentityForm value={identity} onChange={setIdentity} inputCls={inputCls} />
           </div>
         )}
 
@@ -223,7 +190,7 @@ export function Onboarding() {
             <div className="flex items-center gap-3">
               <Avatar profile={preview} size={48} />
               <div>
-                <h1 className="text-[24px] font-bold tracking-tight">{userName ? t("Ready, {name}.", { name: userName }) : t("Ready.")}</h1>
+                <h1 className="text-[24px] font-bold tracking-tight">{identity.user_name.trim() ? t("Ready, {name}.", { name: identity.user_name.trim() }) : t("Ready.")}</h1>
                 <p className="text-[14px] text-muted">{t("A few things people do in their first days.")}</p>
               </div>
             </div>
@@ -253,34 +220,34 @@ export function Onboarding() {
       </div>
 
       <footer className="safe-bottom shrink-0 px-5 pb-5 pt-2 flex gap-2">
-        {idx > 0 && step !== "tips" && (
-          <button type="button" onClick={back} className={secondaryBtn}>
+        {(step === "model" || step === "connect") && (
+          <button type="button" onClick={() => setStep("list")} className={secondaryBtn}>
             {t("Back")}
           </button>
         )}
         {step === "welcome" && (
-          <button type="button" onClick={next} className={cx(primaryBtn, "flex-1 py-3")}>
+          <button type="button" onClick={() => setStep("list")} className={cx(primaryBtn, "flex-1 py-3")}>
             {t("Get started")} <ArrowRight size={16} />
           </button>
         )}
-        {step === "you" && (
-          <button type="button" onClick={next} className={cx(primaryBtn, "flex-1 py-3")}>
-            {userName.trim() ? t("Continue") : t("Skip")} <ArrowRight size={16} />
+        {step === "list" && (
+          <button type="button" disabled={!modelReady} onClick={() => setStep("tips")} className={cx(primaryBtn, "flex-1 py-3")}>
+            {modelReady ? t("Start") : t("Add a model to start")} <ArrowRight size={16} />
           </button>
         )}
         {step === "muse" && (
-          <button type="button" disabled={saving} onClick={() => void saveProfile()} className={cx(primaryBtn, "flex-1 py-3")}>
-            {saving ? <Loader2 size={16} className="animate-spin" /> : null} {t("Continue")} <ArrowRight size={16} />
+          <button type="button" disabled={saving} onClick={() => void saveIdentity()} className={cx(primaryBtn, "flex-1 py-3")}>
+            {saving ? <Loader2 size={16} className="animate-spin" /> : null} {t("That's {name}", { name })} <ArrowRight size={16} />
           </button>
         )}
         {step === "model" && (
-          <button type="button" disabled={!modelReady} onClick={next} className={cx(primaryBtn, "flex-1 py-3")}>
-            {modelReady ? t("Continue") : t("Save a model to continue")} <ArrowRight size={16} />
+          <button type="button" disabled={!modelReady} onClick={() => setStep("list")} className={cx(primaryBtn, "flex-1 py-3")}>
+            {modelReady ? t("Done") : t("Save a model to continue")} <ArrowRight size={16} />
           </button>
         )}
         {step === "connect" && (
-          <button type="button" onClick={next} className={cx(primaryBtn, "flex-1 py-3")}>
-            {conn?.email.configured ? t("Continue") : t("Skip for now")} <ArrowRight size={16} />
+          <button type="button" onClick={() => setStep("list")} className={cx(primaryBtn, "flex-1 py-3")}>
+            {connected ? t("Done") : t("Skip for now")} <ArrowRight size={16} />
           </button>
         )}
         {step === "tips" && (
@@ -291,6 +258,60 @@ export function Onboarding() {
       </footer>
     </div>
   );
+}
+
+function Point({ n, title, body }: { n: number; title: string; body: string }) {
+  return (
+    <li className="flex gap-3 rounded-3xl bg-surface border border-border/70 p-4">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent/12 text-[13px] font-semibold text-accent">{n}</span>
+      <div className="text-[13.5px] leading-relaxed">
+        <div className="font-medium text-fg">{title}</div>
+        <div className="text-muted">{body}</div>
+      </div>
+    </li>
+  );
+}
+
+/** One row of the first-run list: ticked when done, greyed and locked until it can be done. */
+function Item({ done, locked, optional, title, body, onClick }: { done: boolean; locked?: boolean; optional?: boolean; title: string; body: ReactNode; onClick: () => void }) {
+  const t = useT();
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={locked}
+        aria-disabled={locked}
+        className={cx("w-full flex items-center gap-3 rounded-3xl border px-4 py-3.5 text-left transition-colors", done ? "border-accent/30 bg-accent/5" : "border-border/70 bg-surface", locked && "opacity-50")}
+      >
+        <span className={cx("flex h-7 w-7 shrink-0 items-center justify-center rounded-full", done ? "bg-accent text-white" : locked ? "bg-surface-2 text-muted" : "border border-border text-muted")}>
+          {done ? <Check size={15} strokeWidth={3} /> : locked ? <Lock size={13} /> : null}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-2 text-[15px] font-medium">
+            <span className="truncate">{title}</span>
+            {optional && <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[10.5px] font-medium text-muted">{t("optional")}</span>}
+          </span>
+          <span className="block truncate text-[12.5px] text-muted">{body}</span>
+        </span>
+        {!locked && <ChevronRight size={16} className="shrink-0 text-muted" />}
+      </button>
+    </li>
+  );
+}
+
+/** Whether the saved profile carries anything the user chose (name, tagline, tone, style, their own name). */
+function customised(p: Profile | null | undefined): boolean {
+  if (!p) return false;
+  return (p.name && p.name !== "nanoMuse") || !!p.tagline || !!p.tone || !!p.communication || !!p.style || !!p.user_name;
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
 }
 
 function presetOf(conn: ConnectionsData): string {

@@ -111,6 +111,21 @@ STARTER_IDEAS = [
 
 
 PROACTIVITY = ("off", "low", "default", "high")
+
+# identity limits and vocabularies (the app's forms and the identity tool share them)
+NAME_MAX = 20
+TAGLINE_MAX = 60
+TONES: dict[str, str] = {
+    "formal": "Tone: formal — polite and precise, no slang, no exclamation marks.",
+    "casual": "Tone: casual — relaxed and friendly, the way a capable friend talks.",
+    "playful": "Tone: playful — light and a little witty, never at the expense of being clear.",
+    "concise": "Tone: concise — say what matters, then stop; no preamble, no recap.",
+}
+COMMUNICATION: dict[str, str] = {
+    "short": "Length: keep replies short — a few sentences, one or two paragraphs at most, unless asked for more.",
+    "detailed": "Length: be thorough — give the reasoning, the alternatives and what you ruled out.",
+    "bullets": "Shape: prefer bullet points and short headings over running prose; one idea per line.",
+}
 # how the configured interval stretches or shrinks per level
 _INTERVAL_FACTOR = {"low": 2.0, "default": 1.0, "high": 0.5}
 _QUIET_HOURS_RE = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)-([01]?\d|2[0-3]):([0-5]\d)$")
@@ -124,6 +139,12 @@ class Profile:
     avatar: str = "panda"
     emoji: str = "✨"
     color: str = "#0064d4"
+    # one line under the name, the way Muse shows it ("Your day, sorted.")
+    tagline: str = ""
+    # how it talks: a tone (formal · casual · playful · concise), a length or shape of reply
+    # (short · detailed · bullets) and free text; each becomes its own paragraph of the prompt
+    tone: str = ""
+    communication: str = ""
     style: str = ""
     # what the user wants to be called
     user_name: str = ""
@@ -170,6 +191,9 @@ class Profile:
             "avatar": self.avatar,
             "emoji": self.emoji,
             "color": self.color,
+            "tagline": self.tagline,
+            "tone": self.tone,
+            "communication": self.communication,
             "style": self.style,
             "user_name": self.user_name,
             "proactivity": self.proactivity,
@@ -189,13 +213,20 @@ class Profile:
             p.proactivity = "default" if data["proactive"] else "off"
         if p.proactivity not in PROACTIVITY:
             p.proactivity = "default"
-        p.name = (str(p.name).strip() or "nanoMuse")[:40]
+        p.name = (str(p.name).strip() or "nanoMuse")[:NAME_MAX]
         if "avatar" not in data:
             # a profile from before the dolls: keep the emoji it has
             p.avatar = ""
         p.avatar = re.sub(r"[^a-z0-9-]", "", str(p.avatar).lower())[:32]
         p.emoji = str(p.emoji)[:8] or "✨"
         p.color = str(p.color)[:16] or "#0064d4"
+        p.tagline = " ".join(str(p.tagline).split())[:TAGLINE_MAX]
+        p.tone = str(p.tone).strip().lower()
+        if p.tone not in TONES:
+            p.tone = ""
+        p.communication = str(p.communication).strip().lower()
+        if p.communication not in COMMUNICATION:
+            p.communication = ""
         p.style = str(p.style)[:1000]
         p.user_name = str(p.user_name).strip()[:60]
         p.goal_interval_minutes = max(5, min(int(p.goal_interval_minutes), 24 * 60))
@@ -363,8 +394,18 @@ class MuseService:
             extra += (
                 f"\nThe user's name is {self.profile.user_name}; address them by it when natural."
             )
+        if self.profile.tagline.strip():
+            extra += f"\nYour tagline, the line under your name in the app: {self.profile.tagline.strip()!r}"
+        # each choice is its own paragraph, so a change to one leaves the others alone
+        if self.profile.tone in TONES:
+            extra += "\n\n" + TONES[self.profile.tone]
+        if self.profile.communication in COMMUNICATION:
+            extra += "\n\n" + COMMUNICATION[self.profile.communication]
         if self.profile.style.strip():
-            extra += f"\nYour personality / style, chosen by the user: {self.profile.style.strip()}"
+            extra += (
+                "\n\nYour personality / style, in the user's own words: "
+                + self.profile.style.strip()
+            )
         a.instructions = (self._base_instructions.rstrip() + extra).strip()
 
     def update_profile(self, data: dict[str, Any]) -> Profile:

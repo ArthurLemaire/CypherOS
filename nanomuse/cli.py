@@ -115,9 +115,25 @@ def _run_async(coro) -> None:  # noqa: ANN001
         raise typer.Exit(1) from None
 
 
+def _agent_name(settings: Settings) -> str:
+    """The name the user gave their agent (profile.json), else the configured one."""
+    try:
+        import json
+
+        data = json.loads((settings.data_dir / "profile.json").read_text("utf-8"))
+        name = str(data.get("name") or "").strip()
+        if name:
+            return name
+    except (OSError, ValueError):
+        pass
+    return settings.agent.name
+
+
 def _banner(settings: Settings) -> None:
+    name = _agent_name(settings)
+    who = f"  ·  [bold]{name}[/bold]" if name and name != "nanoMuse" else ""
     console.print(
-        f"[bold magenta]nanoMuse[/bold magenta] v{__version__}  ·  model [cyan]{settings.llm.model}[/cyan] "
+        f"[bold magenta]nanoMuse[/bold magenta] v{__version__}{who}  ·  model [cyan]{settings.llm.model}[/cyan] "
         f"via {settings.llm.provider}  ·  sentinel [yellow]{settings.sentinel.mode}[/yellow]  ·  "
         f"config [dim]{settings.source}[/dim]"
     )

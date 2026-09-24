@@ -156,6 +156,13 @@ export interface Profile {
   avatar: string;
   emoji: string;
   color: string;
+  /** one line under the name */
+  tagline: string;
+  /** how it talks: "" | formal | casual | playful | concise */
+  tone: string;
+  /** how much and in what shape: "" | short | detailed | bullets */
+  communication: string;
+  /** free text about its personality, in the user's words */
   style: string;
   /** What you want to be called. */
   user_name: string;
@@ -353,10 +360,21 @@ export interface SkillsData {
 // ----------------------------------------------------------------------------- connections
 export interface ProviderPreset {
   label: string;
-  provider: string;
+  /** who is behind it, or what protocol: "Moonshot AI · 月之暗面", "Responses API" */
+  subtitle?: string;
+  /** how the form groups them: "openai" (Chat Completions), "responses", "local" */
+  group?: "openai" | "responses" | "local" | string;
+  provider: "openai" | "openai_responses" | string;
   base_url: string;
+  /** the fallback catalogue; the live list comes from /api/llm/models */
   models?: string[];
   no_key?: boolean;
+  /** a key may be left empty (a gateway or local server without one) */
+  key_optional?: boolean;
+  /** where a key comes from */
+  key_url?: string;
+  /** what a key looks like there, as the field's placeholder */
+  key_hint?: string;
 }
 
 export interface ConnectionsData {

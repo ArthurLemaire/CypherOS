@@ -85,19 +85,19 @@ Decisions this list rests on (see [design.md](design.md) for the reasoning): the
 
 ## 5. Model access and first run (P0)
 
-- [ ] First-run checklist in this order: meet your nanoMuse (name it) → add a model → start; done items ticked, locked items greyed
-- [ ] Provider form: grouped by protocol with vendor subtitles; masked key; vendor-specific placeholders; Base URL with "append /v1 automatically"; custom endpoints may have an empty key
-- [ ] `/api/llm/models`: fetch `/v1/models`, fall back to a static catalogue, never overwrite a typed model
-- [ ] Chinese presets: DeepSeek / Kimi / Qwen / GLM / 豆包 / MiniMax, each with a link to get a key
-- [ ] No OAuth subscription login (recorded in design.md)
+- [x] First-run checklist in this order: meet your nanoMuse (name it) → add a model → start; done items ticked, locked items greyed; ticks survive a reload (derived from the saved profile) — `web/src/screens/Onboarding.tsx`
+- [x] Provider form: grouped by protocol with vendor subtitles; masked key with a reveal toggle; vendor-specific placeholders and a *Get a key* link; Base URL with "/v1 is added when the URL has no path" (`normalize_base_url`, preset hosts kept verbatim); Ollama and custom endpoints may have an empty key — `ModelCard` in `ConnectionsScreen.tsx`, `connections.py`
+- [x] `/api/llm/models`: `/models` then `/v1/models` with the given or vaulted key, fall back to the preset's catalogue (`source` says which), never overwrite a typed model (a model carried over from another provider yields to the live list) — verified against a local Ollama
+- [x] Chinese presets: DeepSeek / Kimi / Qwen / GLM / 豆包 / MiniMax, each with a link to get a key (`PROVIDERS`; catalogue names are a fallback — the live list is the source of truth and should be re-checked before release)
+- [x] No OAuth subscription login (recorded in design.md, "Identity: the name comes first")
 - [ ] P2: several instances, model groups
 
 ### 5a. Identity (as in Muse: the name comes first)
 
-- [ ] **P0** Naming page: 1–20 characters, empty falls back to nanoMuse; six suggested names as chips plus a shuffle; the avatar; a one-line tagline (`web/src/screens/Onboarding.tsx`)
-- [ ] **P0** The welcome screen down to three points: it does things for you / it keeps working when closed / it asks you first where it matters
-- [ ] **P0** `Profile` (`nanomuse/server/service.py`) gains `tagline`; `style` splits into `tone` (formal / casual / playful / concise) + `communication` (short / detailed / bullets) + free text, each its own prompt paragraph
-- [ ] **P0** Name audit: system prompt, approval cards, Feed, notifications, the hard-coded string in MobileGym `bridge.ts:257`, the Android foreground notification, the CLI banner, the Ideas/Feed prompts
+- [x] **P0** Naming page: 1–20 characters, empty falls back to nanoMuse; six suggested names as chips plus a shuffle; the avatar; a one-line tagline (`web/src/components/IdentityForm.tsx`, shared with Settings)
+- [x] **P0** The welcome screen down to three points: it does things for you / it keeps working when closed / it asks you first where it matters
+- [x] **P0** `Profile` (`nanomuse/server/service.py`) gains `tagline`; `style` splits into `tone` (formal / casual / playful / concise) + `communication` (short / detailed / bullets) + free text, each its own prompt paragraph — `tests/test_server.py::test_identity_fields_each_get_a_paragraph`
+- [x] **P0** Name audit: system prompt, approval and permission copy (`MuseSheet.tsx`), Settings heading, MobileGym `bridge.ts` (name from the hello / profile), the CLI banner (`· <name>`); the Android foreground notification keeps the product name while starting (no profile yet) and shows the agent's status text once connected
 - [ ] **P1** `identity` tool (set_name / set_tagline / set_avatar / set_style): renaming and avatar changes go through a choose/confirm card; tone changes apply at once with a one-line reply; "too long" / "more casual" map to settings
 - [ ] **P1** `identity/IDENTITY.md` + `identity/SOUL.md`, readable and editable; profile → markdown one-way sync; an "Identity" row in the Muse sheet (IDENTITY / SOUL / memory) with reset to default
 - [ ] **P1** `tidy` may propose SOUL.md revisions, surfaced as Ideas, never applied on its own

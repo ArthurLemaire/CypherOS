@@ -241,6 +241,7 @@ function MenuRow({ icon, label, hint, badge, onClick }: { icon: ReactNode; label
 // ------------------------------------------------------------------ approvals queue
 function ApprovalsView({ onDone }: { onDone: () => void }) {
   const { state, decide, openThread, toast } = useStore();
+  const name = state.profile?.name ?? "nanoMuse";
   const t = useT();
   const list = [...state.pendingApprovals].sort((a, b) => a.ts.localeCompare(b.ts));
   const titleOf = (id: string) => {
@@ -266,7 +267,7 @@ function ApprovalsView({ onDone }: { onDone: () => void }) {
   return (
     <div className="space-y-4 pb-2">
       <p className="text-[12.5px] text-muted">
-        {t("Actions your nanoMuse wants to take but cannot without you. Each one shows what will run and why; a permission you grant is bound to that exact tool and target.")}
+        {t("Actions {name} wants to take but cannot without you. Each one shows what will run and why; a permission you grant is bound to that exact tool and target.", { name })}
       </p>
       {list.map((ev) => (
         <div key={ev.id}>
@@ -931,7 +932,7 @@ function PermissionsView({ open }: { open: boolean }) {
   const [data, reload] = useActivity(open);
 
   const reset = async () => {
-    if (!window.confirm(t("Forget every permission you granted? Your nanoMuse will ask again next time."))) return;
+    if (!window.confirm(t("Forget every permission you granted? {name} will ask again next time.", { name: state.profile?.name ?? "nanoMuse" }))) return;
     try {
       await api.resetApprovals();
       await reload();

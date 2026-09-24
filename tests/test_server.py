@@ -627,7 +627,122 @@ def test_user_name_reaches_the_instructions(server, settings: Settings):
     assert "The user's name is Sam" in settings.agent.instructions
 
 
+def test_identity_fields_each_get_a_paragraph(server, settings: Settings):
+    """Tagline, tone and communication are validated and land as separate prompt paragraphs."""
+    client, service, _ = server
+    view = client.put(
+        "/api/settings",
+        json={
+            "profile": {
+                "name": "A name that is far too long for the pill",
+                "tagline": "  Your day,\n sorted.  ",
+                "tone": "Playful",
+                "communication": "bullets",
+                "style": "uses metric units",
+            }
+        },
+    ).json()["profile"]
+    assert len(view["name"]) == 20
+    assert view["tagline"] == "Your day, sorted." and view["tone"] == "playful"
+    assert view["communication"] == "bullets"
+    text = settings.agent.instructions
+    assert "Tone: playful" in text and "Shape: prefer bullet points" in text
+    assert "uses metric units" in text and "Your day, sorted." in text
+    # each choice is its own paragraph: changing one leaves the others
+    client.put("/api/settings", json={"profile": {"tone": "formal", "communication": "nonsense"}})
+    text = settings.agent.instructions
+    assert "Tone: formal" in text and "Tone: playful" not in text
+    assert "Shape: prefer bullet points" not in text and "uses metric units" in text
+    assert service.profile.communication == ""
+
+
 # ----------------------------------------------------------------------------- connections
+def test_base_url_normalisation():
+    from nanomuse.server.connections import normalize_base_url
+
+    assert (
+        normalize_base_url(" https://my-gateway.example.com/ ")
+        == "https://my-gateway.example.com/v1"
+    )
+    assert normalize_base_url("my-gateway.example.com") == "https://my-gateway.example.com/v1"
+    assert normalize_base_url("http://127.0.0.1:8000/v1/") == "http://127.0.0.1:8000/v1"
+    assert (
+        normalize_base_url("https://open.bigmodel.cn/api/paas/v4")
+        == "https://open.bigmodel.cn/api/paas/v4"
+    )
+    # a preset's host stays as the preset has it
+    assert normalize_base_url("https://api.deepseek.com/") == "https://api.deepseek.com"
+    assert normalize_base_url("") == ""
+
+
+def test_llm_models_live_then_catalogue(server, monkeypatch):
+    """/api/llm/models asks the endpoint's /models and falls back to the preset catalogue."""
+    import httpx
+
+    client, _, _ = server
+
+    class FakeResponse:
+        def __init__(self, status: int, data=None):
+            self.status_code = status
+            self._data = data
+
+        def json(self):
+            return self._data
+
+    calls: list[tuple[str, dict]] = []
+
+    class FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, url, headers=None):
+            calls.append((url, dict(headers or {})))
+            if url.startswith("https://live.example.com/v1/models"):
+                return FakeResponse(200, {"data": [{"id": "b-model"}, {"id": "a-model"}]})
+            if url.startswith("https://dead.example.com"):
+                raise httpx.ConnectError("no route")
+            return FakeResponse(404)
+
+    monkeypatch.setattr(httpx, "AsyncClient", FakeClient)
+    live = client.post(
+        "/api/llm/models", json={"base_url": "https://live.example.com", "api_key": "sk-typed"}
+    ).json()
+    assert live == {"models": ["a-model", "b-model"], "source": "live"}
+    assert calls[-1][1]["Authorization"] == "Bearer sk-typed"
+
+    fallback = client.post(
+        "/api/llm/models", json={"preset": "kimi", "base_url": "https://dead.example.com/v1"}
+    ).json()
+    assert fallback["source"] == "catalogue" and "kimi-k2.6" in fallback["models"]
+    assert fallback["error"] == "ConnectError"
+    # a preset alone asks the preset's endpoint; a 404 there means the catalogue
+    glm = client.post("/api/llm/models", json={"preset": "glm"}).json()
+    assert glm["source"] == "catalogue" and glm["error"] == "404" and "glm-5" in glm["models"]
+    assert calls[-1][0] == "https://open.bigmodel.cn/api/paas/v4/models"
+    # no base URL at all: the catalogue, no request
+    before = len(calls)
+    assert client.post("/api/llm/models", json={"preset": "custom"}).json() == {
+        "models": [],
+        "source": "catalogue",
+    }
+    assert len(calls) == before
+
+
+def test_providers_carry_where_keys_come_from(server):
+    client, _, _ = server
+    providers = client.get("/api/connections").json()["providers"]
+    for pid in ("deepseek", "kimi", "qwen", "glm", "doubao", "minimax"):
+        assert providers[pid]["key_url"].startswith("https://"), pid
+        assert providers[pid]["group"] == "openai" and providers[pid]["subtitle"]
+    assert providers["ollama"]["no_key"] and providers["custom"]["key_optional"]
+
+
 def test_connections_model_key_goes_to_the_vault(server, settings: Settings):
     client, service, _ = server
     view = client.get("/api/connections").json()
