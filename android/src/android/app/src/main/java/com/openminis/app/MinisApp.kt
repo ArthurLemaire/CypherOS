@@ -646,7 +646,9 @@ class MinisApp : Application(), ImageLoaderFactory {
         }
         // nanoMuse: remembered approvals + the approval gate's background notification.
         io.github.nanomuse.guard.Grants.init(this)
-        io.github.nanomuse.feed.FeedFlow.init(this) // nanoMuse: the feed's files and its built-in routine
+        io.github.nanomuse.feed.FeedFlow.init(this) // nanoMuse
+        io.github.nanomuse.avatar.AvatarStore.init(this) // nanoMuse: the user's own face, if any
+        io.github.nanomuse.avatar.AvatarStudio.init(this) // nanoMuse: the feed's files and its built-in routine
         val nmRiskNotifier = io.github.nanomuse.guard.RiskApprovalNotifier(this, ::isAppForeground)
         io.github.nanomuse.guard.RiskGate.backgroundNotifier = { nmRiskNotifier.notifyIfBackgrounded(it) }
         io.github.nanomuse.guard.RiskGate.cancelNotification = { nmRiskNotifier.cancel(it) }

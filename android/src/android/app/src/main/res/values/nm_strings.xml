@@ -280,4 +280,44 @@
     <string name="nm_continue_body">%1$s has taken %2$d steps on this and isn\'t finished. Keep going from here?</string>
     <string name="nm_continue_yes">Continue</string>
     <string name="nm_continue_no">Stop here</string>
+
+    <!-- 0.1.6 · appearance -->
+    <string name="nm_avatar_title">Avatar</string>
+    <string name="nm_avatar_settings_subtitle">Generate a face with your image model; it moves with what the agent is doing</string>
+    <string name="nm_avatar_menu_soul">Name and style</string>
+    <string name="nm_avatar_menu_model">Image model</string>
+    <string name="nm_avatar_menu_regenerate_moods">Redraw the moods</string>
+    <string name="nm_avatar_menu_reset">Back to the red panda</string>
+    <string name="nm_avatar_mood_idle">At rest</string>
+    <string name="nm_avatar_mood_working">Working</string>
+    <string name="nm_avatar_mood_waiting">Waiting for you</string>
+    <string name="nm_avatar_mood_happy">Done</string>
+    <string name="nm_avatar_mood_error">Something went wrong</string>
+    <string name="nm_avatar_moods_progress">Posing the moods… %1$d/%2$d</string>
+    <string name="nm_avatar_moods_done">All five moods are drawn.</string>
+    <string name="nm_avatar_moods_partial">%1$d of %2$d moods drawn; the rest use the main picture.</string>
+    <string name="nm_avatar_retry">Retry</string>
+    <string name="nm_avatar_describe_title">Describe a new face</string>
+    <string name="nm_avatar_describe_body">One sentence is enough: what it is, what it wears, what it feels like. Pick a style, and your image model draws four to choose from.</string>
+    <string name="nm_avatar_default_description">A round, friendly red panda with a small scarf</string>
+    <string name="nm_avatar_style_flat">Flat</string>
+    <string name="nm_avatar_style_clay">3D clay</string>
+    <string name="nm_avatar_style_watercolor">Watercolour</string>
+    <string name="nm_avatar_style_pixel">Pixel</string>
+    <string name="nm_avatar_style_line">Line</string>
+    <string name="nm_avatar_style_sticker">Sticker</string>
+    <string name="nm_avatar_generate">Draw four</string>
+    <string name="nm_avatar_generate_again">Draw four more</string>
+    <string name="nm_avatar_generating">Drawing…</string>
+    <string name="nm_avatar_using">Drawn by %1$s · %2$s</string>
+    <string name="nm_avatar_change">Change</string>
+    <string name="nm_avatar_no_provider">Add an OpenAI-compatible provider in Settings → Providers first; the face is drawn with your own key.</string>
+    <string name="nm_avatar_no_model">Set an image model first (Image model in the ⋯ menu).</string>
+    <string name="nm_avatar_pick_title">Pick one</string>
+    <string name="nm_avatar_pick_body">Tap a picture to choose it. You can draw four more any time; the old ones are kept until you do.</string>
+    <string name="nm_avatar_use_this">Use this one</string>
+    <string name="nm_avatar_use_this_hint">The moods — working, waiting, done, oops — are drawn from it next, in the background.</string>
+    <string name="nm_avatar_model_body">Any provider that speaks the OpenAI images API. Alibaba Model Studio: qwen-image-3.0 (moods via qwen-image-edit-max). OpenAI: gpt-image-1.</string>
+    <string name="nm_avatar_model_label">Model</string>
+    <string name="nm_avatar_footer">Pictures are stored on this phone under minis-global/nanomuse/avatar. Each face costs five images from your provider: one you chose plus four moods.</string>
 </resources>

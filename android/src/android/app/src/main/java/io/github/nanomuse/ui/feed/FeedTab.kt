@@ -1,6 +1,10 @@
 package io.github.nanomuse.ui.feed
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -52,6 +56,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
@@ -123,13 +128,14 @@ fun FeedTab(
                 if (i == 0 && !introAck) {
                     item(key = "intro") { IntroCard(onEdit = { editPrefs = true }, onAck = { FeedFlow.acknowledgeIntro(context) }) }
                 }
-                if (i == 0 && generating) item(key = "generating") { GeneratingCard() }
+                if (i == 0 && generating) item(key = "generating") { Box(Modifier.animateItem()) { GeneratingCard() } }
                 items(dayPosts, key = { it.id }) { post -> // the model leads with what matters most
                     PostCard(
                         post = post,
                         onLike = { FeedStore.setLiked(post, !post.liked) },
                         onDiscuss = { onDiscuss(post) },
                         onInfo = { infoPost = post },
+                        modifier = Modifier.animateItem(), // new posts settle in, removed ones fade out
                     )
                 }
             }
@@ -190,11 +196,11 @@ private fun DayTitle(text: String) {
 
 /** White card frame shared by every card on the page. */
 @Composable
-private fun FeedCard(content: @Composable () -> Unit) {
+private fun FeedCard(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Surface(
         shape = RoundedCornerShape(18.dp),
         color = MuseTones.surface,
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 14.dp, vertical = 6.dp)
             .animateContentSize(),
@@ -202,8 +208,14 @@ private fun FeedCard(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun PostCard(post: FeedPost, onLike: () -> Unit, onDiscuss: () -> Unit, onInfo: () -> Unit) {
-    FeedCard {
+private fun PostCard(
+    post: FeedPost,
+    onLike: () -> Unit,
+    onDiscuss: () -> Unit,
+    onInfo: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    FeedCard(modifier) {
         Column(Modifier.padding(start = 14.dp, end = 10.dp, top = 14.dp, bottom = 6.dp)) {
             Row(verticalAlignment = Alignment.Top) {
                 Box(
@@ -233,11 +245,25 @@ private fun PostCard(post: FeedPost, onLike: () -> Unit, onDiscuss: () -> Unit, 
             }
             Spacer(Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                // The heart pops when it fills, the way a like should feel.
+                val heartScale = remember { Animatable(1f) }
+                LaunchedEffect(post.liked) {
+                    if (post.liked) {
+                        heartScale.snapTo(0.7f)
+                        heartScale.animateTo(1f, spring(dampingRatio = 0.35f, stiffness = 800f))
+                    }
+                }
+                val heartTint by animateColorAsState(
+                    if (post.liked) likeRed else MaterialTheme.colorScheme.onSurface,
+                    tween(180),
+                    label = "heartTint",
+                )
                 FooterAction(
                     icon = if (post.liked) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                    tint = if (post.liked) likeRed else MaterialTheme.colorScheme.onSurface,
+                    tint = heartTint,
                     label = null,
                     onClick = onLike,
+                    iconModifier = Modifier.graphicsLayer { scaleX = heartScale.value; scaleY = heartScale.value },
                 )
                 Spacer(Modifier.width(6.dp))
                 FooterAction(
@@ -254,14 +280,20 @@ private fun PostCard(post: FeedPost, onLike: () -> Unit, onDiscuss: () -> Unit, 
 }
 
 @Composable
-private fun FooterAction(icon: androidx.compose.ui.graphics.vector.ImageVector, tint: Color, label: String?, onClick: () -> Unit) {
+private fun FooterAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    tint: Color,
+    label: String?,
+    onClick: () -> Unit,
+    iconModifier: Modifier = Modifier,
+) {
     Row(
         modifier = Modifier
             .clickable(onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(22.dp))
+        Icon(icon, contentDescription = label, tint = tint, modifier = iconModifier.size(22.dp))
         if (label != null) {
             Spacer(Modifier.width(6.dp))
             Text(label, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface)

@@ -273,4 +273,44 @@
     <string name="nm_continue_body">%1$s 在這件事上已經連續走了 %2$d 步，還沒有結束。從這裡繼續嗎？</string>
     <string name="nm_continue_yes">繼續</string>
     <string name="nm_continue_no">先停在這裡</string>
+
+    <!-- 0.1.6 · appearance -->
+    <string name="nm_avatar_title">形象</string>
+    <string name="nm_avatar_settings_subtitle">用你的圖像模型生成一張臉；它會隨著工作狀態動起來</string>
+    <string name="nm_avatar_menu_soul">名字與風格</string>
+    <string name="nm_avatar_menu_model">圖像模型</string>
+    <string name="nm_avatar_menu_regenerate_moods">重畫狀態</string>
+    <string name="nm_avatar_menu_reset">換回小熊貓</string>
+    <string name="nm_avatar_mood_idle">待命</string>
+    <string name="nm_avatar_mood_working">工作中</string>
+    <string name="nm_avatar_mood_waiting">等你回覆</string>
+    <string name="nm_avatar_mood_happy">搞定</string>
+    <string name="nm_avatar_mood_error">出了點問題</string>
+    <string name="nm_avatar_moods_progress">正在畫各個狀態… %1$d/%2$d</string>
+    <string name="nm_avatar_moods_done">五個狀態都畫好了。</string>
+    <string name="nm_avatar_moods_partial">畫好了 %2$d 個狀態裡的 %1$d 個，其餘先用主圖。</string>
+    <string name="nm_avatar_retry">重試</string>
+    <string name="nm_avatar_describe_title">描述一張新的臉</string>
+    <string name="nm_avatar_describe_body">一句話就夠：它是什麼、穿什麼、什麼氣質。選一種風格，你的圖像模型會畫四張讓你挑。</string>
+    <string name="nm_avatar_default_description">一隻圓圓的、友善的小熊貓，戴著一條小圍巾</string>
+    <string name="nm_avatar_style_flat">扁平插畫</string>
+    <string name="nm_avatar_style_clay">3D 黏土</string>
+    <string name="nm_avatar_style_watercolor">水彩</string>
+    <string name="nm_avatar_style_pixel">像素</string>
+    <string name="nm_avatar_style_line">線條</string>
+    <string name="nm_avatar_style_sticker">貼紙</string>
+    <string name="nm_avatar_generate">畫四張</string>
+    <string name="nm_avatar_generate_again">再畫四張</string>
+    <string name="nm_avatar_generating">正在畫…</string>
+    <string name="nm_avatar_using">由 %1$s · %2$s 繪製</string>
+    <string name="nm_avatar_change">更換</string>
+    <string name="nm_avatar_no_provider">先在 設定 → 模型提供方 裡新增一個 OpenAI 相容的提供方；形象用你自己的 key 生成。</string>
+    <string name="nm_avatar_no_model">先設定圖像模型（⋯ 選單裡的「圖像模型」）。</string>
+    <string name="nm_avatar_pick_title">挑一張</string>
+    <string name="nm_avatar_pick_body">點一張選中它。隨時可以再畫四張；沒重畫之前舊的會留著。</string>
+    <string name="nm_avatar_use_this">就用這個</string>
+    <string name="nm_avatar_use_this_hint">接下來會在背景以它為底畫出各個狀態——工作、等你、搞定、出錯。</string>
+    <string name="nm_avatar_model_body">任何支援 OpenAI images 介面的提供方都行。阿里雲百煉：qwen-image-3.0（狀態圖用 qwen-image-edit-max）。OpenAI：gpt-image-1。</string>
+    <string name="nm_avatar_model_label">模型</string>
+    <string name="nm_avatar_footer">圖片存在這台手機的 minis-global/nanomuse/avatar 下。每換一張臉會向你的提供方要五張圖：你選的那張加四個狀態。</string>
 </resources>

@@ -2588,26 +2588,18 @@ fun ChatScreen(
                                     modifier = Modifier.padding(bottom = 1.dp),
                                 )
                             } else if (nmMainChat) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(76.dp)
-                                        .clip(CircleShape)
-                                        .background(io.github.nanomuse.ui.home.avatarDiscColor()),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    io.github.nanomuse.ui.avatar.AgentAvatar(
-                                        mood = nmMood,
-                                        size = 66.dp,
-                                        contentDescription = stringResource(R.string.nm_avatar_content_description),
-                                        onClick = { io.github.nanomuse.ui.header.openSoulSettings(context) },
-                                    )
-                                }
+                                io.github.nanomuse.ui.avatar.AgentAvatarDisc(
+                                    mood = nmMood,
+                                    discSize = 76.dp,
+                                    contentDescription = stringResource(R.string.nm_avatar_content_description),
+                                    onClick = { io.github.nanomuse.ui.header.openAvatarStudio(context) },
+                                )
                             } else
                             io.github.nanomuse.ui.avatar.AgentAvatar(
                                 mood = nmMood,
                                 size = 36.dp,
                                 contentDescription = stringResource(R.string.nm_avatar_content_description),
-                                onClick = { io.github.nanomuse.ui.header.openSoulSettings(context) },
+                                onClick = { io.github.nanomuse.ui.header.openAvatarStudio(context) },
                             )
                             if (!nmSideChat) Spacer(Modifier.height(2.dp))
                             // nanoMuse: the pill is the agent's name (Muse's

@@ -2,6 +2,28 @@
 
 All notable changes to nanoMuse. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/). Unreleased changes are on `main`.
 
+## [0.1.6] - 2026-09-25 · alpha · 形象与动效
+
+The agent gets a face of your choosing. Describe it in a sentence, your own image model draws four, you pick one, and the app poses it for every state the agent can be in — then the face on the disc breathes, bobs, tilts, pops and shakes with what the agent is doing, the way Muse's does. Around it, the small motions that make an app feel finished: pages that cross-fade, feed cards that settle in, a heart that pops.
+
+### Added
+
+- **Avatar page** (`io.github.nanomuse.avatar`, `ui/avatar`; Settings → Avatar, or tap the face on any header). Muse's layout: the face on its disc with the agent's name and what it is doing right now, the preview cycling through the moods; *Describe a new face* — one sentence, a row of style chips (flat, 3D clay, watercolour, pixel, line art, sticker) and a blue *Draw four*; *Pick one* — a 2×2 grid of candidates with a shimmer while they draw, a check on the chosen one, and *Use this one*. Failed tiles say why and retry on tap. The ⋯ menu holds *Name and style* (the soul editor), *Image model*, *Redraw the moods* and *Back to the red panda*.
+- **Bring your own image model.** Generation goes through the providers you already configured — no new key: any enabled OpenAI-compatible, OpenRouter or xAI instance, with the catalogue's image models offered as chips and a sensible default per host (`qwen-image-3.0` on Alibaba Bailian / DashScope, `gpt-image-1` on OpenAI, `grok-2-image` on xAI, `google/gemini-2.5-flash-image` on OpenRouter). Candidates use OpenMinis' `images/generations`; the four moods are image *edits* of the picture you chose — *working* wears headphones at a laptop, *waiting* looks up with a question mark, *happy* hugs a star, *error* has a sweat drop — through `images/edits` on OpenAI-style hosts and DashScope's native `qwen-image-edit-max` on Alibaba hosts, so the character stays the same. Two calls run at a time; rate limits are retried twice with a growing pause.
+- **The face moves.** `AgentAvatar` cross-fades between moods (260 ms) and animates them: a slow breath at rest (2.6 s, +1.8 %), a quicker breath and a 2.5 dp bob while working, a ±4° tilt while it waits for you, a spring pop when a turn ends well, a 420 ms shake when it failed. A custom face fills the whole disc; the built-in red panda keeps its inset. The afterglow only reads outcomes from the run that just ended — a plain reply after an old failure smiles — and a run you stopped ends quietly.
+- **Pictures stay on the phone**: `minis-global/nanomuse/avatar/{base,working,waiting,happy,error}.png` (512 px), `candidates/0–3.png` and `avatar.json` (prompt, style, model, time). Candidates survive restarts until you draw again; *Back to the red panda* removes the face and its moods but keeps the candidates.
+- Motion elsewhere: home pages cross-fade (160 ms in, 120 ms out; the chat underneath fades a touch slower so the switch reads as one), new feed posts settle in and deleted ones fade out (`animateItem`), the like heart pops with a spring and its colour eases.
+
+### Changed
+
+- The header's face opens the avatar page; the name pill still opens the soul settings (name, style).
+- Deep link `minis://settings/avatar` (also `/face`).
+- versionCode 7.
+
+### Kept, on purpose
+
+- The built-in red panda is still the default and one tap away; the launcher icon is untouched. Provider instances, keys and OAuth are OpenMinis' own — the avatar page only reads what you configured there.
+
 ## [0.1.5] - 2026-09-25 · alpha · 记得你
 
 The agent starts to keep things: a feed it writes for you every morning, the files that make it what it is — who it is, what it knows about you, what it remembers, when it wakes — readable and editable in one place, and a way to bring over what another assistant already knew. Long tasks keep the screen on and ask "continue?" instead of wrapping up early.
