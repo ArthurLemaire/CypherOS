@@ -1,343 +1,123 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/cover.png" width="160" alt="nanoMuse">
+  <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/cover.png" width="140" alt="nanoMuse">
 </p>
 
 <h1 align="center">nanoMuse</h1>
+
+<p align="center">一个住在你手机里的个人 AI 智能体。开源，灵感来自 Meta Muse。</p>
 
 <div align="center">
   <p>
     <a href="https://github.com/nano-muse/nanoMuse/blob/main/README.md">English</a> |
     <a href="https://github.com/nano-muse/nanoMuse/blob/main/README_zh.md">简体中文</a> |
-    <a href="https://nano-muse.github.io/nanoMuse/">官网</a>
+    <a href="https://nano-muse.github.io/">网站</a> |
+    <a href="https://github.com/nano-muse/nanoMuse/releases/latest">下载</a>
   </p>
   <p>
-    <a href="https://github.com/nano-muse/nanoMuse"><img src="https://img.shields.io/github/stars/nano-muse/nanoMuse?style=flat&logo=github" alt="GitHub stars"></a>
-    <a href="https://pypi.org/project/nanomuse/"><img src="https://img.shields.io/pypi/v/nanomuse" alt="PyPI version"></a>
-    <a href="https://github.com/nano-muse/nanoMuse/releases"><img src="https://img.shields.io/badge/Android-APK-3DDC84?logo=android&logoColor=white" alt="Android APK"></a>
-    <a href="https://github.com/nano-muse/nanoMuse/actions/workflows/ci.yml"><img src="https://github.com/nano-muse/nanoMuse/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
-    <a href="https://pypi.org/project/nanomuse/"><img src="https://img.shields.io/badge/python-%3E%3D3.11-blue" alt="Python 3.11 or newer"></a>
+    <a href="https://github.com/nano-muse/nanoMuse/releases"><img src="https://img.shields.io/github/v/release/nano-muse/nanoMuse?include_prereleases&label=release" alt="最新版本"></a>
+    <a href="https://github.com/nano-muse/nanoMuse/releases"><img src="https://img.shields.io/badge/Android-8.0%2B%20arm64-3DDC84?logo=android&logoColor=white" alt="Android 8.0+ arm64"></a>
+    <a href="https://github.com/nano-muse/nanoMuse/actions/workflows/android.yml"><img src="https://github.com/nano-muse/nanoMuse/actions/workflows/android.yml/badge.svg?branch=main" alt="Android 构建"></a>
     <a href="https://github.com/nano-muse/nanoMuse/blob/main/LICENSE"><img src="https://img.shields.io/github/license/nano-muse/nanoMuse" alt="GPL-3.0-or-later"></a>
+    <a href="https://github.com/nano-muse/nanoMuse"><img src="https://img.shields.io/github/stars/nano-muse/nanoMuse?style=flat&logo=github" alt="GitHub stars"></a>
   </p>
 </div>
 
-🐾 **nanoMuse** 是一个受 Meta [Muse](https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/) 启发的开源个人 AI Agent。一个有名字、有脸、属于你的 Agent：替你做事而不只是回答问题，关掉 App 也继续干活，记得你，做任何不可撤销的事之前先问你。事情需要什么它就用什么——网页、文件和命令，MCP 服务器和命令行工具（飞书、高德），技能，以及在没有 API 的地方直接操作手机 App 的界面（12306、微信、支付宝）。任何 OpenAI 兼容模型都能跑。现在它是一个 Android App 加一个网页 App，由一个 Python 包在你自己的机器上提供，不依赖云端虚拟机；之后是每人一台云端 VM 的网页版，再之后是桌面版（[路线图](#路线图)）。
-
-> **项目现在在哪（2026-09-24 起）。** App 改为基于 [OpenMinis](https://github.com/OpenMinis/OpenMinis) 1.13 开发——一个完整跑在**手机本机**、不需要服务器的 Agent：proot 下的 Linux 根文件系统、shell、浏览器、MCP、技能、定时任务、无障碍执行器，任何 OpenAI 兼容模型。代码以 `git subtree` 放在 [`android/`](android/)，按小版本逐个发布、每个都是能装的 APK：0.1.1 换皮 → 0.1.2 有名字有脸 → 0.1.3 Muse 的形状 → 0.1.4 关键处先问你 → 0.1.5 记得你 → 0.1.6 形象与动效 → 0.2.0 beta（[docs/roadmap.md](docs/roadmap.md)）。本页其余部分描述的 Python 线（`nanomuse/`、`web/`、`demo/`、`site/`）冻结在 tag [`pre-openminis`](https://github.com/nano-muse/nanoMuse/releases/tag/pre-openminis)，是之后网页版和桌面版的底座。整个仓库改为 **GPL-3.0-or-later**（[NOTICE](NOTICE)、[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)）；怎么编、怎么参与见 [CONTRIBUTING.md](CONTRIBUTING.md)。
->
-> **拿 App：** 到 [Releases](https://github.com/nano-muse/nanoMuse/releases) 下载 `nanoMuse-<版本>-arm64.apk`（Android 8.0+，arm64），安装，在 App 里填一把模型 key。每个版本用同一把签名，新版直接覆盖安装。
+nanoMuse 是 Meta [Muse](https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/) 的开源实现：一个有名字、有脸的智能体，做事而不是只回答，App 关掉了也继续干活，记得你，遇到无法撤销的操作先停下来问你。Muse 跑在每个用户一台的云端虚拟机里；nanoMuse 跑在**手机上**——Linux 根文件系统、shell、浏览器、MCP、技能和定时任务都在 APK 里，模型由你自己带。没有服务器，不用注册，GPL-3.0。
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/screenshots/chat-approval.png" width="24%" alt="聊天：Agent 在一条 shell 命令前停下来问你">
-  <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/screenshots/feed.png" width="24%" alt="Feed：按你的要求写给你的帖子">
-  <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/screenshots/goals.png" width="24%" alt="Goals：按计划跟进，或一步步做完">
-  <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/screenshots/library.png" width="24%" alt="Library：Agent 做出来的页面和文件，带预览">
+  <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/avatar-moods.png" width="88%" alt="同一只小熊猫的五种状态：休息、工作、等你、开心、抱歉">
 </p>
 
 <p align="center">
-  <a href="https://nano-muse.github.io/nanoMuse/?lang=zh#video">▶ 看 66 秒宣传片</a> · <a href="https://nano-muse.github.io/nanoMuse/?lang=zh">官网</a> · <a href="https://demo.nanomuse.dev">在线演示</a>
+  <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/screenshots/chat-approval.png" width="23%" alt="对话：删除文件前停下来问你">
+  <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/screenshots/feed.png" width="23%" alt="动态：今天早上写给你的几条">
+  <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/screenshots/goals.png" width="23%" alt="目标：按时检查，还有例程">
+  <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/screenshots/avatar.png" width="23%" alt="形象：描述一句，你的图像模型画四张，你挑一张">
 </p>
 
-## 从这里开始
+## 安装
 
-| 你想… | 看这里 |
+1. 从[最新版本](https://github.com/nano-muse/nanoMuse/releases/latest)下载 `nanoMuse-<版本>-arm64.apk`——Android 8.0 以上的 64 位手机。想校验就 `sha256sum -c nanoMuse-<版本>-arm64.apk.sha256`。
+2. 打开安装。Android 会问一次是否允许；每个版本都用同一把签名，直接覆盖安装升级，数据不丢。
+3. 添加一个模型：任何 OpenAI 兼容接口配你自己的 key，或者 App 自带的 OAuth 登录。第一次对话它会问你叫什么，并给自己起名字。
+
+App 会到本仓库的 Releases 检查更新。每个版本的说明在 [docs/releases/](docs/releases/) 和 [CHANGELOG](CHANGELOG.md)。
+
+## 能做什么
+
+| | |
 |---|---|
-| 五分钟装到手机上 | [安装](#-安装) 和 [快速开始](#-快速开始) |
-| 装 Android App | [Android](#-android) |
-| 在终端里用 | [CLI](https://github.com/nano-muse/nanoMuse/blob/main/docs/cli.md) |
-| 接 DeepSeek、OpenAI、Ollama 或公司网关 | [模型](#-模型) 和 [配置](https://github.com/nano-muse/nanoMuse/blob/main/docs/configuration.md) |
-| 搞清楚它什么会自己做、什么会先问 | [Sentinel](#%EF%B8%8F-sentinel) 和 [docs/sentinel.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/sentinel.md) |
-| 接邮箱、日历、通讯录、浏览器或 MCP 服务器 | [Connectors](https://github.com/nano-muse/nanoMuse/blob/main/docs/configuration.md#connectors) |
-| 让它操作手机上的 App（12306、微信、支付宝） | [docs/gui.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/gui.md) 和[模拟手机](https://github.com/nano-muse/nanoMuse/blob/main/demo/mobilegym/README.md) |
-| 看看能让它做什么——飞书走 CLI、高德走 MCP、手机 App 走界面，或三样一起 | [Showcase](https://github.com/nano-muse/nanoMuse/blob/main/docs/showcase.md) |
-| 用 Docker 跑，或在服务器上常驻 | [部署](#%EF%B8%8F-部署) |
-| 了解它往哪走——现在是手机，之后是云端 VM 上的网页版和桌面版 | [路线图](#路线图) 和 [docs/roadmap.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/roadmap.md) |
-| 读代码 | [架构](#架构) |
+| **动手做事** | Linux shell、浏览器、MCP 服务、[Agent Skills](https://agentskills.io) 格式的技能，以及在没有 API 时通过屏幕操作手机上的 App。它自己挑合适的那只手，每一步都是一张能点开的卡片。 |
+| **关键处先问** | 删除、发送、付款前先停下——shell 里和浏览器里都是——审批范围由你定：只此一次、本次对话、或对这个收件人 / 域名 / 目录一直允许，在「权限」里随时撤销。密码和验证码永远由你自己输入。 |
+| **一直在干** | 目标在对话里定下来，然后在自己的会话里按时检查；例程在 App 关着时照跑；操作手机时屏幕不灭；到 200 步问你「继续？」而不是草草收尾。 |
+| **写给你的动态** | 每天早上三到六条短帖，来自它对你的了解和你让它盯的事，做成卡片：可以点赞、在旁聊里讨论、删除。一句话就能调它的方向。 |
+| **记得你** | 它是谁（`SOUL.md`）、知道你什么（`USER.md`）、记住了什么（`GLOBAL.md` 和日记）、什么时候醒（`HEARTBEAT.md`），是 App 里能看能改的文件。别的助手记住的你，用「导入记忆」贴过来。 |
+| **有一张脸** | 一句话描述；你的图像模型画四张；你挑一张。App 再给它摆出每种状态的姿势——工作、等你、开心、抱歉——它会随着智能体在做的事呼吸、点头、歪头、跳一下、抖一下。默认是小熊猫。 |
+| **点子与资料库** | 从目标和记忆里来的、接下来可以问的事；以及它做出来的所有东西，带预览。 |
 
-## nanoMuse 能做什么？
+以上每一项都是 Muse 的某个页面或行为，在手机上重做了一遍；OpenMinis 其余的部分——终端、应用内浏览器、MCP 与技能管理、模型组、token 用量、无障碍执行器、共享文件夹——都保留着，从同样的菜单进。
 
-nanoMuse 是一个你在手机上和它说话的个人 Agent。它能：
+## 怎么工作
 
-- 查资料、写页面和文档、跑 shell 命令和 Python、发邮件、读你的日历和通讯录、上网浏览
-- 用服务自带的工具：任何 [MCP](https://modelcontextprotocol.io) 服务器（高德地图查地点、路线和天气），任何命令行工具（飞书走 lark-cli：今天的日程、给同事发条消息、建日程、建文档）——不碰任何界面（[showcase](https://github.com/nano-muse/nanoMuse/blob/main/docs/showcase.md)）
-- 在没有 API 的地方直接操作手机上的 App 界面——在 12306 查车次、读微信并回消息、在支付宝里办事——有开关，每个「发送」「支付」按钮前都会停下来问你（[docs/gui.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/gui.md)）
-- 在任何难以撤销的事之前停下来问你，审批有范围（仅此一次、本次任务、始终），随时可撤销
-- 在 App 关着的时候花几周推进一个目标，按计划向你汇报，在邮件到达、日程临近或 webhook 触发时开始干活
-- 给你写一份 Feed：根据它对你的了解和你让它关注的东西，写几篇短帖子
-- 记住你——记忆你能看、能改、能让它忘掉，还能按含义召回
-- 遵循 [Agent Skills](https://agentskills.io) 格式的技能——内置九个，你的放在一个文件夹里，别的 Agent 的技能原样可用
-- 跑在任何 OpenAI 兼容模型上：DeepSeek、OpenAI、OpenRouter、Ollama、vLLM，或带自定义请求头的网关
+App 是修改过的 [OpenMinis](https://github.com/OpenMinis/OpenMinis) 1.13：一个完整的端侧智能体——[proot](https://github.com/nano-muse/proot) 下的 Alpine Linux、shell、WebView 浏览器、MCP、技能、定时任务、无障碍执行器、任何 OpenAI 兼容模型——用 `git subtree` 放进 [`android/`](android/)，上游版本仍能合并。nanoMuse 加的东西都在 `io.github.nanomuse.*`：
 
-## 💡 为什么是 nanoMuse
+| 包 | 内容 |
+|---|---|
+| `ui/home`、`ui/header` | 首页外壳：一条主聊天、抽屉里的旁聊、动态 · 点子 · 目标 · 资料库底栏，Muse 的页头——脸、名字胶囊、状态行 |
+| `guard` | `ShellGuard` 与 `BrowserGuard` 给命令和页面动作分类；`RiskGate` 拦下工具调用并弹出审批卡；授权按范围记住 |
+| `goals`、`ideas`、`library` | 目标是带计划和检查的定时会话；点子来自记忆和目标；资料库是它写出来的东西 |
+| `feed`、`sysfiles` | 每天早上把 ` ```nanomuse-feed ` 段写进 `minis-global/nanomuse/feed/` 的例程、卡片、那句指示；系统文件页和记忆导入 |
+| `avatar`、`ui/avatar` | 架在 OpenMinis 图像接口（`images/generations`、`images/edits`、DashScope 原生编辑）上的 `ImageGen`、形象页、`AvatarStore`，以及会动的 `AgentAvatar` |
+| `status` | 两级状态（脸下面是工具标题，卡片上是动作 chips）、`KeepAwake`、每个步骤的最后一帧浏览器画面 |
 
-- **Muse 的形态，开源的实现**：手机上的 Chat、Feed、Ideas、Goals、Library；聊天顶上一只小熊猫，随着 Agent 在做的事换姿势；一个 Agent，而不是机器人框架。
-- **一个 Agent，好几只手**：同一个 Agent 可以通过 API、MCP 服务器、命令行工具、浏览器，或者——最后才是——手机 App 的界面去够到一个服务。Sentinel 站在它和所有这些之间。
-- **安全是架构，不是设置项**：Agent 从不直接碰工具。`Sentinel` 对每次调用决定放行 / 询问 / 拒绝，把密钥挡在模型之外，追踪私密数据去了哪，记录一切。Linux 上每条命令都在自己的 [bubblewrap](https://github.com/containers/bubblewrap) 沙箱里跑。
-- **你的机器，你的模型**：笔记本、家用服务器或 Docker 都行。Chat Completions 或 Responses API，流式输出，原生或提示词式工具调用，本地模型也行。
-- **小到读得完**：约 18k 行带类型的 Python、11k 行 TypeScript、800 行 Kotlin。底下没有编排框架。约 240 个测试。
+改到上游文件的地方都标着 `// nanoMuse:`；每次 subtree 拉取之后 `scripts/rebrand.py` 重新套一遍品牌。从源码构建见 [CONTRIBUTING.md](CONTRIBUTING.md)。你的消息只发给你配置的模型；文件、记忆和形象图片都在 App 的私有存储里。
 
-## 它跑在哪
+## 版本
 
-Muse 是围着一个 Agent 的一组客户端——iOS、Android、网页、WhatsApp、Mac App——那个 Agent 跑在每人一台的云端虚拟机里。nanoMuse 一个平台一个平台地长成同样的形状，从不需要 VM 的地方起步：
+按小版本逐个发布，每个都是 GitHub 预发布加一个 APK。计划和理由见 [docs/roadmap.md](docs/roadmap.md)。
 
-| | Meta Muse | nanoMuse |
+| 版本 | | 加了什么 |
 |---|---|---|
-| 手机 | iOS 和 Android App，VM 的瘦客户端 | **现在。** 一个 Android App 和一个网页 App；Agent 跑在你的电脑、家用服务器或 Docker 里——没有云端 VM。这一阶段接下来：大脑内嵌在 APK 里的本地版（完整的 Agent，不开界面操作也成立），以及打开开关后通过无障碍服务操作真实 App。 |
-| 网页 | muse.ai，同一台 VM | **之后。** 托管的 nanoMuse：每人一台 VM，任何浏览器登录，同一个 Agent 和 Sentinel，用自己的 key 或起步额度。 |
-| 桌面 | Mac App，同一台 VM | **再之后。** 两个版本的桌面 App——本地版（Agent、工具和浏览器都在你面前这台电脑上）和接到你云端 VM 的版本。 |
+| [0.1.1](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.1) | 换皮 | OpenMinis 变成 nanoMuse：图标、名字、品牌色、关于 / 反馈 / 更新源、GPL 声明、一把签名 |
+| [0.1.2](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.2) | 有名字有脸 | 小熊猫和 Muse 样式的页头；第一次对话里给它起名；每条通知都带名字和脸 |
+| [0.1.3](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.3) | Muse 的形状 | 打开就是对话而不是列表；旁聊在抽屉里；点子、目标、资料库；目标在对话里定、按时检查 |
+| [0.1.4](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.4) | 关键处先问你 | 删除、发送、付款前带范围的审批；密码永远由你输 |
+| [0.1.5](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.5) | 记得你 | 动态；SOUL / USER / MEMORY / HEARTBEAT 可看可改；记忆导入；屏幕常亮；「继续？」 |
+| [0.1.6](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.6) | 形象与动效 | 你描述、你的图像模型画、你挑的脸，摆好每种状态并动起来；页面淡入淡出、卡片落进来、红心会跳 |
+| 0.2.0 | beta | 头几周使用后的打磨；第一个 beta |
 
-通过界面操作手机、不依赖云端 VM、懂国内的服务，这些是第一阶段的特性，不是定义。完整的计划在 [docs/roadmap.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/roadmap.md)。
-
-## 📦 安装
-
-Python 3.11 或更新，Linux、macOS、Windows 皆可。手机 App 已打进包里；只有改 `web/` 才需要 Node。Android App 单独下载，见 [Android](#-android)。
-
-| 渠道 | 安装 | 更新 |
-|---|---|---|
-| 稳定版 | `uv tool install nanomuse` 或 `pip install nanomuse` | 同一个工具，加 `--upgrade` |
-| 最新代码 | `uv tool install git+https://github.com/nano-muse/nanoMuse.git` | 再跑一次 |
-| 源码 | `git clone` + `uv pip install -e ".[dev]"` | `git pull` |
-
-```bash
-uv tool install nanomuse
-nanomuse version
-```
-
-可选：`nanomuse[browser]` 加上 Playwright 浏览器工具（之后 `playwright install chromium`）。
-
-## 🚀 快速开始
-
-```bash
-nanomuse config init                 # 生成 config/config.toml
-export DEEPSEEK_API_KEY=sk-...       # 默认配置用 DeepSeek；其他模型见下文
-nanomuse serve --host 0.0.0.0        # 打印一个网址和一个二维码
-```
-
-用同一 Wi-Fi 下的手机扫码，或在本机打开网址。链接里带着访问令牌。第一次会先走一遍设置：你的名字、Agent 的名字和头像、模型。然后试试：
-
-1. *“比较 Sony WH-1000XM6 和 Bose QuietComfort Ultra 哪个更适合长途飞行，写一份简短对比存到 headphones.md”*
-2. *“看看这台机器还有多少磁盘空间”*——会停在一张审批卡片上
-3. *“建一个目标：十二月去京都之前学会日常日语会话，每天 30 分钟”*——然后打开 Goals
-
-想在终端里用？`nanomuse chat` 是同一个 Agent，审批在控制台里完成；`nanomuse run "任务"` 做完一件事就退出。哪里不对？`nanomuse doctor` 检查配置、模型和连接器，告诉你该修什么。
-
-## 📱 Android
-
-从最新 Release [**下载 nanomuse.apk**](https://github.com/nano-muse/nanoMuse/releases/latest/download/nanomuse.apk)，在手机上打开。Android 8.0 或更新的 64 位手机。不是商店里的应用，Android 会问一次是否允许安装。
-
-第一屏问你的 nanoMuse 住在哪里：
-
-- **在这台手机上运行。** 整个 Agent 都在 APK 里——一个带 Python 和 `nanomuse` 的小型 Alpine Linux，第一次启动时解压，在用户态 chroot 里运行，不需要 root。电脑上什么都不用装：给 Agent 起个名字，贴一个模型密钥，就好了。它在后台持续工作，重启手机后自己回来。占用约 330 MB 存储。（[原理](https://github.com/nano-muse/nanoMuse/blob/main/docs/local-runtime.md)）
-- **连接我的电脑。** 在电脑上 `nanomuse serve --host 0.0.0.0`，在 App 里点 **扫描二维码**，对准终端。同一 Wi-Fi、Tailscale 之类的 VPN，或放在 TLS 后面的服务器都可以。还有一个只含这一模式、更小的 [`nanomuse-connect.apk`](https://github.com/nano-muse/nanoMuse/releases/latest/download/nanomuse-connect.apk)，任意 CPU 可用。
-
-比浏览器标签页多出来的：
-
-- App 关着也有通知：审批、提问和后台工作的结果，点开直达对应聊天
-- Agent 的 shell 能用上手机：沙箱里的 `nanomuse-device`、`nanomuse-browser`、`nanomuse-open` 能触达剪贴板、日历、闹钟和 App 内浏览器——受同一个 Sentinel 管
-- 手机自己的浏览器：Agent 在 App 的 WebView 里浏览，后台也全速运行；"接管"把真实页面推给你登录或做决定，点"完成"它接着干（[docs/browser.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/browser.md)）
-- 扫码连接，局域网里的 `http://` 直接可用
-- 附件用系统文件选择器，下载进手机，链接用真正的浏览器打开
-
-没有 Android？把网页 App 添加到主屏幕，它以 PWA 方式安装，在 `https://` 下有 Web Push。自己构建 APK 或了解它的原理：[docs/android.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/android.md)。
-
-## ☁️ 部署
-
-```bash
-docker run -d --name nanomuse -p 8787:8787 -e DEEPSEEK_API_KEY=sk-... \
-  -v nanomuse-data:/data -v "$PWD/workspace:/workspace" \
-  ghcr.io/nano-muse/nanomuse:latest
-docker logs nanomuse            # 带访问令牌的网址
-```
-
-镜像有 linux/amd64 和 linux/arm64；`:latest-browser` 内置 Chromium 供浏览器工具使用。在代码目录里，`docker compose up -d app` 效果相同，`docker compose up -d daemon` 只在后台推进目标、没有界面。要从外网访问，放在 Tailscale 或带 TLS 的反向代理后面，不要直接开端口。细节和 systemd 单元见 [docs/deployment.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/deployment.md)。
-
-## 🌐 App
-
-`nanomuse serve` 在一个进程里跑 Agent 并提供 App：FastAPI 加一条 WebSocket 推送实时事件，手机端是 React，已打进包里。
-
-| 页面 | 你能得到 |
-|---|---|
-| Chat | 一条主对话加若干侧边聊天。回复流式出现；工具调用是可点开的小块；它写的文件直接在 App 里打开。审批和提问卡片就在对话里。可以发照片和文件；能看着它浏览网页，需要登录时接管。 |
-| Feed | 用你自己的话写下 *Feed 指令*，Agent 据此每天写几篇帖子，也可随时要新的。下面是你不在时发生的事，以及所有还在等你的卡片。 |
-| Ideas | 接下来可以问什么，来自你的目标、记忆和近期对话，按领域分组。点一下就发出去。 |
-| Goals | *Tracking*：按计划跟进的。*Goals*：一步步做完的。每个都有计划、目标日期、备注，计划不再合适时它会提议修改。主动性旋钮和安静时段决定它自己干多少。 |
-| Library | 它做出来的一切，最新在前，带预览。页面在一个碰不到你令牌的沙箱里渲染。 |
-| 头像 | 点一下：当前状态和 *停止* 按钮、所有聊天里的审批、活动日志、你授予的权限、即将发生的事、记忆、技能、连接、设置。 |
-
-提醒（“六点提醒我给妈妈打电话”）、例程（“每个工作日 07:30 给我一行天气”）和触发器（新邮件、日程、webhook）都在聊天里设置，列在 *Upcoming* 下。App 做的每件事都走一套 REST + WebSocket API，文档在 [docs/app.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/app.md)，别的前端也能驱动同一个 Agent。
-
-## 🛡️ Sentinel
-
-每次工具调用在执行前都经过 `Sentinel`。工具声明风险等级，也可以为某次调用抬高等级（`shell` 遇到 `rm -rf`，`web_fetch` 访问内网地址）。按顺序匹配，命中即止：
-
-1. `deny_tools` → 拒绝
-2. 匹配参数的 `[[sentinel.rules]]` → 规则的动作
-3. `always_allow_tools` / `always_ask_tools`
-4. 污点：本会话读过私密数据 **且** 这次调用把数据发往 `egress_allowlist` 之外 → 询问
-5. 风险 × 模式：`ask` 对敏感调用询问，`strict` 连中等风险也问，`auto` 放行未被拒绝的一切
-6. 带警告的调用（`sudo`、`curl | sh`、删文件的代码）不论模式都询问
-
-```toml
-[sentinel]
-mode = "ask"                              # ask | strict | auto
-always_ask_tools = ["send_email", "shell"]
-egress_allowlist = ["*.wikipedia.org", "github.com", "*.github.com"]
-
-[[sentinel.rules]]
-tool   = "shell"
-match  = { command = "*rm -rf*" }
-action = "deny"
-```
-
-密钥放在加密保险库里（`nanomuse vault set EMAIL_PASSWORD`，或 Connections 页面），以 `{{vault:EMAIL_PASSWORD}}` 引用；Sentinel 在调用前一刻才填入，并从输出里抹掉，模型永远看不到。每个决定都写进 `audit.jsonl`。覆盖了什么、没覆盖什么：[docs/sentinel.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/sentinel.md)；漏洞报告：[SECURITY.md](https://github.com/nano-muse/nanoMuse/blob/main/SECURITY.md)。
-
-## 🧠 模型
-
-任何 OpenAI 兼容端点。编辑 `config/config.toml` 里的 `[llm]`，或在手机的 *Connections* 里选一个预设：
-
-```toml
-[llm]
-provider = "openai"                    # Chat Completions；Responses API 用 "openai_responses"
-model    = "deepseek-flash"
-base_url = "https://api.deepseek.com"
-api_key  = "${DEEPSEEK_API_KEY}"
-
-# OpenAI:      model = "gpt-5.6-sol"  base_url = "https://api.openai.com/v1"   api_key = "${OPENAI_API_KEY}"
-# Ollama:      model = "qwen3:8b"     base_url = "http://localhost:11434/v1"   api_key = "ollama"
-# OpenRouter:  model = "deepseek/deepseek-flash"  base_url = "https://openrouter.ai/api/v1"
-# 需要请求头的网关:  extra_headers = { "X-End-User-Id" = "nanomuse" }
-# 无视 `tools` 的端点:  tool_mode = "prompt"
-```
-
-或者用 `NANOMUSE_LLM_MODEL`、`NANOMUSE_LLM_BASE_URL`、`NANOMUSE_LLM_API_KEY`、`NANOMUSE_LLM_PROVIDER`。本地模型可用：Ollama 上的 `qwen3:8b` 以原生工具调用通过[模型检查](https://github.com/nano-muse/nanoMuse/blob/main/scripts/provider_check.py)，`gemma3:4b` 走提示词回退。完整参考：[docs/configuration.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/configuration.md)。
-
-## 架构
-
-```mermaid
-flowchart LR
-    P([手机 / 浏览器 / Android]) <-- WebSocket + REST --> S[MuseService<br/>线程、调度器、Feed]
-    C([终端]) <--> A
-    S <--> A[Agent 循环]
-    A <--> LLM[(任意 OpenAI 兼容模型)]
-    A --> G{{Sentinel}}
-    G -- 放行 --> T[工具]
-    G -- 询问 --> P
-    G --> AU[(audit.jsonl)]
-    G <--> V[(vault.enc)]
-    T --> F[files · shell · python]
-    T --> W[web_search · web_fetch · browser]
-    T --> E[email · calendar · contacts]
-    T --> MCP[MCP 服务器]
-    T <--> M[(memory.db)]
-    T <--> GO[(goals.db)]
-```
-
-| 部分 | 文件 |
-|---|---|
-| Agent 循环、系统提示词、上下文窗口 | `nanomuse/agent/core.py`、`nanomuse/prompts.py` |
-| Sentinel：策略、审批、污点、审计；沙箱 | `nanomuse/sentinel/`、`nanomuse/sandbox.py` |
-| 凭据保险库 | `nanomuse/vault/` |
-| 工具与 MCP 适配 | `nanomuse/tools/` |
-| LLM 提供方、`<think>` 过滤、提示词式工具调用 | `nanomuse/llm/` |
-| 记忆、目标、技能 | `nanomuse/memory/`、`nanomuse/goals/`、`nanomuse/skills/` |
-| App 服务端：service、REST/WebSocket API、时间线 | `nanomuse/server/` |
-| 手机 App（React、Vite、Tailwind） | `web/` → 构建到 `nanomuse/server/static/` |
-| Android App（Kotlin、WebView、通知服务） | `android/` |
-| 终端界面与 CLI | `nanomuse/console.py`、`nanomuse/cli.py` |
-
-更多见 [docs/architecture.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/architecture.md)。
+**之后：**托管在你自己一台云端 VM 上的 nanoMuse，任何浏览器都能打开，手机 App 是它的客户端；再之后是桌面 App，本地跑或者连到那台 VM。项目起步时的 Python 线——智能体和它的 Sentinel、网页 App、模拟手机——冻结在 tag [`pre-openminis`](https://github.com/nano-muse/nanoMuse/releases/tag/pre-openminis)，文档在 [docs/](docs/)，是后面这几步的底座。
 
 ## nanoMuse 与 Meta Muse
 
 | Meta Muse | nanoMuse |
 |---|---|
-| 每个用户一台安全虚拟机 | 跑在你的机器上或 Docker 里；Linux 上每次 `shell` / Python 调用都有自己的 bubblewrap 命名空间 |
-| Sentinel 审批敏感操作 | `Sentinel`：放行 / 询问 / 拒绝，规则，污点追踪，出站白名单，有范围的审批 |
-| 凭据不经过模型 | 加密保险库、`{{vault:NAME}}` 占位符、输出脱敏 |
-| 记住你 | Agent 维护、你可编辑的 SQLite 记忆，按关键词和含义召回 |
-| 后台推进目标 | 带步骤的目标；调度器推进并汇报到聊天 |
-| 写给你的 Feed | 根据你的指令和它的了解写帖子，每天一次或随时 |
-| iOS、Android、网页、WhatsApp、Mac App，都是那台 VM 的客户端 | 现在是一个 Android App 和一个可添加到主屏幕的网页 App；之后是云端 VM 上的网页版和桌面 App |
-| 一个干活时会换姿势的毛绒玩偶 | 一只实时画出来的小熊猫，空闲、干活、等你、做完、出错、离线各有一个姿势 |
-| 通过 API 使用海外服务 | 同样可以，再加上飞书走 CLI、高德走 MCP，12306 / 微信 / 支付宝走手机界面 |
-| Meta 的模型 | 任何 OpenAI 兼容模型 |
+| 跑在每个用户一台的安全云端 VM 里 | 跑在手机上、App 内的 proot Linux 里；除了模型调用什么都不出手机 |
+| Sentinel 审批敏感操作 | `RiskGate` 拦下调用：只此一次、本次对话、这个范围一直允许、或拒绝；浏览器守卫盯着支付和发送按钮；从不替你输密码 |
+| 记得你 | 能看能改的 Markdown 文件，加一本日记；可以从别的助手导入 |
+| 在后台推进目标 | 目标在自己的会话里按时检查；例程就是定时任务；审批和结果都有通知 |
+| 写给你的动态 | 每天早上的例程，从你的记忆、目标和一句指示写成卡片 |
+| iOS、Android、网页、WhatsApp、Mac App | 现在是 Android；接下来是你自己 VM 上的网页版和桌面 App |
+| 一个干活时会换姿势的毛绒形象 | 你的图像模型画出并摆好姿势的脸，按状态动起来；默认是小熊猫 |
+| Meta 的模型 | 任何 OpenAI 兼容模型，或 App 自带的 OAuth 登录 |
 | 闭源 | GPL-3.0-or-later |
 
-## 文档
+## 参与
 
-- [配置](https://github.com/nano-muse/nanoMuse/blob/main/docs/configuration.md)：每个设置项、环境变量覆盖、连接器、MCP、本地模型
-- [Sentinel](https://github.com/nano-muse/nanoMuse/blob/main/docs/sentinel.md)：策略顺序、规则、污点追踪、保险库、审计、沙箱
-- [操作手机](https://github.com/nano-muse/nanoMuse/blob/main/docs/gui.md)：开关、操作员和它的模型、哪些步骤会先问、设备协议
-- [Showcase：能让它做什么](https://github.com/nano-muse/nanoMuse/blob/main/docs/showcase.md)：飞书走 lark-cli、高德走 MCP、手机 App 走界面、什么都不用，以及混着来的任务
-- [路线图](https://github.com/nano-muse/nanoMuse/blob/main/docs/roadmap.md)：先是不靠云端 VM 的手机，再是云端 VM 上的网页版，然后是两种桌面版
-- [设计](https://github.com/nano-muse/nanoMuse/blob/main/docs/design.md)：从 Muse 的界面里学到了什么——字体、颜色、布局、头像的姿势——以及 nanoMuse 怎么对应
-- [App 与它的 API](https://github.com/nano-muse/nanoMuse/blob/main/docs/app.md)：页面、手机访问、令牌、每个端点
-- [Android](https://github.com/nano-muse/nanoMuse/blob/main/docs/android.md)：安装、通知、构建与签名
-- [CLI](https://github.com/nano-muse/nanoMuse/blob/main/docs/cli.md)：`chat`、`run`、`serve`、`daemon`、`goals`、`memory`、`skills`、`vault`、`audit`、`doctor`
-- [架构](https://github.com/nano-muse/nanoMuse/blob/main/docs/architecture.md)：源码地图与扩展点
-- [部署](https://github.com/nano-muse/nanoMuse/blob/main/docs/deployment.md)：Docker、Compose、systemd、TLS
-- [排障](https://github.com/nano-muse/nanoMuse/blob/main/docs/troubleshooting.md)
-- [模拟手机](https://github.com/nano-muse/nanoMuse/blob/main/demo/mobilegym/README.md)：在 MobileGym 上把 nanoMuse 当原生 App 用，通知也有，一个浏览器标签页搞定
-
-## 发布
-
-**v0.1.0 是第一个版本**，正在准备中：Agent 与 Sentinel、网页 App、Android App、模拟手机上的手机操作员、托管的演示站。打标签之前，`main` 就是可运行的版本——`pip install git+https://github.com/nano-muse/nanoMuse.git`，或镜像 `ghcr.io/nano-muse/nanomuse:edge`。
-
-[CHANGELOG.md](https://github.com/nano-muse/nanoMuse/blob/main/CHANGELOG.md) · [GitHub releases](https://github.com/nano-muse/nanoMuse/releases)
-
-## 路线图
-
-三个阶段，一个平台一个阶段；带理由的完整计划在 [docs/roadmap.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/roadmap.md)。
-
-**第一阶段——手机，不靠云端 VM**（现在）——基于 OpenMinis 的 App，一个阶段一个版本，每个都是 APK：
-
-- [x] [0.1.1 换皮](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.1)——OpenMinis 1.13 变成 nanoMuse：图标、名字、品牌色、关于页 / 反馈 / 更新源、GPL 声明、统一签名
-- [x] [0.1.2 有名字有脸](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.2)——小熊猫和 Muse 式的头部、第一次对话里给它起名、每条通知都带名字和脸
-- [x] [0.1.3 Muse 的形状](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.3)——打开是聊天不是列表；旁聊在抽屉里；点子、目标、资源库三个页签；目标在聊天里定、按节奏自动检查
-- [x] [0.1.4 关键处先问你](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.4)——删、发、付之前先停下来问；按对象 / 域名 / 目录记住；密码验证码永远你自己输
-- [x] [0.1.5 记得你](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.5)——每天早上写给你的动态；SOUL / USER / MEMORY / HEARTBEAT 可看可改；记忆导入；干活时屏幕常亮，长任务到上限问「继续？」
-- [x] [0.1.6 形象与动效](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.6)——一句话描述、你的图像模型画四张、你挑一张，App 给它摆出每种状态；它随工作状态呼吸、点头、歪头、跳一下、抖一下；页面淡入淡出、卡片落进来、红心会跳
-- [ ] 0.2.0 beta——打磨；第一个 beta
-
-国内服务（飞书、高德、快递100……）不再单出一个版本：沙盒里的 shell、MCP、技能已经能从聊天里的一句话够到它们（[docs/services.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/services.md)）。
-
-切换前 Python 线已完成（tag `pre-openminis`）：Agent、Sentinel、保险库、沙箱；网页 App；技能与 MCP；不碰界面的飞书 / 腾讯会议 / 高德 / 快递100 / 12306；模拟手机上的手机操作员，带轨迹回放。
-
-**第二阶段——网页，跑在云端 VM 上**
-
-- [ ] 托管的 nanoMuse：每人一台 VM，Agent、它的浏览器和文件都在里面；任何浏览器登录；同一个 Sentinel；自己的 key 或起步额度
-- [ ] Android App 和网页 App 既能连你自己的机器，也能连你的 VM
-
-**第三阶段——桌面，两种都有**
-
-- [ ] 本地跑 Agent 的桌面 App，用的是你面前这台电脑的文件和浏览器
-- [ ] 同一个 App 接到你的云端 VM
-- [ ] iOS：与 Android App 相同的外壳
-
-## 🤝 参与
-
-拿 nanoMuse 做一件真实的事，报告哪里坏了，然后挑一个小而具体的改进。
-
-- [CONTRIBUTING.md](https://github.com/nano-muse/nanoMuse/blob/main/CONTRIBUTING.md) 有开发环境的搭法；CI 跑 `ruff`、`pytest`、网页构建和 Android 构建。
-- [Issues](https://github.com/nano-muse/nanoMuse/issues) 里有待查的问题。
-- 一个专注的修复就开一个 [Pull Request](https://github.com/nano-muse/nanoMuse/pulls)。给 App 加一种语言只需 `web/src/i18n/` 里的一个词典文件。
+拿它做一件真事，报告哪里坏了，然后挑一件小而具体的事做。[CONTRIBUTING.md](CONTRIBUTING.md) 有构建环境（[android/BUILDING.md](android/BUILDING.md) 和 `scripts/android/` 里的工具链脚本）、约定（包名 `com.openminis.app` 不动，新代码放 `io.github.nanomuse.*`，改上游处标 `// nanoMuse:`，提交带 `Signed-off-by`）和发版方式。[Issues](https://github.com/nano-muse/nanoMuse/issues) · [Pull requests](https://github.com/nano-muse/nanoMuse/pulls)。
 
 ## 致谢
 
-nanoMuse 站在别人的工作之上。条款见 [THIRD_PARTY_NOTICES.md](https://github.com/nano-muse/nanoMuse/blob/main/THIRD_PARTY_NOTICES.md)，这里是短名单：
+nanoMuse 站在别人的工作之上；条款见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
-- [MobileGym](https://github.com/Purewhiter/mobilegym)——演示站跑在上面的模拟安卓手机，国内常用 App 以 React 应用的形式在浏览器里运行；手指动效沿用它的触控反馈。
-- [MemGUI-Bench](https://github.com/lgy0404/MemGUI-Bench)——手机操作员移植自它的 `mobile_use` 提示词与循环。
-- [PhoneHarness](https://github.com/lsdefine/PhoneHarness)——"能用工具精确完成的绝不走 GUI"的路由原则，以及 JSONL 轨迹渲染成 HTML 的做法。
-- [CopilotKit/OpenMuse](https://github.com/CopilotKit/OpenMuse)——持久任务、watch、有依据的 Ideas、追问队列等产品设计。
-- [Open-AutoGLM](https://github.com/zai-org/Open-AutoGLM) 与 [ClawGUI](https://github.com/ClawGUI/ClawGUI-APP)——Android 执行器的参照。
-- [modern-screenshot](https://github.com/qq15725/modern-screenshot)、[Caddy](https://github.com/caddyserver/caddy) 及其 Cloudflare 模块、[Figtree](https://github.com/erikdkennedy/figtree)、[bubblewrap](https://github.com/containers/bubblewrap)。
-
-相关项目：[nanobot](https://github.com/HKUDS/nanobot) 是住在聊天软件（Telegram、Discord、Slack、微信）里的个人助理框架，想在已有频道里放一个机器人选它；浏览器工具的元素标注做法来自 [browser-use](https://github.com/browser-use/browser-use)。
+- [OpenMinis](https://github.com/OpenMinis/OpenMinis)——App 所基于的端侧智能体：proot Linux、shell、浏览器、MCP、技能、定时任务、无障碍执行器。
+- [proot](https://github.com/proot-me/proot)（经 [nano-muse/proot](https://github.com/nano-muse/proot)）与 [Alpine Linux](https://alpinelinux.org/)——APK 里的沙箱。
+- [MobileGym](https://github.com/Purewhiter/mobilegym)、[MemGUI-Bench](https://github.com/lgy0404/MemGUI-Bench)、[PhoneHarness](https://github.com/lsdefine/PhoneHarness)、[CopilotKit/OpenMuse](https://github.com/CopilotKit/OpenMuse)、[Open-AutoGLM](https://github.com/zai-org/Open-AutoGLM)、[ClawGUI](https://github.com/ClawGUI/ClawGUI-APP)——Python 线里的手机操作器、轨迹和产品思路。
 
 ## 声明
 
-nanoMuse 是一个独立的社区项目，与 Meta Platforms, Inc. 及其 Muse 产品没有关联，未获其背书，也不源自其代码。小熊猫和毛绒头像是本项目自己的；名称和设计思路仅用于对照。
+nanoMuse 是独立的社区项目，与 Meta Platforms, Inc. 及其 Muse 产品无关，未获其背书，也不派生自它；Muse 是 Meta Platforms, Inc. 的商标。小熊猫是本项目自己的。
 
-## 许可证
+## 许可
 
-[GPL-3.0-or-later](https://github.com/nano-muse/nanoMuse/blob/main/LICENSE)。Android App 基于 [OpenMinis](https://github.com/OpenMinis/OpenMinis) 1.13（GPL-3.0），自 2026-09-24 起修改；见 [NOTICE](https://github.com/nano-muse/nanoMuse/blob/main/NOTICE) 与 [THIRD_PARTY_NOTICES.md](https://github.com/nano-muse/nanoMuse/blob/main/THIRD_PARTY_NOTICES.md)。更早的版本以 MIT 发布（tag `pre-openminis`）。
+[GPL-3.0-or-later](LICENSE)。Android App 基于 OpenMinis 1.13（GPL-3.0），自 2026-09-24 起修改；见 [NOTICE](NOTICE) 与 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。Python 线更早的版本以 MIT 发布（tag `pre-openminis`）。

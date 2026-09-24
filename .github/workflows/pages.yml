@@ -1,8 +1,9 @@
 name: Website
 
 # Publishes site/ to GitHub Pages: https://nano-muse.github.io/nanoMuse/
-# The page's generated parts (the mascot as static SVG, icons, fonts, the app screenshots)
-# are built here from web/ and docs/, so they never go stale in git. See site/README.md.
+# Since 0.1.6 the homepage lives in nano-muse/nano-muse.github.io; this project page is a
+# redirect to it, with the earlier page kept at legacy.html (its generated parts — the
+# mascot as static SVG, icons, fonts, screenshots — are still built from web/ and docs/).
 
 on:
   push:

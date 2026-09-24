@@ -1,8 +1,12 @@
-# The landing page
+# The landing page (legacy)
 
-`site/` is the nanoMuse website: one static page, no framework, English and 中文 in the same
-file (the toggle in the top right, `?lang=zh` or `?lang=en` in the URL). It is published to
-GitHub Pages by `.github/workflows/pages.yml` on every push to `main`.
+The nanoMuse homepage now lives in [nano-muse/nano-muse.github.io](https://github.com/nano-muse/nano-muse.github.io)
+and is served at <https://nano-muse.github.io/>. `site/index.html` here is a redirect to it;
+the page below — the Python line's site with the promo film — is kept as `legacy.html` and
+still published by `.github/workflows/pages.yml` under `https://nano-muse.github.io/nanoMuse/legacy.html`.
+
+`legacy.html` is one static page, no framework, English and 中文 in the same file (the toggle
+in the top right, `?lang=zh` or `?lang=en` in the URL).
 
 ## Preview
 
@@ -18,7 +22,7 @@ cd ../site && python3 -m http.server 8000   # http://localhost:8000
 
 | File | Purpose |
 |---|---|
-| `index.html` | The page. Every string appears twice, in `<span class="en">` and `<span class="zh">`. |
+| `legacy.html` | The earlier page. Every string appears twice, in `<span class="en">` and `<span class="zh">`. |
 | `style.css` | Colours, type and radii copied from `web/src/index.css`; light and dark. |
 | `site.js` | The language toggle and the phone in the hero, which plays one task end to end. |
 | `assets/` (generated) | `mascot.js` + `mascot.css` from `web/src/components/RedPanda.tsx`, icons, fonts, `screens/` from `docs/screenshots/`, `cover.png`. |
@@ -30,6 +34,5 @@ brings the page along.
 
 ## Domain
 
-The page is served at `https://nano-muse.github.io/nanoMuse/`. To put it on a domain of your
-own, add a `CNAME` file to this folder with the host name and point a CNAME record at
-`nano-muse.github.io`; GitHub Pages does the rest.
+For a domain of your own, add a `CNAME` file to the homepage repository with the host name and
+point a CNAME record at `nano-muse.github.io`; GitHub Pages does the rest.
