@@ -254,9 +254,16 @@ class TriggerSettings(BaseModel):
 
 
 class BrowserSettings(BaseModel):
+    """The browser tool. On the phone (the app's local runtime) it is on by default and uses
+    the app's own WebView; elsewhere it needs Playwright and is off until turned on."""
+
     enabled: bool = False
     headless: bool = True
     timeout_ms: int = 30_000
+    # "auto": Playwright when installed, else the phone's WebView; or "playwright" / "device"
+    backend: str = "auto"
+    # the starting user agent + viewport: "desktop", "mobile", or "" for the backend's own
+    profile: str = ""
 
 
 class GUISettings(BaseModel):
@@ -508,6 +515,11 @@ def _apply_env_overrides(raw: dict[str, Any]) -> None:
     # mounted config.toml keeps the last word otherwise
     if os.environ.get("NANOMUSE_BROWSER_ENABLED", "").strip().lower() in ("1", "true", "yes", "on"):
         raw.setdefault("browser", {})["enabled"] = True
+    # on the phone the app's WebView is always there: the browser is on unless turned off
+    if os.environ.get("NANOMUSE_DEVICE", "").strip().lower() == "android":
+        raw.setdefault("browser", {}).setdefault("enabled", True)
+    if val := os.environ.get("NANOMUSE_BROWSER_BACKEND"):
+        raw.setdefault("browser", {})["backend"] = val
     gui = raw.setdefault("gui", {})
     if os.environ.get("NANOMUSE_GUI_ENABLED", "").strip().lower() in ("1", "true", "yes", "on"):
         gui["enabled"] = True

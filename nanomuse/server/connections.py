@@ -37,7 +37,6 @@ from nanomuse.tools import (
     WebSearch,
     playwright_available,
 )
-from nanomuse.tools.browser import Browser
 
 if TYPE_CHECKING:
     from nanomuse.server.service import MuseService
@@ -171,7 +170,12 @@ class Connections:
             },
             "calendar": self._calendar_view(),
             "contacts": self._contacts_view(),
-            "browser": {"enabled": s.browser.enabled, "available": playwright_available()},
+            "browser": {
+                "enabled": s.browser.enabled,
+                # a browser can render somewhere: Playwright here, or the phone's WebView
+                "available": playwright_available() or self.svc.phone.browser_device is not None,
+                "backend": self.svc.browser_backend(),
+            },
             "gui": self._gui_view(),
             "mcp": [
                 {
@@ -837,15 +841,8 @@ class Connections:
         self._save()
         self.settings.browser.enabled = bool(enabled)
         tools = self.svc.app.tools
-        s = self.settings
-        if enabled and playwright_available() and "browser" not in tools:
-            tools.add(
-                Browser(
-                    headless=s.browser.headless,
-                    timeout_ms=s.browser.timeout_ms,
-                    workspace=s.agent.workspace,
-                )
-            )
+        if enabled and "browser" not in tools:
+            tools.add(self.svc.app.browser_tool())
             self.svc.watch_browser()
         elif not enabled:
             tools.remove("browser")

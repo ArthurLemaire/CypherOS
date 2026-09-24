@@ -23,6 +23,9 @@ _BROWSER_ACTIONS: dict[str, tuple[str, ...]] = {
     "scroll": ("direction",),
     "back": (),
     "screenshot": (),
+    # a signed-in request with the browser's cookies, no page driven (rung two of the ladder)
+    "fetch": ("url", "method", "body"),
+    "profile": ("profile", "user_agent", "width", "height"),
     "close": (),
 }
 
@@ -145,18 +148,11 @@ class Bridge:
             return f"{DEVICE_SERVER}_{name}", device_args
         if kind == "browser":
             action = str(body.get("action") or "").strip()
-            if action == "fetch":
-                # the page as text, through the plain fetcher; the browser's own signed-in
-                # fetch replaces this when the browser backend has one
-                url = str(body.get("url") or "")
-                if not url:
-                    raise BridgeError(400, "fetch needs a URL")
-                return "web_fetch", {"url": url}
             wanted = _BROWSER_ACTIONS.get(action)
             if wanted is None:
                 raise BridgeError(
                     400,
-                    f"unknown browser action '{action}'; one of {', '.join([*_BROWSER_ACTIONS, 'fetch'])}",
+                    f"unknown browser action '{action}'; one of {', '.join(_BROWSER_ACTIONS)}",
                 )
             args: dict[str, Any] = {"action": action}
             for key in wanted:

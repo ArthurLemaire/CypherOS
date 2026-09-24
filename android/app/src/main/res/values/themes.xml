@@ -17,4 +17,21 @@
         <item name="android:windowLightStatusBar">@bool/light_bars</item>
         <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">@bool/light_bars</item>
     </style>
+
+    <!-- the browser take-over sheet: rounded top, the page fills the rest -->
+    <style name="Theme.nanoMuse.Sheet" parent="ThemeOverlay.Material3.BottomSheetDialog">
+        <item name="bottomSheetStyle">@style/Widget.nanoMuse.Sheet</item>
+        <item name="android:windowSoftInputMode">adjustResize</item>
+    </style>
+
+    <style name="Widget.nanoMuse.Sheet" parent="Widget.Material3.BottomSheet">
+        <item name="shapeAppearanceOverlay">@style/ShapeAppearance.nanoMuse.Sheet</item>
+        <item name="backgroundTint">@color/bg</item>
+    </style>
+
+    <style name="ShapeAppearance.nanoMuse.Sheet" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSizeTopLeft">20dp</item>
+        <item name="cornerSizeTopRight">20dp</item>
+    </style>
 </resources>

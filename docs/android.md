@@ -12,6 +12,7 @@ What the shell adds over the browser tab:
 - **Connect by QR code.** Scan the code `nanomuse serve` prints; no typing addresses or tokens.
 - **Notifications in the background.** A foreground service keeps one WebSocket open to your server. Approvals, questions and the last word of background work arrive as Android notifications and open the right chat. A resolved approval takes its notification down again. Reconnects after a network change or a reboot.
 - **Attachments, downloads, links.** The file picker for the paperclip, downloads to the phone's Downloads folder, links opening in the real browser.
+- **The agent's browser.** While the app is connected, its own WebView is a browser the agent may use — offscreen, on a private virtual display so pages run at full speed with the app in the background — and *Take over* on a browser card slides that very page up for you to sign in or decide, then **Done**. In the local build this is the only browser there is; with a server it is used whenever the app is connected (`[browser] backend`). [browser.md](browser.md).
 - **Plain HTTP on the LAN.** Works with `http://192.168.x.x:8787` as is.
 
 Everything else is the same web app, served by your `nanomuse serve`.

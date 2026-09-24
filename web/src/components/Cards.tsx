@@ -395,8 +395,7 @@ export function BrowserCard({ event, onOpen }: { event: BrowserEvent; onOpen: (i
           <div className="min-w-0 flex-1">
             <div className="text-[13.5px] font-medium truncate">{event.title || host}</div>
             <div className="text-[12px] text-muted truncate">
-              {event.by_user ? t("You") : ""}
-              {event.by_user && event.action.startsWith("You") ? event.action.slice(3) : event.action} · {host}
+              {event.by_user && event.action.startsWith("You") ? t("You") + event.action.slice(3) : event.action} · {host}
             </div>
           </div>
           <ChevronRight size={16} className="text-muted shrink-0" />

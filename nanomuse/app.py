@@ -243,17 +243,26 @@ class NanoMuseApp:
         if s.gui.enabled and self.phone is not None:
             tools.add(*self.phone_tools())
         if s.browser.enabled:
-            if playwright_available():
-                tools.add(
-                    Browser(
-                        headless=s.browser.headless, timeout_ms=s.browser.timeout_ms, workspace=ws
-                    )
-                )
-            else:
-                logger.warning(
-                    "browser.enabled=true but playwright is missing: pip install 'nanomuse[browser]'"
-                )
+            tools.add(self.browser_tool())
         return tools
+
+    def browser_tool(self) -> Browser:
+        """The browser: Playwright here, or the phone's WebView through the phone link."""
+        s = self.settings
+        tool = Browser(
+            headless=s.browser.headless,
+            timeout_ms=s.browser.timeout_ms,
+            workspace=s.agent.workspace,
+            backend_mode=s.browser.backend,
+            default_profile=s.browser.profile,
+            link=self.phone,
+        )
+        if not playwright_available() and s.browser.backend != "device" and self.device is None:
+            logger.warning(
+                "browser.enabled=true but playwright is missing: pip install 'nanomuse[browser]' "
+                "— the browser tool will use the phone's WebView when the app is connected"
+            )
+        return tool
 
     def phone_tools(self) -> list[PhoneScreen | PhoneAct | PhoneTask]:
         """The three phone tools, sharing one link and one operator."""

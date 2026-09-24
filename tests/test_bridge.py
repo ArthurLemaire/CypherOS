@@ -65,9 +65,21 @@ def test_requests_map_to_tool_calls():
         "browser",
         {"action": "type", "index": 3, "text": "hi", "submit": True},
     )
+    # fetch goes through the browser: a signed-in request with its cookies
     assert plan("browser", {"action": "fetch", "url": "https://example.com"}) == (
-        "web_fetch",
-        {"url": "https://example.com"},
+        "browser",
+        {"action": "fetch", "url": "https://example.com"},
+    )
+    assert plan(
+        "browser",
+        {"action": "fetch", "url": "https://example.com", "method": "POST", "body": "a=1"},
+    ) == (
+        "browser",
+        {"action": "fetch", "url": "https://example.com", "method": "POST", "body": "a=1"},
+    )
+    assert plan("browser", {"action": "profile", "profile": "desktop"}) == (
+        "browser",
+        {"action": "profile", "profile": "desktop"},
     )
     assert plan("open", {"url": "https://example.com/pay"}) == (
         "browser",

@@ -50,6 +50,7 @@ class NotifyService : Service() {
     private var reconnect: Runnable? = null
     private var unauthorized = false
     private lateinit var notifier: Notifier
+    private var link: DeviceLink? = null
 
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
@@ -102,7 +103,13 @@ class NotifyService : Service() {
         val request = Request.Builder().url(wsUrl).build()
         val socket = http.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                handler.post { backoffMs = RECONNECT_MIN_MS }
+                handler.post {
+                    backoffMs = RECONNECT_MIN_MS
+                    // the phone is a device too: its browser is the agent's when asked
+                    link?.close()
+                    link = DeviceLink(this@NotifyService) { reply -> webSocket.send(reply.toString()) }
+                    webSocket.send(link!!.hello().toString())
+                }
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -143,6 +150,8 @@ class NotifyService : Service() {
     private fun close() {
         reconnect?.let { handler.removeCallbacks(it) }
         reconnect = null
+        link?.close()
+        link = null
         ws?.let { s ->
             ws = null
             runCatching { s.close(1000, null) }
@@ -152,6 +161,7 @@ class NotifyService : Service() {
     // ------------------------------------------------------------------ the events
 
     private fun handle(msg: JSONObject) {
+        if (link?.handle(msg) == true) return
         notifier.handle(msg)
         if (msg.optString("kind") == "hello") foreground(getString(R.string.link_online, host()))
     }
