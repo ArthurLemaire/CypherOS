@@ -25,6 +25,37 @@ export interface AndroidBridge {
   openAccessibilitySettings?(): void;
   /** Open this app's page in Android Settings (the "Allow restricted settings" menu lives there). */
   openAppSettings?(): void;
+  /** JSON: what stands in the way of running in the background (see KeepRunningStatus). */
+  keepRunning?(): string;
+  /** Open the settings page for one of them: battery, overlay, alarms, autostart, app. */
+  openKeepRunning?(what: string): void;
+  setStartOnBoot?(on: boolean): void;
+  /** Zip the crash files, the runtime log and the app's logcat lines; open the share sheet. */
+  exportLogs?(): void;
+}
+
+export interface KeepRunningStatus {
+  battery_unrestricted: boolean;
+  overlay: boolean;
+  exact_alarms: "granted" | "denied" | "n/a";
+  boot_start: boolean;
+  /** xiaomi · huawei · honor · oppo · vivo · samsung · meizu · "" */
+  vendor: string;
+  /** whether this phone has an auto-start / background manager page the app can open */
+  autostart_settings: boolean;
+  android: number;
+  /** the runtime runs on this phone (local mode) */
+  local: boolean;
+}
+
+export function keepRunningStatus(): KeepRunningStatus | null {
+  const app = androidApp();
+  if (!app || typeof app.keepRunning !== "function") return null;
+  try {
+    return JSON.parse(app.keepRunning()) as KeepRunningStatus;
+  } catch {
+    return null;
+  }
 }
 
 export function androidApp(): AndroidBridge | null {

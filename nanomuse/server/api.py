@@ -18,6 +18,7 @@
     PUT  /api/feed/instructions           what you want to read there
     POST /api/feed/posts/refresh          write a new batch now
     GET  /api/upcoming                    next background pass and the goals in line
+    POST /api/tick                        run the scheduler's pass now (the phone's alarm)
     GET  /api/calendar (?days&refresh=1)  today's and tomorrow's events from the calendar feeds
     GET  /api/files  GET /api/files/{path}  POST /api/files/upload?name=  (body: the bytes)
     GET|PUT /api/settings
@@ -1027,6 +1028,15 @@ def create_app(settings: Settings, service: MuseService | None = None) -> FastAP
         if not svc.delete_feed_post(post_id):
             raise HTTPException(404, "no such post")
         return {"ok": True}
+
+    @app.post("/api/tick", dependencies=dep)
+    async def tick() -> dict[str, Any]:
+        """Run the scheduler's pass now — the phone's alarm calls this when the process was
+        asleep — and say when the next wake is due."""
+        svc.wake()
+        await asyncio.sleep(0)
+        when = svc.next_wake_at()
+        return {"ok": True, "next_wake_at": when.isoformat(timespec="seconds") if when else None}
 
     @app.get("/api/upcoming", dependencies=dep)
     async def upcoming() -> dict[str, Any]:

@@ -130,16 +130,17 @@ Decisions this list rests on (see [design.md](design.md) for the reasoning): the
 - [x] `channel` in `SKILL.md` (`api` / `cli` / `web` / `browser` / `gui` / `mixed`, `app-only` accepted); the audit log records the channel of every tool call; Activity shows the share of GUI steps
 - [x] Never types passwords or codes (the Android executor refuses password fields outright), never taps pay; sensitive words trigger a per-action ask
 - [ ] Deferred to 1.5: the Shizuku / wadb tool group (default deny); a bundled IME
-- [ ] **Real phone**: the a11y executor and the capsule were exercised on the API 33 emulator (x86_64, connect build); the arm64 local build, Android 14 restricted settings and vendor battery managers need a physical phone (§16)
+- [ ] **Real phone**: the a11y executor and the capsule were exercised on the API 33 emulator (x86_64, connect build); the arm64 local build, Android 14 restricted settings and vendor battery managers need a physical phone (§13)
 
 ---
 
 ## 8. Background and system (P0)
 
-- [ ] `setExactAndAllowWhileIdle` with a fallback when the permission is revoked
-- [ ] Battery-optimisation guidance plus 小米 / 华为 / OPPO / vivo whitelist instructions; **the overlay permission too** ("display over other apps"; 小米 additionally "background pop-ups")
-- [ ] Start on boot (optional); local-mode notifications stay in-process
-- [ ] Crashes written locally only, no reporting; log export
+- [x] `setExactAndAllowWhileIdle` with a fallback when the permission is revoked (`runtime/WakeAlarms.kt`: `setAndAllowWhileIdle` when `canScheduleExactAlarms()` is false or the call is refused); the alarm is set for the runtime's `next_wake_at` (`schedule` WS event, `/api/upcoming`) and fires `POST /api/tick`
+- [x] Battery-optimisation guidance plus 小米 / 华为 / OPPO / vivo whitelist instructions; **the overlay permission too** ("display over other apps"; 小米 additionally "background pop-ups") — *Settings → Keep it running* (`KeepRunning.kt`: state of the three permissions, vendor guess, the auto-start activity per vendor with a fallback to the app's details page)
+- [x] Start on boot (optional; the *Start after a reboot* switch, on by default); local-mode notifications stay in-process
+- [x] Crashes written locally only, no reporting; log export (`Diagnostics.kt`: `files/crashes/`, the last five; *Export logs* → a zip through a `FileProvider` to the share sheet)
+- [ ] **Real phone**: verified on the API 33 emulator (connect build: the section, the battery dialog, the export zip); the alarm path, Android 14's exact-alarm denial and the vendor pages need physical phones (the six-OEM matrix in §13)
 
 ---
 

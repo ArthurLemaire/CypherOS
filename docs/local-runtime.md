@@ -75,6 +75,16 @@ And the environment (`nanomuse-serve` in the rootfs reads it):
 
 `RuntimeService` then polls `GET /api/health` (up to two minutes on a cold first start; a warm one answers in a few seconds), and on success subscribes to `/ws` like the notification service does: approvals, questions and finished background work become notifications from the same `Notifier`, and the `status` events drive the notification text and a `PARTIAL_WAKE_LOCK` that is held only while a task runs (with a 15 s grace, capped at 30 minutes). If the process dies it is restarted with backoff (2, 4, 8 … 60 s), five times within a minute before giving up and showing the log.
 
+## Waking up
+
+With the screen off, Doze freezes the app's process between maintenance windows, and a Python scheduler that sleeps until 07:30 does not know it slept through 07:30. So the two sides share the schedule instead of both keeping time:
+
+- The Python scheduler naps on an `asyncio.Event`, not a fixed timer, and knows the earliest moment something is due — `Service.next_wake_at()`: the next reminder, the next goal check-in (pushed past the quiet hours), the next background pass when the agent is proactive. It publishes the moment as a `schedule` event on `/ws` whenever it changes and reports it as `next_wake_at` in `GET /api/upcoming`.
+- `RuntimeService` reads it — from `/api/upcoming` after the connection comes up, then from each `schedule` event — and sets one alarm for it (`WakeAlarms`): `setExactAndAllowWhileIdle` when the app may schedule exact alarms, `setAndAllowWhileIdle` otherwise. Android 14 denies `SCHEDULE_EXACT_ALARM` to a fresh install, so the inexact path is the common one until the user grants it under *Settings → Keep it running*; inexact means within Android's batching window, a few minutes late at most, never early.
+- When the alarm fires, `WakeReceiver` pokes the service: it takes the wake lock for up to 45 s, calls `POST /api/tick`, and re-arms for whatever the runtime announces next. `tick` sets the event, the scheduler wakes, sees what is due, runs it — and the `status` events from the run keep the wake lock held for as long as the task takes, exactly as when the user started it.
+
+Nothing is due → no alarm, and the runtime idles until the WebView or a notification action wakes it. On a computer the same `next_wake_at` is just informative (`nanomuse serve` never sleeps), and `POST /api/tick` is harmless: it ends the current nap early and nothing more.
+
 ## The Python side on a phone
 
 `nanomuse.runtime.device()` reads `NANOMUSE_DEVICE*`. With it:
@@ -98,7 +108,7 @@ And the environment (`nanomuse-serve` in the rootfs reads it):
 - **musl, not glibc.** Alpine uses musl. Most Python wheels come as `musllinux`; a prebuilt binary that assumes glibc needs `apk add gcompat`. Node is the Alpine build.
 - **No Chromium in the rootfs.** Playwright cannot run a browser here; the browser is always the app's own WebView (the `Browser` tool's device backend, `nanomuse-browser` from scripts — [browser.md](browser.md)). `apk add chromium` does install but does not start under PRoot on Android.
 - **Storage.** About 330 MB after unpacking, plus whatever the user installs. The compressed rootfs is under 70 MB; the APK a little more.
-- **Background limits.** Android may still kill the service under memory pressure or aggressive vendor battery managers (the per-vendor battery allowances are in [android.md](android.md)). The service is `START_STICKY` and restarts; the scheduler catches up on missed routines.
+- **Background limits.** Android may still kill the service under memory pressure or aggressive vendor battery managers (the per-vendor battery allowances are in [android.md](android.md#keeping-it-running)). The service is `START_STICKY` and restarts; the alarm above survives the process, and the scheduler catches up on missed routines when it is back.
 - **What is in the box.** Alpine's `apk`, `git`, `curl`, `jq`, `bash`, `openssh-client`, `python3` with `pip`, and Node with `npm`. `uv` is not (35 MB); `pip install uv` gets it. `nanomuse-mirror cn|default` switches apk, pip and npm between the upstream servers and mirrors in mainland China; the first start picks from the phone's region.
 - **Node is optional.** `NODE=0 scripts/rootfs/build.sh` produces a rootfs without it, about 12 MB smaller compressed. The default includes it because the showcase's Chinese services (lark-cli, `@tencentcloud/tmeet`, `12306-mcp`) are npm packages.
 

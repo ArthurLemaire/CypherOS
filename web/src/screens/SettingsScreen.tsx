@@ -1,6 +1,6 @@
 import { Box, Check, ChevronRight, LogOut, Moon, Shield, ShieldAlert, ShieldCheck } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
-import { androidApp } from "../android";
+import { androidApp, keepRunningStatus, type KeepRunningStatus } from "../android";
 import { api, setToken } from "../api";
 import { MASCOT } from "../avatars";
 import { AVATAR_COLORS } from "../components/AvatarPicker";
@@ -177,6 +177,13 @@ export function SettingsScreen() {
           {androidApp() ? <PhoneAppSettings name={state.profile?.name ?? "nanoMuse"} /> : <PushSettings name={state.profile?.name ?? "nanoMuse"} />}
         </Section>
 
+        {/* Keep it running: only the Android app has anything to say here */}
+        {keepRunningStatus() && (
+          <Section title={t("Keep it running")}>
+            <KeepRunningSettings name={state.profile?.name ?? "nanoMuse"} />
+          </Section>
+        )}
+
         {/* Model */}
         <Section title={t("Model")}>
           {s && (
@@ -288,6 +295,125 @@ function PhoneAppSettings({ name }: { name: string }) {
       />
       <div className="text-[12.5px] text-muted">{t("nanoMuse for Android {version}", { version: phone.version() })}</div>
     </>
+  );
+}
+
+/**
+ * The Android switches that decide whether the agent keeps running with the screen off —
+ * battery, overlay, exact alarms, start on boot — plus the vendor's own, and the log export.
+ */
+function KeepRunningSettings({ name }: { name: string }) {
+  const t = useT();
+  const app = androidApp();
+  const [st, setSt] = useState<KeepRunningStatus | null>(keepRunningStatus);
+  useEffect(() => {
+    // the user comes back from a settings page: read again
+    const again = () => setSt(keepRunningStatus());
+    document.addEventListener("visibilitychange", again);
+    window.addEventListener("focus", again);
+    return () => {
+      document.removeEventListener("visibilitychange", again);
+      window.removeEventListener("focus", again);
+    };
+  }, []);
+  if (!app || !st) return null;
+  const open = (what: string) => app.openKeepRunning?.(what);
+  const vendorTips: Record<string, string> = {
+    xiaomi: t("Xiaomi / Redmi / POCO: Settings → Apps → Manage apps → {name} → Autostart on; Battery saver → No restrictions; Other permissions → Display pop-up windows while running in the background on."),
+    huawei: t("Huawei: Settings → Battery → App launch → {name} → Manage manually, all three on (auto-launch, secondary launch, run in background); Settings → Apps → {name} → Battery → Launch: manage manually."),
+    honor: t("Honor: Settings → Battery → App launch → {name} → Manage manually, all three on; Battery → More battery settings → Stay connected while asleep on."),
+    oppo: t("OPPO / realme / OnePlus: Settings → Battery → More settings → Optimise battery use → {name} → Don't optimise; Settings → Apps → {name} → Battery usage → Allow background activity, Allow auto launch."),
+    vivo: t("vivo / iQOO: i Manager → App manager → Autostart → {name} on; Settings → Battery → Background power consumption management → {name} → Allow high background power consumption."),
+    samsung: t("Samsung: Settings → Battery → Background usage limits → {name} not in Sleeping or Deep sleeping apps (add it to Never sleeping apps); turn off Adaptive battery if it keeps stopping."),
+    meizu: t("Meizu: Settings → Apps → {name} → Background management → Keep running in the background; Battery → App power management → Allow."),
+  };
+  const tip = vendorTips[st.vendor];
+  return (
+    <>
+      <p className="text-[12.5px] text-muted leading-snug">
+        {t("Android stops apps that seem idle. {name} runs as a foreground service and holds the phone awake only while a task runs; these switches let it keep that promise on this phone.", { name })}
+      </p>
+      <Row
+        label={t("Battery")}
+        value={st.battery_unrestricted ? t("Unrestricted") : t("Optimised")}
+        ok={st.battery_unrestricted}
+        hint={t("Optimised means Android may freeze the agent after a while with the screen off; routines and check-ins then wait until the phone wakes.")}
+        action={st.battery_unrestricted ? undefined : { label: t("Allow"), onClick: () => open("battery") }}
+      />
+      <Row
+        label={t("Display over other apps")}
+        value={st.overlay ? t("Allowed") : t("Not allowed")}
+        ok={st.overlay}
+        hint={t("Lets the agent bring an app to the front from the background and show its status capsule while it works in other apps.")}
+        action={st.overlay ? undefined : { label: t("Allow"), onClick: () => open("overlay") }}
+      />
+      {st.exact_alarms !== "n/a" && st.local && (
+        <Row
+          label={t("Alarms & reminders")}
+          value={st.exact_alarms === "granted" ? t("Exact") : t("Approximate")}
+          ok={st.exact_alarms === "granted"}
+          hint={t("With exact alarms a reminder fires at the minute you named even when the phone is asleep; without them Android may deliver it up to a quarter of an hour late.")}
+          action={st.exact_alarms === "granted" ? undefined : { label: t("Allow"), onClick: () => open("alarms") }}
+        />
+      )}
+      <Toggle
+        label={t("Start after a reboot")}
+        hint={st.local ? t("Bring the runtime back when the phone restarts, so routines and check-ins do not stop.") : t("Reconnect to your computer when the phone restarts, so approvals keep arriving.")}
+        checked={st.boot_start}
+        onChange={(v) => {
+          app.setStartOnBoot?.(v);
+          setSt({ ...st, boot_start: v });
+        }}
+      />
+      {tip && (
+        <div className="rounded-2xl bg-surface-2 px-3 py-2.5 text-[12.5px] leading-snug space-y-2">
+          <div className="font-medium">{t("On this phone's Android")}</div>
+          <div className="text-muted">{tip}</div>
+          {st.autostart_settings && (
+            <button type="button" onClick={() => open("autostart")} className="rounded-full border border-border px-3 py-1.5 text-[12.5px]">
+              {t("Open the auto-start settings")}
+            </button>
+          )}
+        </div>
+      )}
+      <div className="flex items-center justify-between gap-3 pt-1">
+        <div className="text-[12.5px] text-muted leading-snug">{t("Crashes are written to a file on this phone and nowhere else. Export bundles them with the runtime's log for someone you choose.")}</div>
+        <button type="button" onClick={() => app.exportLogs?.()} className="shrink-0 rounded-full border border-border px-3 py-1.5 text-[12.5px]">
+          {t("Export logs")}
+        </button>
+      </div>
+    </>
+  );
+}
+
+function Row({
+  label,
+  value,
+  ok,
+  hint,
+  action,
+}: {
+  label: string;
+  value: string;
+  ok: boolean;
+  hint?: string;
+  action?: { label: string; onClick: () => void };
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <div className="flex-1">
+        <div className="flex items-center gap-2 text-[14px]">
+          <span>{label}</span>
+          <span className={cx("rounded-full px-2 py-0.5 text-[11px] font-medium", ok ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300" : "bg-amber-500/15 text-amber-700 dark:text-amber-300")}>{value}</span>
+        </div>
+        {hint && <div className="text-[12.5px] text-muted leading-snug">{hint}</div>}
+      </div>
+      {action && (
+        <button type="button" onClick={action.onClick} className="shrink-0 rounded-full bg-accent px-3 py-1.5 text-[12.5px] font-medium text-white">
+          {action.label}
+        </button>
+      )}
+    </div>
   );
 }
 
