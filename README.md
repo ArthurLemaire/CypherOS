@@ -22,7 +22,7 @@
 
 🐾 **nanoMuse** is an open-source personal AI agent inspired by Meta's [Muse](https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/). One agent with a name and a face, yours: it does things instead of answering questions, keeps working while the app is closed, remembers you, and asks before anything you could not undo. It works through whatever the job needs — the web, files and commands, MCP servers and command-line tools (飞书, 高德), skills, and the apps on your phone through their screens where there is no API (12306, WeChat, Alipay). Any OpenAI-compatible model. Today it is an Android app and a web app served by one Python package from your own machine, no cloud VM; a hosted web version on a per-user VM and a desktop app come next ([roadmap](#roadmap)).
 
-> **Where the project is (since 2026-09-24).** The app is now built on [OpenMinis](https://github.com/OpenMinis/OpenMinis) 1.13 — a complete agent that runs *on the phone* with no server: a Linux root file system under proot, a shell, a browser, MCP, skills, scheduled tasks, an accessibility executor, any OpenAI-compatible model. It lives in [`android/`](android/) as a `git subtree` and is released one small version at a time, each an installable APK: 0.1.1 换皮 → 0.1.2 有名字有脸 → 0.1.3 国内的日常 → 0.1.4 关键处先问你 → 0.1.5 Muse 的形状 → 0.1.6 记得你 → 0.2.0 beta ([docs/roadmap.md](docs/roadmap.md)). The Python line described in the rest of this page (`nanomuse/`, `web/`, `demo/`, `site/`) is frozen at tag [`pre-openminis`](https://github.com/nano-muse/nanoMuse/releases/tag/pre-openminis) and is the base of the web and desktop phases. The whole repository is **GPL-3.0-or-later** ([NOTICE](NOTICE), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)); how to build and how to contribute: [CONTRIBUTING.md](CONTRIBUTING.md).
+> **Where the project is (since 2026-09-24).** The app is now built on [OpenMinis](https://github.com/OpenMinis/OpenMinis) 1.13 — a complete agent that runs *on the phone* with no server: a Linux root file system under proot, a shell, a browser, MCP, skills, scheduled tasks, an accessibility executor, any OpenAI-compatible model. It lives in [`android/`](android/) as a `git subtree` and is released one small version at a time, each an installable APK: 0.1.1 换皮 → 0.1.2 有名字有脸 → 0.1.3 关键处先问你 → 0.1.4 Muse 的形状 → 0.1.5 记得你 → 0.2.0 beta ([docs/roadmap.md](docs/roadmap.md)). The Python line described in the rest of this page (`nanomuse/`, `web/`, `demo/`, `site/`) is frozen at tag [`pre-openminis`](https://github.com/nano-muse/nanoMuse/releases/tag/pre-openminis) and is the base of the web and desktop phases. The whole repository is **GPL-3.0-or-later** ([NOTICE](NOTICE), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)); how to build and how to contribute: [CONTRIBUTING.md](CONTRIBUTING.md).
 >
 > **Get the app:** download `nanoMuse-<version>-arm64.apk` from [Releases](https://github.com/nano-muse/nanoMuse/releases) (Android 8.0+, arm64), install it, add a model key in the app. Every version is signed with the same key, so an update installs over the previous one.
 
@@ -293,12 +293,13 @@ Three phases, one per platform; the full plan with the reasoning is in [docs/roa
 
 **Phase 1 — the phone, no cloud VM** (now) — the OpenMinis-based app, one version per stage, each an APK:
 
-- [ ] 0.1.1 换皮 — OpenMinis 1.13 as nanoMuse: icon, name, brand colours, About / feedback / update source, GPL notices, one signing key
-- [ ] 0.1.2 有名字有脸 — a name and a face, an onboarding, BYOK only
-- [ ] 0.1.3 国内的日常 — 飞书, 腾讯会议, 高德, 快递100, 12306 without a screen; the screen last
-- [ ] 0.1.4 关键处先问你 — approvals with scope; the four-rung ladder
-- [ ] 0.1.5 Muse 的形状 — chat, feed, goals, library
-- [ ] 0.1.6 → 0.2.0 记得你 — memory, the feed, files; first beta
+- [x] [0.1.1 换皮](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.1) — OpenMinis 1.13 as nanoMuse: icon, name, brand colours, About / feedback / update source, GPL notices, one signing key
+- [x] [0.1.2 有名字有脸](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.2) — the red panda and a Muse-style header, a first conversation that names the agent, the name and face on every notification
+- [ ] 0.1.3 关键处先问你 — approvals with scope; the four-rung ladder
+- [ ] 0.1.4 Muse 的形状 — chat, feed, goals, library
+- [ ] 0.1.5 → 0.2.0 记得你 — memory, the feed, files; first beta
+
+Chinese services (飞书, 高德, 快递100 …) are no longer a version of their own: the sandbox shell, MCP and skills reach them from a sentence in the chat already ([docs/services.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/services.md)).
 
 Done in the Python line before the switch (tag `pre-openminis`): the agent, the Sentinel, the vault and the sandbox; the web app; skills and MCP; 飞书 / 腾讯会议 / 高德 / 快递100 / 12306 without a screen; the phone operator on the simulated phone, with traces.
 
