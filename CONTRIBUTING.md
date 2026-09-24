@@ -2,7 +2,49 @@
 
 Use nanoMuse for a real task, report what broke, then pick something focused. Issues and pull requests are welcome; for anything larger than a fix, open an issue first so we can agree on the shape.
 
-## Setup
+## Two trees
+
+- **`android/`** — the app. A modified copy of [OpenMinis](https://github.com/OpenMinis/OpenMinis) 1.13 imported with `git subtree` (GPL-3.0). This is where the work happens now; see [docs/roadmap.md](docs/roadmap.md) for the six versions of Phase 1.
+- **`nanomuse/`, `web/`, `demo/`, `site/`** — the Python line (agent, Sentinel, web app, showcase). Frozen at tag `pre-openminis`; kept as the base of the web and desktop phases. Fixes are welcome, features wait.
+
+## Licence and sign-off
+
+nanoMuse is **GPL-3.0-or-later** ([LICENSE](LICENSE), [NOTICE](NOTICE)). By contributing you agree that your contribution is licensed the same way. Every commit must carry a [Developer Certificate of Origin](https://developercertificate.org) sign-off — `git commit -s` adds the line:
+
+```
+Signed-off-by: Your Name <you@example.com>
+```
+
+CI checks it. Not accepted, ever:
+
+- code under a licence that cannot be combined with GPL-3.0 (GPL-2.0-*only*, SSPL, BUSL, "source-available", proprietary SDKs);
+- anything obtained by decompiling, unpacking or scraping the Meta Muse app, or the OpenMinis binaries beyond what their source already shows;
+- the OpenMinis or Meta Muse names and logos as part of nanoMuse's own identity (attribution in the About screen and NOTICE is required and stays).
+
+## Working in `android/`
+
+Upstream is a mirror of a private tree, squashed roughly monthly, and does not take pull requests. We have to be able to `git subtree pull` each release, so:
+
+1. **Do not rename the Kotlin package** `com.openminis.app` or the Gradle `namespace`. Only the `applicationId` (`io.github.nanomuse.app`) is ours.
+2. **Do not rename sandbox paths or CLI names** inside the root file system (`/var/minis`, `minis-global`, `minis-open`, `minis-mcp-cli`, `android-*`). They are upstream's contract with itself.
+3. **New code goes in new files** — package `io.github.nanomuse.*` or a new file next to the upstream one. When an upstream file must change, add a `// nanoMuse:` comment at the spot, and make one change per spot.
+4. **Rebranding is a script, not hand edits.** `scripts/rebrand.py` (names, ids, colours, links) and `scripts/gen-android-icons.py` (launcher icons) are idempotent; run them after every upstream pull. Do not fix a rebranding miss by hand — fix the script.
+5. **Binary resources** (icon PNGs) are overwritten under the upstream name; on a pull conflict take ours (`git checkout --ours`).
+
+Build steps are in [android/BUILDING.md](android/BUILDING.md) (upstream) and, for the toolchain this repository is built with, in `scripts/android/` — JDK 21, SDK CMake 3.22.1, NDK r27c, Go 1.25+, `gomobile`; `deps/build_proot.sh` builds proot from the `android/deps/proot` submodule (our fork; portable `awk`, no gawk needed) and must run before `scripts/prepare_android_sandbox.sh`.
+
+### Pulling an upstream release
+
+```bash
+git fetch openminis --tags
+git subtree pull --prefix=android openminis 1.14 -m "Merge OpenMinis 1.14"
+git rm -r -q android/src/ios android/deps/ish ...        # modify/delete conflicts: iOS is gone here
+git checkout --ours -- 'android/src/android/app/src/main/res/mipmap-*'
+python scripts/rebrand.py && python scripts/gen-android-icons.py
+# resolve the remaining conflicts at the `// nanoMuse:` marks, build, run the smoke list
+```
+
+## Working in the Python line
 
 ```bash
 git clone https://github.com/nano-muse/nanoMuse.git && cd nanoMuse
@@ -11,56 +53,26 @@ uv pip install -e ".[dev]"            # add ",browser" for the Playwright tool
 nanomuse config init                  # config/config.toml is git-ignored
 ```
 
-The phone app lives in `web/` (React, TypeScript, Tailwind, Vite). Node 20+ is only needed if you change it:
-
-```bash
-cd web && npm install
-npm run dev            # http://localhost:5173, proxied to `nanomuse serve` on 8787
-npm run check          # eslint, tsc, vitest
-npm run build          # writes nanomuse/server/static/ — commit the result with your change
-```
-
-## Before you push
+Before you push:
 
 ```bash
 ruff check nanomuse tests scripts && ruff format nanomuse tests scripts
 mypy                                           # types; config in pyproject.toml
 python -m pytest -q                            # MockLLM only, no network
-NANOMUSE_LIVE=1 python -m pytest -q -m live    # optional: against your configured model
-python scripts/provider_check.py               # optional: five real tasks against your model, one line each
-cd web && npm run check && npm run build       # if you touched web/
+cd web && npm run check && npm run build       # if you touched web/; commit the build
 ```
 
-CI runs the Python checks on Linux and macOS with Python 3.11–3.13 (Windows is advisory), lints, tests and builds the web app and checks that the committed build is current, and builds the Docker image.
+Guidelines that still apply there: everything that acts goes through the Sentinel with an honest `risk`; secrets never reach the model (`{{vault:NAME}}`); test with `MockLLM`; no internal endpoints or keys in the repo; Ruff, line length 100, type hints; docs are part of the change.
 
-## Guidelines
+## Commits and pull requests
 
-- **Everything that acts goes through Sentinel.** New tools declare an honest `risk`, set `reads_private_data` / `egress` where they apply, and override `assess()` when a call can be more dangerous than the default or needs a readable summary. See [docs/sentinel.md](docs/sentinel.md#writing-a-safe-tool).
-- **Secrets never reach the model.** Use `{{vault:NAME}}` placeholders. Do not log or return raw credentials.
-- **Test with `MockLLM`.** Agent and server behaviour is tested without network access (`tests/test_agent.py`, `tests/test_server.py`). Live tests are marked `@pytest.mark.live` and skipped by default.
-- **No internal endpoints or keys in the repo.** `config/config.toml`, `.env` and `workspace/` are git-ignored on purpose.
-- **Commits** follow [Conventional Commits](https://www.conventionalcommits.org): `feat(tools): …`, `fix(server): …`, `docs: …`, `ci: …`.
-- **Style**: Ruff (line length 100), type hints, `from __future__ import annotations`, small modules. In `web/`, keep components small and state in `store.tsx`.
-- **Docs are part of the change.** If you alter a setting, a command, a tool's behaviour or the API, update the matching page in `docs/`.
-
-## Adding a tool
-
-1. Subclass `BaseTool` in `nanomuse/tools/`: `name`, `description`, `parameters` (JSON schema), `risk`, `async execute(**kwargs) -> ToolResult`.
-2. Register it in `nanomuse/app.py::_build_tools` (behind a config flag if it needs credentials or an optional dependency).
-3. Add a label in `nanomuse/server/webui.py::_TOOL_LABELS` so the app shows a readable status.
-4. Add a unit test in `tests/test_tools.py`.
-5. Mention it in `docs/configuration.md` if it has settings.
-
-Prefer an [MCP server](https://modelcontextprotocol.io) for integrations with an existing protocol; it plugs in through `[[mcp.servers]]` with no code.
+- [Conventional Commits](https://www.conventionalcommits.org) prefixes are welcome but not required; the first line says what changed and why in plain words.
+- One pull request, one topic. Screenshots for anything visible in the app.
+- Say which device and Android version you tested on. Phone-side features are tested on real hardware; the emulator is x86_64 and cannot run the arm64 APK.
 
 ## Releasing (maintainers)
 
-1. Bump `version` in `pyproject.toml` and `nanomuse/__init__.py`; move the `Unreleased` entries in `CHANGELOG.md` under the new version with today's date; commit.
-2. `git tag vX.Y.Z && git push origin main vX.Y.Z`.
-3. The [Release](.github/workflows/release.yml) workflow checks the tag against the version, builds and smoke-tests the wheel, then publishes to PyPI through Trusted Publishing (`pypi` environment, no stored token). The [Docker image](.github/workflows/docker.yml) workflow pushes `ghcr.io/nano-muse/nanomuse:X.Y.Z` and `:latest` for amd64 and arm64.
-4. Paste the changelog section into the GitHub release.
-
-Dependabot's weekly PRs are grouped per ecosystem. A `web/` bump changes the bundle by definition, so CI does not check the committed build on those PRs; after merging one, run `cd web && npm ci && npm run build` and commit the result (`chore(web): rebuild after dependency updates`).
+Every stage of Phase 1 is a version — `0.1.1`, `0.1.2`, … `0.1.6`, then `0.2.0`. Version names stay plain numbers (the in-app update check compares them). `scripts/release-apk.sh <version>` builds the release APK, verifies the signature, writes the sha256 and creates the GitHub pre-release; `docs/release-notes-template.md` is the shape of the notes. The signing key is one key for every version so an update installs over the previous one; it is not in the repository and not in CI.
 
 ## Security issues
 

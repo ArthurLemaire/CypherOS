@@ -13,14 +13,18 @@
   <p>
     <a href="https://github.com/nano-muse/nanoMuse"><img src="https://img.shields.io/github/stars/nano-muse/nanoMuse?style=flat&logo=github" alt="GitHub stars"></a>
     <a href="https://pypi.org/project/nanomuse/"><img src="https://img.shields.io/pypi/v/nanomuse" alt="PyPI version"></a>
-    <a href="https://github.com/nano-muse/nanoMuse/releases/latest/download/nanomuse.apk"><img src="https://img.shields.io/badge/Android-APK-3DDC84?logo=android&logoColor=white" alt="Android APK"></a>
+    <a href="https://github.com/nano-muse/nanoMuse/releases"><img src="https://img.shields.io/badge/Android-APK-3DDC84?logo=android&logoColor=white" alt="Android APK"></a>
     <a href="https://github.com/nano-muse/nanoMuse/actions/workflows/ci.yml"><img src="https://github.com/nano-muse/nanoMuse/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
     <a href="https://pypi.org/project/nanomuse/"><img src="https://img.shields.io/badge/python-%3E%3D3.11-blue" alt="Python 3.11 or newer"></a>
-    <a href="https://github.com/nano-muse/nanoMuse/blob/main/LICENSE"><img src="https://img.shields.io/github/license/nano-muse/nanoMuse" alt="MIT License"></a>
+    <a href="https://github.com/nano-muse/nanoMuse/blob/main/LICENSE"><img src="https://img.shields.io/github/license/nano-muse/nanoMuse" alt="GPL-3.0-or-later"></a>
   </p>
 </div>
 
 🐾 **nanoMuse** is an open-source personal AI agent inspired by Meta's [Muse](https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/). One agent with a name and a face, yours: it does things instead of answering questions, keeps working while the app is closed, remembers you, and asks before anything you could not undo. It works through whatever the job needs — the web, files and commands, MCP servers and command-line tools (飞书, 高德), skills, and the apps on your phone through their screens where there is no API (12306, WeChat, Alipay). Any OpenAI-compatible model. Today it is an Android app and a web app served by one Python package from your own machine, no cloud VM; a hosted web version on a per-user VM and a desktop app come next ([roadmap](#roadmap)).
+
+> **Where the project is (since 2026-09-24).** The app is now built on [OpenMinis](https://github.com/OpenMinis/OpenMinis) 1.13 — a complete agent that runs *on the phone* with no server: a Linux root file system under proot, a shell, a browser, MCP, skills, scheduled tasks, an accessibility executor, any OpenAI-compatible model. It lives in [`android/`](android/) as a `git subtree` and is released one small version at a time, each an installable APK: 0.1.1 换皮 → 0.1.2 有名字有脸 → 0.1.3 国内的日常 → 0.1.4 关键处先问你 → 0.1.5 Muse 的形状 → 0.1.6 记得你 → 0.2.0 beta ([docs/roadmap.md](docs/roadmap.md)). The Python line described in the rest of this page (`nanomuse/`, `web/`, `demo/`, `site/`) is frozen at tag [`pre-openminis`](https://github.com/nano-muse/nanoMuse/releases/tag/pre-openminis) and is the base of the web and desktop phases. The whole repository is **GPL-3.0-or-later** ([NOTICE](NOTICE), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)); how to build and how to contribute: [CONTRIBUTING.md](CONTRIBUTING.md).
+>
+> **Get the app:** download `nanoMuse-<version>-arm64.apk` from [Releases](https://github.com/nano-muse/nanoMuse/releases) (Android 8.0+, arm64), install it, add a model key in the app. Every version is signed with the same key, so an update installs over the previous one.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/screenshots/chat-approval.png" width="24%" alt="Chat: the agent stops before a shell command and asks">
@@ -259,7 +263,7 @@ More in [docs/architecture.md](https://github.com/nano-muse/nanoMuse/blob/main/d
 | A plush doll that changes pose while it works | A red panda drawn live, with a pose for idle, working, waiting, done, failed and offline |
 | Western services through their APIs | The same, plus 飞书 through its CLI, 高德 through MCP, and 12306 / WeChat / Alipay through the phone's screen |
 | Meta's models | Any OpenAI-compatible model |
-| Closed | MIT |
+| Closed | GPL-3.0-or-later |
 
 ## Docs
 
@@ -287,15 +291,16 @@ More in [docs/architecture.md](https://github.com/nano-muse/nanoMuse/blob/main/d
 
 Three phases, one per platform; the full plan with the reasoning is in [docs/roadmap.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/roadmap.md).
 
-**Phase 1 — the phone, no cloud VM** (now)
+**Phase 1 — the phone, no cloud VM** (now) — the OpenMinis-based app, one version per stage, each an APK:
 
-- [x] The agent, the Sentinel, the vault, the sandbox; the web app; the Android app; skills and MCP; 飞书 and 高德 without a screen
-- [x] The phone operator on the simulated phone, with traces
-- [ ] Local build: the brain inside the APK, so the phone needs no server at all — the whole agent, complete with the phone operator switched off
-- [ ] Android executor: with the switch on, the app operates real apps through an accessibility service (screenshots, gestures, the finger overlay), with Shizuku as an option
-- [ ] Free starter quota through the showcase gateway, then your own key
-- [ ] Muse features still missing: durable tasks with a take-over hand-off, watches that trigger on the world, ideas with evidence, a follow-up queue
-- [ ] Voice: speak a message and see it as text before it goes, through any OpenAI-compatible `/audio/transcriptions`
+- [ ] 0.1.1 换皮 — OpenMinis 1.13 as nanoMuse: icon, name, brand colours, About / feedback / update source, GPL notices, one signing key
+- [ ] 0.1.2 有名字有脸 — a name and a face, an onboarding, BYOK only
+- [ ] 0.1.3 国内的日常 — 飞书, 腾讯会议, 高德, 快递100, 12306 without a screen; the screen last
+- [ ] 0.1.4 关键处先问你 — approvals with scope; the four-rung ladder
+- [ ] 0.1.5 Muse 的形状 — chat, feed, goals, library
+- [ ] 0.1.6 → 0.2.0 记得你 — memory, the feed, files; first beta
+
+Done in the Python line before the switch (tag `pre-openminis`): the agent, the Sentinel, the vault and the sandbox; the web app; skills and MCP; 飞书 / 腾讯会议 / 高德 / 快递100 / 12306 without a screen; the phone operator on the simulated phone, with traces.
 
 **Phase 2 — the web, on a cloud VM**
 
@@ -335,4 +340,4 @@ nanoMuse is an independent community project. It is not affiliated with, endorse
 
 ## License
 
-[MIT](https://github.com/nano-muse/nanoMuse/blob/main/LICENSE)
+[GPL-3.0-or-later](https://github.com/nano-muse/nanoMuse/blob/main/LICENSE). The Android app is based on [OpenMinis](https://github.com/OpenMinis/OpenMinis) 1.13 (GPL-3.0), modified since 2026-09-24; see [NOTICE](https://github.com/nano-muse/nanoMuse/blob/main/NOTICE) and [THIRD_PARTY_NOTICES.md](https://github.com/nano-muse/nanoMuse/blob/main/THIRD_PARTY_NOTICES.md). Earlier versions were released under MIT (tag `pre-openminis`).
