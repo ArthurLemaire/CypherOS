@@ -31,13 +31,34 @@ android {
     // Android 16 behavior changes; the Live Updates path is runtime-gated on
     // Build.VERSION.SDK_INT >= 36 (see DynamicIslandSupport / AgentForegroundService).
     compileSdk = 36
+    // nanoMuse: pin the NDK this repository is built and released with (r27c);
+    // deps/build_proot.sh uses the same one through ANDROID_NDK_HOME.
+    ndkVersion = "27.2.12479018"
+
+    // nanoMuse: release builds are signed with the project key when
+    // android/keystore.properties exists (storeFile / storePassword / keyAlias /
+    // keyPassword; git-ignored) and fall back to the debug key otherwise, so a
+    // release APK can be built by anyone. One key for every version.
+    signingConfigs {
+        val keystoreProperties = rootProject.file("../../keystore.properties")
+        if (keystoreProperties.isFile) {
+            val props = Properties()
+            keystoreProperties.inputStream().use { props.load(it) }
+            create("nanomuse") {
+                storeFile = file(props.getProperty("storeFile"))
+                storePassword = props.getProperty("storePassword")
+                keyAlias = props.getProperty("keyAlias")
+                keyPassword = props.getProperty("keyPassword")
+            }
+        }
+    }
 
     defaultConfig {
-        applicationId = "com.openminis.app"
+        applicationId = "io.github.nanomuse.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 25
-        versionName = "1.13"
+        versionCode = 2
+        versionName = "0.1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -75,7 +96,8 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("debug")
+            // nanoMuse: project key if present, debug key otherwise (see signingConfigs).
+            signingConfig = signingConfigs.findByName("nanomuse") ?: signingConfigs.getByName("debug")
         }
     }
 

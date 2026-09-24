@@ -112,7 +112,7 @@ class ClipboardOffloadHandler(private val context: Context) : NativeOffloadHandl
         if (!isAppForeground() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             return backgroundError(args)
         }
-        val label = args.get("label") ?: "Minis"
+        val label = args.get("label") ?: "nanoMuse"
         cm.setPrimaryClip(ClipData.newPlainText(label, text))
         return NativeOffloadResult(
             0,
@@ -199,7 +199,7 @@ class ClipboardOffloadHandler(private val context: Context) : NativeOffloadHandl
         1,
         OffloadOutput.formatBody(
             JSONObject().put("error", "clipboard_requires_foreground")
-                .put("message", "Android 10+ blocks clipboard access when the app is not in the foreground. Ask the user to bring Minis to the foreground and retry.")
+                .put("message", "Android 10+ blocks clipboard access when the app is not in the foreground. Ask the user to bring nanoMuse to the foreground and retry.")
                 .toString(),
             args,
         ) + "\n",
@@ -227,7 +227,7 @@ COMMANDS:
 
 OPTIONS:
   --text <value>       Text to write (for `set`)
-  --label <name>       Optional ClipData label (default: Minis)
+  --label <name>       Optional ClipData label (default: nanoMuse)
   --help, -h           Show this help message
   --compact            Minimize JSON output
   -q, --quiet          Output only data field

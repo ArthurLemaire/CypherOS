@@ -70,29 +70,29 @@ val LightChatPalette = ChatPalette(
     secondaryText = Color(0x993C3C43),
     tertiaryText = Color(0x4D3C3C43),
     disabledText = Color(0x2E3C3C43),
-    userBubble = Color(0x1E787880),
+    userBubble = Color(0xFFE5F0FF),
     toolBg = Color(0xFFF2F2F7),
     toolBorder = Color(0x14000000),
     toolCapsuleBg = Color(0xFFF2F2F7),
     separator = Color(0x4D3C3C43),
-    sendButton = Color(0xFF000000),
+    sendButton = Color(0xFF015CFB),
     sendButtonDisabled = Color(0x2E3C3C43),
     codeBlockBg = Color(0xFF000000),
-    codeBlockText = Color(0xFF34C759),
+    codeBlockText = Color(0xFFE5E5EA),
     inlineCodeBg = Color(0xFFF2F2F7),
-    inlineCodeText = Color(0xFFFF9500),
-    link = Color(0xFF007AFF),
-    blockquoteBar = Color(0x80FF9500),
-    thinking = Color(0xFF007AFF),
+    inlineCodeText = Color(0xFF015CFB),
+    link = Color(0xFF015CFB),
+    blockquoteBar = Color(0x80015CFB),
+    thinking = Color(0xFF015CFB),
     warningBg = Color(0x14FF9500),
     warningText = Color(0x73000000),
     tableBorder = Color(0x1F000000),
     inputShadow = Color.Transparent,
-    toastBg = Color(0x2E007AFF),
+    toastBg = Color(0x2E015CFB),
     thumbnailBorder = Color(0x33808080),
     sheetHeaderBg = Color(0xFFFFFFFF),
     sheetHeaderBorder = Color(0x1A000000),
-    fabAccent = Color(0xFFB7AF96),
+    fabAccent = Color(0xFF015CFB),
 )
 
 // T153: Android-specific dark palette tweaks. iOS borrows the system
@@ -122,15 +122,15 @@ val DarkChatPalette = ChatPalette(
     // wash" failure the palette header warns about. Use an OPAQUE cool slate-blue
     // so the user's own messages read as a distinct accent; white primaryText
     // stays legible on it.
-    userBubble = Color(0xFF2F3A5C),
+    userBubble = Color(0xFF1A2B4A),
     toolBg = Color(0xFF3A3A3F),
     toolBorder = Color(0x40545458),
     toolCapsuleBg = Color(0xFF28282C),
     separator = Color(0x99545458),
-    sendButton = Color(0xFFFFFFFF),
+    sendButton = Color(0xFF58A6FF),
     sendButtonDisabled = Color(0x2EEBEBF5),
     codeBlockBg = Color(0xFF262626),
-    codeBlockText = Color(0xFF8CF38C),
+    codeBlockText = Color(0xFFE5E5EA),
     // [T-inline-code-dark-bg-android] Lifted into the T153 ramp — the old
     // #1C1C1E chip was invisible on the #000 chat background (the comment
     // block above explains why non-background layers need the ~6-10% lift;
@@ -138,19 +138,19 @@ val DarkChatPalette = ChatPalette(
     // toolBg (#3A3A3F), clearly above codeBlockBg (#262626) so small inline
     // chips read against both the wash and fenced blocks.
     inlineCodeBg = Color(0xFF34343A),
-    inlineCodeText = Color(0xFFFF9F0A),
-    link = Color(0xFF0A84FF),
-    blockquoteBar = Color(0x80FF9F0A),
-    thinking = Color(0xFF0A84FF),
+    inlineCodeText = Color(0xFF58A6FF),
+    link = Color(0xFF58A6FF),
+    blockquoteBar = Color(0x8058A6FF),
+    thinking = Color(0xFF58A6FF),
     warningBg = Color(0x14FF9F0A),
     warningText = Color(0x73FFFFFF),
     tableBorder = Color(0xFF38383A),
     inputShadow = Color(0x80000000),
-    toastBg = Color(0x2E0A84FF),
+    toastBg = Color(0x2E58A6FF),
     thumbnailBorder = Color(0x20545458),
     sheetHeaderBg = Color(0xFF2C2C2E),
     sheetHeaderBorder = Color(0x33FFFFFF),
-    fabAccent = Color(0xFF504C42),
+    fabAccent = Color(0xFF58A6FF),
 )
 
 val LocalChatPalette = compositionLocalOf { LightChatPalette }

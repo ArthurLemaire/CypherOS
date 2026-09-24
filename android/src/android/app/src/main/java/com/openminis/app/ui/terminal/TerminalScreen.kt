@@ -74,7 +74,7 @@ private val TerminalFg = Color(0xFFD4D4D4)
 private val TerminalGreen = Color(0xFF34C759)
 private val AccessoryBg = Color(0xFF1F1F1F)
 private val AccButtonBg = Color(0xFF404040)
-private val AccButtonActive = Color(0xFF007AFF)
+private val AccButtonActive = Color(0xFF015CFB)
 private val TopButtonBg = Color(0xFF2C2C2E)
 
 @Composable

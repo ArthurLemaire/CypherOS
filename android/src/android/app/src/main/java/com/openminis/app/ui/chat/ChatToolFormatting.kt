@@ -53,9 +53,9 @@ internal fun formatStepDuration(seconds: Long, stillRunning: Boolean): String {
 internal fun toolAccentColor(toolName: String): Color = when (toolName) {
     "shell_execute" -> Color(0xFF34C759)
     "file_read" -> Color(0xFF32ADE6)
-    "file_write" -> Color(0xFF007AFF)
+    "file_write" -> Color(0xFF015CFB)
     "file_edit" -> Color(0xFFFF9500)
-    "browser_use" -> Color(0xFF007AFF)
+    "browser_use" -> Color(0xFF015CFB)
     "read_image" -> Color(0xFFAF52DE)
     "memory_write", "memory_get" -> Color(0xFFFF2D55)
     "web_search" -> Color(0xFF32ADE6)    // iOS: .cyan for search
@@ -75,7 +75,7 @@ internal fun toolIconFor(toolName: String) = when (toolName) {
     else -> Icons.Default.Build
 }
 
-// Helper: tool display name for "Minis is using X"
+// Helper: tool display name for "nanoMuse is using X"
 internal fun toolDisplayName(toolName: String): String = when (toolName) {
     "shell_execute" -> "terminal"
     "file_read" -> "file reader"
@@ -90,19 +90,19 @@ internal fun toolDisplayName(toolName: String): String = when (toolName) {
 }
 
 /**
- * Full "Minis is …" label shown in the tool detail sheet's bottom bar.
+ * Full "nanoMuse is …" label shown in the tool detail sheet's bottom bar.
  * Mirrors iOS ToolLiveSheet.toolTitle so the wording matches per tool.
  */
 internal fun toolTitleLabel(toolName: String): String = when (toolName) {
-    "shell_execute" -> "Minis is using Shell"
-    "file_read" -> "Minis is reading File"
-    "file_write" -> "Minis is using Editor"
-    "file_edit" -> "Minis is editing File"
-    "browser_use" -> "Minis is using Browser"
-    "read_image" -> "Minis is reading Image"
-    "memory_write", "memory_get" -> "Minis is using Memory"
-    "web_search" -> "Minis is using Search"
-    else -> "Minis is using ${toolDisplayName(toolName)}"
+    "shell_execute" -> "nanoMuse is using Shell"
+    "file_read" -> "nanoMuse is reading File"
+    "file_write" -> "nanoMuse is using Editor"
+    "file_edit" -> "nanoMuse is editing File"
+    "browser_use" -> "nanoMuse is using Browser"
+    "read_image" -> "nanoMuse is reading Image"
+    "memory_write", "memory_get" -> "nanoMuse is using Memory"
+    "web_search" -> "nanoMuse is using Search"
+    else -> "nanoMuse is using ${toolDisplayName(toolName)}"
 }
 
 // Helper: format duration (iOS: < 1s → "0.1s", < 60s → "45s", >= 60s → "2m 10s")

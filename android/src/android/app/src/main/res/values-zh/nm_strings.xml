@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- nanoMuse: 在上游之外新增的字符串，单独成文件，上游同步不会碰到。 -->
+<resources>
+    <string name="nm_about_build">这个版本</string>
+    <string name="nm_about_license">许可证</string>
+    <string name="nm_about_upstream">基于 OpenMinis 1.13</string>
+    <string name="nm_about_upstream_detail">GPL-3.0 · 自 2026-09-24 起修改 · 源码在 GitHub</string>
+    <string name="nm_about_trademark">与 Meta 无关</string>
+    <string name="nm_about_trademark_detail">Muse 是 Meta Platforms, Inc. 的商标。nanoMuse 是独立的自由软件项目。</string>
+</resources>

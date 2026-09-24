@@ -1,5 +1,5 @@
-name: Bug report
-description: Something does not work the way the docs say it does.
+name: Bug report (Python line)
+description: Something in the Python package, the web app or the showcase does not work the way the docs say it does.
 labels: ["bug"]
 body:
   - type: markdown

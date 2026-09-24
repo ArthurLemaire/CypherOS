@@ -2,6 +2,22 @@
 
 All notable changes to nanoMuse. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/). Unreleased changes are on `main`.
 
+## [0.1.1] - 2026-09-25 · alpha · 换皮
+
+The first version of the Android line: [OpenMinis](https://github.com/OpenMinis/OpenMinis) 1.13 as nanoMuse, functionally identical to upstream. Pre-release; arm64 APK signed with the project key that every later version will use.
+
+### Changed
+
+- **The app is OpenMinis 1.13, imported with `git subtree` under `android/`** (unsquashed, 38 upstream commits in the history). The iOS half, the iSH submodule and iOS-only scripts are removed; `deps/proot` is a submodule pointing at our fork [nano-muse/proot](https://github.com/nano-muse/proot), whose `loader-info.awk` no longer needs gawk.
+- **Identity**: application id `io.github.nanomuse.app` (the Kotlin package stays `com.openminis.app` for upstream merges), name nanoMuse in all 17 locales and in every user-facing string, the agent's default name and 🐾 header, the one-stroke N as adaptive launcher icon (white tile, brand gradient; a dark skin; Android 13 themed-icon layer; a flat status-bar mark for notifications), the brand blue `#015CFB` / `#58A6FF` instead of iOS blue and the teal Material scheme, one accent hue in chat (links, thinking, inline code, blockquotes, the send button, the user bubble).
+- **Where things point**: update check on `nano-muse/nanoMuse` releases; About shows the licence, "Based on OpenMinis 1.13" and the Meta trademark note; Feedback opens a pre-filled GitHub issue form; the privacy policy is [docs/privacy.md](docs/privacy.md). The Telegram group and the mailbox are gone.
+- **Licence**: the repository is GPL-3.0-or-later ([NOTICE](NOTICE), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)); contributions need a DCO sign-off.
+- **Build**: `scripts/rebrand.py` and `scripts/gen-android-icons.py` are idempotent and re-run after every upstream pull; `scripts/android/build-natives.sh` builds proot, the Alpine root file system and `rclone.aar`; `scripts/release-apk.sh <version>` builds, signs (`android/keystore.properties`, debug key otherwise), names and publishes. JDK 21, SDK CMake 3.22.1, NDK r27c, Go 1.26.
+
+### Frozen
+
+- The Python line (`nanomuse/`, `web/`, `demo/`, `site/`) at tag `pre-openminis`, the base of the web and desktop phases. Its unreleased changes below stay as the record of what it does.
+
 ## [Unreleased]
 
 The first release: an open-source personal AI agent inspired by Meta's Muse. One agent that does the work while a Sentinel decides what may run; it reaches a service through its API, an MCP server, a command-line tool, a browser or — with the *Phone* switch on — the screen of the app on your phone. This release is the first phase of the plan: the phone, with the agent on your own machine and no cloud VM; the web on a per-user VM and the desktop come after ([docs/roadmap.md](docs/roadmap.md)).

@@ -109,9 +109,9 @@ class ContactsOffloadHandler(private val context: Context) : NativeOffloadHandle
                         id = if (needsWrite) "CONTACTS_RW" else Manifest.permission.READ_CONTACTS,
                         title = "Contacts permission needed",
                         message = if (needsWrite) {
-                            "Minis needs read + write contacts permission to delete entries. Open Settings to allow it."
+                            "nanoMuse needs read + write contacts permission to delete entries. Open Settings to allow it."
                         } else {
-                            "Minis needs contacts permission to read your address book. Open Settings to allow it."
+                            "nanoMuse needs contacts permission to read your address book. Open Settings to allow it."
                         },
                         settingsAction = android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                         requiresPackageUri = true,

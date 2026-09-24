@@ -149,7 +149,7 @@ object SessionActivityTracker {
      * [T-android-overlay-reply-status-34599] Truncated excerpt of the
      * most recent assistant reply for the currently-tracked session.
      * Published by ChatViewModel via [publishLastReply] right before
-     * [setInactive] so the overlay can show "what did Minis just say".
+     * [setInactive] so the overlay can show "what did nanoMuse just say".
      * Null when no reply has been observed yet this session-cycle;
      * cleared when a fresh session goes active (so the previous
      * session's reply doesn't bleed into a newly-started turn).

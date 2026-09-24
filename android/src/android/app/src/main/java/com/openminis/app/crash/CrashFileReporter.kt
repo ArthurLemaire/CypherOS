@@ -32,7 +32,7 @@ class CrashFileSender : ReportSender {
         val out = File(dir, "crash-$stamp.log")
 
         val body = buildString {
-            appendLine("=== Minis Java/Kotlin Crash ===")
+            appendLine("=== nanoMuse Java/Kotlin Crash ===")
             appendLine("Time: $stamp")
             appendLine("Version: ${errorContent.getString(ReportField.APP_VERSION_NAME)} " +
                 "(${errorContent.getString(ReportField.APP_VERSION_CODE)})")
