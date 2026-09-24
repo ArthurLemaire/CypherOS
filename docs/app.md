@@ -94,6 +94,10 @@ Push needs a secure context: `https://` or `localhost`. Over plain `http://` on 
 
 Non-secret choices made in Connections are stored in `<data_dir>/app-settings.json` and layered over `config.toml` on every start — for the CLI too — so a phone-only setup never needs a file edited. Secrets are only ever referenced from there as `{{vault:NAME}}`.
 
+### Opening the app on something
+
+The page takes a few query parameters, which the Android app uses and a bookmark can too: `?thread=<id>` opens a conversation, `?tab=goals` (feed, ideas, library, connections) a tab; `&draft=<text>` puts text in the composer without sending it; `&attach=<json>` — the JSON list of `{path, name, mime, size}` that `POST /api/files/upload` returned — adds files already in the workspace as attachment chips. They are read once and removed from the address bar. This is how **Share → nanoMuse** works on the phone: the app uploads the shared files (`POST /api/files/upload`), starts a thread (`POST /api/threads`) named after the subject or the first file, and opens it with the text as a draft and the files attached, waiting for what to do with them. On the phone the agent also has the phone's own capabilities as tools and the workspace appears in the Files app — [device.md](device.md).
+
 ## Background work
 
 Meta Muse "does things on its own, but not too much". The *Proactivity* dial in Settings sets how much:

@@ -12,6 +12,7 @@ import { api, AuthError, connectWs, getToken } from "./api";
 import { registerWorker, setAppBadge } from "./push";
 import type {
   ApprovalEvent,
+  AttachmentInfo,
   Goal,
   Profile,
   SettingsView,
@@ -64,6 +65,8 @@ export interface AppState {
   viewer: string | null;
   /** Text to put in the chat composer next time it shows (e.g. "/weekly-review "). */
   draft: string | null;
+  /** attachments handed over from outside (the phone's share sheet), already uploaded */
+  draftFiles: AttachmentInfo[] | null;
   /** Bumps when a connection (model, email, browser, MCP) changes on the server. */
   connectionsVersion: number;
   /** Bumps when a skill is added, changed, switched or removed on the server. */
@@ -92,6 +95,7 @@ type Action =
   | { type: "feedSeen"; at: string }
   | { type: "viewer"; path: string | null }
   | { type: "draft"; text: string | null }
+  | { type: "draftFiles"; files: AttachmentInfo[] | null }
   | { type: "onboardingDismissed" }
   | { type: "toast"; toast: string | null };
 
@@ -119,6 +123,7 @@ const initial: AppState = {
   feedSeenAt: localStorage.getItem(FEED_SEEN_KEY) ?? "",
   viewer: null,
   draft: null,
+  draftFiles: null,
   connectionsVersion: 0,
   skillsVersion: 0,
   onboardingDismissed: false,
@@ -212,6 +217,8 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, viewer: action.path };
     case "draft":
       return { ...state, draft: action.text };
+    case "draftFiles":
+      return { ...state, draftFiles: action.files };
     case "onboardingDismissed":
       return { ...state, onboardingDismissed: true };
     case "toast":
@@ -355,6 +362,7 @@ interface StoreValue {
   openFile: (path: string | null) => void;
   /** Put text in the chat composer and switch to the chat (a skill's "Use", for one). */
   draft: (text: string | null) => void;
+  draftFiles: (files: AttachmentInfo[] | null) => void;
   dismissOnboarding: () => void;
   toast: (text: string) => void;
 }
@@ -434,6 +442,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     void registerWorker();
     // `?thread=<id>` opens a chat, `?tab=goals` (feed, ideas, library, connections) a tab —
     // used by notification taps and by links into the app.
+    // `?draft=<text>&attach=<json>` puts text and already-uploaded files into the composer
+    // without sending — how "Share to nanoMuse" from another app on the phone arrives.
     const openFromUrl = (href: string) => {
       const url = new URL(href, window.location.origin);
       const thread = url.searchParams.get("thread");
@@ -441,12 +451,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (thread) dispatch({ type: "activeThread", thread });
       if (tab && TAB_NAMES.includes(tab as Tab) && !thread) dispatch({ type: "tab", tab: tab as Tab });
       else dispatch({ type: "tab", tab: "chat" });
+      const text = url.searchParams.get("draft");
+      if (text) dispatch({ type: "draft", text });
+      const attach = url.searchParams.get("attach");
+      if (attach) {
+        try {
+          const files = JSON.parse(attach) as AttachmentInfo[];
+          if (Array.isArray(files) && files.length) dispatch({ type: "draftFiles", files: files.filter((f) => f && typeof f.path === "string") });
+        } catch {
+          /* not ours */
+        }
+      }
     };
     const initial = new URL(window.location.href);
-    if (initial.searchParams.get("thread") || initial.searchParams.get("tab")) {
+    if (["thread", "tab", "draft", "attach"].some((k) => initial.searchParams.has(k))) {
       openFromUrl(initial.href);
-      initial.searchParams.delete("thread");
-      initial.searchParams.delete("tab");
+      for (const k of ["thread", "tab", "draft", "attach"]) initial.searchParams.delete(k);
       window.history.replaceState({}, "", initial.toString());
     }
     const onMessage = (ev: MessageEvent) => {
@@ -484,6 +504,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       openThread: (thread) => dispatch({ type: "activeThread", thread }),
       markFeedSeen: (at) => dispatch({ type: "feedSeen", at }),
       openFile: (path) => dispatch({ type: "viewer", path }),
+      draftFiles: (files) => dispatch({ type: "draftFiles", files }),
       draft: (text) => {
         dispatch({ type: "draft", text });
         if (text !== null) dispatch({ type: "tab", tab: "chat" });

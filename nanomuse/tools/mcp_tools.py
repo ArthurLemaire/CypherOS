@@ -11,6 +11,8 @@ Configure in ``config.toml``::
     [[mcp.servers]]
     name = "remote"
     url = "http://localhost:8000/mcp"   # streamable HTTP (or SSE)
+    [mcp.servers.tools.delete_file]     # one tool stricter than its server
+    risk = "sensitive"
 
 Compatible with mcp 1.x and 2.x.
 """
@@ -124,13 +126,18 @@ class MCPManager:
                     "type": "object",
                     "properties": {},
                 }
+                policy = cfg.tools.get(t.name)
                 tool = MCPTool(
                     name=_safe_name(cfg.name, t.name),
                     description=(t.description or f"{t.name} (from MCP server {cfg.name})")[:1000],
                     parameters=schema,
-                    risk=cfg.risk,
-                    egress=cfg.egress,
-                    reads_private_data=cfg.reads_private_data,
+                    risk=policy.risk if policy and policy.risk is not None else cfg.risk,
+                    egress=policy.egress if policy and policy.egress is not None else cfg.egress,
+                    reads_private_data=(
+                        policy.reads_private_data
+                        if policy and policy.reads_private_data is not None
+                        else cfg.reads_private_data
+                    ),
                     session=session,
                     server=cfg.name,
                     original_name=t.name,

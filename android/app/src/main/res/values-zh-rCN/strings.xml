@@ -62,4 +62,20 @@
     <string name="takeover_done">完成</string>
     <string name="takeover_open_external">用系统浏览器打开</string>
     <string name="takeover_nothing">智能体现在没有打开的页面。</string>
+    <!-- the phone's capabilities as tools -->
+    <string name="ask_permission_title">%1$s 需要一项权限</string>
+    <string name="ask_why_calendar">用于读取或添加日程。点击允许。</string>
+    <string name="ask_why_contacts">用于在通讯录中查找联系人。点击允许。</string>
+    <string name="ask_why_location">用于获取你的位置。点击允许。</string>
+    <string name="ask_why_notify">用于在后台向你发通知。点击允许。</string>
+    <string name="ask_clipboard_title">%1$s 想读取剪贴板</string>
+    <string name="ask_clipboard_body">Android 只允许屏幕上的应用读取剪贴板。点击即可让它读取你复制的内容。</string>
+    <string name="ask_photos_title">%1$s 想要一张照片</string>
+    <string name="ask_photos_body">点击选择。只有你选中的会被共享。</string>
+    <string name="device_alarm_tap">点击设置 %1$s 的闹钟</string>
+    <string name="device_timer_tap">点击开始 %1$s 的计时器</string>
+    <string name="device_tap_body">%1$s 在后台无法直接打开时钟应用；点一下即可。</string>
+    <string name="documents_summary">它做出的东西，以及给它的文件</string>
+    <string name="documents_root">工作区</string>
+    <string name="share_failed">无法分享：%1$s</string>
 </resources>

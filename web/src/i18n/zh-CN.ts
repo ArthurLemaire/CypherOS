@@ -906,6 +906,8 @@ const zhCN: Record<string, string> = {
   "Hide key": "隐藏密钥",
   "Actions {name} wants to take but cannot without you. Each one shows what will run and why; a permission you grant is bound to that exact tool and target.": "{name} 想执行但没有你就无法进行的操作。每一项都会显示将要运行什么以及原因；你授予的权限只绑定到那个具体的工具和目标。",
   "Forget every permission you granted? {name} will ask again next time.": "忘掉你授予的所有权限？下次 {name} 会重新询问。",
+  "This phone": "这台手机",
+  "clipboard, notifications, calendar, contacts, location, alarms, photos": "剪贴板、通知、日历、通讯录、位置、闹钟、照片",
 };
 
 export default zhCN;

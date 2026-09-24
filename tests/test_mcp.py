@@ -34,6 +34,34 @@ async def test_mcp_tools_are_exposed_and_callable():
         await manager.close()
 
 
+async def test_per_tool_policy_overrides_the_servers_defaults():
+    """`[mcp.servers.tools.<name>]` makes one tool stricter (or looser) than its server;
+    a field left out keeps the server's value."""
+    from nanomuse.config import MCPToolPolicy
+
+    manager = MCPManager(
+        [
+            MCPServerSettings(
+                name="echo",
+                command=sys.executable,
+                args=[str(SERVER)],
+                risk=RiskLevel.SAFE,
+                reads_private_data=True,
+                tools={"add": MCPToolPolicy(risk=RiskLevel.SENSITIVE, reads_private_data=False)},
+            )
+        ]
+    )
+    try:
+        tools = {t.name: t for t in await manager.connect()}
+        assert tools["echo__add"].risk == RiskLevel.SENSITIVE
+        assert tools["echo__add"].reads_private_data is False
+        assert tools["echo__add"].egress is False  # not set: the server's
+        assert tools["echo__echo"].risk == RiskLevel.SAFE
+        assert tools["echo__echo"].reads_private_data is True
+    finally:
+        await manager.close()
+
+
 async def test_unavailable_server_is_skipped():
     manager = MCPManager([MCPServerSettings(name="nope", command="definitely-not-a-command-xyz")])
     try:

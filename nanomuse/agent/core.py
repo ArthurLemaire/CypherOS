@@ -144,6 +144,17 @@ class MuseAgent:
                 status += f" Apps on it: {apps}."
         return prompts.PHONE_SECTION.format(status=status)
 
+    def device_section(self) -> str:
+        """The phone this runs on, when its capabilities are there as `device__*` tools."""
+        from nanomuse.runtime import DEVICE_PREFIX
+
+        names = sorted(
+            t.name[len(DEVICE_PREFIX) :] for t in self.tools if t.name.startswith(DEVICE_PREFIX)
+        )
+        if not names:
+            return ""
+        return prompts.DEVICE_SECTION.format(tools=", ".join(names))
+
     def contacts_note(self) -> str:
         """One line on the address book, when there is one (the tool does the looking up)."""
         book = self.contacts
@@ -239,7 +250,11 @@ class MuseAgent:
             tool_names=", ".join(t.name for t in self.tools),
             user_profile=profile,
             memories=memories,
-            goals=goals + calendar + self.phone_section() + self.skills_section(),
+            goals=goals
+            + calendar
+            + self.device_section()
+            + self.phone_section()
+            + self.skills_section(),
             extra=extra,
         )
 

@@ -101,14 +101,19 @@ def device_main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         prog="nanomuse-device",
         description="The phone's capabilities, from a command the agent runs: "
-        "`nanomuse-device CAPABILITY ACTION [key=value ...]`, e.g. `clipboard read`, "
-        "`alarm set time=07:30 label=Train`. `nanomuse-device list` shows what this phone has.",
+        "`nanomuse-device CAPABILITY [ACTION] [key=value ...]`, e.g. `clipboard read`, "
+        "`alarm set hour=7 minute=30 message=Train`, `notify title=Done body='Booked.'`. "
+        "`nanomuse-device list` shows what this phone has.",
     )
     p.add_argument(
         "capability",
-        help="clipboard, calendar, alarm, contacts, location, notifications, photos … or `list`",
+        help="clipboard, calendar, alarm, timer, contacts, location, notify, photo … or `list`",
     )
-    p.add_argument("action", nargs="?", help="read, write, list, set, search, …")
+    p.add_argument(
+        "action",
+        nargs="?",
+        help="read, write, list, create, set, search, pick … (none for notify, location, calendars)",
+    )
     p.add_argument("pairs", nargs="*", metavar="key=value")
     p.add_argument("--json", action="store_true", help="print the raw result as JSON")
     ns = p.parse_args(argv)
@@ -127,9 +132,13 @@ def device_main(argv: list[str] | None = None) -> int:
         for t in tools:
             print(f"{t['name'].replace('_', ' ', 1):<28} {t.get('description', '')}")
         return 0
-    if ns.action is None:
-        p.error("an action is needed, e.g. `nanomuse-device clipboard read`")
-    body = {"tool": f"{ns.capability}_{ns.action}", "args": parse_pairs(ns.pairs)}
+    pairs = list(ns.pairs)
+    action = ns.action
+    if action is not None and "=" in action:  # `nanomuse-device notify title=…`: no action word
+        pairs.insert(0, action)
+        action = None
+    tool = ns.capability if action is None else f"{ns.capability}_{action}"
+    body = {"tool": tool, "args": parse_pairs(pairs)}
     return _print(client.post("device", body), ns.json)
 
 

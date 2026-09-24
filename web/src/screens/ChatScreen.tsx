@@ -448,16 +448,31 @@ function Composer({
   waiting: boolean;
   onSend: (text: string, files: string[]) => void;
 }) {
-  const { state, draft, toast } = useStore();
+  const { state, draft, draftFiles, toast } = useStore();
   const [text, setText] = useState("");
   const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [pending, setPending] = useState<Pending[]>([]);
+
+  // files shared from another app on the phone: uploaded already, they only need chips
+  useEffect(() => {
+    if (!state.draftFiles) return;
+    const items: Pending[] = state.draftFiles.map((info) => ({
+      key: `shared-${info.path}`,
+      file: new File([], info.name),
+      preview: info.kind === "image" ? fileUrl(info.path) : null,
+      info,
+      error: null,
+    }));
+    setPending((cur) => [...cur.filter((p) => !items.some((i) => i.key === p.key)), ...items].slice(0, 10));
+    draftFiles(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.draftFiles]);
   const ref = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const t = useT();
 
   // previews are object URLs; let them go when the chip goes
-  useEffect(() => () => pending.forEach((p) => p.preview && URL.revokeObjectURL(p.preview)), [pending]);
+  useEffect(() => () => pending.forEach((p) => p.preview?.startsWith("blob:") && URL.revokeObjectURL(p.preview)), [pending]);
 
   const addFiles = (list: FileList | File[]) => {
     const files = Array.from(list).slice(0, Math.max(0, 10 - pending.length));
@@ -559,7 +574,7 @@ function Composer({
                   <span className="rounded-xl bg-accent/12 p-1.5 text-accent">{chipKind(p.file.name) === "data" ? <Table2 size={16} /> : <FileText size={16} />}</span>
                   <span className="min-w-0">
                     <span className="block truncate text-[12.5px] font-medium">{p.file.name}</span>
-                    <span className="block text-[11px] text-muted">{p.error ? t("Upload failed") : fileSize(p.file.size)}</span>
+                    <span className="block text-[11px] text-muted">{p.error ? t("Upload failed") : fileSize(p.info?.size ?? p.file.size)}</span>
                   </span>
                 </div>
               )}

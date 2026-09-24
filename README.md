@@ -128,7 +128,9 @@ The first screen asks where your nanoMuse should live:
 What the app adds over the browser tab:
 
 - notifications while the app is closed: approvals, questions and the last word of background work, each opening the right chat
-- the agent's shell can use the phone: `nanomuse-device`, `nanomuse-browser` and `nanomuse-open` inside the sandbox reach the clipboard, calendar, alarms, the in-app browser — under the same Sentinel
+- the phone's own capabilities as tools: clipboard, notifications, calendar, contacts, location, alarms and timers, photos through the system picker — every permission is Android's own dialog, each tool has its own Sentinel default ([docs/device.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/device.md))
+- the agent's shell can use the phone too: `nanomuse-device`, `nanomuse-browser` and `nanomuse-open` inside the sandbox reach the same tools and the in-app browser — under the same Sentinel
+- the workspace in the Files app, and **Share → nanoMuse** from any app to start a conversation about a text, a link or a file
 - the phone's own browser: the agent browses in the app's WebView, at full speed in the background, and *Take over* hands you the real page to sign in on — then **Done** and it continues ([docs/browser.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/browser.md))
 - connect by QR code, plain `http://` on the LAN
 - the file picker for attachments, downloads to the phone, links in the real browser

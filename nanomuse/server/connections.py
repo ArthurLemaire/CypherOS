@@ -293,9 +293,11 @@ class Connections:
                     "tools": live_tools.get(m.name, 0),
                     "connected": m.name in live_tools,
                     "from_app": m.name in app_mcp,
+                    "builtin": False,
                 }
                 for m in s.mcp.servers
-            ],
+            ]
+            + self._device_mcp_view(live_tools),
             "vault": self.vault.names(),
             "onboarded": bool(self.data.get("onboarded")),
         }
@@ -923,6 +925,28 @@ class Connections:
         return {"ok": True, "contacts": status["count"], "sources": len(status["sources"])}
 
     # ------------------------------------------------------------------ phone (GUI)
+    def _device_mcp_view(self, live_tools: dict[str, int]) -> list[dict[str, Any]]:
+        """On the phone, the app's own capabilities are an MCP server too (`device`), not
+        in the config file: shown with the others, without a remove button."""
+        from nanomuse.runtime import DEVICE_SERVER
+
+        dev = getattr(self.svc.app, "device", None)
+        if dev is None or not dev.has_host:
+            return []
+        return [
+            {
+                "name": DEVICE_SERVER,
+                "command": None,
+                "args": [],
+                "url": dev.host_url + "/mcp",
+                "risk": "moderate",
+                "tools": live_tools.get(DEVICE_SERVER, 0),
+                "connected": DEVICE_SERVER in live_tools,
+                "from_app": False,
+                "builtin": True,
+            }
+        ]
+
     def _gui_view(self) -> dict[str, Any]:
         gui = self.settings.gui
         key = gui.api_key

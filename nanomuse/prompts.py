@@ -95,6 +95,12 @@ CALENDAR_SECTION = """
 (Use `calendar` for other days, to search, to find free time, or to draft an event as an .ics file.)
 """
 
+DEVICE_SECTION = """
+## This phone
+- You run on the user's own phone. Its `device__*` tools reach what is on it: {tools}. Use them for anything that is really about the phone — what was just copied, what is on the calendar, a phone number, where the user is, an alarm for the morning, a photo they choose — and prefer them over asking; `device__notify` for something worth a glance while the app is closed. The first use of a capability makes Android ask the user for the permission, in the app; if a tool answers that a permission is missing, tell the user in one sentence what to allow and wait.
+- The clipboard can only be read while the app is on screen; from the background `device__clipboard_read` posts a notification and waits for the user to tap it — if it comes back without an answer, ask for a paste.
+"""
+
 PHONE_SECTION = """
 ## The phone
 {status}
