@@ -37,4 +37,100 @@
         <item>Juno</item>
         <item>Remy</item>
     </string-array>
+
+    <!-- Home: the four tabs (Muse's shape) -->
+    <string name="nm_tab_chat">Chat</string>
+    <string name="nm_tab_ideas">Ideas</string>
+    <string name="nm_tab_goals">Goals</string>
+    <string name="nm_tab_library">Library</string>
+    <string name="nm_more">More</string>
+    <string name="nm_open_drawer">Chats</string>
+
+    <!-- Home: the chats drawer -->
+    <string name="nm_drawer_main_chat">Main chat</string>
+    <string name="nm_drawer_side_chats">Side chats</string>
+    <string name="nm_drawer_all_chats">All chats</string>
+    <string name="nm_drawer_empty_title">Start a side chat</string>
+    <string name="nm_drawer_empty_body">Side chats are an optional way to keep conversations organised by topic.</string>
+    <string name="nm_drawer_search">Search</string>
+    <string name="nm_drawer_new_chat">New side chat</string>
+    <string name="nm_drawer_settings">Settings</string>
+    <string name="nm_drawer_untitled">New chat</string>
+    <string name="nm_drawer_set_main">Make this the main chat</string>
+
+    <!-- Goals tab -->
+    <string name="nm_goals_title">Goals</string>
+    <string name="nm_goals_tracking">Tracking</string>
+    <string name="nm_goals_tracking_empty">Nothing tracked yet</string>
+    <string name="nm_goals_routines">Routines</string>
+    <string name="nm_goals_routines_empty">Nothing scheduled yet. A routine is something I do for you at a set time, every day or on the days you pick.</string>
+    <string name="nm_goals_create">Create a goal</string>
+    <string name="nm_goals_create_body">Pick a category and tell me the goal you have in mind. I\'ll shape a plan with you and keep improving it as you go.</string>
+    <string name="nm_goal_cat_health">Health</string>
+    <string name="nm_goal_cat_relationships">Relationships</string>
+    <string name="nm_goal_cat_finance">Finance</string>
+    <string name="nm_goal_cat_career">Career</string>
+    <string name="nm_goal_cat_interests">Interests</string>
+    <string name="nm_goal_cat_productivity">Productivity</string>
+    <string name="nm_goal_cat_other">Other</string>
+    <string name="nm_goal_sheet_title">Create a %1$s goal</string>
+    <string name="nm_goal_sheet_body1">First, we\'ll shape the goal together in the chat. I\'ll ask a few questions so I understand exactly what you\'re after.</string>
+    <string name="nm_goal_sheet_body2">Once it\'s set, I\'ll track your progress here.</string>
+    <string name="nm_goal_sheet_go">Let\'s go</string>
+    <string name="nm_goal_create_message">I\'d like to create a %1$s goal.</string>
+    <string name="nm_goal_check_task_label">Goal check: %1$s</string>
+    <plurals name="nm_goal_every_hours">
+        <item quantity="one">Checks every hour</item>
+        <item quantity="other">Checks every %d hours</item>
+    </plurals>
+    <string name="nm_goal_daily_at">Checks daily at %1$s</string>
+    <string name="nm_goal_cadence_next">%1$s · next %2$s</string>
+    <string name="nm_goal_no_check_yet">First check in about a minute</string>
+    <string name="nm_goal_open_chat">Open conversation</string>
+    <string name="nm_goal_check_now">Check now</string>
+    <string name="nm_goal_pause">Pause checks</string>
+    <string name="nm_goal_resume">Resume checks</string>
+    <string name="nm_goal_delete">Delete goal</string>
+    <string name="nm_goal_delete_confirm">Delete this goal? Its conversation stays in your chats.</string>
+    <string name="nm_goal_status_paused">Paused</string>
+    <string name="nm_goal_status_done">Done</string>
+    <string name="nm_goal_card_created">Goal created</string>
+    <string name="nm_goal_card_open">See in Goals</string>
+    <string name="nm_goal_update_card_title">Goal update</string>
+    <string name="nm_goal_update_on_track">On track</string>
+    <string name="nm_goal_update_attention">Needs attention</string>
+
+    <!-- Routines (scheduled tasks) inside the Goals tab -->
+    <string name="nm_routine_new">New routine</string>
+    <string name="nm_routine_all">All routines</string>
+    <string name="nm_routine_edit">Edit</string>
+    <string name="nm_routine_runs">Run records</string>
+    <string name="nm_routine_run_now">Run now</string>
+    <string name="nm_routine_delete">Delete</string>
+    <string name="nm_routine_paused">Off</string>
+
+    <!-- Ideas tab -->
+    <string name="nm_ideas_title">Ideas</string>
+    <string name="nm_idea_kind_chat">Starts a conversation</string>
+    <string name="nm_idea_kind_routine">Creates a routine</string>
+    <string name="nm_idea_kind_goal">Creates a goal</string>
+    <string name="nm_idea_action_chat">Send to chat</string>
+    <string name="nm_idea_action_routine">Create routine</string>
+    <string name="nm_idea_action_goal">Start goal</string>
+    <string name="nm_idea_routine_created">Routine created — set the time and details.</string>
+
+    <!-- Library tab -->
+    <string name="nm_library_title">Library</string>
+    <string name="nm_library_artifacts">Artifacts</string>
+    <string name="nm_library_media">Media</string>
+    <string name="nm_library_empty_artifacts_title">Nothing created yet</string>
+    <string name="nm_library_empty_artifacts_body">Documents, tables and pages I write for you will show up here.</string>
+    <string name="nm_library_empty_media_title">No media yet</string>
+    <string name="nm_library_empty_media_body">Photos, screenshots and recordings I produce will show up here.</string>
+    <string name="nm_library_from_shared">Shared folder</string>
+    <string name="nm_library_share">Share</string>
+    <string name="nm_library_open_chat">Open conversation</string>
+    <string name="nm_library_menu_shared_folders">Shared folders</string>
+    <string name="nm_goal_check_prompt">Time to check on this goal: %1$s</string>
+    <string name="nm_goal_first_check">First time round: %1$s</string>
 </resources>

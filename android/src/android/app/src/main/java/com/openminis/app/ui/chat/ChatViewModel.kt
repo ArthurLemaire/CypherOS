@@ -3838,6 +3838,10 @@ class ChatViewModel(
         if (isDraft) {
             ChatViewModelStore.rename(sessionId, session.id)
             nmFirstConversation.rebind(fromDraft = sessionId, toReal = session.id) // nanoMuse
+            // nanoMuse: the home shell's main chat may have been this draft;
+            // prompt addenda (goal creation etc.) follow the id too.
+            io.github.nanomuse.home.MainChat.onPromoted(context, sessionId, session.id)
+            io.github.nanomuse.chat.SessionAddenda.rebind(sessionId, session.id)
             // Bring every disk/shell resource that was opened with the draft
             // id over to the real id *before* agent tools start running against
             // the persisted session — otherwise the first tool call (e.g.
@@ -6279,6 +6283,7 @@ class ChatViewModel(
                     fallbackProviders = fallbackProviders,
                     fallbackStrategy = fallbackStrategy,
                 )
+                nmAfterTurn() // nanoMuse: queued prompts complete turns too
             } catch (e: CancellationException) {
                 Log.d(TAG, "Agent loop (queued-drain) cancelled")
                 // Cancel mid-drain: cancelStream() will check _promptQueue
@@ -6358,8 +6363,15 @@ class ChatViewModel(
     }
 
     private fun nmAfterTurn() {
+        val sid = realSessionId.ifEmpty { sessionId }
+        // Goal blocks in the reply just finished, and the turn budget of any
+        // prompt addendum, are settled first — they apply to every session.
+        io.github.nanomuse.chat.SessionAddenda.onTurnFinished(sid)
+        _messages.value.lastOrNull { it.role == "assistant" }?.content?.let { text ->
+            io.github.nanomuse.goals.GoalFlow.afterTurn(context, sid, text)
+        }
         val fc = nmFirstConversation
-        if (!fc.isBoundTo(realSessionId.ifEmpty { sessionId })) return
+        if (!fc.isBoundTo(sid)) return
         fc.onTurnFinished()
         if (fc.phase == io.github.nanomuse.onboarding.Phase.ASK_AGENT_NAME) nmShowNamingCard()
     }
@@ -6986,6 +6998,7 @@ class ChatViewModel(
                             fallbackStrategy = activeFallbackStrategy,
                         )
                         AppLogger.info(TAG_STREAM, "retryLast runAgentLoop RETURN normal")
+                        nmAfterTurn() // nanoMuse
                         drainQueuedPrompts(provider, systemPrompt, fallbackProviders, activeFallbackStrategy)
                         AppLogger.info(TAG_STREAM, "retryLast drainQueuedPrompts RETURN")
                     } catch (e: CancellationException) {
@@ -10362,6 +10375,12 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
             if (nmFirstConversation.isBoundTo(realSessionId.ifEmpty { sessionId })) {
                 nmFirstConversation.promptAddendum()?.let { append("\n\n").append(it) }
             }
+            // nanoMuse: turn-limited addenda for this session (goal creation).
+            io.github.nanomuse.chat.SessionAddenda.forPrompt(realSessionId.ifEmpty { sessionId })
+                ?.let { append("\n\n").append(it) }
+            // nanoMuse: a goal's conversation carries the goal's context and reporting protocol.
+            io.github.nanomuse.goals.GoalFlow.systemAddendum(context, realSessionId.ifEmpty { sessionId })
+                ?.let { append("\n\n").append(it) }
         }
     }
 
@@ -11819,6 +11838,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
                             fallbackStrategy = activeFallbackStrategy,
                         )
                         AppLogger.info(TAG_STREAM, "resume runAgentLoop RETURN normal")
+                        nmAfterTurn() // nanoMuse
                         drainQueuedPrompts(provider, systemPrompt, fallbackProviders, activeFallbackStrategy)
                         AppLogger.info(TAG_STREAM, "resume drainQueuedPrompts RETURN")
                     } catch (e: CancellationException) {

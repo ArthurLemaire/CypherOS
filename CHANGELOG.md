@@ -2,6 +2,31 @@
 
 All notable changes to nanoMuse. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/). Unreleased changes are on `main`.
 
+## [0.1.3] - 2026-09-25 · alpha · Muse 的形状
+
+The app opens on a conversation, not a list. One main chat with the face at the top, side chats in a drawer, and a bottom bar with Ideas, Goals and Library — the shape of Muse on a phone. Everything OpenMinis had is still there; it is reached from these pages instead of the old session list.
+
+### Added
+
+- **Home.** In compact windows the start route renders `NanoMuseHome`: a four-tab shell (chat, ideas, goals, library) whose chat pane stays composed under the other tabs, so switching tabs keeps the scroll position, the composer draft and a running stream. Tablet and landscape widths keep OpenMinis' two-pane scaffold unchanged. Deep links and notifications still open a full-screen chat on top.
+- **Main chat.** The first session becomes the main chat and is remembered (`nanomuse` prefs); it is what the app opens on and what the chat tab returns to. Its header is Muse's: the face on a pale disc, the name pill hanging off its chin, a round menu button on the left and a round ⋯ on the right. Side chats get the compact header — title, menu, ⋯ — and take their title from the first exchange, as before.
+- **The drawer.** Agent name, "Main chat", the side-chat list with search, an archive glyph that opens the full session list (OpenMinis' `SessionListScreen`, now at `nanomuse/all_chats`, handing the pick back to Home), settings, compose. Long-press a side chat to make it the main chat.
+- **Goals.** A page with *Tracking* (goals with a checkbox, the latest note, cadence, next check and progress; ⋯ for open conversation / check now / pause / delete), *Routines* (OpenMinis' scheduled tasks — switch, schedule summary, run now, run records, editor, "All routines"), and *Create a goal* with seven categories. Creating one is a conversation: the sheet's "Let's go" sends an opener to the main chat with a two-turn system addendum; the model asks its questions and ends with a fenced ` ```nanomuse-goal ` block that the app turns into a goal card and a `goals.json` entry. Each goal gets its own session and a hidden interval `ScheduledTask` (`hidden`, `goalId`, `intervalMinutes` added to the model) that appends a one-line check to that session; the goal's context and the reporting protocol travel in that session's system prompt, and the model's ` ```nanomuse-goal-update ` block becomes a progress card and updates the row.
+- **Ideas.** Twenty-four starters in six sections from `assets/nanomuse/ideas.{zh,en}.json`: emoji, pitch, what it does, and a sheet with one primary action — send to chat, create a routine (prefilled scheduled task, editor opens), or start a goal in a category.
+- **Library.** *Artifacts* and *Media* segments listing what the agent wrote under `minis-sessions/*/workspace` and `minis-global/shared`, newest first, with type icons and image thumbnails, the conversation it came from, preview through OpenMinis' file preview, share via the file provider; ⋯ opens shared folders and the main chat's files.
+- `nanomuse-*` fenced blocks render as cards in both the streaming and the static Markdown renderers.
+
+### Changed
+
+- The first-conversation and goal hooks now also run after *retry*, *resume* and queued prompts, not only after a plain send.
+- The scheduled-task list hides goal checks; they are managed from the Goals page.
+- Muse neutrals for nanoMuse pages (`MuseTones`): white surfaces, a warm disc under the face, grey fills — OpenMinis' iOS-grouped scheme is left as it is for its own screens.
+- versionCode 4.
+
+### Kept, on purpose
+
+- Session list, scheduled tasks and their editor, shared folders, file browser and preview, terminal, model groups and every settings page are unchanged and reachable from the new pages.
+
 ## [0.1.2] - 2026-09-25 · alpha · 有名字有脸
 
 The agent gets a face and a name, and the first conversation is where you meet it — the shape of Muse's first run, on top of OpenMinis's setup cards, which are unchanged.

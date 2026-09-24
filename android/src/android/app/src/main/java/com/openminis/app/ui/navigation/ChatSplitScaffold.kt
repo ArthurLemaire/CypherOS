@@ -173,7 +173,7 @@ private const val KEY_LIST_COLLAPSED = "tablet_list_pane_collapsed"
  */
 @OptIn(ExperimentalMaterial3AdaptiveApi::class)
 @Composable
-private fun shouldUseTwoPane(): Boolean {
+internal fun shouldUseTwoPane(): Boolean { // nanoMuse: internal — AppNavigation picks HOME vs split on it
     val windowSizeClass = currentWindowAdaptiveInfo().windowSizeClass
     // Breakpoint predicates rather than the WindowWidthSizeClass/
     // WindowHeightSizeClass enums: those are deprecated ("will not be developed

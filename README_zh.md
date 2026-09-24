@@ -22,7 +22,7 @@
 
 🐾 **nanoMuse** 是一个受 Meta [Muse](https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/) 启发的开源个人 AI Agent。一个有名字、有脸、属于你的 Agent：替你做事而不只是回答问题，关掉 App 也继续干活，记得你，做任何不可撤销的事之前先问你。事情需要什么它就用什么——网页、文件和命令，MCP 服务器和命令行工具（飞书、高德），技能，以及在没有 API 的地方直接操作手机 App 的界面（12306、微信、支付宝）。任何 OpenAI 兼容模型都能跑。现在它是一个 Android App 加一个网页 App，由一个 Python 包在你自己的机器上提供，不依赖云端虚拟机；之后是每人一台云端 VM 的网页版，再之后是桌面版（[路线图](#路线图)）。
 
-> **项目现在在哪（2026-09-24 起）。** App 改为基于 [OpenMinis](https://github.com/OpenMinis/OpenMinis) 1.13 开发——一个完整跑在**手机本机**、不需要服务器的 Agent：proot 下的 Linux 根文件系统、shell、浏览器、MCP、技能、定时任务、无障碍执行器，任何 OpenAI 兼容模型。代码以 `git subtree` 放在 [`android/`](android/)，按小版本逐个发布、每个都是能装的 APK：0.1.1 换皮 → 0.1.2 有名字有脸 → 0.1.3 关键处先问你 → 0.1.4 Muse 的形状 → 0.1.5 记得你 → 0.2.0 beta（[docs/roadmap.md](docs/roadmap.md)）。本页其余部分描述的 Python 线（`nanomuse/`、`web/`、`demo/`、`site/`）冻结在 tag [`pre-openminis`](https://github.com/nano-muse/nanoMuse/releases/tag/pre-openminis)，是之后网页版和桌面版的底座。整个仓库改为 **GPL-3.0-or-later**（[NOTICE](NOTICE)、[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)）；怎么编、怎么参与见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+> **项目现在在哪（2026-09-24 起）。** App 改为基于 [OpenMinis](https://github.com/OpenMinis/OpenMinis) 1.13 开发——一个完整跑在**手机本机**、不需要服务器的 Agent：proot 下的 Linux 根文件系统、shell、浏览器、MCP、技能、定时任务、无障碍执行器，任何 OpenAI 兼容模型。代码以 `git subtree` 放在 [`android/`](android/)，按小版本逐个发布、每个都是能装的 APK：0.1.1 换皮 → 0.1.2 有名字有脸 → 0.1.3 Muse 的形状 → 0.1.4 关键处先问你 → 0.1.5 记得你 → 0.1.6 形象与动效 → 0.2.0 beta（[docs/roadmap.md](docs/roadmap.md)）。本页其余部分描述的 Python 线（`nanomuse/`、`web/`、`demo/`、`site/`）冻结在 tag [`pre-openminis`](https://github.com/nano-muse/nanoMuse/releases/tag/pre-openminis)，是之后网页版和桌面版的底座。整个仓库改为 **GPL-3.0-or-later**（[NOTICE](NOTICE)、[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)）；怎么编、怎么参与见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 >
 > **拿 App：** 到 [Releases](https://github.com/nano-muse/nanoMuse/releases) 下载 `nanoMuse-<版本>-arm64.apk`（Android 8.0+，arm64），安装，在 App 里填一把模型 key。每个版本用同一把签名，新版直接覆盖安装。
 
@@ -292,9 +292,10 @@ flowchart LR
 
 - [x] [0.1.1 换皮](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.1)——OpenMinis 1.13 变成 nanoMuse：图标、名字、品牌色、关于页 / 反馈 / 更新源、GPL 声明、统一签名
 - [x] [0.1.2 有名字有脸](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.2)——小熊猫和 Muse 式的头部、第一次对话里给它起名、每条通知都带名字和脸
-- [ ] 0.1.3 关键处先问你——有范围的审批；四档阶梯
-- [ ] 0.1.4 Muse 的形状——聊天、动态、目标、资料库
-- [ ] 0.1.5 → 0.2.0 记得你——记忆、动态、文件；第一个 beta
+- [x] [0.1.3 Muse 的形状](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.3)——打开是聊天不是列表；旁聊在抽屉里；点子、目标、资源库三个页签；目标在聊天里定、按节奏自动检查
+- [ ] 0.1.4 关键处先问你——删、发、付之前先停下来问；按对象 / 域名 / 目录记住；密码验证码永远你自己输
+- [ ] 0.1.5 记得你——动态、系统文件（SOUL / USER / MEMORY / HEARTBEAT）、记忆导入、两级状态与续跑
+- [ ] 0.1.6 → 0.2.0 形象与动效——用你的模型生成并挑选形象，随工作状态动起来；打磨；第一个 beta
 
 国内服务（飞书、高德、快递100……）不再单出一个版本：沙盒里的 shell、MCP、技能已经能从聊天里的一句话够到它们（[docs/services.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/services.md)）。
 

@@ -16,15 +16,16 @@ nanoMuse keeps the shape and changes two things. The agent is open and runs wher
 
 ## Phase 1 — the phone, no cloud VM (now)
 
-Five versions. Each is a GitHub pre-release with an APK; `versionName` is a plain number so the in-app update check works.
+Six versions. Each is a GitHub pre-release with an APK; `versionName` is a plain number so the in-app update check works.
 
 | Version | Name | What it adds |
 |---|---|---|
 | 0.1.1 | 换皮 | OpenMinis 1.13 as nanoMuse: the icon and name, the brand blue instead of iOS blue, About / feedback / update source pointing here, GPL notices, one signing key for every version. Functionally identical to upstream. |
 | 0.1.2 | 有名字有脸 | A name and a face: the red panda in the chat header with a Muse-style name pill and status line, a first conversation that asks what to call you and lets the agent pick its own name (written to `SOUL.md`), the name and face on every notification. Providers and the three setup cards stay as upstream ships them — bring your own key, or one of the OAuth logins. |
-| 0.1.3 | 关键处先问你 | Approvals with scope — a Sentinel before shell, payments, messages and anything you could not undo; the four-rung ladder (skill / MCP / CLI → logged-in fetch → in-app browser → the phone's screen, last and off by default). |
-| 0.1.4 | Muse 的形状 | The Muse tabs: chat, feed, goals, library. |
-| 0.1.5 → 0.2.0 | 记得你 | Memory you can read and edit, the feed written for you, files; 0.2.0 is the first beta. |
+| 0.1.3 | Muse 的形状 | The app opens on a conversation, not a list: one main chat, side chats in a drawer, and a bottom bar with Ideas, Goals and Library. Goals are shaped in the chat and checked on a schedule in their own conversation; routines are the scheduled tasks OpenMinis already had, shown Muse's way; the library lists what the agent wrote. |
+| 0.1.4 | 关键处先问你 | Approvals with scope — a stop before deleting, sending, paying and anything you could not undo, remembered per recipient / domain / folder if you say so; passwords and codes are always yours to type. |
+| 0.1.5 | 记得你 | The feed written for you, the system files (SOUL, USER, MEMORY, HEARTBEAT) you can read and edit, a memory import, two-level status, the screen kept awake while it works, "continue?" instead of a premature wrap-up. |
+| 0.1.6 → 0.2.0 | 形象与动效 | A face you choose — generated from a description with your own image model, animated by what the agent is doing; motion and polish everywhere; 0.2.0 is the first beta. |
 
 There is no "Chinese services" version any more: the shell, MCP and skills OpenMinis ships already reach 飞书, 高德, 快递100 and the rest from a sentence in the chat, so those stay a matter of skills and docs ([services.md](services.md)), not of a release.
 

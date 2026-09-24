@@ -132,6 +132,7 @@ import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.StopCircle
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.MoreHoriz // nanoMuse
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.RadioButtonChecked
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
@@ -530,6 +531,9 @@ fun ChatScreen(
      *  management screen — wired to the "Edit" button on the model picker's
      *  Model Groups section header. */
     onModelGroupsClick: () -> Unit = {},
+    // nanoMuse: non-null when this chat is a tab of the home shell — hamburger
+    // instead of back, round kebab, big-face header on the main chat.
+    nmHome: io.github.nanomuse.ui.chat.NmHomeChrome? = null,
 ) {
     val context = LocalContext.current
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -2561,13 +2565,48 @@ fun ChatScreen(
                             // state and the app-wide "needs you" gates; tapping
                             // it opens Settings → Soul (name / icon / style).
                             val nmMood = io.github.nanomuse.ui.avatar.rememberAgentMood(isStreaming, error)
+                            // nanoMuse: side chats inside the home shell show
+                            // their title where the face would be (Muse puts
+                            // the face only on the main chat); the main chat
+                            // gets the big face on its disc.
+                            val nmSideChat = nmHome != null && !nmHome.isMainChat
+                            val nmMainChat = nmHome != null && nmHome.isMainChat
+                            if (nmSideChat) {
+                                Text(
+                                    text = sessionTitle?.trim()?.ifEmpty { null }
+                                        ?: stringResource(R.string.nm_drawer_untitled),
+                                    fontSize = 17.sp,
+                                    lineHeight = 21.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = ChatColors.primaryText,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    style = noFontPad,
+                                    modifier = Modifier.padding(bottom = 1.dp),
+                                )
+                            } else if (nmMainChat) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(76.dp)
+                                        .clip(CircleShape)
+                                        .background(io.github.nanomuse.ui.home.avatarDiscColor()),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    io.github.nanomuse.ui.avatar.AgentAvatar(
+                                        mood = nmMood,
+                                        size = 66.dp,
+                                        contentDescription = stringResource(R.string.nm_avatar_content_description),
+                                        onClick = { io.github.nanomuse.ui.header.openSoulSettings(context) },
+                                    )
+                                }
+                            } else
                             io.github.nanomuse.ui.avatar.AgentAvatar(
                                 mood = nmMood,
                                 size = 36.dp,
                                 contentDescription = stringResource(R.string.nm_avatar_content_description),
                                 onClick = { io.github.nanomuse.ui.header.openSoulSettings(context) },
                             )
-                            Spacer(Modifier.height(2.dp))
+                            if (!nmSideChat) Spacer(Modifier.height(2.dp))
                             // nanoMuse: the pill is the agent's name (Muse's
                             // header), never the session title — that one
                             // stays in the session list and in the chat
@@ -2581,7 +2620,9 @@ fun ChatScreen(
                             val topBarSoul by com.openminis.app.agent.SoulStore
                                 .cachedMetadata.collectAsState()
                             val displayTitle = topBarSoul.name.trim().ifEmpty { stringResource(R.string.app_name) }
-                            Text(
+                            // nanoMuse: no name pill on side chats — their
+                            // title took the slot above.
+                            if (!nmSideChat) Text(
                                 text = displayTitle,
                                 fontSize = 16.sp,
                                 lineHeight = 19.sp,
@@ -2591,11 +2632,18 @@ fun ChatScreen(
                                 overflow = TextOverflow.Ellipsis,
                                 style = noFontPad,
                                 modifier = Modifier
+                                    // nanoMuse: on the main chat the pill hangs
+                                    // off the disc's chin, as in Muse.
+                                    .then(if (nmMainChat) io.github.nanomuse.ui.home.pullUp(14.dp) else Modifier)
+                                    .then(
+                                        if (nmMainChat) Modifier.shadow(3.dp, CircleShape, clip = false, ambientColor = Color.Black.copy(alpha = 0.18f))
+                                        else Modifier,
+                                    )
                                     // nanoMuse: the name sits in a capsule under the face (Muse's name pill).
                                     .clip(CircleShape)
-                                    .background(ChatColors.userBubble)
+                                    .background(if (nmMainChat) MaterialTheme.colorScheme.surface else ChatColors.userBubble)
                                     .clickable { io.github.nanomuse.ui.header.openSoulSettings(context) }
-                                    .padding(horizontal = 12.dp, vertical = 3.dp),
+                                    .padding(horizontal = if (nmMainChat) 14.dp else 12.dp, vertical = if (nmMainChat) 6.dp else 3.dp),
                             )
                             // nanoMuse: while the agent works or waits, this
                             // slot shows what it is doing (Muse's status line)
@@ -2796,6 +2844,16 @@ fun ChatScreen(
                     }
                 },
                 navigationIcon = {
+                    // nanoMuse: inside the home shell the slot is Muse's round
+                    // hamburger, which opens the chats drawer.
+                    if (nmHome != null) {
+                        io.github.nanomuse.ui.home.MuseRoundButton(
+                            icon = Icons.Filled.Menu,
+                            contentDescription = stringResource(R.string.nm_open_drawer),
+                            onClick = nmHome.onOpenDrawer,
+                            modifier = Modifier.padding(start = 12.dp),
+                        )
+                    } else
                     // [T-android-tablet-split] See `isTwoPane`.
                     if (!isTwoPane) {
                         IconButton(onClick = onBack) {
@@ -2876,6 +2934,15 @@ fun ChatScreen(
                 actions = {
                     // iOS: "..." circle button → dropdown menu
                     Box {
+                        // nanoMuse: Muse's round "•••" when hosted in the home shell.
+                        if (nmHome != null) {
+                            io.github.nanomuse.ui.home.MuseRoundButton(
+                                icon = Icons.Filled.MoreHoriz,
+                                contentDescription = stringResource(R.string.nm_more),
+                                onClick = { showChatMenu = true },
+                                modifier = Modifier.padding(end = 12.dp),
+                            )
+                        } else
                         IconButton(onClick = { showChatMenu = true }) {
                             Icon(Icons.Default.MoreVert, contentDescription = "More")
                         }
@@ -3159,8 +3226,14 @@ fun ChatScreen(
                 // re-clipping (T-topbar-model-row-clip regression check).
                 // Font sizes + lineHeights stay untouched per spec.
                 // nanoMuse: 68dp held the 3-row title; the face (36dp) and the
-                // capsule padding sit on top of that.
-                expandedHeight = 108.dp,
+                // capsule padding sit on top of that. In the home shell the
+                // main chat's disc (76dp) needs more, a side chat's one-line
+                // title less.
+                expandedHeight = when {
+                    nmHome == null -> 108.dp
+                    nmHome.isMainChat -> 136.dp
+                    else -> 72.dp
+                },
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },

@@ -36,4 +36,94 @@
         <item>小竹</item>
         <item>阿岳</item>
     </string-array>
+
+    <!-- 首頁：四個頁籤 -->
+    <string name="nm_tab_chat">聊天</string>
+    <string name="nm_tab_ideas">點子</string>
+    <string name="nm_tab_goals">目標</string>
+    <string name="nm_tab_library">資源庫</string>
+    <string name="nm_more">更多</string>
+    <string name="nm_open_drawer">對話</string>
+
+    <string name="nm_drawer_main_chat">主要聊天</string>
+    <string name="nm_drawer_side_chats">旁聊</string>
+    <string name="nm_drawer_all_chats">全部對話</string>
+    <string name="nm_drawer_empty_title">發起旁聊</string>
+    <string name="nm_drawer_empty_body">旁聊是按主題整理對話的可選方式。</string>
+    <string name="nm_drawer_search">搜尋</string>
+    <string name="nm_drawer_new_chat">新建旁聊</string>
+    <string name="nm_drawer_settings">設定</string>
+    <string name="nm_drawer_untitled">新對話</string>
+    <string name="nm_drawer_set_main">設為主要聊天</string>
+
+    <string name="nm_goals_title">目標</string>
+    <string name="nm_goals_tracking">追蹤</string>
+    <string name="nm_goals_tracking_empty">尚未追蹤任何內容</string>
+    <string name="nm_goals_routines">例程</string>
+    <string name="nm_goals_routines_empty">還沒有例程。例程是我在固定時間替你做的事——每天，或你選的那幾天。</string>
+    <string name="nm_goals_create">建立目標</string>
+    <string name="nm_goals_create_body">選擇一個類別，告訴我你想要的目標，我會為你量身打造一個計畫，並隨著你的成長不斷改進。</string>
+    <string name="nm_goal_cat_health">健康</string>
+    <string name="nm_goal_cat_relationships">人際關係</string>
+    <string name="nm_goal_cat_finance">金融</string>
+    <string name="nm_goal_cat_career">事業</string>
+    <string name="nm_goal_cat_interests">興趣</string>
+    <string name="nm_goal_cat_productivity">效率</string>
+    <string name="nm_goal_cat_other">其他</string>
+    <string name="nm_goal_sheet_title">建立%1$s目標</string>
+    <string name="nm_goal_sheet_body1">首先，我們會在聊天中一起完善目標。我會問幾個問題，準確了解你的目標。</string>
+    <string name="nm_goal_sheet_body2">目標設定後，我會在這裡追蹤你的進度。</string>
+    <string name="nm_goal_sheet_go">開始吧</string>
+    <string name="nm_goal_create_message">我想建立一個%1$s目標。</string>
+    <string name="nm_goal_check_task_label">目標檢查：%1$s</string>
+    <plurals name="nm_goal_every_hours">
+        <item quantity="other">每 %d 小時檢查一次</item>
+    </plurals>
+    <string name="nm_goal_daily_at">每天 %1$s 檢查</string>
+    <string name="nm_goal_cadence_next">%1$s · 下次 %2$s</string>
+    <string name="nm_goal_no_check_yet">首次檢查約一分鐘後開始</string>
+    <string name="nm_goal_open_chat">開啟對話</string>
+    <string name="nm_goal_check_now">立即檢查</string>
+    <string name="nm_goal_pause">暫停檢查</string>
+    <string name="nm_goal_resume">恢復檢查</string>
+    <string name="nm_goal_delete">刪除目標</string>
+    <string name="nm_goal_delete_confirm">刪除這個目標？它的對話會留在對話列表裡。</string>
+    <string name="nm_goal_status_paused">已暫停</string>
+    <string name="nm_goal_status_done">已完成</string>
+    <string name="nm_goal_card_created">目標已建立</string>
+    <string name="nm_goal_card_open">在「目標」中查看</string>
+    <string name="nm_goal_update_card_title">目標進展</string>
+    <string name="nm_goal_update_on_track">進展順利</string>
+    <string name="nm_goal_update_attention">需要留意</string>
+
+    <string name="nm_routine_new">新建例程</string>
+    <string name="nm_routine_all">全部例程</string>
+    <string name="nm_routine_edit">編輯</string>
+    <string name="nm_routine_runs">執行記錄</string>
+    <string name="nm_routine_run_now">立即執行</string>
+    <string name="nm_routine_delete">刪除</string>
+    <string name="nm_routine_paused">已關閉</string>
+
+    <string name="nm_ideas_title">點子</string>
+    <string name="nm_idea_kind_chat">會開始一段對話</string>
+    <string name="nm_idea_kind_routine">會建立一條例程</string>
+    <string name="nm_idea_kind_goal">會建立一個目標</string>
+    <string name="nm_idea_action_chat">傳到聊天</string>
+    <string name="nm_idea_action_routine">建立例程</string>
+    <string name="nm_idea_action_goal">開始這個目標</string>
+    <string name="nm_idea_routine_created">例程已建立，去設定時間和細節。</string>
+
+    <string name="nm_library_title">資源庫</string>
+    <string name="nm_library_artifacts">構件</string>
+    <string name="nm_library_media">影音內容</string>
+    <string name="nm_library_empty_artifacts_title">還沒有建立任何內容</string>
+    <string name="nm_library_empty_artifacts_body">我為你寫的文件、表格和頁面會顯示在這裡。</string>
+    <string name="nm_library_empty_media_title">還沒有影音內容</string>
+    <string name="nm_library_empty_media_body">我產生的圖片、截圖和錄音會顯示在這裡。</string>
+    <string name="nm_library_from_shared">共享資料夾</string>
+    <string name="nm_library_share">分享</string>
+    <string name="nm_library_open_chat">開啟對話</string>
+    <string name="nm_library_menu_shared_folders">共享資料夾</string>
+    <string name="nm_goal_check_prompt">到點了，看看這個目標：%1$s</string>
+    <string name="nm_goal_first_check">第一次先：%1$s</string>
 </resources>
