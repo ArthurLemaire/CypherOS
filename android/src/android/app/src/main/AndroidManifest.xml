@@ -483,6 +483,11 @@
             android:name=".scheduled.ScheduledTaskAlarmReceiver"
             android:exported="false" />
 
+        <!-- nanoMuse: Allow / Deny buttons on the approval notification -->
+        <receiver
+            android:name="io.github.nanomuse.guard.RiskApprovalReceiver"
+            android:exported="false" />
+
         <!-- Notification listener — lets android-notification read active notifications.
              User must enable this manually in Settings → Notifications → Device &
              app notifications → Notification access. -->

@@ -106,6 +106,9 @@ fun OffloadPermissionScreen(
             )
         }
 
+        // nanoMuse: the approvals the user chose to remember, revocable here.
+        io.github.nanomuse.ui.guard.GrantsSection()
+
         autoCategories.forEach { (category, tools) ->
             SettingsSection(header = stringResource(categoryHeaderRes(category))) {
                 tools.forEachIndexed { idx, tool ->

@@ -4753,7 +4753,16 @@ fun ChatScreen(
 
                 // T-chat-title-pill: sticky session title overlay. Sits
                 // above the LazyColumn (top-center), animates in once the
+
+                // nanoMuse: dim the conversation while the approval card is up.
+                io.github.nanomuse.ui.guard.RiskScrim(sessionId = viewModel.activeSessionId)
             }
+
+            // nanoMuse: Muse's "Needs approval" card sits between the messages and the composer.
+            io.github.nanomuse.ui.guard.RiskApprovalHost(
+                sessionId = viewModel.activeSessionId,
+                onOpenSession = { onMoveToSession(it) },
+            )
 
             // T-chat-title-pill-edit: reuse SessionEditSheet from the session
             // list (same composable, exposed `internal`) so title + category

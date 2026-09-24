@@ -109,6 +109,7 @@ class ChatRepository(internal val dao: ChatDao) {
     suspend fun deleteSession(id: String) {
         dao.deleteMessages(id)
         dao.deleteSession(id)
+        io.github.nanomuse.guard.Grants.clearSession(id) // nanoMuse
     }
 
     // ─── Session groups ("folders") ────────────────────────────────────────

@@ -293,7 +293,7 @@ flowchart LR
 - [x] [0.1.1 换皮](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.1)——OpenMinis 1.13 变成 nanoMuse：图标、名字、品牌色、关于页 / 反馈 / 更新源、GPL 声明、统一签名
 - [x] [0.1.2 有名字有脸](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.2)——小熊猫和 Muse 式的头部、第一次对话里给它起名、每条通知都带名字和脸
 - [x] [0.1.3 Muse 的形状](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.3)——打开是聊天不是列表；旁聊在抽屉里；点子、目标、资源库三个页签；目标在聊天里定、按节奏自动检查
-- [ ] 0.1.4 关键处先问你——删、发、付之前先停下来问；按对象 / 域名 / 目录记住；密码验证码永远你自己输
+- [x] [0.1.4 关键处先问你](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.4)——删、发、付之前先停下来问；按对象 / 域名 / 目录记住；密码验证码永远你自己输
 - [ ] 0.1.5 记得你——动态、系统文件（SOUL / USER / MEMORY / HEARTBEAT）、记忆导入、两级状态与续跑
 - [ ] 0.1.6 → 0.2.0 形象与动效——用你的模型生成并挑选形象，随工作状态动起来；打磨；第一个 beta
 

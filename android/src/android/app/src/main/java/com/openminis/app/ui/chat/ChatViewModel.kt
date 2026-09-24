@@ -5009,6 +5009,7 @@ class ChatViewModel(
     fun clearChat() {
         if (_isStreaming.value) cancelStream()
         val sid = activeSessionId
+        io.github.nanomuse.guard.Grants.clearSession(sid) // nanoMuse: "allow for this chat" ends with the chat
         // T-streaming-side-channel: ensure no stale stream delta survives a
         // session wipe; the messages list is about to be cleared, so any
         // pending key would be orphaned.
@@ -9431,6 +9432,20 @@ class ChatViewModel(
                 return ToolExecutionResult("Error: 'command' is required", false, toolTitle = toolTitle)
             }
 
+            // nanoMuse: delete / send / pay stop for the user's yes; installs run with a notice.
+            var nmNotice: String? = null
+            run {
+                val idx = toolBlocks.indexOfFirst { it.id == toolId }
+                val gate = io.github.nanomuse.guard.RiskGate.checkShell(activeSessionId, command)
+                when (gate) {
+                    is io.github.nanomuse.guard.GateOutcome.Denied -> {
+                        if (idx >= 0) toolBlocks[idx] = toolBlocks[idx].copy(content = "")
+                        return ToolExecutionResult(gate.message, false, toolTitle = toolTitle)
+                    }
+                    is io.github.nanomuse.guard.GateOutcome.Allowed -> nmNotice = gate.notice
+                }
+            }
+
             // [T-android-overlay-finalize item 1] Removed the
             // shell-specific status hack ("shell: $toolTitle"). Since the
             // dispatch loop (~5003) now surfaces `tool_title` in the overlay
@@ -9586,7 +9601,7 @@ class ChatViewModel(
             } ?: redactedOut
 
             ToolExecutionResult(
-                output = withReminder,
+                output = nmNotice?.let { "$withReminder\n\n$it" } ?: withReminder, // nanoMuse: install notice
                 success = result.exitCode == 0,
                 toolTitle = toolTitle,
                 timedOut = timedOut,
@@ -9605,6 +9620,10 @@ class ChatViewModel(
             val toolTitle = try {
                 JSONObject(argsJson).optString("tool_title", "browser_use")
             } catch (_: Exception) { "browser_use" }
+            // nanoMuse: a refused password / code field hands the browser to the user.
+            if (result.text.contains(io.github.nanomuse.guard.BrowserGuard.HANDOFF_PREFIX)) {
+                withContext(Dispatchers.Main) { openBrowserSheetForUrl(result.pageURL ?: "") }
+            }
 
             var output = result.text
             var persistentImagePath: String? = result.imageFilePath
@@ -10375,6 +10394,8 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
             if (nmFirstConversation.isBoundTo(realSessionId.ifEmpty { sessionId })) {
                 nmFirstConversation.promptAddendum()?.let { append("\n\n").append(it) }
             }
+            // nanoMuse: how approvals work here.
+            append("\n\n").append(io.github.nanomuse.guard.RiskPolicy.promptParagraph())
             // nanoMuse: turn-limited addenda for this session (goal creation).
             io.github.nanomuse.chat.SessionAddenda.forPrompt(realSessionId.ifEmpty { sessionId })
                 ?.let { append("\n\n").append(it) }
