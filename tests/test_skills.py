@@ -132,6 +132,8 @@ def test_builtin_skills_are_well_formed():
         "phone-messages",
         "feishu",
         "amap",
+        "tencent-meeting",
+        "kuaidi100",
     } <= set(names)
     assert lib.errors == {} and all(s.source == BUILT_IN for s in lib.all())
     for s in lib.all():
@@ -143,9 +145,11 @@ def test_builtin_skills_are_well_formed():
     # every built-in skill says which rung it works on; the screen ones are marked in the index
     by_name = {s.name: s for s in lib.all()}
     assert all(s.channel for s in lib.all()), [s.name for s in lib.all() if not s.channel]
-    assert by_name["train-tickets"].needs_phone and by_name["phone-messages"].needs_phone
+    assert by_name["phone-messages"].needs_phone and not by_name["train-tickets"].needs_phone
+    assert by_name["train-tickets"].channel == "mixed"  # the 12306 server first, the screen to book
     assert by_name["feishu"].channel == "cli" and by_name["amap"].channel == "api"
-    assert "- train-tickets [on the phone's screen]: " in index
+    assert by_name["tencent-meeting"].channel == "cli" and by_name["kuaidi100"].channel == "api"
+    assert "- phone-messages [on the phone's screen]: " in index
     assert "- feishu: " in index
 
 
@@ -302,7 +306,7 @@ async def test_skills_tool(tmp_path: Path):
     assert b.warnings == ["this replaces one of the built-in skills"]
     assert tool.assess({"action": "remove", "name": "x"}).risk == RiskLevel.SENSITIVE
     r = await tool.execute(action="list")
-    assert r.ok and r.output.startswith("9 skills:\n- amap (built-in)")
+    assert r.ok and r.output.startswith("11 skills:\n- amap (built-in)")
     r = await tool.execute(action="use", name="trip-plan")
     assert r.ok and r.output.startswith("# Skill: trip-plan\n") and "## Research" in r.output
     r = await tool.execute(action="use", name="nope")

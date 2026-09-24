@@ -60,7 +60,7 @@ nanoMuse is a personal agent you talk to from your phone. It can:
 - work on goals over weeks while the app is closed, check in on a schedule, and start work when mail arrives, an event is near or a webhook fires
 - write you a feed: short posts from what it knows about you and what you asked it to follow
 - remember you in a memory you can read, edit and forget, and recall it by meaning
-- follow skills in the [Agent Skills](https://agentskills.io) format — nine built in, yours in a folder, other agents' skills as they are
+- follow skills in the [Agent Skills](https://agentskills.io) format — eleven built in, yours in a folder, other agents' skills as they are
 - run on any OpenAI-compatible model: DeepSeek, OpenAI, OpenRouter, Ollama, vLLM, a gateway with its own headers
 
 ## 💡 Why nanoMuse

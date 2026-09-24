@@ -236,6 +236,26 @@ device_timeout_s = 20.0  # how long to wait for the phone to answer one request
 # url = "https://mcp.amap.com/mcp?key={{vault:AMAP_KEY}}"
 # risk = "safe"
 # egress = true
+#
+# 12306 (trains in China): timetable, seats and prices, connections, stops — a community
+# server (https://github.com/Joooook/12306-mcp), no key, no login; it cannot book.
+# The `train-tickets` skill searches here and books on the phone only when told to.
+# [[mcp.servers]]
+# name = "12306"
+# command = "npx"
+# args = ["-y", "12306-mcp"]
+# risk = "safe"
+# egress = true
+#
+# 快递100 (parcels): where a parcel is, when it arrives, what shipping costs — the official
+# server (https://github.com/kuaidi100-api/kuaidi100-MCP). Paid per new tracking number, with
+# a free trial; the 授权 key from api.kuaidi100.com goes in the vault (`nanomuse vault set KUAIDI100_KEY`).
+# [[mcp.servers]]
+# name = "kuaidi100"
+# url = "https://api.kuaidi100.com/mcp/streamable?key={{vault:KUAIDI100_KEY}}"
+# risk = "safe"
+# egress = true
+# reads_private_data = true    # a tracking number and a phone number go out
 
 # ------------------------------------------------------------------------------
 # App server — `nanomuse serve` (the phone app)

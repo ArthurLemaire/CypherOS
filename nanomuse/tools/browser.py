@@ -100,7 +100,8 @@ class Browser(BaseTool):
         "Control a real web browser to complete tasks on websites (search, read, fill forms, click). "
         "Actions: `navigate` (url), `extract` (read current page + numbered interactive elements), "
         "`click` (index), `type` (index, text, submit=true to press Enter), `press` (key, e.g. 'Enter'), "
-        "`scroll` (direction up|down), `back`, `screenshot`, `fetch` (url: GET a URL with the browser's "
+        "`scroll` (direction up|down), `back`, `wait` (seconds, for a page that is still drawing itself), "
+        "`screenshot`, `fetch` (url: GET a URL with the browser's "
         "cookies and return the raw body — a signed-in request without driving the page; method/body "
         "for POST), `profile` (profile: mobile|desktop, or user_agent/width/height: how the browser "
         "presents itself), `close`. After navigate/click/type the tool returns the new page state. "
@@ -122,6 +123,7 @@ class Browser(BaseTool):
                     "press",
                     "scroll",
                     "back",
+                    "wait",
                     "screenshot",
                     "fetch",
                     "profile",
@@ -134,6 +136,7 @@ class Browser(BaseTool):
             "submit": {"type": "boolean"},
             "key": {"type": "string"},
             "direction": {"type": "string", "enum": ["up", "down"]},
+            "seconds": {"type": "number", "description": "For wait: how long, at most 15."},
             "method": {"type": "string", "description": "For fetch: GET (default) or POST."},
             "body": {"type": "string", "description": "For fetch with POST: the request body."},
             "profile": {"type": "string", "enum": ["mobile", "desktop"]},
@@ -316,6 +319,7 @@ class Browser(BaseTool):
         submit: bool = False,
         key: str | None = None,
         direction: str = "down",
+        seconds: float | None = None,
         method: str | None = None,
         body: str | None = None,
         profile: str | None = None,
@@ -337,7 +341,9 @@ class Browser(BaseTool):
                     return await self._fetch(backend, url, method, body)
                 if action == "profile":
                     return await self._profile(backend, profile, user_agent, width, height)
-                return await self._act(backend, action, url, index, text, submit, key, direction)
+                return await self._act(
+                    backend, action, url, index, text, submit, key, direction, seconds
+                )
             except Exception as exc:  # noqa: BLE001 – playwright raises many error types
                 return ToolResult.fail(
                     f"browser error: {type(exc).__name__}: {str(exc).splitlines()[0][:300]}"
@@ -353,6 +359,7 @@ class Browser(BaseTool):
         submit: bool,
         key: str | None,
         direction: str,
+        seconds: float | None = None,
     ) -> ToolResult:
         await backend.ensure()
         if action == "navigate":
@@ -398,6 +405,17 @@ class Browser(BaseTool):
             await backend.back()
             await backend.settle(self.timeout_ms)
             await self._frame(backend, "Went back")
+            return await self._state(backend, brief=True)
+        if action == "wait":
+            # a single-page app that draws itself after `load`; capped so a stuck page cannot
+            # hold the run
+            try:
+                pause = float(seconds) if seconds is not None else 2.0
+            except (TypeError, ValueError):
+                pause = 2.0
+            await asyncio.sleep(min(max(pause, 0.5), 15.0))
+            await backend.settle(self.timeout_ms)
+            await self._frame(backend, "Waited for the page")
             return await self._state(backend, brief=True)
         if action == "screenshot":
             shots = self.workspace / "screenshots"

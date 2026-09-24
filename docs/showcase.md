@@ -1,99 +1,127 @@
-# Showcase: what to ask it
+# Showcase: seven things a Chinese day asks for
 
-nanoMuse is one agent with several hands. It reads and writes files, searches the web, runs commands, drives a browser; it calls MCP servers and command-line tools; it follows skills; and, when a phone is connected, it operates the apps on the phone's screen. The screen is the hand of last resort — for 12306, 微信 and 支付宝, which have no API a personal agent may use — not the point of the project. Many things in a Chinese day need no screen at all: 飞书 has a CLI, 高德 has an MCP server, and the agent uses those the way it uses any tool, with the Sentinel between it and anything irreversible.
+nanoMuse is one agent with several hands. It reads and writes files, searches the web, runs commands, drives a browser; it calls MCP servers and command-line tools; it follows skills; and, when it runs on a phone, it uses the phone's own calendar, clipboard and alarms — and, as the last resort, the apps on the phone's screen. The [ladder](gui.md#the-ladder) says which hand comes first: a skill, a CLI or an MCP server; then a fetch with the user's login; then the in-app browser; only then the screen. Of the seven cases below, one uses the screen. That is the point.
 
-Five kinds of asks below, because those hands belong to one agent: some need only the phone, some a CLI or an MCP server, some none of it, and the interesting ones mix them. Nothing here spends money: every send, order or payment step stops for your approval, and the operator does not fill in passwords or codes.
+Nothing here spends money: every send, order or payment stops for your approval, and the operator never fills in passwords or codes. Which services stand behind the cases, and which have been run where: [services.md](services.md).
 
-The phone asks are written for the apps on the [simulated phone](../demo/mobilegym/README.md) — 微信, 支付宝, 铁路12306, 地图, 天气, 哔哩哔哩, 小红书, 腾讯会议, 微信读书 and the system apps — and work the same on a real phone with the Android app's executor. They want the *Phone* switch on and a phone connected (`Connections → Phone` shows "MobileGym connected").
+**Traces.** Each case links to what actually happened — the chat's timeline as the app stores it, or a phone trace with every screen and tap. Cases marked *pending* have not been run end to end yet, and the line says what they wait for: the four Tier-1 services need the owner's keys and logins (a 高德 key, a 飞书 and a 腾讯会议 login), and the phone cases need an Android phone with the apps on it. The [launch checklist](launch-checklist.md#9-chinese-services-and-the-showcase-p0) tracks them.
 
-## Through a CLI: 飞书 (Feishu / Lark)
+## 1. A business trip in one sentence
 
-[lark-cli](https://github.com/larksuite/cli) is the official command-line tool for 飞书; the built-in `feishu` skill teaches the agent its shape (`lark-cli calendar +agenda`, `im +messages-send`, `task +create`, `docs +fetch`, JSON in, JSON out). Install it (`npm i -g @larksuite/cli`), log in once (`lark-cli auth login`), and — if the [sandbox](sentinel.md#the-sandbox) is on — share the tool and its login with the box:
+> 明天要去上海开会，下午两点在虹桥附近。帮我看看北京到上海上午出发、下午一点前能到虹桥的高铁，挑一班合适的；查一下从家到北京南站几点得出发；把出发时间写进日历，车次发到飞书的「出差」群。另外记住：我坐高铁只坐二等座、靠窗。
 
-```toml
-[sandbox]
-share_read_only = ["~/.nvm"]                          # node and lark-cli live here (or wherever `which lark-cli` points)
-share = ["~/.lark-cli", "~/.local/share/lark-cli"]    # its config and encrypted tokens
-```
-
-The rest of your home directory stays invisible to commands. Every `lark-cli` call is a `shell` call, so it shows on an approval card in `ask` mode with the full command on it — reading your agenda is one tap, and a message to a colleague shows its exact text before it goes.
-
-| Ask | What happens |
+| Hand | What it does |
 |---|---|
-| 我今天飞书上有什么安排 | `lark-cli calendar +agenda --as user`; the events in a few lines, with what is next and how soon. |
-| 项目群里今天上午聊了什么，给我三句话总结 | `im +chat-search` for the group, `im +chat-messages-list` for the window, then a summary — the messages themselves stay out of the answer unless you ask. |
-| 帮我给王芳发一条飞书：周报我下午三点前发出来 | Finds her `open_id`, shows you the text on a card, `im +messages-send --user-id ou_… --text …` once you approve, with an idempotency key so a retry cannot send twice. |
-| 明天下午两点跟张三、李四开个 30 分钟的需求评审会，写到飞书日历里 | `contact +search-user` for both, `calendar +create` with attendees; the title, time and attendees read back to you. |
-| 把 workspace 里的 headphones.md 建成一份飞书文档发我 | `docs +create --markdown @headphones.md`; the link comes back in chat. |
-| 我这周飞书上还有哪些任务没做完 | `task +get-my-tasks`, grouped by due date. |
+| `skills` | reads `train-tickets`: search through the 12306 server, book on the phone only when told to |
+| `remember` | 二等座、靠窗 — a preference, used the next time trains come up |
+| `12306__get-current-date` · `get-station-code-of-citys` · `get-station-code-by-names` · `get-tickets` | tomorrow's date from the server, the codes for 北京 and 上海虹桥, the G trains before 13:00 with seats and prices; a second query when the first is sold out |
+| `amap__maps_geo` · `maps_direction_transit_integrated` | home (remembered) → 北京南站 at that hour: leave by 06:40 |
+| `calendar` | a draft for the departure with 车次 and seat, for you to confirm |
+| `shell: lark-cli im +chat-search` · `im +messages-send --idempotency-key …` | the 「出差」 group, the one message — its text on an approval card first |
 
-## Through an MCP server: 高德地图 (Amap)
+No screen anywhere. The Sentinel asks once, for the message; everything else is read-only or in your own workspace.
 
-高德 runs an [MCP server](https://lbs.amap.com/api/mcp-server/summary) — geocoding, places, driving / transit / cycling / walking routes, distance, weather. Add it to `config.toml` with a free Web 服务 key from [console.amap.com](https://console.amap.com) kept in the vault (`nanomuse vault set AMAP_KEY`), and its twelve tools show up to the agent as `amap__maps_*`; the built-in `amap` skill knows which to call for what:
+**Trace:** [the train half](traces/case-1-train.md) — recorded on 2026-09-24 in the web app with the 12306 server; the model found every 二等座 before 13:00 sold out, said so, and gave the nearest alternatives instead of pretending. The 高德 route, the calendar draft and the 飞书 message are *pending*: a 高德 key and a 飞书 login on the test machine.
 
-```toml
-[[mcp.servers]]
-name = "amap"
-url = "https://mcp.amap.com/mcp?key={{vault:AMAP_KEY}}"
-risk = "safe"
-```
+## 2. The morning brief
 
-No browser, no phone, no screenshots: a question about a place is one or two tool calls, listed in the chat like any other.
+> 每个工作日早上 7:30 给我一条简报：今天北京的天气、飞书上的日程和没做完的任务、腾讯会议里今天有哪些会，一条通知就好。
 
-| Ask | What happens |
+| Hand | What it does |
 |---|---|
-| 从北京南站到国贸开车要多久，地铁呢 | `maps_geo` for both ends, `maps_direction_driving` and `maps_direction_transit_integrated`; a line each, and which it would take at that hour. |
-| 国贸附近评分高的川菜馆，走过去十分钟以内的 | `maps_around_search` with a radius, `maps_search_detail` for the top few; three places, not a list. |
-| 这周六杭州的天气适合爬山吗 | `maps_weather` for 杭州; yes or no, and why. |
-| 上海市浦东新区世纪大道100号在哪个区，离虹桥机场多远 | `maps_geo`, `maps_regeocode`, `maps_distance`. |
+| `reminders` (a routine) | `weekdays 07:30`, delivered as a notification with the app closed — on the phone, the runtime's alarm wakes it for this |
+| `amap__maps_weather` | 北京 today: temperature, rain, air |
+| `shell: lark-cli calendar +agenda --as user` · `task +get-my-tasks --as user` | the day's events and the open tasks, `--jq` to keep them short |
+| `shell: tmeet meeting list --compact` | today's meetings with 会议号 and link |
+| the notification | one card; tapping it opens the chat with the full brief |
 
-## On the phone only
+**Trace:** *pending* — 高德 key, 飞书 and 腾讯会议 logins. The routine and the notification path themselves are exercised by the app's tests and the emulator (the *Keep it running* work in [android.md](android.md#keeping-it-running)).
 
-For apps with no API. One app:
+## 3. Where is my 京东 order
 
-| Ask | What happens |
+> 我上周在京东买的耳机到哪了？
+
+| Hand | What it does |
 |---|---|
-| 打开微信，看看最上面三个聊天是谁、最后一条说了什么 | Opens 微信, reads the chat list, comes back with names, previews and times. Nothing is tapped inside a chat. |
-| 给 blank. 回一句「好的，那明天见」 | Reads the chat first, types the text, and stops at 发送 — an approval card, once; then confirms the bubble is there. |
-| 用 12306 查一下后天上海到杭州最早的三班高铁，二等座多少钱 | Sets 出发 / 到达 and the date, presses 查询车票, ticks 只看高铁/动车 when the list mixes in slow trains, reads the first three back. Search only. |
-| 支付宝里我这个月的账单大概花了多少 | 支付宝: reads the bill page and sums it up; never taps 付款 or 转账. |
-| 明天北京的天气怎么样，要带伞吗 | 天气 app: the forecast for tomorrow, in a sentence. (With the 高德 server configured it does not need the phone for this, and says so.) |
+| `browser` (the phone's WebView, offscreen) | opens 京东's order page in the background |
+| the login wall | the agent stops: *Take over* slides the real page up as a sheet, you log in once, **Done** hands it back — the login persists in the app's own browser profile |
+| `browser` `extract` | the order and its tracking number and courier |
+| `kuaidi100__query_trace` (when configured) | the parcel's events; otherwise the order page's own tracking list |
+| the reply | where it is, when it should arrive |
 
-Across apps:
+The second rung — a page with your login, in the app — before any screen: 京东 has no personal API, but its web works without an app. Configured, 快递100 turns the tracking into one tool call.
 
-| Ask | What happens |
+**Trace:** *pending* — a 京东 login on a phone with the local build. The browser backend, the take-over sheet and the login persisting were verified on the emulator in [browser.md](browser.md).
+
+## 4. A budget table for 成都 over the holiday
+
+> 国庆去成都三晚，住春熙路附近。帮我在去哪儿网上看看每晚 400 元左右、评分 4.5 以上的酒店，挑三家做成预算表存到 trips/chengdu-2026-10/budget.md，只看不订。
+
+| Hand | What it does |
 |---|---|
-| 查一下明天北京到上海最早的高铁，然后把车次和时间发给 Boss | 12306 for the search, 微信 for the message; the send waits for your approval with the exact text on the card. |
-| 看看小红书上「杭州两日游」最热的一篇笔记讲了什么，把要点记到笔记 app 里 | 小红书 to read, 笔记 to write. |
-| 腾讯会议里下一个会是几点，提前十分钟在时钟里设个闹钟 | 腾讯会议 for the time, 时钟 for the alarm. |
+| `browser` (Playwright on the computer, or the phone's WebView) | 去哪儿 hotel search for the dates and the area, filters, three listings read |
+| `files` | `trips/chengdu-2026-10/budget.md` — name, location, price per night, three nights, rating |
+| Library | the table opens as a page in the app |
 
-## Without any of it
+Third rung: a public site, no login, browsed in the background while you do something else. The agent does not book; "只看不订" is also what the `browser` tool's Sentinel rules enforce for order and payment buttons.
 
-The agent as itself: the web, the workspace, commands, goals, routines, memory.
+**Trace:** see the note at the end of this page for the run on 2026-09-24.
 
-| Ask | What happens |
+## 5. Book a meeting and tell the group
+
+> 下周三下午三点跟设计组开半小时的评审会，用腾讯会议，把会议号发到飞书「设计评审」群。
+
+| Hand | What it does |
 |---|---|
-| 比较一下 Sony WH-1000XM6 和 Bose QuietComfort Ultra 哪个更适合长途飞行，写一份简短对比存到 headphones.md | `web_search`, `web_fetch`, a file in the workspace, a preview in Library. |
-| 帮我看看这台机器还剩多少磁盘空间 | `shell` — stops on an approval card because it is a shell command. |
-| 定一个目标：12 月去京都前把日语会话练起来，每天 30 分钟 | A goal with steps and a daily check-in, worked on in the background. |
-| 每个工作日早上 7:30 给我一行今天的天气 | A routine; the message arrives as a notification with the app closed. |
-| 记住我坐高铁只坐靠窗、不坐一等座 | Memory; used the next time trains come up. |
+| `calendar` | the slot is free |
+| `shell: tmeet meeting create --subject 设计评审 --start 2026-09-30T15:00+08:00 --end 2026-09-30T15:30+08:00` | one approval card with the exact command; the answer carries `meeting_code` and `join_url` |
+| `shell: lark-cli im +messages-send --chat-id oc_… --text "…"` | the group message with 会议号 and link — its text on a second card |
+| `reminders` | ten minutes before |
 
-## Mixed
+Two CLIs, two approvals, no app opened. **Trace:** *pending* — 腾讯会议 and 飞书 logins on the test machine (`tmeet auth login`, `lark-cli auth login`).
 
-The reason the hands belong to one agent.
+## 6. Clipboard → calendar + alarm
 
-| Ask | What happens |
+> （copies a message: 「周五上午10点，海淀区中关村大街1号3层会议室，带上合同」）把剪贴板里的这个安排加到日历，提前一小时给我设个闹钟。
+
+| Hand | What it does |
 |---|---|
-| 下周三去上海开会，帮我做个行程：查网上有什么值得顺路去的地方，用 12306 看看早上的高铁，把出发时间写进日历 | Web research for the plan, 12306 on the phone for real trains and prices (search only), a calendar draft for the departure, `trips/…/itinerary.html` in the workspace — the `trip-plan` skill. |
-| 明天早上去北京南站坐 8 点的高铁，我几点得从家出发？把出发时间和车次发到飞书的「出差」群 | 高德 for the route from home (remembered) to the station at that hour, 12306 on the phone for the train, and one 飞书 message once you approve its text — MCP, screen and CLI in one run. |
-| 看看飞书上下午那个会的地点，从公司过去怎么走，顺便查一下会不会下雨 | `calendar +agenda` for the place, 高德 for the route and the weather; a plan in three lines. |
-| 看看微信里王芳最后说了什么，如果她问周末的事，查一下周六的天气再回她 | Reads the chat on the phone, decides what she asked, gets the forecast (高德, or the 天气 app), drafts a reply for you to confirm, sends it once you do. |
-| 帮我查明天北京到上海的高铁，选一班上午 9 点前出发的，订好后提醒我付款 | 12306 to the order screen (you approve 提交订单), then a reminder to pay in the app within its time limit; the payment stays yours. |
-| 把 Boss 刚发我的那条消息里的时间和地点整理进日历，再用高德看看要提前多久出发 | Reads the message on the phone, creates the event, checks the route. |
+| `device__clipboard_read` | the text (Android lets an app read the clipboard only while it is on screen; the tool says so when it is not) |
+| `device__calendar_create` | Friday 10:00, the address as the location, 「带上合同」 in the notes — Android's own permission dialog the first time |
+| `device__alarm_set` | 09:00 Friday through the clock app |
+| `amap__maps_geo` (optional) | the address checked, the travel time added to the notes |
+
+The phone's own capabilities as MCP tools ([device.md](device.md)); nothing leaves the phone except the optional geocode. **Trace:** *pending* — the local build on an Android phone (the device server runs only there).
+
+## 7. A 美团 order that stops before payment
+
+> 用美团给我点一份公司附近的麦当劳板烧鸡腿堡套餐，送到公司，到付款前停下来。
+
+| Hand | What it does |
+|---|---|
+| `phone_task` in 美团 | search, the restaurant, the set meal, the address; the capsule shows the step and **Stop** all the while |
+| the Sentinel | the tap on 提交订单 is SENSITIVE (`sensitive_words`): an approval card, once |
+| the stop | the operator ends on the payment page and says so; paying is yours, in the app |
+
+The only case on the screen, because 美团 has no personal API and its web needs the app's login. Everything the operator saw and did is in the trace, every tap drawn on its screenshot.
+
+**Trace:** *pending* — an Android phone with 美团 installed (the x86 emulator cannot run it). The executor, the capsule and Stop were verified on the emulator in [gui.md](gui.md).
+
+## Documented, not shown
+
+Four more screen cases are written up in the `train-tickets` and `phone-messages` skills and stop at the same place — the last confirmation is yours:
+
+- 交管12123: look up fines, stop before paying.
+- 滴滴: fill in the destination, stop before 呼叫.
+- 12306 app: a booking up to 提交订单 (the search itself no longer needs the screen).
+- 京东 app: the cart up to 结算.
+
+## Never in public material
+
+The agent can read 微信 on the phone's screen when you ask it to, and some people will. It does not appear in the showcase, the site or the film, nor do 支付宝 statements, 医保 or 个税 — services whose terms forbid automation or whose data should not be in a demo.
 
 ## Reading the trail
 
-Every step is a row in the chat — `shell: lark-cli calendar +agenda --as user`, `mcp:amap.maps_direction_driving(…)`, `phone_act: tap "发送" at (318,742) in 微信 (wechat)` — and every approval card says what will be done and why it asks; on the phone itself a ripple marks the tap and a caption says what the agent is doing. `Activity` under the avatar keeps the audit log; `Permissions` shows the grants, which for phone steps are only ever *once*. On your own server, `nanomuse phone traces` lists every phone task and `nanomuse phone trace <id> -o trace.html` renders one as a page with every screen the operator saw and every tap drawn on it ([gui.md → Traces](gui.md#traces)).
+Every step is a row in the chat — `12306__get-tickets(…)`, `shell: lark-cli calendar +agenda --as user`, `phone_act: tap "提交订单" at (318,742) in 美团` — and every approval card says what will be done and why it asks. `Activity` under the avatar keeps the audit log with the channel of every call; `Permissions` shows the grants, which for phone steps are only ever *once*. On your own server, `nanomuse phone traces` lists every phone task and `nanomuse phone trace <id> -o trace.html` renders one as a page with every screen the operator saw and every tap drawn on it ([gui.md → Traces](gui.md#traces)). The Markdown traces under [`docs/traces/`](traces/) are the same timelines, rendered for reading.
 
-Four built-in skills carry these habits — `feishu` and `amap` for the two services above, `train-tickets` and `phone-messages` for the phone — and `trip-plan` knows to look in 12306 when a phone is there and in 高德 when the server is. `Skills` in the app lists them; a folder of your own with the same name replaces one. Skills written for other agents in the [Agent Skills](https://agentskills.io) format drop into `<data_dir>/skills` as they are — Larksuite's own `lark-*` skills included.
+Eleven skills carry these habits — `feishu`, `tencent-meeting`, `amap`, `kuaidi100` and `train-tickets` for the services above, `phone-messages` for the screen, `trip-plan`, `meeting-prep`, `inbox-triage`, `compare-options` and `weekly-review` for the agent's own work. `Skills` in the app lists them; a folder of your own with the same name replaces one. Skills written for other agents in the [Agent Skills](https://agentskills.io) format drop into `<data_dir>/skills` as they are — Larksuite's own `lark-*` skills included.

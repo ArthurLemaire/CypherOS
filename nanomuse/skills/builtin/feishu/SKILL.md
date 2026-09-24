@@ -13,7 +13,7 @@ metadata:
 
 ## Is it there?
 
-`shell`: `lark-cli auth status` — `identities.user.available` must be true for anything done in the user's name (their agenda, their messages). If the command is missing or the user identity is not logged in, say so in one line and stop; logging in is the user's job (`lark-cli auth login` opens a browser). Do not try to install it or to log in for them. In a sandbox the CLI and its login only exist when the user shared them (`sandbox.share_read_only` / `sandbox.share` in config.toml); the error then says "command not found" — tell the user which two lines to add.
+`shell`: `lark-cli auth status` — `identities.user.available` must be true for anything done in the user's name (their agenda, their messages). If the command is missing, the answer says `not_configured`, or the user identity is not logged in, say so in one line and stop; setting it up is the user's job, in two steps they run themselves: `lark-cli config init --new` once (it prints a link that creates the CLI's own 飞书 app under their account), then `lark-cli auth login` (a link or a QR code to approve; `--domain calendar,im,task` narrows what it may touch). Do not try to install it, to run `config init` or to log in for them. In a sandbox the CLI and its login only exist when the user shared them (`sandbox.share_read_only` / `sandbox.share` in config.toml); the error then says "command not found" — tell the user which two lines to add.
 
 ## Reading
 

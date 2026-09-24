@@ -913,6 +913,16 @@ def test_workspace_scan_ignores_only_excludes_inside_it(tmp_path: Path):
     inner.mkdir(parents=True)
     (inner / "list.html").write_text("<p>")
     assert list(make(inner, data)._scan_workspace() or {}) == ["list.html"]
+    # the browser's persistent profile (cookies, caches Chromium rewrites on every page) is
+    # in the workspace by design and never an artifact; a download next to it is one
+    (inner / "browser-profile" / "Default" / "Cache").mkdir(parents=True)
+    (inner / "browser-profile" / "Default" / "Cache" / "data_0").write_text("x")
+    (inner / "downloads").mkdir()
+    (inner / "downloads" / "invoice.pdf").write_text("%PDF")
+    assert sorted(make(inner, data)._scan_workspace() or {}) == [
+        "downloads/invoice.pdf",
+        "list.html",
+    ]
 
 
 def test_html_artifacts_are_served_sandboxed(server, settings: Settings):
