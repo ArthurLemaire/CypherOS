@@ -26,14 +26,22 @@ def main() -> None:
     mascot_js = (ROOT / "site/assets/mascot.js").read_text()
     moods = json.loads(re.search(r"window\.NANOMUSE_MASCOT = (\{.*\});", mascot_js, re.S).group(1))
     css = (WEB / "src/components/RedPanda.css").read_text()
-    idle = moods["idle"].replace('<g class="rp-all"', '<circle cx="100" cy="100" r="100" fill="#dcebdc"></circle><g class="rp-all"', 1)
+    idle = moods["idle"].replace(
+        '<g class="rp-all"',
+        '<circle cx="100" cy="100" r="100" fill="#dcebdc"></circle><g class="rp-all"',
+        1,
+    )
     idle = re.sub(r'width="\d+" height="\d+"', 'width="480" height="480"', idle, count=1)
 
     with sync_playwright() as p:
         browser = p.chromium.launch()
         for size in (192, 512):
             page = browser.new_page(viewport={"width": size, "height": size}, device_scale_factor=1)
-            page.set_content(_page_html(re.sub(r"<svg ", f'<svg width="{size}" height="{size}" ', icon_svg, count=1)))
+            page.set_content(
+                _page_html(
+                    re.sub(r"<svg ", f'<svg width="{size}" height="{size}" ', icon_svg, count=1)
+                )
+            )
             page.screenshot(path=str(WEB / f"public/icon-{size}.png"), omit_background=True)
             page.close()
         page = browser.new_page(viewport={"width": 480, "height": 480}, device_scale_factor=1)
