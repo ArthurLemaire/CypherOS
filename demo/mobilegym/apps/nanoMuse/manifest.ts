@@ -18,7 +18,7 @@ export const manifest: AppManifest = {
   versionCode: 2,
   type: 'plugin',
   icon: IcLauncher,
-  iconBackground: 'linear-gradient(135deg, #6d28d9 0%, #a855f7 100%)',
+  iconBackground: '#2f7a5a', // the logo plate; the mark keeps its own colours
   iconForeground: '#ffffff',
   designViewportWidth: 360,
   theme: {

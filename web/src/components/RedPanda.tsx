@@ -1,5 +1,7 @@
+import { useId } from "react";
 import { cx } from "../util";
 import "./RedPanda.css";
+import { BLUSH, BODY, EARS, EYES, HEAD, MASK_PATH, MOUTH_PATH, NOSE_PATH, PALETTE, PAWS, TAIL_PATH, TAIL_WIDTH } from "./redPandaShapes";
 
 /**
  * The red panda: nanoMuse's own face. Meta's Muse gives its agent a plush doll that idles,
@@ -11,22 +13,27 @@ import "./RedPanda.css";
  * card; happy squints and bounces; sleepy shuts its eyes and floats z's; error droops its
  * ears and sweats. Nothing moves under prefers-reduced-motion, and `still` freezes the pose
  * for lists and pickers.
+ *
+ * The drawing has three levels of detail. `mark` is flat colour and the head's features
+ * only, for 16–28 px where a gradient is noise; `avatar` adds the gradients, the sheen, the
+ * blush and the tail; `hero` adds the finer touches for 160 px and up. Left unset, the size
+ * picks it. The geometry lives in redPandaShapes.ts and is shared with the logo.
  */
 export type Mood = "idle" | "working" | "waiting" | "happy" | "sleepy" | "error";
+export type Detail = "mark" | "avatar" | "hero";
 
-const RUST = "#d8632e";
-const RUST_DEEP = "#bf4f23";
-const CREAM = "#fff4e6";
-const DARK = "#2a1a14";
-const PAW = "#3a2721";
-const TEAR = "#a8482a";
-const BLUSH = "#f4a0a0";
+export function detailFor(size: number): Detail {
+  return size <= 28 ? "mark" : size >= 160 ? "hero" : "avatar";
+}
+
+const { fur, furLight, furDeep, furDark, cream, creamLight, creamDeep, dark, eyeLight, blush } = PALETTE;
 
 export function RedPanda({
   mood = "idle",
   size = 48,
   still = false,
-  bg = "#dcebdc",
+  bg = PALETTE.plate,
+  detail,
   className,
 }: {
   mood?: Mood;
@@ -35,162 +42,237 @@ export function RedPanda({
   still?: boolean;
   /** the circle behind it; "none" for transparent */
   bg?: string;
+  /** level of detail; by default the size decides */
+  detail?: Detail;
   className?: string;
 }) {
+  const lod = detail ?? detailFor(size);
+  const flat = lod === "mark";
+  const rich = lod === "hero";
+  // Gradient ids must be unique per instance: several pandas share one document, and a
+  // `url(#…)` finds the first match. useId may contain characters a fragment dislikes.
+  const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
+  const id = (name: string) => `rp${uid}-${name}`;
+  const paint = (name: string, fallback: string) => (flat ? fallback : `url(#${id(name)})`);
+
+  const eyeR = mood === "waiting" ? 14 : 13;
+
   return (
     <svg
       viewBox="0 0 200 200"
       width={size}
       height={size}
-      className={cx("rp", `rp-${mood}`, still && "rp-still", className)}
+      className={cx("rp", `rp-${mood}`, `rp-${lod}`, still && "rp-still", className)}
       aria-hidden="true"
       focusable="false"
     >
+      {!flat && (
+        <defs>
+          <radialGradient id={id("fur")} cx="40%" cy="32%" r="78%">
+            <stop offset="0" stopColor={furLight} />
+            <stop offset="0.45" stopColor={fur} />
+            <stop offset="1" stopColor={furDeep} />
+          </radialGradient>
+          <radialGradient id={id("body")} cx="50%" cy="15%" r="85%">
+            <stop offset="0" stopColor={furDeep} />
+            <stop offset="1" stopColor={furDark} />
+          </radialGradient>
+          <radialGradient id={id("cream")} cx="50%" cy="38%" r="72%">
+            <stop offset="0" stopColor={creamLight} />
+            <stop offset="0.7" stopColor={cream} />
+            <stop offset="1" stopColor={creamDeep} />
+          </radialGradient>
+          <radialGradient id={id("eye")} cx="50%" cy="62%" r="60%">
+            <stop offset="0" stopColor={eyeLight} />
+            <stop offset="1" stopColor={dark} />
+          </radialGradient>
+          <radialGradient id={id("shade")} cx="50%" cy="50%" r="50%">
+            <stop offset="0" stopColor={dark} stopOpacity="0.32" />
+            <stop offset="1" stopColor={dark} stopOpacity="0" />
+          </radialGradient>
+          <radialGradient id={id("sheen")} cx="50%" cy="50%" r="50%">
+            <stop offset="0" stopColor="#ffffff" stopOpacity="0.38" />
+            <stop offset="1" stopColor="#ffffff" stopOpacity="0" />
+          </radialGradient>
+          <clipPath id={id("plate")}>
+            {bg !== "none" ? <circle cx="100" cy="100" r="100" /> : <rect x="0" y="0" width="200" height="200" />}
+          </clipPath>
+          <clipPath id={id("head")}>
+            <ellipse cx={HEAD.cx} cy={HEAD.cy} rx={HEAD.rx} ry={HEAD.ry} />
+          </clipPath>
+        </defs>
+      )}
+
       {bg !== "none" && <circle cx="100" cy="100" r="100" fill={bg} />}
 
-      <g className="rp-all">
-        {/* tail, behind everything: rust with dark rings */}
-        <g className="rp-tail">
-          <path d="M150 200 Q178 190 186 150 Q190 128 178 118" fill="none" stroke={RUST} strokeWidth="26" strokeLinecap="round" />
-          <path d="M150 200 Q178 190 186 150 Q190 128 178 118" fill="none" stroke={PAW} strokeWidth="26" strokeLinecap="butt" strokeDasharray="12 16" strokeDashoffset="4" opacity="0.9" />
-        </g>
+      <g className="rp-all" clipPath={flat ? undefined : `url(#${id("plate")})`}>
+        {/* tail, behind everything: fur with dark rings */}
+        {!flat && (
+          <g className="rp-tail">
+            <path d={TAIL_PATH} fill="none" stroke={fur} strokeWidth={TAIL_WIDTH} strokeLinecap="round" />
+            <path
+              d={TAIL_PATH}
+              fill="none"
+              stroke={dark}
+              strokeWidth={TAIL_WIDTH}
+              strokeLinecap="butt"
+              strokeDasharray={rich ? "10 14" : "12 16"}
+              strokeDashoffset="6"
+              opacity="0.6"
+            />
+          </g>
+        )}
 
-        {/* body */}
-        <ellipse cx="100" cy="205" rx="66" ry="60" fill={RUST_DEEP} />
-        <ellipse cx="100" cy="214" rx="36" ry="40" fill={PAW} opacity="0.35" />
-
-        {/* paws at rest */}
-        {mood !== "working" && mood !== "waiting" && (
+        {/* body, and the shadow the head throws on it */}
+        {!flat && (
           <>
-            <ellipse className="rp-paw-l" cx="64" cy="188" rx="17" ry="12" fill={PAW} />
-            <ellipse className="rp-paw-r" cx="136" cy="188" rx="17" ry="12" fill={PAW} />
+            <ellipse cx={BODY.cx} cy={BODY.cy} rx={BODY.rx} ry={BODY.ry} fill={paint("body", furDeep)} />
+            <ellipse cx="100" cy="166" rx="56" ry="13" fill={paint("shade", dark)} opacity={flat ? 0.2 : 1} />
           </>
         )}
-        {mood === "waiting" && <ellipse className="rp-paw-l" cx="64" cy="188" rx="17" ry="12" fill={PAW} />}
 
+        {/* paws at rest */}
+        {!flat && mood !== "working" && mood !== "waiting" && (
+          <>
+            <ellipse className="rp-paw-l" cx={PAWS[0].cx} cy={PAWS[0].cy} rx={PAWS[0].rx} ry={PAWS[0].ry} fill={dark} />
+            <ellipse className="rp-paw-r" cx={PAWS[1].cx} cy={PAWS[1].cy} rx={PAWS[1].rx} ry={PAWS[1].ry} fill={dark} />
+          </>
+        )}
+        {!flat && mood === "waiting" && (
+          <ellipse className="rp-paw-l" cx={PAWS[0].cx} cy={PAWS[0].cy} rx={PAWS[0].rx} ry={PAWS[0].ry} fill={dark} />
+        )}
+
+        {/* the mark is the head alone, scaled up to fill the box */}
+        <g transform={flat ? "translate(100 100) scale(1.24) translate(-100 -97)" : undefined}>
         <g className="rp-head">
-          {/* ears */}
-          <g className="rp-ear rp-ear-l">
-            <path d="M42 68 Q14 30 26 14 Q38 6 82 44 Z" fill={RUST} strokeLinejoin="round" />
-            <path d="M46 62 Q30 38 34 26 Q42 20 72 46 Z" fill={CREAM} opacity="0.92" />
-          </g>
-          <g className="rp-ear rp-ear-r">
-            <path d="M158 68 Q186 30 174 14 Q162 6 118 44 Z" fill={RUST} strokeLinejoin="round" />
-            <path d="M154 62 Q170 38 166 26 Q158 20 128 46 Z" fill={CREAM} opacity="0.92" />
-          </g>
+          {/* round ears, cream inside */}
+          {EARS.map((ear, i) => (
+            <g key={i} className={cx("rp-ear", i === 0 ? "rp-ear-l" : "rp-ear-r")}>
+              <circle cx={ear.outer.cx} cy={ear.outer.cy} r={ear.outer.r} fill={flat ? furDeep : paint("fur", fur)} />
+              {flat && <circle cx={ear.outer.cx} cy={ear.outer.cy} r={ear.outer.r - 4} fill={fur} />}
+              <circle cx={ear.inner.cx} cy={ear.inner.cy} r={ear.inner.r} fill={paint("cream", cream)} />
+              {rich && <circle cx={ear.inner.cx} cy={ear.inner.cy + 3} r={ear.inner.r - 5} fill={blush} opacity="0.35" />}
+            </g>
+          ))}
 
-          {/* head */}
-          <ellipse cx="100" cy="100" rx="72" ry="62" fill={RUST} />
-          {/* face markings: cheeks, muzzle, brow spots */}
-          <ellipse cx="60" cy="124" rx="32" ry="28" fill={CREAM} />
-          <ellipse cx="140" cy="124" rx="32" ry="28" fill={CREAM} />
-          <ellipse cx="100" cy="138" rx="36" ry="26" fill={CREAM} />
-          <ellipse cx="70" cy="70" rx="11" ry="7" fill={CREAM} />
-          <ellipse cx="130" cy="70" rx="11" ry="7" fill={CREAM} />
-          {/* tear marks: from under the eyes out across the cheeks */}
-          <path d="M66 108 Q60 116 56 124" fill="none" stroke={TEAR} strokeWidth="7" strokeLinecap="round" opacity="0.55" />
-          <path d="M134 108 Q140 116 144 124" fill="none" stroke={TEAR} strokeWidth="7" strokeLinecap="round" opacity="0.55" />
+          {/* head and the cream face */}
+          <ellipse cx={HEAD.cx} cy={HEAD.cy} rx={HEAD.rx} ry={HEAD.ry} fill={paint("fur", fur)} />
+          <path d={MASK_PATH} fill={paint("cream", cream)} />
+          {!flat && (
+            <ellipse
+              className="rp-sheen"
+              cx="72"
+              cy="62"
+              rx="36"
+              ry="15"
+              transform="rotate(-18 72 62)"
+              fill={`url(#${id("sheen")})`}
+              clipPath={`url(#${id("head")})`}
+            />
+          )}
+
           {/* blush */}
-          <ellipse cx="52" cy="134" rx="9" ry="5.5" fill={BLUSH} opacity={mood === "happy" ? 0.95 : 0.7} />
-          <ellipse cx="148" cy="134" rx="9" ry="5.5" fill={BLUSH} opacity={mood === "happy" ? 0.95 : 0.7} />
+          {!flat &&
+            BLUSH.map((b, i) => (
+              <ellipse key={i} cx={b.cx} cy={b.cy} rx={b.rx} ry={b.ry} fill={blush} opacity={mood === "happy" ? 0.9 : 0.6} />
+            ))}
 
           {/* eyes */}
           <g className="rp-eyes">
             {mood === "happy" ? (
               <>
-                <path d="M61 98 Q72 84 83 98" fill="none" stroke={DARK} strokeWidth="5.5" strokeLinecap="round" />
-                <path d="M117 98 Q128 84 139 98" fill="none" stroke={DARK} strokeWidth="5.5" strokeLinecap="round" />
+                <path d="M60 110 Q72 96 84 110" fill="none" stroke={dark} strokeWidth="6" strokeLinecap="round" />
+                <path d="M116 110 Q128 96 140 110" fill="none" stroke={dark} strokeWidth="6" strokeLinecap="round" />
               </>
             ) : mood === "sleepy" ? (
               <>
-                <path d="M62 95 Q72 103 82 95" fill="none" stroke={DARK} strokeWidth="4.5" strokeLinecap="round" />
-                <path d="M118 95 Q128 103 138 95" fill="none" stroke={DARK} strokeWidth="4.5" strokeLinecap="round" />
+                <path d="M61 107 Q72 116 83 107" fill="none" stroke={dark} strokeWidth="5" strokeLinecap="round" />
+                <path d="M117 107 Q128 116 139 107" fill="none" stroke={dark} strokeWidth="5" strokeLinecap="round" />
               </>
             ) : (
-              <>
-                <g className="rp-eye">
+              EYES.map((e, i) => (
+                <g key={i} className="rp-eye">
                   <g className="rp-blink">
-                    <circle cx="72" cy="96" r={mood === "waiting" ? 11 : 10} fill={DARK} />
-                    <circle cx="75.5" cy="92.5" r="3.2" fill="#fff" />
-                    <circle cx="69" cy="99" r="1.5" fill="#fff" opacity="0.8" />
+                    <circle cx={e.eye.cx} cy={e.eye.cy} r={eyeR} fill={paint("eye", dark)} />
+                    <circle cx={e.highlight.cx} cy={e.highlight.cy} r={flat ? 4.6 : e.highlight.r} fill="#ffffff" />
                   </g>
                 </g>
-                <g className="rp-eye">
-                  <g className="rp-blink">
-                    <circle cx="128" cy="96" r={mood === "waiting" ? 11 : 10} fill={DARK} />
-                    <circle cx="131.5" cy="92.5" r="3.2" fill="#fff" />
-                    <circle cx="125" cy="99" r="1.5" fill="#fff" opacity="0.8" />
-                  </g>
-                </g>
-              </>
+              ))
             )}
           </g>
           {mood === "error" && (
             <>
-              <path d="M58 82 L80 76" fill="none" stroke={PAW} strokeWidth="3.5" strokeLinecap="round" />
-              <path d="M142 82 L120 76" fill="none" stroke={PAW} strokeWidth="3.5" strokeLinecap="round" />
+              <path d="M58 90 L82 86" fill="none" stroke={dark} strokeWidth="4" strokeLinecap="round" />
+              <path d="M142 90 L118 86" fill="none" stroke={dark} strokeWidth="4" strokeLinecap="round" />
             </>
           )}
 
           {/* nose and mouth */}
-          <path d="M93 126 Q100 121 107 126 Q105 136 100 139 Q95 136 93 126 Z" fill={DARK} />
+          <path d={NOSE_PATH} fill={dark} />
           {mood === "happy" ? (
             <>
-              <path d="M88 141 Q100 158 112 141 Z" fill={DARK} />
+              <path d="M88 141 Q100 158 112 141 Z" fill={dark} />
               <path d="M94 148 Q100 155 106 148 Z" fill="#f28c8c" />
             </>
           ) : mood === "waiting" ? (
-            <circle cx="100" cy="147" r="4" fill="none" stroke={DARK} strokeWidth="3" />
+            <path d="M100 139 V142 M96 147 a4 4 0 1 0 8 0 a4 4 0 1 0 -8 0" fill="none" stroke={dark} strokeWidth="3.2" strokeLinecap="round" />
           ) : mood === "error" ? (
-            <path d="M90 148 Q95 142 100 148 T110 148" fill="none" stroke={DARK} strokeWidth="3" strokeLinecap="round" />
+            <path d="M100 139 V142 M91 147 Q95.5 141 100 147 T109 147" fill="none" stroke={dark} strokeWidth="3.2" strokeLinecap="round" />
           ) : mood === "sleepy" ? (
-            <path d="M96 147 Q100 150 104 147" fill="none" stroke={DARK} strokeWidth="3" strokeLinecap="round" />
+            <path d="M100 139 V142 M95 146 Q100 150 105 146" fill="none" stroke={dark} strokeWidth="3.2" strokeLinecap="round" />
           ) : (
-            <path d="M100 139 V143 M91 143 Q100 152 109 143" fill="none" stroke={DARK} strokeWidth="3" strokeLinecap="round" />
+            <path d={MOUTH_PATH} fill="none" stroke={dark} strokeWidth={flat ? 4 : 3.2} strokeLinecap="round" strokeLinejoin="round" />
           )}
+        </g>
         </g>
 
         {/* the laptop it works at, and paws on the keys */}
-        {mood === "working" && (
+        {!flat && mood === "working" && (
           <g className="rp-laptop">
             <rect x="50" y="156" width="100" height="60" rx="10" fill="#3b3f47" />
             <rect x="58" y="164" width="84" height="46" rx="6" fill="#2b2f36" />
-            <circle cx="100" cy="186" r="5" fill={CREAM} opacity="0.35" />
-            <ellipse className="rp-paw-l rp-typing" cx="70" cy="158" rx="14" ry="10" fill={PAW} />
-            <ellipse className="rp-paw-r rp-typing" cx="130" cy="158" rx="14" ry="10" fill={PAW} />
+            <circle cx="100" cy="186" r="5" fill={cream} opacity="0.35" />
+            <ellipse className="rp-paw-l rp-typing" cx="70" cy="158" rx="14" ry="10" fill={dark} />
+            <ellipse className="rp-paw-r rp-typing" cx="130" cy="158" rx="14" ry="10" fill={dark} />
           </g>
         )}
 
         {/* a raised paw, and the card it holds up */}
-        {mood === "waiting" && (
+        {!flat && mood === "waiting" && (
           <g className="rp-raise">
-            <path d="M150 178 Q160 150 158 132" fill="none" stroke={PAW} strokeWidth="18" strokeLinecap="round" />
-            <ellipse cx="158" cy="128" rx="14" ry="12" fill={PAW} />
+            <path d="M148 180 Q158 152 156 134" fill="none" stroke={dark} strokeWidth="18" strokeLinecap="round" />
+            <ellipse cx="156" cy="130" rx="14" ry="12" fill={dark} />
             <g className="rp-bang">
-              <circle cx="164" cy="50" r="18" fill="#fff" stroke="#e5e7eb" strokeWidth="2" />
-              <text x="164" y="59" textAnchor="middle" fontSize="26" fontWeight="800" fill="#0064d4" fontFamily="Figtree, system-ui, sans-serif">
+              <circle cx="166" cy="50" r="18" fill="#ffffff" stroke="#e5e7eb" strokeWidth="2" />
+              <text x="166" y="59" textAnchor="middle" fontSize="26" fontWeight="800" fill="#0064d4" fontFamily="Figtree, system-ui, sans-serif">
                 !
               </text>
             </g>
           </g>
         )}
 
-        {mood === "happy" && (
+        {!flat && mood === "happy" && (
           <g className="rp-sparkles">
-            <path className="rp-spark" d="M38 40 Q39 52 50 54 Q39 56 38 68 Q37 56 26 54 Q37 52 38 40 Z" fill="#f5b400" />
-            <path className="rp-spark rp-spark-2" d="M166 34 Q167 43 175 44 Q167 45 166 54 Q165 45 157 44 Q165 43 166 34 Z" fill="#f5b400" />
+            <path className="rp-spark" d="M36 44 Q37 56 48 58 Q37 60 36 72 Q35 60 24 58 Q35 56 36 44 Z" fill="#f5b400" />
+            <path className="rp-spark rp-spark-2" d="M168 36 Q169 45 177 46 Q169 47 168 56 Q167 47 159 46 Q167 45 168 36 Z" fill="#f5b400" />
           </g>
         )}
 
-        {mood === "sleepy" && (
+        {!flat && mood === "sleepy" && (
           <g className="rp-zs" fill="#6b7280" fontFamily="Figtree, system-ui, sans-serif" fontWeight="700">
-            <text className="rp-z" x="146" y="70" fontSize="18">z</text>
-            <text className="rp-z rp-z-2" x="158" y="54" fontSize="14">z</text>
-            <text className="rp-z rp-z-3" x="167" y="41" fontSize="11">z</text>
+            <text className="rp-z" x="168" y="94" fontSize="18">
+              z
+            </text>
+            <text className="rp-z rp-z-2" x="178" y="80" fontSize="14">
+              z
+            </text>
+            <text className="rp-z rp-z-3" x="185" y="68" fontSize="11">
+              z
+            </text>
           </g>
         )}
 
-        {mood === "error" && <path className="rp-drop" d="M156 58 Q166 72 156 82 Q146 72 156 58 Z" fill="#8ec5ff" />}
+        {!flat && mood === "error" && <path className="rp-drop" d="M160 62 Q170 76 160 86 Q150 76 160 62 Z" fill="#8ec5ff" />}
       </g>
     </svg>
   );

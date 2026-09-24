@@ -1,0 +1,66 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`the flat logo > is a single silhouette with the face punched out 1`] = `"M26 52a24 24 0 1 1 48 0a24 24 0 1 1 -48 0zM126 52a24 24 0 1 1 48 0a24 24 0 1 1 -48 0zM30 104a70 62 0 1 1 140 0a70 62 0 1 1 -140 0zM59 108a13 13 0 1 0 26 0a13 13 0 1 0 -26 0zM115 108a13 13 0 1 0 26 0a13 13 0 1 0 -26 0zM93 128Q95.5 137 100 139Q104.5 137 107 128Q100 123 93 128ZM98.4 138.5v3.5h3.2v-3.5zM91 143.6Q95.5 150.6 100 143.6Q104.5 150.6 109 143.6L109 140.4Q104.5 147.4 100 140.4Q95.5 147.4 91 140.4Z"`;
+
+exports[`the flat logo > matches the last approved drawing 1`] = `
+[
+  {
+    "d": "M26 52a24 24 0 1 1 48 0a24 24 0 1 1 -48 0z",
+    "fill": "#bf4f23",
+  },
+  {
+    "d": "M126 52a24 24 0 1 1 48 0a24 24 0 1 1 -48 0z",
+    "fill": "#bf4f23",
+  },
+  {
+    "d": "M30 52a20 20 0 1 1 40 0a20 20 0 1 1 -40 0z",
+    "fill": "#d8632e",
+  },
+  {
+    "d": "M130 52a20 20 0 1 1 40 0a20 20 0 1 1 -40 0z",
+    "fill": "#d8632e",
+  },
+  {
+    "d": "M37 53a14 14 0 1 1 28 0a14 14 0 1 1 -28 0z",
+    "fill": "#fff4e6",
+  },
+  {
+    "d": "M135 53a14 14 0 1 1 28 0a14 14 0 1 1 -28 0z",
+    "fill": "#fff4e6",
+  },
+  {
+    "d": "M30 104a70 62 0 1 1 140 0a70 62 0 1 1 -140 0z",
+    "fill": "#d8632e",
+  },
+  {
+    "d": "M38 118C38 96 52 84 66 84C82 84 94 98 100 112C106 98 118 84 134 84C148 84 162 96 162 118C162 142.3 134.2 162 100 162C65.8 162 38 142.3 38 118Z",
+    "fill": "#fff4e6",
+  },
+  {
+    "d": "M59 108a13 13 0 1 1 26 0a13 13 0 1 1 -26 0z",
+    "fill": "#2a1a14",
+  },
+  {
+    "d": "M115 108a13 13 0 1 1 26 0a13 13 0 1 1 -26 0z",
+    "fill": "#2a1a14",
+  },
+  {
+    "d": "M72.3 103a4.2 4.2 0 1 1 8.4 0a4.2 4.2 0 1 1 -8.4 0z",
+    "fill": "#ffffff",
+  },
+  {
+    "d": "M128.3 103a4.2 4.2 0 1 1 8.4 0a4.2 4.2 0 1 1 -8.4 0z",
+    "fill": "#ffffff",
+  },
+  {
+    "d": "M93 128Q100 123 107 128Q104.5 137 100 139Q95.5 137 93 128Z",
+    "fill": "#2a1a14",
+  },
+  {
+    "d": "M98.4 138.5h3.2v3.5h-3.2zM91 140.4Q95.5 147.4 100 140.4Q104.5 147.4 109 140.4L109 143.6Q104.5 150.6 100 143.6Q95.5 150.6 91 143.6Z",
+    "fill": "#2a1a14",
+  },
+]
+`;
+
+exports[`the flat logo > matches the last approved drawing 2`] = `"<svg viewBox="0 0 200 200" width="200" height="200" class="rp rp-idle rp-hero" aria-hidden="true" focusable="false"><defs><radialGradient id="rpR0-fur" cx="40%" cy="32%" r="78%"><stop offset="0" stop-color="#ee8a4c"></stop><stop offset="0.45" stop-color="#d8632e"></stop><stop offset="1" stop-color="#bf4f23"></stop></radialGradient><radialGradient id="rpR0-body" cx="50%" cy="15%" r="85%"><stop offset="0" stop-color="#bf4f23"></stop><stop offset="1" stop-color="#9e3f18"></stop></radialGradient><radialGradient id="rpR0-cream" cx="50%" cy="38%" r="72%"><stop offset="0" stop-color="#fffaf2"></stop><stop offset="0.7" stop-color="#fff4e6"></stop><stop offset="1" stop-color="#f3dfc6"></stop></radialGradient><radialGradient id="rpR0-eye" cx="50%" cy="62%" r="60%"><stop offset="0" stop-color="#4a302a"></stop><stop offset="1" stop-color="#2a1a14"></stop></radialGradient><radialGradient id="rpR0-shade" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#2a1a14" stop-opacity="0.32"></stop><stop offset="1" stop-color="#2a1a14" stop-opacity="0"></stop></radialGradient><radialGradient id="rpR0-sheen" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#ffffff" stop-opacity="0.38"></stop><stop offset="1" stop-color="#ffffff" stop-opacity="0"></stop></radialGradient><clipPath id="rpR0-plate"><rect x="0" y="0" width="200" height="200"></rect></clipPath><clipPath id="rpR0-head"><ellipse cx="100" cy="104" rx="70" ry="62"></ellipse></clipPath></defs><g class="rp-all" clip-path="url(#rpR0-plate)"><g class="rp-tail"><path d="M142 198Q178 190 186 150Q190 132 180 122" fill="none" stroke="#d8632e" stroke-width="24" stroke-linecap="round"></path><path d="M142 198Q178 190 186 150Q190 132 180 122" fill="none" stroke="#2a1a14" stroke-width="24" stroke-linecap="butt" stroke-dasharray="10 14" stroke-dashoffset="6" opacity="0.6"></path></g><ellipse cx="100" cy="196" rx="58" ry="48" fill="url(#rpR0-body)"></ellipse><ellipse cx="100" cy="166" rx="56" ry="13" fill="url(#rpR0-shade)" opacity="1"></ellipse><ellipse class="rp-paw-l" cx="66" cy="186" rx="15" ry="10" fill="#2a1a14"></ellipse><ellipse class="rp-paw-r" cx="134" cy="186" rx="15" ry="10" fill="#2a1a14"></ellipse><g><g class="rp-head"><g class="rp-ear rp-ear-l"><circle cx="50" cy="52" r="24" fill="url(#rpR0-fur)"></circle><circle cx="51" cy="53" r="14" fill="url(#rpR0-cream)"></circle><circle cx="51" cy="56" r="9" fill="#f4a0a0" opacity="0.35"></circle></g><g class="rp-ear rp-ear-r"><circle cx="150" cy="52" r="24" fill="url(#rpR0-fur)"></circle><circle cx="149" cy="53" r="14" fill="url(#rpR0-cream)"></circle><circle cx="149" cy="56" r="9" fill="#f4a0a0" opacity="0.35"></circle></g><ellipse cx="100" cy="104" rx="70" ry="62" fill="url(#rpR0-fur)"></ellipse><path d="M38 118C38 96 52 84 66 84C82 84 94 98 100 112C106 98 118 84 134 84C148 84 162 96 162 118C162 142.3 134.2 162 100 162C65.8 162 38 142.3 38 118Z" fill="url(#rpR0-cream)"></path><ellipse class="rp-sheen" cx="72" cy="62" rx="36" ry="15" transform="rotate(-18 72 62)" fill="url(#rpR0-sheen)" clip-path="url(#rpR0-head)"></ellipse><ellipse cx="56" cy="134" rx="10" ry="6" fill="#f4a0a0" opacity="0.6"></ellipse><ellipse cx="144" cy="134" rx="10" ry="6" fill="#f4a0a0" opacity="0.6"></ellipse><g class="rp-eyes"><g class="rp-eye"><g class="rp-blink"><circle cx="72" cy="108" r="13" fill="url(#rpR0-eye)"></circle><circle cx="76.5" cy="103" r="4.2" fill="#ffffff"></circle></g></g><g class="rp-eye"><g class="rp-blink"><circle cx="128" cy="108" r="13" fill="url(#rpR0-eye)"></circle><circle cx="132.5" cy="103" r="4.2" fill="#ffffff"></circle></g></g></g><path d="M93 128Q100 123 107 128Q104.5 137 100 139Q95.5 137 93 128Z" fill="#2a1a14"></path><path d="M100 139V142M91 142Q95.5 149 100 142Q104.5 149 109 142" fill="none" stroke="#2a1a14" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"></path></g></g></g></svg>"`;

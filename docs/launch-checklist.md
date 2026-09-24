@@ -36,12 +36,12 @@ Decisions this list rests on (see [design.md](design.md) for the reasoning): the
 
 ## 2. Mascot v2: the red panda (P0, before every screenshot and frame)
 
-- [ ] Redraw `web/src/components/RedPanda.tsx`: round ears, one cream face mask with a widow's peak, larger and lower eyes with a single highlight, a small nose and an ω mouth; drop the tear marks, brow dots and the second highlight; four radial gradients plus a crown sheen, no SVG filters; gradient ids prefixed with `useId`; `clipPath` for the round crop
-- [ ] `detail: "mark" | "avatar" | "hero"`; keep the six moods; move transform origins in `RedPanda.css`
-- [ ] Comparison sheet (current vs new × 16/40/96/200 px × six moods × light/dark), produced under `/tmp`
-- [ ] Regenerate: `icon.svg`, PWA icons, Android adaptive foreground and monochrome silhouette (flat), README cover, `site/assets/mascot.js`, film frames, MobileGym `res/icons.tsx`
-- [ ] `docs/design.md`: the new spec and the decision record (red panda rather than giant panda; 2.5D rather than real 3D; flat icon)
-- [ ] Snapshot tests, `tsc`, vitest, rebuild the static bundle; CHANGELOG; commit and push
+- [x] Redraw `web/src/components/RedPanda.tsx`: round ears, one cream face mask with a widow's peak, larger and lower eyes with a single highlight, a small nose and an ω mouth; drop the tear marks, brow dots and the second highlight; four radial gradients plus a crown sheen, no SVG filters; gradient ids prefixed with `useId`; `clipPath` for the round crop
+- [x] `detail: "mark" | "avatar" | "hero"`; keep the six moods; move transform origins in `RedPanda.css`
+- [x] Comparison sheet (current vs new × 16/40/96/200 px × six moods × light/dark), produced under `/tmp`
+- [x] Regenerate: `icon.svg`, PWA icons, Android adaptive foreground and monochrome silhouette (flat), README cover, `site/assets/mascot.js`, MobileGym `res/icons.tsx` (`npm run mascot:assets`, `npm run site:mascot`, `scripts/mascot_png.py`); film frames are re-rendered with the film in §12
+- [x] `docs/design.md`: the new spec and the decision record (red panda rather than giant panda; 2.5D rather than real 3D; flat icon)
+- [x] Snapshot tests, `tsc`, vitest, rebuild the static bundle; CHANGELOG; commit and push
 - [ ] P2: a plush-toy 3D render for the onboarding page, the site and store listings only
 
 ---
