@@ -565,7 +565,10 @@ fun ChatScreen(
     val messages by viewModel.uiMessages.collectAsState()
     val hasOlderMessages by viewModel.hasOlderMessages.collectAsState()
     val isStreaming by viewModel.isStreaming.collectAsState()
+    // nanoMuse: the screen stays on while the agent drives the browser or another app's screen.
+    io.github.nanomuse.status.KeepAwake.Effect(isStreaming)
     val canResume by viewModel.canResume.collectAsState()
+    val nmContinueAsk by viewModel.nmContinueAsk.collectAsState() // nanoMuse: "continue?" card replaces the banner while shown
     // [T-android-compact-progress] null when no compaction is running.
     val compactProgress by viewModel.compactProgress.collectAsState()
     val error by viewModel.error.collectAsState()
@@ -3977,7 +3980,7 @@ fun ChatScreen(
                             )
                         }
                     }
-                    if (canResume && !isStreaming && error == null && !lastAssistantHasError) {
+                    if (canResume && !isStreaming && error == null && !lastAssistantHasError && nmContinueAsk == null) {
                         item(key = "__resume_banner__", contentType = "resume_banner") {
                             ResumeBanner(onResume = {
                                 viewModel.resume()
@@ -4763,6 +4766,8 @@ fun ChatScreen(
                 sessionId = viewModel.activeSessionId,
                 onOpenSession = { onMoveToSession(it) },
             )
+            // nanoMuse: a long task that hit the step ceiling asks "continue?" here.
+            io.github.nanomuse.ui.chat.ContinueAskHost(viewModel)
 
             // T-chat-title-pill-edit: reuse SessionEditSheet from the session
             // list (same composable, exposed `internal`) so title + category

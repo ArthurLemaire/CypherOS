@@ -799,6 +799,13 @@ class ChatViewModel(
      */
     private val _canResume = MutableStateFlow(false)
     val canResume: StateFlow<Boolean> = _canResume.asStateFlow()
+    // nanoMuse: set when the turn ceiling stops a long task; the chat shows a "continue?" card.
+    private val _nmContinueAsk = MutableStateFlow<Int?>(null)
+    val nmContinueAsk: StateFlow<Int?> = _nmContinueAsk.asStateFlow()
+    fun nmContinue(keepGoing: Boolean) {
+        _nmContinueAsk.value = null
+        if (keepGoing) resume()
+    }
 
     /**
      * [T-android-group-pause-badge-restamp] Marks the ONE `_canResume = true`
@@ -3955,6 +3962,7 @@ class ChatViewModel(
     }.getOrDefault(false)
 
     private fun loadSession() {
+        _nmContinueAsk.value = null // nanoMuse: the "continue?" card belongs to the session that hit the ceiling
         // T-android-crash-detected-halt: when CrashFrequencyDetector
         // tripped (#459, ≥3 crashes in last hour), skip the heavy
         // session-restore path entirely. Re-running the same persisted
@@ -5024,6 +5032,7 @@ class ChatViewModel(
         _cachedLatestMarker = null
         toolLoopDetector.reset()
         _canResume.value = false
+        _nmContinueAsk.value = null // nanoMuse
         _attachments.value = emptyList()
         _promptQueue.value = emptyList()
         _hasInjectedShareContent.value = false
@@ -5207,6 +5216,7 @@ class ChatViewModel(
             return false
         }
         _canResume.value = false
+        _nmContinueAsk.value = null // nanoMuse
         _error.value = null
 
         // T149 parity: revoke memory_writes in the parts we're about to drop
@@ -5357,6 +5367,7 @@ class ChatViewModel(
     fun retryFromMessage(messageId: String) {
         if (_isStreaming.value) return
         _canResume.value = false
+        _nmContinueAsk.value = null // nanoMuse
         val messages = _messages.value
         val index = messages.indexOfFirst { it.id == messageId }
         if (index < 0) return
@@ -5505,6 +5516,7 @@ class ChatViewModel(
     fun deleteFromMessage(messageId: String) {
         if (_isStreaming.value) return
         _canResume.value = false
+        _nmContinueAsk.value = null // nanoMuse
         val messages = _messages.value
         val index = messages.indexOfFirst { it.id == messageId }
         if (index < 0) return
@@ -6370,6 +6382,7 @@ class ChatViewModel(
         io.github.nanomuse.chat.SessionAddenda.onTurnFinished(sid)
         _messages.value.lastOrNull { it.role == "assistant" }?.content?.let { text ->
             io.github.nanomuse.goals.GoalFlow.afterTurn(context, sid, text)
+            io.github.nanomuse.feed.FeedFlow.afterTurn(context, sid, text)
         }
         val fc = nmFirstConversation
         if (!fc.isBoundTo(sid)) return
@@ -6445,6 +6458,7 @@ class ChatViewModel(
         // A fresh send supersedes any pending resume — mirror iOS which clears
         // canResume at the top of send().
         _canResume.value = false
+        _nmContinueAsk.value = null // nanoMuse
         // T185: clear the share-injected flag the moment the user actually
         // sends. Without this, the "Move to…" capsule (gated on
         // hasInjectedShareContent) keeps floating over the user-message row
@@ -9201,11 +9215,9 @@ class ChatViewModel(
         if (_streamingById.value.containsKey(assistantId)) {
             _streamingById.value = _streamingById.value - assistantId
         }
-        setInlineError(
-            "Stopped after $MAX_AGENT_TURNS agent turns to prevent runaway " +
-            "tool use. The model kept calling tools without finishing — tap " +
-            "Resume to continue from here, or send a new message to start over.",
-        )
+        // nanoMuse: instead of an error, the chat asks "continue?" (the Resume state stays set
+        // underneath, so the upstream banner still works if the card is dismissed).
+        _nmContinueAsk.value = MAX_AGENT_TURNS
         // [T-android-group-pause-badge-restamp] A LIVE interruption just
         // happened: this is a real entry into the paused state, so the
         // badge's 24h freshness stamp must be refreshed. Cancel any
@@ -10382,6 +10394,8 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
                 append("\n\n")
                 append(dailyMemoryFragment)
             }
+            // nanoMuse: USER.md — what the agent knows about the person, kept as a file they can edit.
+            io.github.nanomuse.sysfiles.UserFile.promptFragment(context)?.let { append("\n\n").append(it) }
             // Runtime context goes last so the prefix above stays byte-stable
             // across requests within the same day. Keep ordering deterministic
             // (date → tz → lang → model count) — any reorder defeats the cache.
@@ -10401,6 +10415,9 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
                 ?.let { append("\n\n").append(it) }
             // nanoMuse: a goal's conversation carries the goal's context and reporting protocol.
             io.github.nanomuse.goals.GoalFlow.systemAddendum(context, realSessionId.ifEmpty { sessionId })
+                ?.let { append("\n\n").append(it) }
+            // nanoMuse: the feed's conversation carries the user's feed preferences and the post protocol.
+            io.github.nanomuse.feed.FeedFlow.systemAddendum(context, realSessionId.ifEmpty { sessionId })
                 ?.let { append("\n\n").append(it) }
         }
     }
@@ -11789,6 +11806,7 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
             return
         }
         _canResume.value = false
+        _nmContinueAsk.value = null // nanoMuse
         _error.value = null
         // [T-error-persist-android] resume() follows finalizeAtTurnLimit's
         // setInlineError (which persisted an error sticker on the last assistant

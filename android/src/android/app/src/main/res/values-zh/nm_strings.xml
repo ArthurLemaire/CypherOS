@@ -177,4 +177,105 @@
     <string name="nm_grants_revoke">撤销</string>
     <string name="nm_grants_revoke_all">全部撤销</string>
     <string name="nm_grants_revoke_confirm">撤销这条授权？下次遇到会重新问你。</string>
+
+    <!-- 0.1.5: 动态 -->
+    <string name="nm_tab_feed">动态</string>
+    <string name="nm_feed_session_title">动态</string>
+    <string name="nm_feed_routine_label">写动态</string>
+    <string name="nm_feed_prompt">写今天的动态。</string>
+    <string name="nm_feed_default_preferences">为我打造一个关于我兴趣的动态版块。保持内容简洁直接，确保可快速浏览，尽量避免点击诱饵。</string>
+    <string name="nm_feed_intro_title">动态版块说明</string>
+    <string name="nm_feed_intro_desc">你的动态版块由以下指示驱动。你对此提示做出的任何编辑都将应用于今后的动态帖子。</string>
+    <string name="nm_feed_edit">编辑</string>
+    <string name="nm_feed_got_it">知道了</string>
+    <string name="nm_feed_save">保存</string>
+    <string name="nm_feed_settings_title">动态</string>
+    <string name="nm_feed_routine_switch">每天自动写</string>
+    <string name="nm_feed_routine_time">每天 %1$s · 点击修改</string>
+    <string name="nm_feed_routine_needs_model">先添加一个模型——动态由你的 agent 来写。</string>
+    <string name="nm_feed_write_now">现在写一版</string>
+    <string name="nm_feed_generating">正在写…</string>
+    <string name="nm_feed_discuss">讨论</string>
+    <string name="nm_feed_discuss_opener">聊聊我动态里的这一条：\n\n**%1$s**\n\n%2$s</string>
+    <string name="nm_feed_delete">删除这条</string>
+    <string name="nm_feed_info_type">类型</string>
+    <string name="nm_feed_info_written">写于</string>
+    <string name="nm_feed_info_source">来源</string>
+    <string name="nm_feed_info_file">文件</string>
+    <string name="nm_feed_type_brief">简报</string>
+    <string name="nm_feed_type_reminder">提醒</string>
+    <string name="nm_feed_type_idea">点子</string>
+    <string name="nm_feed_type_goal">目标</string>
+    <string name="nm_feed_type_memory">记忆</string>
+    <string name="nm_feed_type_note">随记</string>
+    <string name="nm_feed_empty_title">你的动态版块尚未准备就绪</string>
+    <string name="nm_feed_empty_body">随着我们相互了解，新的帖子会显示在这里。每天 %1$s，我会读一遍记得的关于你的东西——记忆文件、最近一周的日记、你的目标——然后写几条简短的帖子。</string>
+    <string name="nm_feed_empty_how_title">一句话就能调整</string>
+    <string name="nm_feed_empty_how_body">点右上角的滑杆，告诉我你想多看什么、关掉每天的例程，或者让我现在就写第一天。</string>
+    <string name="nm_feed_card_posted">已加入动态</string>
+    <string name="nm_feed_card_open">打开</string>
+    <string name="nm_feed_day_today">%1$s%2$s</string>
+    <string name="nm_feed_day_past">%1$s · %2$s</string>
+    <string name="nm_feed_part_morning">上午</string>
+    <string name="nm_feed_part_afternoon">下午</string>
+    <string name="nm_feed_part_evening">晚上</string>
+    <string-array name="nm_weekdays">
+        <item>周一</item><item>周二</item><item>周三</item><item>周四</item><item>周五</item><item>周六</item><item>周日</item>
+    </string-array>
+    <string name="nm_time_just_now">刚刚</string>
+    <string name="nm_time_yesterday">昨天</string>
+
+    <!-- 0.1.5: 系统文件 -->
+    <string name="nm_back">返回</string>
+    <string name="nm_cancel">取消</string>
+    <string name="nm_save">保存</string>
+    <string name="nm_sysfiles_title">系统文件</string>
+    <string name="nm_sysfiles_subtitle">SOUL、USER、MEMORY、动态偏好、HEARTBEAT</string>
+    <string name="nm_sysfiles_sort_name">名称</string>
+    <string name="nm_sysfiles_sort_recent">最近修改</string>
+    <string name="nm_sysfiles_sort_toggle">切换排序</string>
+    <string name="nm_sysfiles_open_memory">打开记忆</string>
+    <string name="nm_sysfiles_footer">这些文件属于 agent：它是谁、它对你的了解、它记住的事、它为你写的东西、它什么时候自己醒来。都存在你手机里——agent 在它的 shell 里通过 /var/minis/memory 读写，你也可以在这里直接改。</string>
+    <string name="nm_sysfile_about_lead">关于此文件。</string>
+    <string name="nm_sysfile_about_soul">这是 agent 的人格：它在每次对话里努力守住的价值和习惯、它的名字、它回答时的风格。从 nanoMuse 自带的模板开始，agent 可能会随着时间打磨它，并在改动时告诉你。你随时可以编辑。这段说明不是文件的一部分。</string>
+    <string name="nm_sysfile_about_user">agent 把这个文件当作关于你的工作笔记：你的名字、你喜欢的称呼、你的时区，以及它要派上用场所需要的背景，比如你正在做的事。它会从你们的对话里逐渐填进来，并在每次对话开始时读一遍。它反映的是 agent 当前的理解，可能不完整或过时。这里的任何内容你都可以改，agent 会照你写的来。这段说明不是文件的一部分。</string>
+    <string name="nm_sysfile_about_memory">agent 跨对话保留的长期记录——值得记住的事，用它自己的话写下，加上你从别的助手导入的内容。逐日的日记放在同一个记忆文件夹里。开着记忆时，每次对话开始都会读。这段说明不是文件的一部分。</string>
+    <string name="nm_sysfile_about_feed">一段话决定动态怎么写：你想多看什么、少看什么、每条多长。每天写动态的例程动笔前会先读它。这段说明不是文件的一部分。</string>
+    <string name="nm_sysfile_about_heartbeat">agent 什么时候自己醒来：每条例程和每个目标检查，它们的时间和上次运行的结果。由例程实时生成，所以这里只能看——要改请去 目标 → 例程。这段说明不是文件的一部分。</string>
+    <string name="nm_sysfile_edit">编辑</string>
+    <string name="nm_sysfile_copy">复制内容</string>
+    <string name="nm_sysfile_share">分享</string>
+    <string name="nm_sysfile_copied">已复制</string>
+    <string name="nm_sysfile_edit_hint">用 Markdown 写 %1$s。标题和要点最好读；别写密码等敏感信息。</string>
+    <string name="nm_sysfile_saved">已保存</string>
+    <string name="nm_sysfile_empty">这里还是空的。</string>
+    <string name="nm_sysfile_empty_editable">这里还是空的。点铅笔来写，或者让 agent 在聊天中慢慢填。</string>
+    <string name="nm_heartbeat_intro">哪些事会自己跑、什么时候跑。由例程生成；要改请去 目标 → 例程。</string>
+    <string name="nm_heartbeat_routines">例程</string>
+    <string name="nm_heartbeat_goal_checks">目标检查</string>
+    <string name="nm_heartbeat_none">暂无</string>
+    <string name="nm_heartbeat_last_ok">上次运行 %1$s</string>
+    <string name="nm_heartbeat_last_failed">上次运行 %1$s，失败</string>
+
+    <!-- 0.1.5: 导入记忆 -->
+    <string name="nm_import_title">导入记忆</string>
+    <string name="nm_import_intro">把别的助手已经了解的你带过来。用下面这段提示词去问它，把回答粘贴到这里，就会追加到 GLOBAL.md 的「导入」一节——你的 agent 每次对话开始都会读到。</string>
+    <string name="nm_import_step1">去问你的另一个助手</string>
+    <string name="nm_import_step2">把它的回答贴进来</string>
+    <string name="nm_import_prompt">请把你记住的关于我的信息整理成简洁的要点：我是谁、喜欢被怎么称呼、住在哪里和时区、做什么工作、现在在忙什么、我的偏好和习惯，以及你被要求一直做或绝不做的事。纯文本，不要标题，不要包含密码等敏感信息。</string>
+    <string name="nm_import_copy_prompt">复制提示词</string>
+    <string name="nm_import_from_hint">来自（可选）——如 ChatGPT、Claude</string>
+    <string name="nm_import_paste_hint">把要点粘贴到这里</string>
+    <string name="nm_import_heading">导入</string>
+    <string name="nm_import_append">追加到记忆</string>
+    <string name="nm_import_done">已追加到 GLOBAL.md</string>
+    <string name="nm_import_empty">没有可追加的内容</string>
+    <string name="nm_import_footer">贴之前先过一眼：去掉密码、卡号，以及任何你不想以明文放在手机文件里的东西。</string>
+
+    <!-- 0.1.5: 状态 -->
+    <string name="nm_tool_done">已完成</string>
+    <string name="nm_continue_title">已经走了 %1$d 步，还没做完</string>
+    <string name="nm_continue_body">%1$s 在这件事上已经连续走了 %2$d 步，还没有结束。从这里继续吗？</string>
+    <string name="nm_continue_yes">继续</string>
+    <string name="nm_continue_no">先停在这里</string>
 </resources>

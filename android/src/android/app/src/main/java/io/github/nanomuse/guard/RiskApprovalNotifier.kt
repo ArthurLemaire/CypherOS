@@ -96,7 +96,7 @@ class RiskApprovalNotifier(
     }
 
     companion object {
-        private const val TAG = "nanoMuse.RiskNotifier"
+        private const val TAG = "RiskNotifier"
         const val CHANNEL_ID = "nanomuse_approval"
         private const val TAG_NOTIF = "nanomuse-approval"
     }

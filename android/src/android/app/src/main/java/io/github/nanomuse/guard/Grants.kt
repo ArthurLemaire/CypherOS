@@ -33,7 +33,7 @@ data class Grant(
  * them can be revoked.
  */
 object Grants {
-    private const val TAG = "nanoMuse.Grants"
+    private const val TAG = "Grants"
     private var file: File? = null
     private val session = ArrayList<Grant>()
     private val _always = MutableStateFlow<List<Grant>>(emptyList())

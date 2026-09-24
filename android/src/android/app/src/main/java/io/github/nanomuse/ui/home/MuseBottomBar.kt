@@ -22,7 +22,7 @@ import androidx.compose.ui.unit.dp
 import com.openminis.app.ui.theme.ChatColors
 
 /**
- * Muse's bottom bar: a plain white strip, five (here four) glyphs, the current one filled and
+ * Muse's bottom bar: a plain white strip, five glyphs, the current one filled and
  * dark, the others outlined and softer. No labels, no indicator pill — the fill is the state.
  */
 @Composable

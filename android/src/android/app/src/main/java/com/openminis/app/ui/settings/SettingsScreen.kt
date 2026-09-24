@@ -89,6 +89,7 @@ fun SettingsScreen(
     // Agent Runtime section; default no-op for callers that haven't wired
     // the route yet.
     onSoulClick: () -> Unit = {},
+    onSystemFilesClick: () -> Unit = {}, // nanoMuse
     onPermissionsClick: () -> Unit = {},
     onUsageClick: () -> Unit = {},
     onAppearanceClick: () -> Unit = {},
@@ -195,6 +196,14 @@ fun SettingsScreen(
                     title = stringResource(R.string.settings_memory),
                     subtitle = stringResource(R.string.settings_memory_subtitle),
                     onClick = onMemoryClick,
+                )
+                // nanoMuse: Muse's "System files" — SOUL / USER / MEMORY / feed / HEARTBEAT in one list.
+                SettingsItem(
+                    icon = Icons.Outlined.Description,
+                    iconColor = Color(0xFF0A66E4),
+                    title = stringResource(R.string.nm_sysfiles_title),
+                    subtitle = stringResource(R.string.nm_sysfiles_subtitle),
+                    onClick = onSystemFilesClick,
                 )
                 // [T-mcp-integration-android] MCP Integrations — directly below Memory.
                 // [T-android-mcp-icon-distinct] Dashboard (2x2 block grid) instead of

@@ -179,4 +179,105 @@
     <string name="nm_grants_revoke">Revoke</string>
     <string name="nm_grants_revoke_all">Revoke all</string>
     <string name="nm_grants_revoke_confirm">Revoke this approval? The next time it comes up, you will be asked again.</string>
+
+    <!-- 0.1.5: feed -->
+    <string name="nm_tab_feed">Feed</string>
+    <string name="nm_feed_session_title">Feed</string>
+    <string name="nm_feed_routine_label">Write the feed</string>
+    <string name="nm_feed_prompt">Write today\'s feed.</string>
+    <string name="nm_feed_default_preferences">Build me a feed about what I care about. Keep it short and direct, easy to skim, no clickbait.</string>
+    <string name="nm_feed_intro_title">About the feed</string>
+    <string name="nm_feed_intro_desc">Your feed is driven by the instruction below. Any edit you make here applies to every post from now on.</string>
+    <string name="nm_feed_edit">Edit</string>
+    <string name="nm_feed_got_it">Got it</string>
+    <string name="nm_feed_save">Save</string>
+    <string name="nm_feed_settings_title">Feed</string>
+    <string name="nm_feed_routine_switch">Write it every day</string>
+    <string name="nm_feed_routine_time">Daily at %1$s · tap to change</string>
+    <string name="nm_feed_routine_needs_model">Add a model first — the feed is written by your agent.</string>
+    <string name="nm_feed_write_now">Write it now</string>
+    <string name="nm_feed_generating">Writing…</string>
+    <string name="nm_feed_discuss">Discuss</string>
+    <string name="nm_feed_discuss_opener">Let\'s talk about this post from my feed:\n\n**%1$s**\n\n%2$s</string>
+    <string name="nm_feed_delete">Remove this post</string>
+    <string name="nm_feed_info_type">Type</string>
+    <string name="nm_feed_info_written">Written</string>
+    <string name="nm_feed_info_source">From</string>
+    <string name="nm_feed_info_file">File</string>
+    <string name="nm_feed_type_brief">Briefing</string>
+    <string name="nm_feed_type_reminder">Reminder</string>
+    <string name="nm_feed_type_idea">Idea</string>
+    <string name="nm_feed_type_goal">Goal</string>
+    <string name="nm_feed_type_memory">Memory</string>
+    <string name="nm_feed_type_note">Note</string>
+    <string name="nm_feed_empty_title">Your feed isn\'t ready yet</string>
+    <string name="nm_feed_empty_body">As we get to know each other, new posts will show up here. Every day at %1$s I read what I remember about you — your memory files, the last week of diary, your goals — and write a few short posts.</string>
+    <string name="nm_feed_empty_how_title">Steer it with one sentence</string>
+    <string name="nm_feed_empty_how_body">Tap the sliders at the top right to tell me what you want more of, switch the daily routine off, or have me write the first day now.</string>
+    <string name="nm_feed_card_posted">Added to your feed</string>
+    <string name="nm_feed_card_open">Open</string>
+    <string name="nm_feed_day_today">%1$s %2$s</string>
+    <string name="nm_feed_day_past">%1$s · %2$s</string>
+    <string name="nm_feed_part_morning">morning</string>
+    <string name="nm_feed_part_afternoon">afternoon</string>
+    <string name="nm_feed_part_evening">evening</string>
+    <string-array name="nm_weekdays">
+        <item>Monday</item><item>Tuesday</item><item>Wednesday</item><item>Thursday</item><item>Friday</item><item>Saturday</item><item>Sunday</item>
+    </string-array>
+    <string name="nm_time_just_now">just now</string>
+    <string name="nm_time_yesterday">Yesterday</string>
+
+    <!-- 0.1.5: system files -->
+    <string name="nm_back">Back</string>
+    <string name="nm_cancel">Cancel</string>
+    <string name="nm_save">Save</string>
+    <string name="nm_sysfiles_title">System files</string>
+    <string name="nm_sysfiles_subtitle">SOUL, USER, MEMORY, feed preferences, HEARTBEAT</string>
+    <string name="nm_sysfiles_sort_name">Name</string>
+    <string name="nm_sysfiles_sort_recent">Recently changed</string>
+    <string name="nm_sysfiles_sort_toggle">Change order</string>
+    <string name="nm_sysfiles_open_memory">Open memory</string>
+    <string name="nm_sysfiles_footer">These files are the agent\'s: who it is, what it knows about you, what it remembers, what it writes for you and when it wakes up. They live in your phone\'s storage — the agent reads and edits them from its shell under /var/minis/memory, and you can edit anything here.</string>
+    <string name="nm_sysfile_about_lead">About this file.</string>
+    <string name="nm_sysfile_about_soul">This is the agent\'s persona: the values and habits it tries to hold to in every conversation, its name, and the style it answers in. It starts from a template that ships with nanoMuse; the agent may refine it over time and tells you when it does. You can edit it at any time. This note is not part of the file.</string>
+    <string name="nm_sysfile_about_user">The agent keeps this file as its working notes about you: your name, how you like to be addressed, your timezone, and the context it needs to be useful, such as what you are working on. It fills it in over time from your conversations and reads it at the start of each one. It reflects the agent\'s current understanding, so it can be incomplete or out of date. You can edit anything here, and the agent will follow what you write. This note is not part of the file.</string>
+    <string name="nm_sysfile_about_memory">Durable notes the agent keeps across conversations — the things worth remembering, in its own words, plus anything you imported from another assistant. The day-by-day diary lives beside it in the memory folder. Read at the start of every conversation when memory is on. This note is not part of the file.</string>
+    <string name="nm_sysfile_about_feed">One paragraph that steers the feed: what you want more of, what to skip, how long posts should be. The daily feed routine reads it before writing. This note is not part of the file.</string>
+    <string name="nm_sysfile_about_heartbeat">When the agent wakes up on its own: every routine and every goal check, with its schedule and how the last run went. Rendered from the routines, so it is read-only here — change them from Goals → Routines. This note is not part of the file.</string>
+    <string name="nm_sysfile_edit">Edit</string>
+    <string name="nm_sysfile_copy">Copy contents</string>
+    <string name="nm_sysfile_share">Share</string>
+    <string name="nm_sysfile_copied">Copied</string>
+    <string name="nm_sysfile_edit_hint">Write %1$s in Markdown. Headings and bullet points read best; keep secrets out.</string>
+    <string name="nm_sysfile_saved">Saved</string>
+    <string name="nm_sysfile_empty">Nothing here yet.</string>
+    <string name="nm_sysfile_empty_editable">Nothing here yet. Tap the pencil to write it, or let the agent fill it in as you talk.</string>
+    <string name="nm_heartbeat_intro">What runs on its own, and when. Rendered from the routines; edit them from Goals → Routines.</string>
+    <string name="nm_heartbeat_routines">Routines</string>
+    <string name="nm_heartbeat_goal_checks">Goal checks</string>
+    <string name="nm_heartbeat_none">none</string>
+    <string name="nm_heartbeat_last_ok">last run %1$s</string>
+    <string name="nm_heartbeat_last_failed">last run %1$s, failed</string>
+
+    <!-- 0.1.5: memory import -->
+    <string name="nm_import_title">Import memory</string>
+    <string name="nm_import_intro">Bring over what another assistant already knows about you. Ask it with the prompt below, paste its answer here, and it is appended to GLOBAL.md under “Imported” — where your agent reads it at the start of every conversation.</string>
+    <string name="nm_import_step1">Ask your other assistant</string>
+    <string name="nm_import_step2">Paste its answer</string>
+    <string name="nm_import_prompt">Please gather everything you remember about me into a concise list of bullet points: who I am, how I like to be addressed, where I live and my timezone, what I do, what I am working on right now, my preferences and habits, and anything you were told to always or never do. Plain text, no headings, no secrets or passwords.</string>
+    <string name="nm_import_copy_prompt">Copy prompt</string>
+    <string name="nm_import_from_hint">From (optional) — e.g. ChatGPT, Claude</string>
+    <string name="nm_import_paste_hint">Paste the list here</string>
+    <string name="nm_import_heading">Imported</string>
+    <string name="nm_import_append">Add to memory</string>
+    <string name="nm_import_done">Added to GLOBAL.md</string>
+    <string name="nm_import_empty">Nothing to add</string>
+    <string name="nm_import_footer">Look it over first: leave out passwords, card numbers and anything you would not want in a plain text file on your phone.</string>
+
+    <!-- 0.1.5: status -->
+    <string name="nm_tool_done">Done</string>
+    <string name="nm_continue_title">Still going after %1$d steps</string>
+    <string name="nm_continue_body">%1$s has taken %2$d steps on this and isn\'t finished. Keep going from here?</string>
+    <string name="nm_continue_yes">Continue</string>
+    <string name="nm_continue_no">Stop here</string>
 </resources>

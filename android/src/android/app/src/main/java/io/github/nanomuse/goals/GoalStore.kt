@@ -77,7 +77,7 @@ class GoalStore private constructor(context: Context) {
     }
 
     companion object {
-        private const val TAG = "nanoMuse.Goals"
+        private const val TAG = "Goals"
 
         @Volatile private var instance: GoalStore? = null
 

@@ -30,7 +30,7 @@ data class IdeaSection(val id: String, val title: String, val ideas: List<Idea>)
  * can actually do today.
  */
 object Ideas {
-    private const val TAG = "nanoMuse.Ideas"
+    private const val TAG = "Ideas"
 
     fun load(context: Context): List<IdeaSection> {
         val lang = context.resources.configuration.locales[0]?.language ?: Locale.getDefault().language

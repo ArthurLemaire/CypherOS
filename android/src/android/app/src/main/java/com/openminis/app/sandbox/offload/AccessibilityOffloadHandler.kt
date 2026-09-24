@@ -95,6 +95,7 @@ First-run: enable "nanoMuse" under Settings → Accessibility, then `service pin
             return NativeOffloadResult(if (args.positional.isEmpty()) 2 else 0, TOP_HELP)
         }
         val sub = args.positional[0]
+        io.github.nanomuse.status.KeepAwake.a11yTouched() // nanoMuse: the screen stays on while this runs
         // T330: tri-state agent gate via OffloadPermissionManager. `service`
         // and `--version` are diagnostic and pass through so the agent (or
         // a curious developer) can still verify the service runs even when

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -63,6 +64,8 @@ import io.github.nanomuse.goals.GoalFlow
 import io.github.nanomuse.home.MainChat
 import io.github.nanomuse.ideas.Idea
 import io.github.nanomuse.ui.avatar.rememberAgentMood
+import io.github.nanomuse.ui.feed.FeedTab
+import io.github.nanomuse.ui.feed.FeedUi
 import io.github.nanomuse.ui.goals.GoalsTab
 import io.github.nanomuse.ui.header.openSoulSettings
 import io.github.nanomuse.ui.header.rememberNanoMuseStatusLine
@@ -184,6 +187,24 @@ fun NanoMuseHome(
         navController.safeNavigate(Routes.scheduledTaskEdit(task.id))
     }
 
+    /** "Discuss" on a feed card: a side chat that opens on the post. */
+    fun discussPost(post: io.github.nanomuse.feed.FeedPost) {
+        scope.launch {
+            val app = context.applicationContext as? com.openminis.app.MinisApp ?: return@launch
+            val id = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                io.github.nanomuse.goals.GoalSessions.create(app, post.title.take(40))
+            } ?: run {
+                Toast.makeText(context, R.string.nm_feed_routine_needs_model, Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            showSession(id)
+            val opener = context.getString(R.string.nm_feed_discuss_opener, post.title, post.body.take(1200))
+            com.openminis.app.debug.HeadlessChatRunner.prompt(
+                context = app, sessionId = id, text = opener, wait = false, timeoutMs = 10 * 60 * 1000L,
+            )
+        }
+    }
+
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     fun openDrawer() {
         focusManager.clearFocus(force = true)
@@ -215,6 +236,7 @@ fun NanoMuseHome(
                     onAllChats = { closeDrawer(); navController.safeNavigate(ROUTE_ALL_CHATS) },
                     onSettings = { closeDrawer(); navController.safeNavigate(Routes.SETTINGS) },
                     onSetMain = { id -> MainChat.set(context, id); closeDrawer(); showSession(id) },
+                    onSystemFiles = { closeDrawer(); navController.safeNavigate(io.github.nanomuse.ui.sysfiles.ROUTE_SYSTEM_FILES) },
                 )
             }
         },
@@ -295,6 +317,11 @@ fun NanoMuseHome(
                                 )
                             }
                             when (tab) {
+                                HomeTab.FEED -> FeedTab(
+                                    header = header,
+                                    onDiscuss = { discussPost(it) },
+                                    onEditRoutine = { navController.safeNavigate(Routes.scheduledTaskEdit(it)) },
+                                )
                                 HomeTab.IDEAS -> IdeasTab(
                                     header = header,
                                     onSendToChat = { sendToMainChat(it) },
@@ -328,7 +355,7 @@ fun NanoMuseHome(
     }
 }
 
-/** The big-face header on the three pages, with Muse's round hamburger and "•••". */
+/** The big-face header on the four pages, with Muse's round hamburger and "•••" (sliders on the feed). */
 @Composable
 private fun TabHeader(
     tab: HomeTab,
@@ -354,7 +381,13 @@ private fun TabHeader(
             )
         },
         trailing = {
-            Box {
+            if (tab == HomeTab.FEED) {
+                MuseRoundButton(
+                    icon = Icons.Outlined.Tune,
+                    contentDescription = stringResource(R.string.nm_feed_settings_title),
+                    onClick = { FeedUi.settingsOpen.value = true },
+                )
+            } else Box {
                 MuseRoundButton(
                     icon = Icons.Filled.MoreHoriz,
                     contentDescription = stringResource(R.string.nm_more),
@@ -382,6 +415,10 @@ private fun TabHeader(
                         }
                         else -> Unit
                     }
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.nm_sysfiles_title)) },
+                        onClick = { menu = false; navController.safeNavigate(io.github.nanomuse.ui.sysfiles.ROUTE_SYSTEM_FILES) },
+                    )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.nm_drawer_settings)) },
                         onClick = { menu = false; navController.safeNavigate(Routes.SETTINGS) },

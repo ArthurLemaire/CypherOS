@@ -705,7 +705,8 @@ private fun ToolPreviewThumbnail(
                         try { android.graphics.BitmapFactory.decodeFile(path) } catch (_: Exception) { null }
                     }
                 }
-                val bitmap = liveBitmap ?: savedBitmap
+                // nanoMuse: a finished action that saved no screenshot keeps its last live frame.
+                val bitmap = liveBitmap ?: savedBitmap ?: io.github.nanomuse.status.BrowserFrames.get(block.id)
                 if (bitmap != null) {
                     Image(
                         bitmap = bitmap.asImageBitmap(),
@@ -867,8 +868,10 @@ internal fun FloatingToolStatusBar(
             // stays clean.
 
             // Tool title
+            // nanoMuse: a finished browser step reads "<title> · Done", the way Muse closes its browser card.
+            val nmTitle = block.toolTitle.ifEmpty { block.toolName }
             Text(
-                text = block.toolTitle.ifEmpty { block.toolName },
+                text = if (isDone && block.toolName == "browser_use") "$nmTitle · ${stringResource(R.string.nm_tool_done)}" else nmTitle,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
                 color = ChatColors.primaryText,
