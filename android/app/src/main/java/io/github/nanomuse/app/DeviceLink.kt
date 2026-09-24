@@ -3,7 +3,11 @@ package io.github.nanomuse.app
 import android.content.Context
 import android.os.Build
 import android.util.Log
+import android.view.WindowManager
 import io.github.nanomuse.app.browser.DeviceBrowser
+import io.github.nanomuse.app.gui.A11yExecutor
+import io.github.nanomuse.app.gui.DeviceExecutor
+import io.github.nanomuse.app.gui.MuseAccessibilityService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -16,24 +20,49 @@ import org.json.JSONObject
  * notifications use. On connect it announces what it can do (`kind: device`); each
  * `device_request` gets exactly one `device_result`. See `nanomuse/phone/link.py`.
  *
- * Today the one capability is the browser ([DeviceBrowser]); the screen and the phone's
- * own tools join here later.
+ * Two capabilities: the browser ([DeviceBrowser], always) and the screen — `screen` / `act` /
+ * `task` through the [DeviceExecutor], which is there when the user has turned the
+ * accessibility service on. When the service comes or goes the phone announces itself again,
+ * so the server's *Phone* card and the agent's prompt follow.
  */
 class DeviceLink(private val context: Context, private val send: (JSONObject) -> Unit) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val browser = DeviceBrowser.get(context)
+    private val executor: DeviceExecutor = A11yExecutor(context)
+    private val onServiceChange: () -> Unit = { announce() }
+
+    init {
+        MuseAccessibilityService.listeners.add(onServiceChange)
+    }
 
     /** What to say when the socket opens. */
     fun hello(): JSONObject {
         val dm = context.resources.displayMetrics
-        return JSONObject()
+        val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        val bounds = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) wm.maximumWindowMetrics.bounds else null
+        val screenW = bounds?.width() ?: dm.widthPixels
+        val screenH = bounds?.height() ?: dm.heightPixels
+        val gui = executor.available
+        val o = JSONObject()
             .put("kind", "device")
             .put("name", listOf(Build.MANUFACTURER, Build.MODEL).filter { it.isNotBlank() }.joinToString(" ").ifEmpty { "phone" })
             .put("platform", "android")
-            .put("gui", false)
+            .put("gui", gui)
             .put("browser", true)
-            .put("screen", JSONObject().put("width", dm.widthPixels).put("height", dm.heightPixels))
+            .put("capsule", true) // it shows the step and a Stop button while operated (`task` requests)
+            .put("screen", JSONObject().put("width", screenW).put("height", screenH))
             .put("app", BuildConfig.VERSION_NAME)
+        if (gui) o.put("apps", executor.apps())
+        return o
+    }
+
+    /** Say hello again (the accessibility service was turned on or off). */
+    fun announce() {
+        try {
+            send(hello())
+        } catch (e: Exception) {
+            Log.w(TAG, "announce failed: ${e.message}")
+        }
     }
 
     /** Handle a message if it is for us. Returns true when it was. */
@@ -47,6 +76,12 @@ class DeviceLink(private val context: Context, private val send: (JSONObject) ->
             try {
                 val result = when (op) {
                     "browser" -> browser.handle(params.optString("op"), params)
+                    "screen" -> executor.screen()
+                    "act" -> executor.act(params)
+                    "task" -> {
+                        executor.task(params.optString("event"), params.optString("text"))
+                        JSONObject().put("ok", true)
+                    }
                     else -> throw IllegalArgumentException("this phone cannot do '$op'")
                 }
                 reply.put("ok", true).put("result", result)
@@ -60,6 +95,7 @@ class DeviceLink(private val context: Context, private val send: (JSONObject) ->
     }
 
     fun close() {
+        MuseAccessibilityService.listeners.remove(onServiceChange)
         scope.cancel()
     }
 

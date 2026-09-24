@@ -182,6 +182,8 @@ async def test_gate_allows_safe_and_audits(tmp_path: Path):
     assert result.output == "echo: hi"
     entries = audit.tail()
     assert entries[-1]["event"] == "tool_call" and entries[-1]["decision"] == "allow"
+    # every tool call names its rung, so the Activity view can count the screen steps
+    assert entries[-1]["channel"] == "local"
 
 
 async def test_gate_denies_when_user_declines(tmp_path: Path):
@@ -189,7 +191,7 @@ async def test_gate_denies_when_user_declines(tmp_path: Path):
     gate = Sentinel(SentinelSettings(always_ask_tools=["echo"]), audit, HeadlessUI(approve=False))
     result = await gate.guard(call("echo", text="hi"), Echo())
     assert result.error and "Sentinel blocked" in result.error
-    assert audit.tail()[-1]["decision"] == "deny"
+    assert audit.tail()[-1]["decision"] == "deny" and audit.tail()[-1]["channel"] == "local"
 
 
 async def test_gate_does_not_ask_about_arguments_that_never_parsed(tmp_path: Path):

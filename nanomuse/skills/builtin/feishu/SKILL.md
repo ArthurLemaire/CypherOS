@@ -1,6 +1,7 @@
 ---
 name: feishu
 description: The user's 飞书 / Lark through its command-line tool (lark-cli) — agenda, people and groups, reading and sending messages, events, tasks, documents — with no app open. Use when the user mentions 飞书, Lark, a 群, a 日程 or a 飞书文档, or wants a colleague told something.
+channel: cli
 metadata:
   author: nanoMuse
   version: "1"

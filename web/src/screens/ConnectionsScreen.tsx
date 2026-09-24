@@ -29,6 +29,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { accessibilityState, androidApp } from "../android";
 import { api } from "../api";
 import { BackBar } from "../components/BackBar";
 import { useT } from "../i18n";
@@ -2138,6 +2139,30 @@ function PhoneCard({
     }
   };
   const phone = g.phone;
+  // the Android app: its own accessibility service does the operating — re-read when the
+  // sheet is opened again or the app comes back from Settings
+  const [a11y, setA11y] = useState(accessibilityState);
+  const a11yRef = useRef(a11y);
+  useEffect(() => {
+    if (!open) return;
+    const again = () => {
+      const now = accessibilityState();
+      if (now !== a11yRef.current) {
+        a11yRef.current = now;
+        setA11y(now);
+        // switched on or off in Settings: the server knows already (the app announced it),
+        // so the card's header should catch up too
+        setTimeout(onChange, 400);
+      }
+    };
+    again();
+    document.addEventListener("visibilitychange", again);
+    window.addEventListener("focus", again);
+    return () => {
+      document.removeEventListener("visibilitychange", again);
+      window.removeEventListener("focus", again);
+    };
+  }, [open, onChange]);
   const summary = phone.connected
     ? t("{name} is connected", { name: phone.device?.name ?? t("A phone") })
     : g.enabled
@@ -2186,6 +2211,63 @@ function PhoneCard({
           />
         </button>
       </div>
+      {a11y !== null && (
+        <div className="rounded-2xl bg-surface-2 px-3 py-2.5 text-[12.5px] leading-snug space-y-1.5">
+          <div className="flex items-center justify-between gap-3">
+            <span className="font-medium">{t("This phone")}</span>
+            <span
+              className={cx(
+                "rounded-full px-2 py-0.5 text-[11px] font-medium",
+                a11y === "on" && "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300",
+                a11y === "off" && "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+                a11y === "unsupported" && "bg-surface text-muted",
+              )}
+            >
+              {a11y === "on" ? t("Ready") : a11y === "off" ? t("Not yet") : t("Not on this Android")}
+            </span>
+          </div>
+          {a11y === "unsupported" && (
+            <div className="text-muted">
+              {t("Operating the screen needs Android 11 or newer; this phone can still be used for everything else.")}
+            </div>
+          )}
+          {a11y === "off" && (
+            <>
+              <div className="text-muted">
+                {t(
+                  "Turn on the nanoMuse accessibility service — that is how it sees the screen and taps for you, only while a task runs, with a Stop button on screen.",
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2 pt-0.5">
+                <button
+                  type="button"
+                  onClick={() => androidApp()?.openAccessibilitySettings?.()}
+                  className="rounded-full bg-accent px-3 py-1.5 text-[12.5px] font-medium text-white"
+                >
+                  {t("Open Accessibility settings")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => androidApp()?.openAppSettings?.()}
+                  className="rounded-full border border-border px-3 py-1.5 text-[12.5px]"
+                >
+                  {t("App settings")}
+                </button>
+              </div>
+              <div className="text-muted">
+                {t(
+                  "Greyed out with “Restricted setting”? Android 13+ does that for apps installed from a download: in App settings tap ⋮ → Allow restricted settings, then come back.",
+                )}
+              </div>
+            </>
+          )}
+          {a11y === "on" && (
+            <div className="text-muted">
+              {t("Android may switch the service off after an update or a battery clean-up; if the phone stops answering, come back here.")}
+            </div>
+          )}
+        </div>
+      )}
       {phone.connected && phone.device && (
         <div className="rounded-2xl bg-surface-2 px-3 py-2 text-[12.5px] text-muted">
           {t("{name} ({platform}), {n} apps", {

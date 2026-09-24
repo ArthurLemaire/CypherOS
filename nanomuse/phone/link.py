@@ -12,10 +12,14 @@ one answer::
     → {"kind": "device_result", "id": "r1", "ok": true, "result": {...}}
 
 Operations: ``screen`` (the current screen, see :mod:`nanomuse.phone.screen`), ``act``
-(one action, see :mod:`nanomuse.tools.phone`) and ``browser`` (the app's WebView, see
-:class:`nanomuse.tools.browser_backends.DeviceBackend`). The device is a single user's own
-phone: when more than one is connected, the most recent one with the capability asked for
-is *the* phone.
+(one action, see :mod:`nanomuse.tools.phone`), ``browser`` (the app's WebView, see
+:class:`nanomuse.tools.browser_backends.DeviceBackend`) and, for a device that announced
+``"capsule": true``, ``task`` — ``begin`` / ``end`` of a phone task and a ``notice`` the user
+should see on the operated screen (the Android app shows a pill with the step and a **Stop**
+button). A device whose user pressed Stop answers the next request with an error that
+contains ``nanomuse:stop``; that becomes :class:`DeviceStopped` here and ends the task. The
+device is a single user's own phone: when more than one is connected, the most recent one
+with the capability asked for is *the* phone.
 """
 
 from __future__ import annotations
@@ -41,6 +45,7 @@ class Device:
     platform: str = "unknown"  # android | mobilegym | ...
     gui: bool = False
     browser: bool = False  # it has a WebView the agent may drive
+    capsule: bool = False  # it shows the current step and a Stop button (takes `task` requests)
     apps: list[dict[str, str]] = field(default_factory=list)  # [{"id": ..., "name": ...}]
     width: int = 0
     height: int = 0
@@ -54,6 +59,7 @@ class Device:
             "platform": self.platform,
             "gui": self.gui,
             "browser": self.browser,
+            "capsule": self.capsule,
             "apps": len(self.apps),
             "width": self.width,
             "height": self.height,
@@ -72,6 +78,20 @@ class Device:
 
 class DeviceError(RuntimeError):
     """The phone could not do what was asked (or is not there)."""
+
+
+STOP_MARKER = "nanomuse:stop"
+
+
+class DeviceStopped(DeviceError):
+    """The user pressed Stop on the phone: the task ends and the agent asks what to do."""
+
+    def __init__(self, message: str = "") -> None:
+        super().__init__(
+            "The user pressed Stop on the phone. Do not go on operating it; ask them what to do "
+            "next."
+        )
+        self.device_message = message
 
 
 class PhoneLink:
@@ -100,14 +120,21 @@ class PhoneLink:
             platform=str(info.get("platform") or "unknown")[:30],
             gui=bool(info.get("gui")),
             browser=bool(info.get("browser")),
+            capsule=bool(info.get("capsule")),
             apps=apps,
             width=int(screen.get("width") or 0),
             height=int(screen.get("height") or 0),
             send=send,
         )
+        previous = self.devices.get(conn_id)
+        if previous is not None:
+            # the same phone announcing again (its accessibility service came or went): keep
+            # its place in the "most recent" order, take the new capabilities
+            device.connected_at = previous.connected_at
         self.devices[conn_id] = device
         logger.info(
-            "phone connected: {} ({}, gui={}, browser={})",
+            "phone {}: {} ({}, gui={}, browser={})",
+            "updated" if previous is not None else "connected",
             device.name,
             device.platform,
             device.gui,
@@ -199,7 +226,11 @@ class PhoneLink:
             result = msg.get("result")
             fut.set_result(result if isinstance(result, dict) else {})
         else:
-            fut.set_exception(DeviceError(str(msg.get("error") or "the phone reported an error")))
+            error = str(msg.get("error") or "the phone reported an error")
+            if STOP_MARKER in error:
+                fut.set_exception(DeviceStopped(error))
+            else:
+                fut.set_exception(DeviceError(error))
         return True
 
     # ------------------------------------------------------------------ high level
@@ -211,6 +242,19 @@ class PhoneLink:
 
     async def act(self, params: dict[str, Any], timeout: float | None = None) -> dict[str, Any]:
         return await self.request("act", params, timeout=timeout)
+
+    async def task_event(self, event: str, text: str = "") -> None:
+        """Tell the phone a task begins or ends, or show the user a notice on its screen —
+        best effort, only for a device that shows a capsule; never raises."""
+        device = self.device
+        if device is None or not device.capsule:
+            return
+        try:
+            await self.request(
+                "task", {"event": event, "text": text[:200]}, timeout=3.0, device=device
+            )
+        except DeviceError as exc:
+            logger.debug("phone task event {} not delivered: {}", event, exc)
 
     async def browser(
         self, op: str, params: dict[str, Any] | None = None, timeout: float | None = None
@@ -227,4 +271,4 @@ class PhoneLink:
         )
 
 
-__all__ = ["Device", "DeviceError", "PhoneLink", "Sender"]
+__all__ = ["STOP_MARKER", "Device", "DeviceError", "DeviceStopped", "PhoneLink", "Sender"]

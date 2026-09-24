@@ -1,6 +1,7 @@
 ---
 name: weekly-review
 description: Look back at the past week and set up the next one — calendar, mail, goals and files in one page, with a short plan. Use when the user asks for a weekly review, a week in review, "how did my week go" or to plan next week.
+channel: mixed
 metadata:
   author: nanoMuse
   version: "1"

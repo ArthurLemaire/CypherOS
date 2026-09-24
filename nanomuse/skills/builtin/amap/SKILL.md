@@ -1,6 +1,7 @@
 ---
 name: amap
 description: Places, routes, travel times, distances and weather in China through the 高德地图 (Amap) MCP server. Use when the user asks how far, how long, how to get somewhere (car, transit, bike, foot), what is near a place, or about the weather in a Chinese city.
+channel: api
 metadata:
   author: nanoMuse
   version: "1"

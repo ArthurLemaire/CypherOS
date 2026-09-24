@@ -99,7 +99,18 @@ export interface ArtifactEvent extends BaseEvent {
 /** The phone that is connected for GUI operation (the Android app or the MobileGym module). */
 export interface PhoneStatus {
   connected: boolean;
-  device: { id: string; name: string; platform: string; gui: boolean; apps: number; width: number; height: number } | null;
+  device: {
+    id: string;
+    name: string;
+    platform: string;
+    /** whether the phone can be operated through its screen (the accessibility service is on) */
+    gui: boolean;
+    /** whether the phone shows the step capsule with a Stop button while it is operated */
+    capsule?: boolean;
+    apps: number;
+    width: number;
+    height: number;
+  } | null;
   last_screen: { app: string; app_name: string; route: string; elements: number; image: string | null; taken_at: number } | null;
 }
 
@@ -573,6 +584,8 @@ export interface AuditEntry {
   event: string;
   session?: string;
   tool?: string;
+  /** which rung the call was: gui (the phone's screen), browser, web, cli, device, api, local */
+  channel?: string;
   summary?: string;
   risk?: string;
   decision?: string;

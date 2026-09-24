@@ -84,4 +84,15 @@
     <string name="documents_summary">What the agent made, and files for it</string>
     <string name="documents_root">Workspace</string>
     <string name="share_failed">Could not share that: %1$s</string>
+
+    <!-- operating the phone (accessibility service + overlay) -->
+    <string name="a11y_label">nanoMuse · operate the phone</string>
+    <string name="a11y_summary">Lets your nanoMuse tap, type and swipe in apps when you ask it to</string>
+    <string name="a11y_description">With this on, your nanoMuse can look at the screen and act in apps on your behalf — only during a task you gave it, with a Stop button on screen the whole time. It reads the screen to find buttons and fields, performs taps and swipes, and takes screenshots for the model you configured; nothing goes anywhere else. It never types passwords or codes and stops before paying, sending or deleting. Off by default; you can turn it off here any time.</string>
+    <string name="gui_stop">Stop</string>
+    <string name="gui_hide">Hide</string>
+    <string name="gui_stopped">Stopped</string>
+    <string name="gui_working">%1$s is working on this screen</string>
+    <string name="gui_needs_you">%1$s needs you</string>
+    <string name="gui_open_app">Open %1$s</string>
 </resources>

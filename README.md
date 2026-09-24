@@ -129,6 +129,7 @@ What the app adds over the browser tab:
 
 - notifications while the app is closed: approvals, questions and the last word of background work, each opening the right chat
 - the phone's own capabilities as tools: clipboard, notifications, calendar, contacts, location, alarms and timers, photos through the system picker — every permission is Android's own dialog, each tool has its own Sentinel default ([docs/device.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/device.md))
+- **operating the phone's own screen** (Android 11+, off by default): with the *Phone* switch on and the accessibility service enabled, the agent looks at the screen and taps, types and swipes in any app — 12306, 微信, 美团 — as the last rung after skills, fetches and the browser; a capsule with a **Stop** button sits over the app the whole time ([docs/gui.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/gui.md))
 - the agent's shell can use the phone too: `nanomuse-device`, `nanomuse-browser` and `nanomuse-open` inside the sandbox reach the same tools and the in-app browser — under the same Sentinel
 - the workspace in the Files app, and **Share → nanoMuse** from any app to start a conversation about a text, a link or a file
 - the phone's own browser: the agent browses in the app's WebView, at full speed in the background, and *Take over* hands you the real page to sign in on — then **Done** and it continues ([docs/browser.md](https://github.com/nano-muse/nanoMuse/blob/main/docs/browser.md))

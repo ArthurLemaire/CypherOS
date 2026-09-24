@@ -1,6 +1,7 @@
 ---
 name: inbox-triage
 description: Go through recent mail and sort it into needs-a-reply, waiting-on-others, to-do and can-ignore, with draft replies ready for review. Use when the user asks to triage, sort, catch up on or clear their inbox — never to send anything on its own.
+channel: api
 metadata:
   author: nanoMuse
   version: "1"

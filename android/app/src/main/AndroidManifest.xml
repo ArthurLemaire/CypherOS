@@ -22,13 +22,18 @@
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
-    <!-- which other apps this one may see: the clock, for alarms and timers -->
+    <!-- which other apps this one may see: the clock (alarms and timers) and, for the GUI
+         operator's `open_app`, whatever has a launcher icon -->
     <queries>
         <intent>
             <action android:name="android.intent.action.SET_ALARM" />
         </intent>
         <intent>
             <action android:name="android.intent.action.SET_TIMER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
         </intent>
     </queries>
 
@@ -116,6 +121,21 @@
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Runs the user's own nanoMuse agent server locally on the device (a Python process under a user-mode chroot) so scheduled routines, check-ins and long tasks keep running while the app is in the background. Nothing is sent anywhere but to the model provider the user configured." />
+        </service>
+
+        <!-- the GUI operator's hands and eyes; the user turns it on in Android's accessibility
+             settings, and the agent only ever uses it through the server (docs/gui.md) -->
+        <service
+            android:name=".gui.MuseAccessibilityService"
+            android:exported="true"
+            android:label="@string/a11y_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
         </service>
 
         <receiver

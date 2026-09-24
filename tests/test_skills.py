@@ -30,7 +30,7 @@ from nanomuse.skills import (
     raw_skill_url,
     render_skill,
 )
-from nanomuse.skills.library import fetch_skill_text
+from nanomuse.skills.library import fetch_skill_text, normalise_channel
 from nanomuse.tools.skills_tool import Skills
 
 APPLE_STYLE = """---
@@ -140,6 +140,40 @@ def test_builtin_skills_are_well_formed():
         assert (BUILTIN_DIR / s.name / "SKILL.md").exists()
     index = lib.index()
     assert index.count("\n") == len(names) - 1 and "…" not in index
+    # every built-in skill says which rung it works on; the screen ones are marked in the index
+    by_name = {s.name: s for s in lib.all()}
+    assert all(s.channel for s in lib.all()), [s.name for s in lib.all() if not s.channel]
+    assert by_name["train-tickets"].needs_phone and by_name["phone-messages"].needs_phone
+    assert by_name["feishu"].channel == "cli" and by_name["amap"].channel == "api"
+    assert "- train-tickets [on the phone's screen]: " in index
+    assert "- feishu: " in index
+
+
+def test_skill_channel_is_read_normalised_and_written_back(tmp_path: Path):
+    folder = tmp_path / "app-only-thing"
+    folder.mkdir()
+    (folder / "SKILL.md").write_text(
+        "---\nname: app-only-thing\ndescription: Something in an app. Use when asked.\n"
+        "metadata:\n  channel: App-Only\n---\n\nDo it.\n",
+        encoding="utf-8",
+    )
+    skill = load_skill(folder)
+    assert skill.channel == "gui" and skill.needs_phone and skill.to_dict()["channel"] == "gui"
+    assert "\nchannel: gui\n" in skill.render()
+    for raw, want in [
+        ("gui", "gui"),
+        ("MCP", "api"),
+        ("fetch", "web"),
+        ("nonsense", ""),
+        (None, ""),
+    ]:
+        assert normalise_channel(raw) == want
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    (plain / "SKILL.md").write_text(
+        "---\nname: plain\ndescription: Plain. Use when asked.\n---\n\nDo it.\n", encoding="utf-8"
+    )
+    assert load_skill(plain).channel == "" and "channel:" not in load_skill(plain).render()
 
 
 def test_skills_dir_setting(tmp_path: Path):

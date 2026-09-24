@@ -121,15 +121,16 @@ Decisions this list rests on (see [design.md](design.md) for the reasoning): the
 
 ## 7. Operating the phone's GUI (P0, switch off by default)
 
-- [ ] `DeviceExecutor` interface; phase 1 ships only the accessibility backend
-- [ ] `AccessibilityService`: `dispatchGesture`, `takeScreenshot` (API 30+), global actions, a node-tree dump with stable ids, `SET_TEXT` with a clipboard fallback, event waits
-- [ ] `screen` / `act` wired into `mobile_use`; the node tree as a second input
-- [ ] During GUI operation the §10 `StatusCapsule` enters its Stop state (`TYPE_ACCESSIBILITY_OVERLAY`: the v2 red panda + the current step + Stop; no screenshot, it is operating the very screen); `AskUserOverlay`
-- [ ] Onboarding: enabling the service, Android 13+ restricted settings, recovery after the service is killed
-- [ ] **The four-rung ladder in the system prompt**: skills / MCP / CLI → logged-in fetch → the in-app browser → the phone's GUI; the GUI only when asked explicitly, when a skill is `app-only`, or after the first three rungs failed; announced before entering, first action is `ask`
-- [ ] `channel` in `SKILL.md`; the audit log records the channel; Activity shows the share of GUI steps
-- [ ] Never types passwords or codes, never taps pay; sensitive words trigger a per-action ask
+- [x] `DeviceExecutor` interface; phase 1 ships only the accessibility backend (`gui/A11yExecutor.kt`)
+- [x] `AccessibilityService`: `dispatchGesture`, `takeScreenshot` (API 30+), global actions, a node-tree dump with stable ids (`gui/NodeTree.kt`), `SET_TEXT` with a clipboard fallback, event waits (`awaitIdle`)
+- [x] `screen` / `act` wired into `mobile_use`; the node tree as a second input (`Screen.nodes`, 999-grid lines after the picture; the picture decides)
+- [x] During GUI operation the capsule is in its Stop state (`TYPE_ACCESSIBILITY_OVERLAY`: the red panda + the current step + Stop; hidden for the screenshot); a notice card with *Open* when the agent needs the user (`task begin` / `end` / `notice`, `nanomuse:stop` → `stopped`)
+- [x] Onboarding: enabling the service, Android 13+ restricted settings, recovery after the service is killed — the *This phone* row on the Phone card, live through `accessibilityState()`, and the device re-announces when the service comes or goes
+- [x] **The four-rung ladder in the system prompt**: skills / MCP / CLI → logged-in fetch → the in-app browser → the phone's GUI; the GUI only when asked explicitly, when a skill is `gui`, or after the first three rungs failed; announced before entering, `ask_user` first when climbing on its own
+- [x] `channel` in `SKILL.md` (`api` / `cli` / `web` / `browser` / `gui` / `mixed`, `app-only` accepted); the audit log records the channel of every tool call; Activity shows the share of GUI steps
+- [x] Never types passwords or codes (the Android executor refuses password fields outright), never taps pay; sensitive words trigger a per-action ask
 - [ ] Deferred to 1.5: the Shizuku / wadb tool group (default deny); a bundled IME
+- [ ] **Real phone**: the a11y executor and the capsule were exercised on the API 33 emulator (x86_64, connect build); the arm64 local build, Android 14 restricted settings and vendor battery managers need a physical phone (§16)
 
 ---
 

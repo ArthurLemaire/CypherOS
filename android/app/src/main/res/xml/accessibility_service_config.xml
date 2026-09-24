@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- What the GUI operator needs and nothing more: the window tree (to find the focused field, the
+     keyboard, and the node list that goes with each screenshot), gestures, screenshots. No
+     fingerprint gestures, no key filtering, no touch exploration. -->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged|typeWindowsChanged|typeViewScrolled|typeViewTextChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows|flagReportViewIds|flagIncludeNotImportantViews"
+    android:canPerformGestures="true"
+    android:canRetrieveWindowContent="true"
+    android:canTakeScreenshot="true"
+    android:description="@string/a11y_description"
+    android:notificationTimeout="50"
+    android:settingsActivity="io.github.nanomuse.app.MainActivity"
+    android:summary="@string/a11y_summary" />

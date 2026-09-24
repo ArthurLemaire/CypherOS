@@ -1,6 +1,7 @@
 ---
 name: meeting-prep
 description: Prepare for a meeting — who is in it, what was last said with them, what the user owes them and wants from them — as a one-page brief. Use when the user asks to prepare for or get ready for a meeting, a call or a visit; a trigger can run it before every meeting with a client.
+channel: mixed
 metadata:
   author: nanoMuse
   version: "1"

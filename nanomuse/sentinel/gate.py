@@ -22,7 +22,7 @@ from typing import Any
 from nanomuse.config import SentinelSettings
 from nanomuse.logger import logger
 from nanomuse.schema import RiskLevel, ToolCall, ToolResult
-from nanomuse.sentinel.audit import AuditLog
+from nanomuse.sentinel.audit import AuditLog, channel_of
 from nanomuse.sentinel.grants import SCOPES, Grant, GrantStore, grant_key
 from nanomuse.sentinel.policy import Decision, Policy
 from nanomuse.tools.base import BaseTool, CallAssessment, safe_execute
@@ -178,6 +178,7 @@ class Sentinel:
             self.audit.record(
                 "tool_call",
                 tool=tool.name,
+                channel=channel_of(tool.name),
                 args=redacted_args,
                 summary=assessment.summary,
                 risk=assessment.risk.value,
@@ -223,6 +224,7 @@ class Sentinel:
         self.audit.record(
             "tool_call",
             tool=tool.name,
+            channel=channel_of(tool.name),
             args=redacted_args,
             summary=assessment.summary,
             risk=assessment.risk.value,

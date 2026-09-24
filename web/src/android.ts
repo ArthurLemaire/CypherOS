@@ -16,6 +16,15 @@ export interface AndroidBridge {
    * `nanomuse:browser-handed-back` with `{thread}` on window.
    */
   takeOverBrowser?(thread: string): void;
+  /**
+   * The accessibility service that operates the phone's screen: "on", "off", or "unsupported"
+   * (Android 10 and older cannot take screenshots for it).
+   */
+  accessibilityState?(): string;
+  /** Open Android Settings → Accessibility, where the service is switched on. */
+  openAccessibilitySettings?(): void;
+  /** Open this app's page in Android Settings (the "Allow restricted settings" menu lives there). */
+  openAppSettings?(): void;
 }
 
 export function androidApp(): AndroidBridge | null {
@@ -27,4 +36,12 @@ export function androidApp(): AndroidBridge | null {
 export function nativeTakeOver(): boolean {
   const app = androidApp();
   return !!app && typeof app.takeOverBrowser === "function" && (typeof app.hasBrowser !== "function" || app.hasBrowser());
+}
+
+/** What the app says about its accessibility service; null when this is not the Android app. */
+export function accessibilityState(): "on" | "off" | "unsupported" | null {
+  const app = androidApp();
+  if (!app || typeof app.accessibilityState !== "function") return null;
+  const state = app.accessibilityState();
+  return state === "on" || state === "off" || state === "unsupported" ? state : null;
 }
