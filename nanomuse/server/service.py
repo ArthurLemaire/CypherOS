@@ -24,6 +24,7 @@ from typing import Any
 from nanomuse import __version__, prompts
 from nanomuse.agent import Incoming, MuseAgent
 from nanomuse.app import NanoMuseApp
+from nanomuse.bridge.server import Bridge
 from nanomuse.config import Settings
 from nanomuse.goals import Goal
 from nanomuse.llm import BaseLLM
@@ -270,6 +271,13 @@ class MuseService:
         )
         self.phone.on_change = self.publish_phone
         self.app = NanoMuseApp(settings, ui=self.ui, llm=llm, session_id="app", phone=self.phone)
+        # The CLI bridge: `nanomuse-device` and friends, from inside a shell command. It
+        # learns where the server listens in `serve()`; until then no token is minted.
+        self.bridge = Bridge(self.app.tools, self.app.sentinel, self.ui)
+        for name in ("shell", "python_execute"):
+            tool = self.app.tools.get(name)
+            if tool is not None:
+                tool.bridge = self.bridge  # type: ignore[attr-defined]
         self.watch_browser()
         self._watch_reminders()
         self._mail_polled_at: float | None = None
@@ -1799,6 +1807,8 @@ class MuseService:
             "goals": [goal_to_dict(g) for g in self.app.goals.list()],
             "settings": self.settings_view(),
             "phone": self.phone_view(),
+            # the phone this server runs on (the local runtime), or null on a computer
+            "device": self.app.device.to_dict() if self.app.device is not None else None,
         }
 
 

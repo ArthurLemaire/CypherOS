@@ -32,10 +32,31 @@ class Prefs(context: Context) {
         get() = sp.getString("agent_name", "") ?: ""
         set(v) = sp.edit().putString("agent_name", v).apply()
 
+    /** [MODE_LOCAL]: the server runs on this phone; [MODE_REMOTE]: on the user's computer. */
+    var mode: String
+        get() = sp.getString("mode", "") ?: ""
+        set(v) = sp.edit().putString("mode", v).apply()
+
+    val isLocal: Boolean get() = mode == MODE_LOCAL
+
+    /** The loopback port and token of the phone's own server; picked once, kept. */
+    var localPort: Int
+        get() = sp.getInt("local_port", 0)
+        set(v) = sp.edit().putInt("local_port", v).apply()
+
+    var localToken: String
+        get() = sp.getString("local_token", "") ?: ""
+        set(v) = sp.edit().putString("local_token", v).apply()
+
     val connected: Boolean get() = serverUrl.isNotEmpty() && token.isNotEmpty()
 
     fun forget() {
+        // the local server's identity stays: forgetting a computer must not lose the phone's data
+        val port = localPort
+        val local = localToken
         sp.edit().clear().apply()
+        localPort = port
+        localToken = local
     }
 
     /** Where the notification service connects: `ws(s)://host/ws?token=…`. */
@@ -57,6 +78,16 @@ class Prefs(context: Context) {
     }
 
     companion object {
+        const val MODE_LOCAL = "local"
+        const val MODE_REMOTE = "remote"
+
+        /** A fresh server token: 32 bytes of the system's randomness, URL-safe. */
+        fun newToken(): String {
+            val bytes = ByteArray(32)
+            java.security.SecureRandom().nextBytes(bytes)
+            return android.util.Base64.encodeToString(bytes, android.util.Base64.URL_SAFE or android.util.Base64.NO_PADDING or android.util.Base64.NO_WRAP)
+        }
+
         /**
          * Pull the server origin and the token out of the link `nanomuse serve` prints
          * (`http://host:8787/?token=XYZ`). A bare origin is accepted too when the token is

@@ -28,15 +28,25 @@ import androidx.core.content.getSystemService
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import io.github.nanomuse.app.databinding.ActivityMainBinding
+import io.github.nanomuse.app.runtime.LocalRuntime
+import io.github.nanomuse.app.runtime.RuntimeService
 
 /**
  * The app proper: the nanoMuse web app in a WebView, plus the parts a browser tab cannot do —
  * notifications while the screen is off (see [NotifyService]), the camera for QR codes,
  * a file picker for attachments, downloads, and a way back to the Connect screen.
+ *
+ * In local mode the server is the phone's own [RuntimeService]; the page is loaded once it
+ * answers, and its failures are shown here with the runtime log.
  */
 class MainActivity : AppCompatActivity() {
     private lateinit var ui: ActivityMainBinding
     private lateinit var prefs: Prefs
+    private var pendingThread: String? = null
+    private var waitingForRuntime = false
+    private val runtimeListener: (RuntimeService.State, String?) -> Unit = { state, detail ->
+        runOnUiThread { runtimeChanged(state, detail) }
+    }
     private var pendingFiles: ValueCallback<Array<Uri>>? = null
     private var pendingPermission: PermissionRequest? = null
 
@@ -66,7 +76,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = Prefs(this)
-        if (!prefs.connected) {
+        if (!prefs.connected || (prefs.isLocal && !LocalRuntime(this).installed)) {
             goConnect()
             return
         }
@@ -78,8 +88,12 @@ class MainActivity : AppCompatActivity() {
             insets
         }
         setupWebView()
-        ui.retry.setOnClickListener { load(null) }
+        ui.retry.setOnClickListener { retry() }
         ui.changeServer.setOnClickListener { forget() }
+        if (prefs.isLocal) {
+            ui.changeServer.text = getString(R.string.start_over)
+            RuntimeService.listeners.add(runtimeListener)
+        }
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -134,7 +148,16 @@ class MainActivity : AppCompatActivity() {
 
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
                 if (!request.isForMainFrame) return
+                if (prefs.isLocal) {
+                    showRuntimeFailure(getString(R.string.offline_body, prefs.serverUrl))
+                    return
+                }
+                ui.offlineTitle.text = getString(R.string.offline_title)
                 ui.offlineBody.text = getString(R.string.offline_body, prefs.serverUrl)
+                ui.offlineProgress.visibility = View.GONE
+                ui.offlineLog.visibility = View.GONE
+                ui.retry.visibility = View.VISIBLE
+                ui.changeServer.visibility = View.VISIBLE
                 ui.offline.visibility = View.VISIBLE
             }
         }
@@ -196,13 +219,72 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun load(thread: String?) {
+        if (prefs.isLocal && RuntimeService.state != RuntimeService.State.RUNNING) {
+            // the phone's own server: start it (idempotent) and load once it answers
+            pendingThread = thread
+            waitingForRuntime = true
+            if (RuntimeService.state == RuntimeService.State.FAILED) {
+                showRuntimeFailure(RuntimeService.lastError ?: getString(R.string.runtime_no_answer))
+            } else {
+                showStarting()
+            }
+            RuntimeService.start(this)
+            return
+        }
         ui.offline.visibility = View.GONE
         ui.web.loadUrl(prefs.pageUrl(thread))
+    }
+
+    private fun retry() {
+        if (prefs.isLocal && RuntimeService.state != RuntimeService.State.RUNNING) {
+            showStarting()
+            waitingForRuntime = true
+            RuntimeService.start(this)
+        } else {
+            load(pendingThread)
+        }
+    }
+
+    private fun runtimeChanged(state: RuntimeService.State, detail: String?) {
+        if (!::ui.isInitialized) return
+        when (state) {
+            RuntimeService.State.RUNNING -> if (waitingForRuntime) {
+                waitingForRuntime = false
+                val t = pendingThread
+                pendingThread = null
+                load(t)
+            }
+            RuntimeService.State.FAILED -> showRuntimeFailure(detail ?: RuntimeService.lastError ?: getString(R.string.runtime_no_answer))
+            else -> Unit
+        }
+    }
+
+    private fun showStarting() {
+        ui.offlineTitle.text = getString(R.string.local_starting_title)
+        ui.offlineBody.text = getString(R.string.local_starting_body)
+        ui.offlineProgress.visibility = View.VISIBLE
+        ui.offlineLog.visibility = View.GONE
+        ui.retry.visibility = View.GONE
+        ui.changeServer.visibility = View.GONE
+        ui.offline.visibility = View.VISIBLE
+    }
+
+    private fun showRuntimeFailure(message: String) {
+        ui.offlineTitle.text = getString(R.string.offline_title)
+        ui.offlineBody.text = message
+        ui.offlineProgress.visibility = View.GONE
+        val tail = LocalRuntime(this).logTail(30)
+        ui.offlineLog.text = tail
+        ui.offlineLog.visibility = if (tail.isBlank()) View.GONE else View.VISIBLE
+        ui.retry.visibility = View.VISIBLE
+        ui.changeServer.visibility = View.VISIBLE
+        ui.offline.visibility = View.VISIBLE
     }
 
     /** From the JS bridge and the offline screen: drop the server and start over. */
     fun forget() {
         NotifyService.stop(this)
+        if (prefs.isLocal) RuntimeService.stop(this) // the phone's data stays on disk
         prefs.forget()
         ui.web.clearHistory()
         goConnect()
@@ -224,6 +306,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        RuntimeService.listeners.remove(runtimeListener)
         if (::ui.isInitialized) ui.web.destroy()
         super.onDestroy()
     }

@@ -16,7 +16,17 @@ from nanomuse.config import Settings
 from nanomuse.server.api import STATIC_DIR, create_app
 from nanomuse.server.service import MuseService
 
-__all__ = ["MuseService", "STATIC_DIR", "create_app", "lan_ip", "serve"]
+__all__ = ["MuseService", "STATIC_DIR", "bridge_url", "create_app", "lan_ip", "serve"]
+
+
+def bridge_url(host: str, port: int) -> str:
+    """Where a command on this machine reaches the server: the loopback when the server
+    listens on every address or on it, the one address it listens on otherwise."""
+    if host in ("", "0.0.0.0", "127.0.0.1", "localhost"):
+        return f"http://127.0.0.1:{port}"
+    if host in ("::", "::1"):
+        return f"http://[::1]:{port}"
+    return f"http://[{host}]:{port}" if ":" in host else f"http://{host}:{port}"
 
 
 def lan_ip() -> str | None:
@@ -42,6 +52,7 @@ def serve(
     host = host or settings.server.host
     port = port or settings.server.port
     service = MuseService(settings)
+    service.bridge.base_url = bridge_url(host, port)
     app = create_app(settings, service)
 
     shown_host = host

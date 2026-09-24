@@ -16,6 +16,30 @@
     <string name="connect_unauthorized">The server refused the token. Copy the current link from nanomuse serve.</string>
     <string name="connect_scan_prompt">Point the camera at the QR code printed by nanomuse serve</string>
 
+    <!-- Mode chooser (builds that carry a root file system) -->
+    <string name="mode_title">Where should your nanoMuse live?</string>
+    <string name="mode_body">On this phone, with nothing else to set up. Or on your computer, with the phone as its remote.</string>
+    <string name="mode_local">Run on this phone</string>
+    <string name="mode_local_hint">Unpacks a %1$d MB Linux environment into the app\'s storage. Everything stays on the phone; you bring your own model key.</string>
+    <string name="mode_remote">Connect to my computer</string>
+    <string name="mode_remote_hint">For a nanomuse serve already running at home.</string>
+    <string name="install_unpacking">Unpacking… %1$d%%</string>
+    <string name="install_starting">Starting for the first time… this takes a moment.</string>
+    <string name="install_failed">Could not set up the phone runtime: %1$s</string>
+
+    <!-- The runtime on the phone -->
+    <string name="runtime_starting">Starting…</string>
+    <string name="runtime_idle">Running on this phone</string>
+    <string name="runtime_restarting">Stopped unexpectedly, restarting in %1$d s…</string>
+    <string name="runtime_crashed">Keeps stopping (exit %1$d). Open the app to see the log.</string>
+    <string name="runtime_failed">Could not start: %1$s</string>
+    <string name="runtime_no_answer">Started but never answered. Open the app to see the log.</string>
+    <string name="runtime_not_installed">Not set up yet. Open the app.</string>
+    <string name="runtime_stop">Stop</string>
+    <string name="local_starting_title">Waking your nanoMuse</string>
+    <string name="local_starting_body">Starting the runtime on this phone…</string>
+    <string name="start_over">Start over</string>
+
     <!-- Notifications -->
     <string name="channel_attention">Needs your attention</string>
     <string name="channel_attention_desc">Approvals and questions from your agent</string>

@@ -48,19 +48,19 @@ Decisions this list rests on (see [design.md](design.md) for the reasoning): the
 
 ## 3. Local runtime (P0)
 
-- [ ] **rootfs built in CI** (buildx + QEMU): Alpine aarch64 + python3 + the `nanomuse` wheel and its dependencies; trimmed; versioned with checksums; Chinese apk/pip mirrors preconfigured
-- [ ] **Node**: recommended preinstalled in the rootfs (lark-cli, `@tencentcloud/tmeet` and 12306-mcp are all Node; +10–15 MB compressed) — decision pending
-- [ ] **proot built with the NDK**: upstream proot + talloc → `libproot.so` / `libproot-loader.so`; W^X handled through `nativeLibraryDir`; no fork, no native-offload extension
-- [ ] **`LocalRuntime`**: first-run unpack with progress and a completion marker; the proot argument set; DNS written from `ConnectivityManager`; TZ as `LCL-8`; system proxy; `UV_LINK_MODE=symlink`; `nanomuse serve --host 127.0.0.1 --port <random> --token <random>`; health check, crash restart, logs; upgrade migration
-- [ ] **`RuntimeService`**: foreground service of type `specialUse`; `PARTIAL_WAKE_LOCK` only while a task runs; the notification shows the current `tool_title`; subscribes to the local `/ws` event stream (shared by the notification and the §10 capsule)
-- [ ] **Mode chooser**: Run on this phone / Connect to my computer; the WebView points at `127.0.0.1`
-- [ ] Python detects local mode; degrades cleanly when bubblewrap is unavailable
-- [ ] **CLI bridge inside the rootfs** (the role OpenMinis gives its native offload, done over `127.0.0.1` HTTP + token instead of intercepting `execve`; all Python, MIT):
-  - `nanomuse-device` (§6: clipboard / calendar / alarm / contacts / location / notifications / photos)
-  - **P1** `nanomuse-browser`: navigate / extract / click / type / fetch / screenshot, sharing `DeviceBackend` with the `Browser` tool, so shell scripts and skills can drive the offscreen WebView
-  - **P1** `nanomuse-open <url>`: set as the rootfs `BROWSER`, so "open this in your browser" from any CLI lands in the in-app take-over sheet
-- [ ] Toolchain verified in the sandbox, with traces: shell / python / files, apk, pip, git, curl, lark-cli, tmeet, `npx 12306-mcp`, the three bridge CLIs
-- [ ] Document the limits: PRoot is user-mode with no root; glibc binaries need `gcompat`; no Chromium in the rootfs (the browser is always the Kotlin WebView); ptrace makes syscall-heavy work slower
+- [x] **rootfs built in CI** (buildx + QEMU): Alpine aarch64 + python3 + the `nanomuse` wheel and its dependencies; trimmed; versioned with checksums; Chinese apk/pip/npm mirrors chosen on first start from the phone's region (`nanomuse-mirror`) — `scripts/rootfs/`, `.github/workflows/rootfs.yml`; 315 MB unpacked / 67.9 MB xz with Node
+- [x] **Node**: preinstalled (Node 22 + npm; `NODE=0` builds without, ~12 MB smaller) — recommended in, the owner confirms against the budget (local APK 72 MB release ≈ 75 MB debug, budget 80)
+- [x] **proot built with the NDK**: Termux proot 5.1.107.94 + talloc 2.4.3 → `libproot.so` / `libproot-loader.so`; W^X handled through `nativeLibraryDir`; no 32-bit loader — `android/native/build-proot.sh`
+- [x] **`LocalRuntime`**: first-run unpack with progress and a version marker (swap-in, old tree kept until the new one is in place); the proot argument set; DNS written from `ConnectivityManager`; `TZ` as the phone's IANA id; system proxy; `UV_LINK_MODE=symlink`; `nanomuse serve --host 127.0.0.1 --port <random> --token <random>`; health check, crash restart with backoff, logs rolled at 2 MB; `home/` survives upgrades
+- [x] **`RuntimeService`**: foreground service of type `specialUse`; `PARTIAL_WAKE_LOCK` only while a task runs; the notification shows the current status `detail` (the §10 `tool_title` replaces it when it lands); subscribes to the local `/ws` event stream and feeds the shared `Notifier`; a Stop action; back after reboot
+- [x] **Mode chooser**: Run on this phone / Connect to my computer; the WebView points at `127.0.0.1`; failure screen with the log tail, Try again, Start over
+- [x] Python detects local mode (`nanomuse.runtime.device()`); the sandbox says so when bubblewrap is unavailable
+- [x] **CLI bridge inside the rootfs** (`nanomuse/bridge/`, `/api/bridge/{kind}`, one token per command, nested Sentinel-guarded tool calls, `via: "shell"` on the timeline):
+  - `nanomuse-device` (§6: clipboard / calendar / alarm / contacts / location / notifications / photos) — the Kotlin side of the tools is §6
+  - `nanomuse-browser`: navigate / extract / click / type / fetch / screenshot — the device backend it drives is §4
+  - `nanomuse-open <url>`: the rootfs `BROWSER`
+- [ ] **Owner**: toolchain verified on a real phone, with traces: shell / python / files, apk, pip, git, curl, lark-cli, tmeet, `npx 12306-mcp`, the three bridge CLIs. Verified so far under QEMU (arm64 rootfs, not PRoot): `nanomuse serve` boots in ~14 s, `/api/health`, `device` detected, mirrors switch, the CLIs are on `PATH` — PRoot itself can only be exercised on a phone
+- [x] Document the limits: PRoot is user-mode with no root; glibc binaries need `gcompat`; no Chromium in the rootfs (the browser is always the Kotlin WebView); ptrace makes syscall-heavy work slower — [docs/local-runtime.md](local-runtime.md)
 - [ ] P2: a terminal page (xterm.js + pty)
 
 ---

@@ -1,0 +1,35 @@
+#!/bin/sh
+# Point apk, pip and npm at a regional mirror — or back at the defaults.
+#
+#   nanomuse-mirror              show the current choice
+#   nanomuse-mirror cn           mirrors in mainland China (Aliyun for apk, Tsinghua for pip, npmmirror)
+#   nanomuse-mirror default      the upstream servers
+#
+# The app calls it on first start from the phone's region, and never again once the user
+# has chosen (the choice is kept in /etc/nanomuse-mirror), so a hand edit stays put.
+set -e
+state=/etc/nanomuse-mirror
+alpine="$(cut -d. -f1,2 /etc/alpine-release)"
+
+apply() { # apk_base pip_index npm_registry name
+  printf '%s/v%s/main\n%s/v%s/community\n' "$1" "$alpine" "$1" "$alpine" > /etc/apk/repositories
+  mkdir -p /etc /root
+  if [ -n "$2" ]; then
+    printf '[global]\nindex-url = %s\n' "$2" > /etc/pip.conf
+  else
+    rm -f /etc/pip.conf
+  fi
+  if [ -n "$3" ]; then
+    printf 'registry=%s\n' "$3" > /etc/npmrc
+  else
+    rm -f /etc/npmrc
+  fi
+  echo "$4" > "$state"
+}
+
+case "${1:-}" in
+  "") cat "$state" 2>/dev/null || echo default ;;
+  cn) apply https://mirrors.aliyun.com/alpine https://pypi.tuna.tsinghua.edu.cn/simple https://registry.npmmirror.com cn ;;
+  default) apply https://dl-cdn.alpinelinux.org/alpine "" "" default ;;
+  *) echo "usage: nanomuse-mirror [cn|default]" >&2; exit 2 ;;
+esac

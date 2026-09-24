@@ -52,6 +52,10 @@ all = ["nanomuse[browser,dev]"]
 
 [project.scripts]
 nanomuse = "nanomuse.cli:app"
+# the CLI bridge: for commands the agent runs (docs/local-runtime.md)
+nanomuse-device = "nanomuse.bridge.cli:device_main"
+nanomuse-browser = "nanomuse.bridge.cli:browser_main"
+nanomuse-open = "nanomuse.bridge.cli:open_main"
 
 [project.urls]
 Homepage = "https://github.com/nano-muse/nanoMuse"

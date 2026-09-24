@@ -33,6 +33,7 @@ from pathlib import Path
 
 from nanomuse.config import SandboxSettings
 from nanomuse.logger import logger
+from nanomuse.runtime import on_device
 
 # Programs whose job is the network. A command running one of these gets the network
 # and counts as egress for the Sentinel; everything else runs without.
@@ -51,6 +52,12 @@ NETWORK_PROGRAMS = frozenset(
         "git",
         "go",
         "host",
+        # the CLI bridge reaches the server over 127.0.0.1, which a box without a network
+        # namespace of its own does not have; and what it reaches (the phone, the browser)
+        # is egress in the Sentinel's sense too
+        "nanomuse-browser",
+        "nanomuse-device",
+        "nanomuse-open",
         "nc",
         "ncat",
         "nslookup",
@@ -174,6 +181,10 @@ class Sandbox:
             self.reason = "sandbox.mode = off"
         elif platform.system() != "Linux":
             self.reason = f"bubblewrap is Linux-only (this is {platform.system()})"
+        elif not self.bwrap and on_device():
+            # on the phone the app's own root file system, under PRoot, is the box: there is
+            # no root and no user namespace to make a smaller one inside it
+            self.reason = "on the phone, in the app's own root file system, which is the box"
         elif not self.bwrap and in_container():
             # the image does not ship bubblewrap: the container is the box
             self.reason = "in a container, which is the box"
@@ -249,6 +260,13 @@ class Sandbox:
 
     def describe(self) -> str:
         """One line for the model and the app."""
+        if not self.active and on_device():
+            return (
+                "Commands run on this phone, inside the app's own Linux root file system "
+                "(Alpine under PRoot, no root): it is the box. The phone's own files are not "
+                "there; the workspace is; the network is reachable. `nanomuse-device`, "
+                "`nanomuse-browser` and `nanomuse-open` reach the phone and the browser view."
+            )
         if not self.active:
             return "Commands run in the workspace with a scrubbed environment (no sandbox)."
         if not self.blocks_network:

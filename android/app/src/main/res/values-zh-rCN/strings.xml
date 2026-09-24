@@ -15,6 +15,28 @@
     <string name="connect_unauthorized">服务器拒绝了这个令牌。请从 nanomuse serve 复制当前链接。</string>
     <string name="connect_scan_prompt">把摄像头对准 nanomuse serve 打印的二维码</string>
 
+    <string name="mode_title">你的 nanoMuse 住在哪里？</string>
+    <string name="mode_body">住在这台手机上，什么都不用另装。或者住在你的电脑上，手机做它的遥控器。</string>
+    <string name="mode_local">在这台手机上运行</string>
+    <string name="mode_local_hint">会在应用存储里解压一个 %1$d MB 的 Linux 环境。一切都留在手机上；模型密钥用你自己的。</string>
+    <string name="mode_remote">连接我的电脑</string>
+    <string name="mode_remote_hint">家里已经跑着 nanomuse serve 时选这个。</string>
+    <string name="install_unpacking">正在解压… %1$d%%</string>
+    <string name="install_starting">第一次启动，需要一点时间…</string>
+    <string name="install_failed">无法安装手机运行环境：%1$s</string>
+
+    <string name="runtime_starting">正在启动…</string>
+    <string name="runtime_idle">在这台手机上运行</string>
+    <string name="runtime_restarting">意外停止，%1$d 秒后重启…</string>
+    <string name="runtime_crashed">反复停止（退出码 %1$d）。打开应用查看日志。</string>
+    <string name="runtime_failed">无法启动：%1$s</string>
+    <string name="runtime_no_answer">已启动但一直没有响应。打开应用查看日志。</string>
+    <string name="runtime_not_installed">还没有安装。请打开应用。</string>
+    <string name="runtime_stop">停止</string>
+    <string name="local_starting_title">正在唤醒你的 nanoMuse</string>
+    <string name="local_starting_body">正在启动手机上的运行环境…</string>
+    <string name="start_over">重新开始</string>
+
     <string name="channel_attention">需要你处理</string>
     <string name="channel_attention_desc">来自智能体的审批和提问</string>
     <string name="channel_updates">更新</string>

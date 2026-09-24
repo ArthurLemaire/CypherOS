@@ -65,10 +65,37 @@ android {
         buildConfig = true
     }
 
-    // one APK for every ABI: there is no native code in the app itself
+    // Two APKs from the same code (docs/local-runtime.md):
+    //  - local:   nanoMuse runs on the phone itself — PRoot and the Alpine root file system
+    //             (android/app/src/local/) are inside; arm64 only, as the runtime is
+    //  - connect: the thin shell that connects to `nanomuse serve` on a computer; every ABI
+    flavorDimensions += "mode"
+    productFlavors {
+        create("local") {
+            dimension = "mode"
+            buildConfigField("boolean", "LOCAL_RUNTIME", "true")
+            ndk { abiFilters += "arm64-v8a" }
+        }
+        create("connect") {
+            dimension = "mode"
+            buildConfigField("boolean", "LOCAL_RUNTIME", "false")
+            versionNameSuffix = "-connect"
+        }
+    }
+
+    androidResources {
+        // the root file system is xz already; the tar inside would not shrink again
+        noCompress += listOf("xz", "tar")
+    }
+
     packaging {
         resources.excludes += setOf("META-INF/*.kotlin_module", "META-INF/versions/**")
+        // proot and its loader are executables kept as .so so the installer extracts them
+        // to the one place under /data an app may exec from; do not compress or page-align away
+        jniLibs.useLegacyPackaging = true
     }
+
+    testOptions.unitTests.isReturnDefaultValues = true
 }
 
 dependencies {
@@ -80,4 +107,9 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0") { isTransitive = false }
     implementation("com.google.zxing:core:3.5.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    // xz decompression for the root file system (pure Java, public domain)
+    implementation("org.tukaani:xz:1.10")
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
 }

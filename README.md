@@ -118,13 +118,17 @@ Prefer the terminal? `nanomuse chat` is the same agent with approvals in the con
 
 ## 📱 Android
 
-[**Download nanomuse.apk**](https://github.com/nano-muse/nanoMuse/releases/latest/download/nanomuse.apk) from the latest release and open it on the phone. Android 8.0 or newer, any CPU. It is not from a store, so Android asks once to allow the install.
+[**Download nanomuse.apk**](https://github.com/nano-muse/nanoMuse/releases/latest/download/nanomuse.apk) from the latest release and open it on the phone. Android 8.0 or newer, a 64-bit phone. It is not from a store, so Android asks once to allow the install.
 
-Then `nanomuse serve --host 0.0.0.0` on your computer, tap **Scan QR code** in the app and point the camera at the terminal. Same Wi-Fi, a VPN such as Tailscale, or your server behind TLS all work.
+The first screen asks where your nanoMuse should live:
+
+- **Run on this phone.** The whole agent is inside the APK — a small Alpine Linux with Python and `nanomuse`, unpacked on first start and run under a user-mode chroot, no root. Nothing to install on a computer: name the agent, paste a model key, done. It keeps working in the background and comes back after a reboot. About 330 MB of storage. ([how it works](https://github.com/nano-muse/nanoMuse/blob/main/docs/local-runtime.md))
+- **Connect to my computer.** `nanomuse serve --host 0.0.0.0` on the computer, tap **Scan QR code**, point the camera at the terminal. Same Wi-Fi, a VPN such as Tailscale, or your server behind TLS all work. There is also a smaller [`nanomuse-connect.apk`](https://github.com/nano-muse/nanoMuse/releases/latest/download/nanomuse-connect.apk) with only this mode, for any CPU.
 
 What the app adds over the browser tab:
 
 - notifications while the app is closed: approvals, questions and the last word of background work, each opening the right chat
+- the agent's shell can use the phone: `nanomuse-device`, `nanomuse-browser` and `nanomuse-open` inside the sandbox reach the clipboard, calendar, alarms, the in-app browser — under the same Sentinel
 - connect by QR code, plain `http://` on the LAN
 - the file picker for attachments, downloads to the phone, links in the real browser
 

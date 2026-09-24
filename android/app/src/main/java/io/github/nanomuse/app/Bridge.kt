@@ -16,6 +16,10 @@ class Bridge(private val activity: MainActivity) {
     @JavascriptInterface
     fun serverUrl(): String = prefs.serverUrl
 
+    /** "local" when the server runs on this phone, "remote" when it is the user's computer. */
+    @JavascriptInterface
+    fun mode(): String = prefs.mode.ifEmpty { Prefs.MODE_REMOTE }
+
     /** Whether the background connection (and with it, notifications) is on. */
     @JavascriptInterface
     fun notificationsEnabled(): Boolean = prefs.notify

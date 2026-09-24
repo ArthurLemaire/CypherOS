@@ -54,6 +54,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
+from nanomuse.bridge.server import BridgeError
 from nanomuse.config import Settings
 from nanomuse.logger import logger
 from nanomuse.server.events import MAIN_THREAD
@@ -940,6 +941,31 @@ def create_app(settings: Settings, service: MuseService | None = None) -> FastAP
             raise HTTPException(400, str(exc)) from exc
         except Exception as exc:  # noqa: BLE001 - playwright raises many error types
             raise HTTPException(502, f"browser error: {str(exc).splitlines()[0][:200]}") from exc
+
+    # ------------------------------------------------------------------ the CLI bridge
+    # Not behind the app token: a command the agent runs holds a call token instead, minted
+    # for it alone by the shell tool and good while it runs (nanomuse.bridge).
+    def _bridge_token(request: Request) -> str | None:
+        return request.headers.get("x-nanomuse-bridge") or None
+
+    @app.get("/api/bridge/tools")
+    async def bridge_tools(request: Request) -> dict[str, Any]:
+        if svc.bridge.tokens.get(_bridge_token(request)) is None:
+            raise HTTPException(401, "the call token is missing, unknown or expired")
+        return {"ok": True, "tools": svc.bridge.device_tools()}
+
+    @app.post("/api/bridge/{kind}")
+    async def bridge_call(kind: str, request: Request) -> dict[str, Any]:
+        try:
+            body = await request.json()
+        except ValueError as exc:
+            raise HTTPException(400, "the request body must be JSON") from exc
+        if not isinstance(body, dict):
+            raise HTTPException(400, "the request body must be a JSON object")
+        try:
+            return await svc.bridge.handle(_bridge_token(request), kind, body)
+        except BridgeError as exc:
+            raise HTTPException(exc.status, exc.message) from exc
 
     # ------------------------------------------------------------------ push
     @app.get("/api/push", dependencies=dep)

@@ -20,6 +20,7 @@ from nanomuse.memory import Embedder, MemoryIndex, MemoryStore
 from nanomuse.phone import PhoneLink
 from nanomuse.phone.operator import PhoneOperator
 from nanomuse.reminders import ReminderStore
+from nanomuse.runtime import device, device_mcp_server
 from nanomuse.sandbox import Sandbox
 from nanomuse.search import WebSearchProvider
 from nanomuse.sentinel import AuditLog, Sentinel
@@ -99,9 +100,15 @@ class NanoMuseApp:
             persistent_approvals_file=settings.data_dir / "approvals.json",
         )
         self.llm = llm or self.make_llm()
+        # On the phone, the app's own capabilities (clipboard, calendar, alarms …) are an MCP
+        # server on 127.0.0.1; it joins the configured ones as `device`.
+        self.device = device()
+        mcp_servers = list(settings.mcp.servers)
+        if self.device is not None and self.device.has_host:
+            mcp_servers.append(device_mcp_server(self.device))
         self.mcp = (
-            MCPManager(settings.mcp.servers, resolve=lambda v: self.vault.resolve(v, strict=False))
-            if settings.mcp.servers
+            MCPManager(mcp_servers, resolve=lambda v: self.vault.resolve(v, strict=False))
+            if mcp_servers
             else None
         )
         self.tools = self._build_tools()
