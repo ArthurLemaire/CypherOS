@@ -128,7 +128,7 @@
     <string name="a11y_repair_failed">Repair failed — try enabling it in Settings</string>
     <string name="a11y_repair_footer_shizuku">Android removes the accessibility grant whenever an app is force-stopped, and does not restore it automatically. Shizuku can write it back directly.</string>
     <string name="a11y_repair_footer_manual">Android removes the accessibility grant whenever an app is force-stopped, and does not restore it automatically. Install and authorize Shizuku to repair this in one tap in future.</string>
-    <string name="bg_service_notification_title">nanoMuse Agent Active</string>
+    <string name="bg_service_notification_title">nanoMuse is working</string>
     <string name="bg_service_notification_text">%1$s | %2$s | %3$s</string>
     <!-- Shown on the ongoing notification / Live Update chip once the agent
          task has finished but the service is still alive because the user is
@@ -399,7 +399,7 @@
     <string name="common_skip">Skip</string>
     <string name="common_next">Next</string>
     <string name="onboarding_welcome_title">Welcome to nanoMuse</string>
-    <string name="onboarding_welcome_subtitle">Your nanoMuse Agent with terminal, browser, and native device access.</string>
+    <string name="onboarding_welcome_subtitle">An AI assistant with its own terminal and browser, running on this phone.</string>
     <string name="onboarding_get_started">Get Started</string>
     <string name="onboarding_provider_title">Add a Provider</string>
     <string name="onboarding_provider_subtitle">Enter an API key for at least one provider to get started.</string>
@@ -568,7 +568,7 @@
     <string name="browser_nav_forward">Forward</string>
     <string name="browser_stop">Stop</string>
     <string name="browser_reload">Reload</string>
-    <string name="browser_minis_browsing">nanoMuse is browsing</string>
+    <string name="browser_minis_browsing">%1$s is browsing</string>
     <!-- Streaming indicator shown while the assistant is composing a reply. %1$s is the Soul-customized assistant name (default "nanoMuse"). -->
     <string name="chat_typing_indicator">%1$s is thinking</string>
     <string name="read_aloud_unavailable">Read aloud failed: no usable voice engine. Check Voice Output settings or install a system speech engine.</string>
@@ -1718,7 +1718,7 @@
 
     <!-- Welcome / onboarding (T332) -->
     <string name="sessionlist_welcome_title">Welcome to nanoMuse</string>
-    <string name="sessionlist_welcome_subtitle">Your first On-Device Agent is almost ready.</string>
+    <string name="sessionlist_welcome_subtitle">Three steps, and you have an assistant that lives on your phone.</string>
     <string name="sessionlist_welcome_step1_title">Add a Provider</string>
     <string name="sessionlist_welcome_step1_subtitle">Configure an API key or sign in with OAuth</string>
     <string name="sessionlist_welcome_step2_title">Select Models</string>

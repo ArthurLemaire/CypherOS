@@ -7,4 +7,33 @@
     <string name="nm_about_upstream_detail">GPL-3.0 · 自 2026-09-24 起修改 · 原始碼在 GitHub</string>
     <string name="nm_about_trademark">與 Meta 無關</string>
     <string name="nm_about_trademark_detail">Muse 是 Meta Platforms, Inc. 的商標。nanoMuse 是獨立的自由軟體專案。</string>
+
+    <!-- 聊天頁頭部 -->
+    <string name="nm_avatar_content_description">你的助理。點一下可以改名字、圖示和風格。</string>
+    <string name="nm_status_waiting">等你確認</string>
+    <string name="nm_status_thinking">思考中…</string>
+    <string name="nm_chat_menu_rename">重新命名對話</string>
+
+    <!-- 前景服務通知標題（沒有工具在跑時） -->
+    <string name="nm_notif_working">%1$s 正在工作</string>
+
+    <!-- 第一次對話：開場白 -->
+    <string name="nm_intro_hello">你好，我是 nanoMuse，住在你手機裡的私人助理。讓我替你分擔幾件事。</string>
+    <string name="nm_intro_how_i_work">先說說我怎麼工作：\n\n- 我有自己的電腦——一個 Linux 沙盒和一個瀏覽器，能跑指令、開網頁、填表單。\n- 你掛載給我的檔案和相簿，我能讀、能整理；提醒和排程任務也可以交給我。\n- 關鍵的一步之前，我會先問你。\n- 一切都在這支手機上跑，對話只發給你自己設定的模型。</string>
+    <string name="nm_intro_ask_name">開始之前——我該怎麼稱呼你？</string>
+
+    <!-- 第一次對話：取名卡 -->
+    <string name="nm_naming_title">給我取個名字吧</string>
+    <string name="nm_naming_custom">自己取一個…</string>
+    <string name="nm_naming_placeholder">寫個名字…</string>
+    <string-array name="nm_name_suggestions">
+        <item>阿福</item>
+        <item>小滿</item>
+        <item>豆豆</item>
+        <item>團團</item>
+        <item>小北</item>
+        <item>一一</item>
+        <item>小竹</item>
+        <item>阿岳</item>
+    </string-array>
 </resources>

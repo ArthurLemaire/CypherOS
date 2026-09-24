@@ -261,7 +261,6 @@ fun AppearanceScreen(
     var toolPreview by remember { mutableStateOf(prefs.getBoolean(KEY_TOOL_PREVIEW, true)) }
     var autoFocusAfterReply by remember { mutableStateOf(prefs.getBoolean(KEY_AUTO_FOCUS_AFTER_REPLY, true)) }
     var autoExpandThinking by remember { mutableStateOf(prefs.getBoolean(KEY_AUTO_EXPAND_THINKING, true)) }
-    var showChatTitle by remember { mutableStateOf(prefs.getBoolean(KEY_SHOW_CHAT_TITLE, true)) }
     var autoGrouping by remember { mutableStateOf(prefs.getBoolean(KEY_AUTO_GROUPING, true)) }
     var chatInputLevel by remember { mutableIntStateOf(prefs.getInt(KEY_FONT_CHAT_INPUT, 0)) }
     var messageLevel by remember { mutableIntStateOf(prefs.getInt(KEY_FONT_MESSAGE, 0)) }
@@ -474,26 +473,11 @@ fun AppearanceScreen(
         }
 
         // -- Chat Title (T-chat-title-pill) --
-        // Sticky session-title pill that appears at the top of the chat
-        // when the user scrolls back through history. Default ON; toggle
-        // also reachable via `minis-config set appearance.show_chat_title`.
-        SettingsSection(
-            header = stringResource(R.string.appearance_section_chat_title),
-            footer = stringResource(R.string.appearance_show_chat_title_footer),
-        ) {
-            SettingsSwitchRow(
-                icon = Icons.Outlined.ChatBubbleOutline,
-                iconColor = tileBlue,
-                title = stringResource(R.string.appearance_show_chat_title),
-                subtitle = stringResource(R.string.appearance_show_chat_title_subtitle),
-                checked = showChatTitle,
-                onCheckedChange = {
-                    showChatTitle = it
-                    prefs.edit().putBoolean(KEY_SHOW_CHAT_TITLE, it).apply()
-                },
-                showDivider = false,
-            )
-        }
+        // nanoMuse: not offered. The chat top bar shows the agent's name, not
+        // the session title (see ChatScreen), so the "Show chat title" switch
+        // has nothing left to govern. KEY_SHOW_CHAT_TITLE and its strings stay
+        // for minis-config compatibility; session titles live in the session
+        // list and in the chat menu's "Rename chat".
 
         // -- Auto-Grouping (T-android-auto-grouping) --
         // Rides the title-generation call, so enabling it costs no extra

@@ -507,7 +507,7 @@
     <string name="browser_nav_forward">Ke Hadapan</string>
     <string name="browser_stop">Hentikan</string>
     <string name="browser_reload">Muat semula</string>
-    <string name="browser_minis_browsing">nanoMuse sedang melayari</string>
+    <string name="browser_minis_browsing">%1$s sedang melayari</string>
     <string name="chat_typing_indicator">%1$s sedang berfikir</string>
     <string name="read_aloud_unavailable">Gagal membacakan: tiada enjin suara yang boleh digunakan. Semak tetapan Output Suara atau pasang enjin pertuturan sistem.</string>
     <string name="chat_error_stream_dropped_partial">Sambungan terputus — balasan ini mungkin tidak lengkap. Ketik Cuba Lagi untuk meneruskan.</string>

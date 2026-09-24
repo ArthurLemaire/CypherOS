@@ -8,4 +8,33 @@
     <string name="nm_about_upstream_detail">GPL-3.0 · modified since 2026-09-24 · source on GitHub</string>
     <string name="nm_about_trademark">Not affiliated with Meta</string>
     <string name="nm_about_trademark_detail">Muse is a trademark of Meta Platforms, Inc. nanoMuse is an independent free-software project.</string>
+
+    <!-- Chat header -->
+    <string name="nm_avatar_content_description">Your agent. Tap to change its name, icon or style.</string>
+    <string name="nm_status_waiting">Waiting for you</string>
+    <string name="nm_status_thinking">Thinking…</string>
+    <string name="nm_chat_menu_rename">Rename chat</string>
+
+    <!-- Foreground-service notification title while no tool is running -->
+    <string name="nm_notif_working">%1$s is working</string>
+
+    <!-- First conversation: the scripted opening (see io.github.nanomuse.onboarding) -->
+    <string name="nm_intro_hello">Hi, I\'m nanoMuse, the assistant that lives on your phone. Let me take a few things off your plate.</string>
+    <string name="nm_intro_how_i_work">A bit about how I work:\n\n- I have my own computer — a Linux sandbox and a browser — so I can run commands, open websites and fill in forms.\n- I can read and organise the files and photos you mount for me, and take care of reminders and scheduled tasks.\n- Before any step that matters, I ask you first.\n- Everything runs on this phone; your messages go only to the model you configured.</string>
+    <string name="nm_intro_ask_name">Before we start — what should I call you?</string>
+
+    <!-- First conversation: the name chooser -->
+    <string name="nm_naming_title">Give me a name</string>
+    <string name="nm_naming_custom">Something else…</string>
+    <string name="nm_naming_placeholder">Write a name here</string>
+    <string-array name="nm_name_suggestions">
+        <item>Hana</item>
+        <item>Spark</item>
+        <item>Nova</item>
+        <item>Milo</item>
+        <item>Pip</item>
+        <item>Sage</item>
+        <item>Juno</item>
+        <item>Remy</item>
+    </string-array>
 </resources>

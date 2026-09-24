@@ -105,7 +105,7 @@
     <string name="a11y_repair_failed">恢复失败——请到系统设置中开启</string>
     <string name="a11y_repair_footer_shizuku">每次应用被强行停止，Android 都会移除无障碍授权，且不会自动恢复。Shizuku 可以直接写回该授权。</string>
     <string name="a11y_repair_footer_manual">每次应用被强行停止，Android 都会移除无障碍授权，且不会自动恢复。安装并授权 Shizuku 后，今后可一键恢复。</string>
-    <string name="bg_service_notification_title">nanoMuse Agent 运行中</string>
+    <string name="bg_service_notification_title">nanoMuse 正在工作</string>
     <string name="bg_service_notification_text">%1$s | %2$s | %3$s</string>
     <string name="bg_service_notification_title_completed">任务已完成</string>
     <string name="bg_service_notification_text_completed">%1$s | 用时 %2$s</string>
@@ -351,7 +351,7 @@
     <string name="common_skip">跳过</string>
     <string name="common_next">下一步</string>
     <string name="onboarding_welcome_title">欢迎使用 nanoMuse</string>
-    <string name="onboarding_welcome_subtitle">集终端、浏览器和设备本地访问于一身的 AI 助手。</string>
+    <string name="onboarding_welcome_subtitle">有自己的终端和浏览器、能用这台手机的 AI 助理。</string>
     <string name="onboarding_get_started">开始使用</string>
     <string name="onboarding_provider_title">添加提供方</string>
     <string name="onboarding_provider_subtitle">请至少为一个提供方输入 API 密钥以开始使用。</string>
@@ -507,7 +507,7 @@
     <string name="browser_nav_forward">前进</string>
     <string name="browser_stop">停止</string>
     <string name="browser_reload">重新加载</string>
-    <string name="browser_minis_browsing">nanoMuse 正在浏览</string>
+    <string name="browser_minis_browsing">%1$s 正在浏览</string>
     <string name="chat_typing_indicator">%1$s 正在思考</string>
     <string name="read_aloud_unavailable">朗读失败：没有可用的语音引擎。请检查语音输出设置，或安装系统语音引擎。</string>
     <string name="chat_error_stream_dropped_partial">连接中断，此回复可能不完整。点击重试以继续。</string>
@@ -1569,7 +1569,7 @@
     <string name="a11y_service_summary">nanoMuse 的 UI 层自动化后端</string>
     <string name="back">返回</string>
     <string name="sessionlist_welcome_title">欢迎使用 nanoMuse</string>
-    <string name="sessionlist_welcome_subtitle">你的第一个端侧 Agent 即将就绪。</string>
+    <string name="sessionlist_welcome_subtitle">三步之后，你就有一个住在手机里的助理。</string>
     <string name="sessionlist_welcome_step1_title">添加供应商</string>
     <string name="sessionlist_welcome_step1_subtitle">配置 API Key 或使用 OAuth 登录</string>
     <string name="sessionlist_welcome_step2_title">选择模型</string>

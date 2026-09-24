@@ -512,7 +512,7 @@
     <string name="browser_nav_forward">Maju</string>
     <string name="browser_stop">Hentikan</string>
     <string name="browser_reload">Muat ulang</string>
-    <string name="browser_minis_browsing">nanoMuse sedang menjelajah</string>
+    <string name="browser_minis_browsing">%1$s sedang menjelajah</string>
     <string name="chat_typing_indicator">%1$s sedang berpikir</string>
     <string name="read_aloud_unavailable">Gagal membacakan: tidak ada mesin suara yang dapat digunakan. Periksa pengaturan Output Suara atau pasang mesin ucapan sistem.</string>
     <string name="chat_error_stream_dropped_partial">Koneksi terputus — balasan ini mungkin tidak lengkap. Ketuk Coba Lagi untuk melanjutkan.</string>

@@ -92,6 +92,7 @@ class ScheduledNotificationReceiver : BroadcastReceiver() {
         val notifId = id.hashCode() and 0x7FFFFFFF
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_nanomuse) // nanoMuse: flat status-bar mark
+            .setLargeIcon(io.github.nanomuse.identity.NanoMuseIdentity.face(context)) // nanoMuse: the agent is the sender
             .setContentTitle(title)
             .setContentText(body)
             .setAutoCancel(true)

@@ -508,7 +508,7 @@
     <string name="browser_nav_forward">Înainte</string>
     <string name="browser_stop">Oprește</string>
     <string name="browser_reload">Reîncarcă</string>
-    <string name="browser_minis_browsing">nanoMuse navighează</string>
+    <string name="browser_minis_browsing">%1$s navighează</string>
     <string name="chat_typing_indicator">%1$s se gândește</string>
     <string name="read_aloud_unavailable">Citirea cu voce tare a eșuat: niciun motor vocal utilizabil. Verifică setările de ieșire vocală sau instalează un motor de sinteză al sistemului.</string>
     <string name="chat_error_stream_dropped_partial">Conexiunea s-a întrerupt — acest răspuns poate fi incomplet. Atinge Reîncearcă pentru a continua.</string>

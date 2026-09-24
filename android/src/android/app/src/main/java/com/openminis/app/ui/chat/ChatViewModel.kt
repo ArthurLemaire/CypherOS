@@ -3596,6 +3596,16 @@ class ChatViewModel(
     /** The real session ID (same as sessionId for existing sessions, generated on first message for drafts). */
     internal var realSessionId: String = if (isDraft) "" else sessionId
 
+    // nanoMuse: the first conversation — scripted opening, "what should I call
+    // you?", then the name chooser. Logic lives in io.github.nanomuse.onboarding;
+    // this VM only seeds the virtual messages, intercepts the name, and appends
+    // the phase addendum to the system prompt. Declared before init so
+    // loadSession() can use it.
+    internal val nmFirstConversation =
+        io.github.nanomuse.onboarding.FirstConversation(context, memoryRepository)
+    val nmNamingCard: StateFlow<io.github.nanomuse.onboarding.NamingCardState?>
+        get() = nmFirstConversation.namingCard
+
     init {
         loadSession()
         // [T-session-paused-badge-active-false-positive] Drive the session-list
@@ -3827,6 +3837,7 @@ class ChatViewModel(
         // sessionId so re-entering the session reuses the same instance.
         if (isDraft) {
             ChatViewModelStore.rename(sessionId, session.id)
+            nmFirstConversation.rebind(fromDraft = sessionId, toReal = session.id) // nanoMuse
             // Bring every disk/shell resource that was opened with the draft
             // id over to the real id *before* agent tools start running against
             // the persisted session — otherwise the first tool call (e.g.
@@ -3995,6 +4006,7 @@ class ChatViewModel(
                     // newest-provider/newest-text-model. Was firstOrNull().
                     applyNewChatDefaultModel()
                 }
+                nmSeedFirstConversation() // nanoMuse: a fresh draft is where the first conversation starts
                 return@launch
             }
 
@@ -4251,6 +4263,7 @@ class ChatViewModel(
                 }
                 applyCompactMarkerGraying(ordered, marker, loaded.messages, historyDbIds)
             }
+            nmSeedFirstConversation() // nanoMuse: re-seat the virtual opening in the session it belongs to
 
             // Cold-start interrupt detection: an agent loop that was killed by
             // the OS (or app force-quit) leaves agentHistory in one of four
@@ -6280,7 +6293,77 @@ class ChatViewModel(
         }
     }
 
-    fun sendMessage(text: String) = sendMessage(text, skipContextCheck = false)
+    fun sendMessage(text: String) {
+        // nanoMuse: the first conversation listens in. A short reply to "what
+        // should I call you?" is saved as the form of address; a name typed
+        // while the chooser is up names the agent (the text still goes out as
+        // the user's message, as in Muse); anything else dismisses the chooser.
+        nmBeforeSend(text)
+        sendMessage(text, skipContextCheck = false)
+    }
+
+    // ─── nanoMuse: first conversation ──────────────────────────────────────
+    // See io.github.nanomuse.onboarding.FirstConversation for the flow. The
+    // opening and the chooser are virtual messages: in _messages only, never
+    // in the DB or agentHistory. The model hears about the phase through
+    // buildSystemPrompt().
+
+    private val nmNamingCardId = "nm_naming_card"
+
+    private suspend fun nmSeedFirstConversation() {
+        val fc = nmFirstConversation
+        val hasSessions = runCatching { chatRepository.observeSessions().first().isNotEmpty() }.getOrDefault(true)
+        if (!fc.shouldShowIntro(sessionId, hasOtherSessions = hasSessions)) return
+        fc.start(sessionId)
+        val intro = fc.intro().mapIndexed { i, text ->
+            ChatMessage(
+                id = "nm_intro_$i",
+                role = "assistant",
+                content = text,
+                toolBlocks = listOf(AssistantBlock(id = "nm_intro_${i}_text", kind = "text", content = text)),
+            )
+        }
+        _messages.value = intro + _messages.value.filterNot { it.id.startsWith("nm_intro_") }
+        if (fc.phase == io.github.nanomuse.onboarding.Phase.ASK_AGENT_NAME) nmShowNamingCard()
+    }
+
+    private fun nmShowNamingCard() {
+        if (_messages.value.any { it.id == nmNamingCardId }) return
+        _messages.value = _messages.value + ChatMessage(
+            id = nmNamingCardId,
+            role = "system",
+            content = "",
+            toolBlocks = listOf(AssistantBlock(id = "${nmNamingCardId}_block", kind = "nm_naming")),
+        )
+    }
+
+    private fun nmBeforeSend(text: String) {
+        val fc = nmFirstConversation
+        if (!fc.isBoundTo(realSessionId.ifEmpty { sessionId })) return
+        when (fc.phase) {
+            io.github.nanomuse.onboarding.Phase.ASK_USER_NAME -> fc.onUserNameReply(text)
+            io.github.nanomuse.onboarding.Phase.ASK_AGENT_NAME -> {
+                if (fc.interceptWhileChoosing(text) == null) {
+                    _messages.value = _messages.value.filterNot { it.id == nmNamingCardId }
+                }
+            }
+            else -> Unit
+        }
+    }
+
+    /** A suggestion chip was tapped: name the agent and send the name as the user's message. */
+    fun nmPickName(name: String) {
+        nmFirstConversation.pick(name)
+        sendMessage(name, skipContextCheck = false)
+    }
+
+    private fun nmAfterTurn() {
+        val fc = nmFirstConversation
+        if (!fc.isBoundTo(realSessionId.ifEmpty { sessionId })) return
+        fc.onTurnFinished()
+        if (fc.phase == io.github.nanomuse.onboarding.Phase.ASK_AGENT_NAME) nmShowNamingCard()
+    }
+    // ───────────────────────────────────────────────────────────────────────
 
     /**
      * @param skipContextCheck set by the pre-send context dialog's own actions,
@@ -6566,6 +6649,7 @@ class ChatViewModel(
                             fallbackStrategy = activeFallbackStrategy,
                         )
                         AppLogger.info(TAG_STREAM, "send runAgentLoop RETURN normal")
+                        nmAfterTurn() // nanoMuse: the first conversation steps forward when a turn completes
                         // Drain any prompts the user queued while this loop was running.
                         // Skipped on cancel: cancelled job won't reach here.
                         drainQueuedPrompts(provider, systemPrompt, fallbackProviders, activeFallbackStrategy)
@@ -10273,6 +10357,11 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
             append("- Current date: ").append(dateStr).append(" (").append(tzId).append(")\n")
             append("- Device language: ").append(lang).append("\n")
             append("- minis-model-use models available: ").append(modelUseCount)
+            // nanoMuse: the first-conversation addendum — a few lines for two
+            // turns, then null. Last so the cacheable prefix stays untouched.
+            if (nmFirstConversation.isBoundTo(realSessionId.ifEmpty { sessionId })) {
+                nmFirstConversation.promptAddendum()?.let { append("\n\n").append(it) }
+            }
         }
     }
 

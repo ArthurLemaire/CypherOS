@@ -2,6 +2,29 @@
 
 All notable changes to nanoMuse. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/). Unreleased changes are on `main`.
 
+## [0.1.2] - 2026-09-25 · alpha · 有名字有脸
+
+The agent gets a face and a name, and the first conversation is where you meet it — the shape of Muse's first run, on top of OpenMinis's setup cards, which are unchanged.
+
+### Added
+
+- **The red panda in the chat header.** Above the name, 36 dp, drawn from the same shapes as the logo (`scripts/gen-avatar.py` derives five VectorDrawables from `web/src/components/redPandaShapes.ts`). Its mood follows the session: idle, working (breathing, narrowed eyes) while the model streams, waiting (round mouth) when an approval, a permission or a config confirmation is pending, happy for three seconds after a turn, error for four after a failure. Tap it — or the name pill under it — to open Settings → Soul (`minis://settings/soul`).
+- **Muse's header.** The name sits in a capsule under the face; while the agent works the model rows give way to a status line (the running tool's title, "Thinking…", or "Waiting for you" in the accent colour) and come back when it is idle.
+- **The first conversation.** With no sessions yet and the default name still in place, the first chat opens with a scripted greeting, how the agent works and "what should I call you?"; the reply is saved as the user's form of address in `GLOBAL.md` (`## About the user`), the model confirms in one sentence and asks for its own name, and a chooser card appears under that message — two suggestions and "Something else…", the composer's placeholder turning into "Write a name here". A pick or a typed name goes straight into `SOUL.md` (no `minis-config` round-trip, no approval gate); the header, the message labels and the placeholder rename at once, and the model's next reply — one line about the name, three concrete things it can do here, "what first?" — is steered by a system-prompt addendum that exists only for those two turns. The opening and the card are virtual UI rows: never in the database, never in the history a provider sees (Anthropic rejects a transcript that opens with the assistant). The opening is drawn again when the first session is reopened.
+- **The name everywhere.** Notifications carry the face as their large icon and the Soul name as sender: the foreground service ("<name> is working"), background results, scheduled tasks, alarms, config confirmations, and the notifications the agent sends itself; the browser banner reads "<name> is browsing". Both happen through `scripts/rebrand.py` (`notification_faces`, the `%1$s` placeholder), so an upstream pull keeps them.
+- **CI**: `.github/workflows/android.yml` builds a debug arm64 APK on ubuntu-24.04 for pushes and pull requests that touch the Android tree, and uploads it as an artifact. No signing, no secrets.
+- `-Pnm.abi=x86_64` builds a chat-only test APK for the x86_64 emulator (the sandbox payloads are arm64-only).
+
+### Changed
+
+- The chat top bar no longer shows the session title; "Rename chat" moved to the ⋮ menu, and the Appearance switch "Show chat title" is gone (its `minis-config` key remains, inert).
+- Copy in nanoMuse's voice for the welcome card, the onboarding subtitle and the service notification (en, zh, zh-TW; other locales keep upstream's wording). The Korean locale had 30 strings still reading "Minis" — `rebrand.py` now catches the particle-suffixed form.
+- versionCode 3.
+
+### Kept, on purpose
+
+- The provider list and its OAuth sign-ins (Claude, Codex, Kimi, OpenRouter) and the three setup cards stay as in OpenMinis 1.13; there are no vendor presets yet.
+
 ## [0.1.1] - 2026-09-25 · alpha · 换皮
 
 The first version of the Android line: [OpenMinis](https://github.com/OpenMinis/OpenMinis) 1.13 as nanoMuse, functionally identical to upstream. Pre-release; arm64 APK signed with the project key that every later version will use.

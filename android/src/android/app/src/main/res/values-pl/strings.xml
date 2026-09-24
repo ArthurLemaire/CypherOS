@@ -509,7 +509,7 @@
     <string name="browser_nav_forward">Dalej</string>
     <string name="browser_stop">Zatrzymaj</string>
     <string name="browser_reload">Odśwież</string>
-    <string name="browser_minis_browsing">nanoMuse przegląda</string>
+    <string name="browser_minis_browsing">%1$s przegląda</string>
     <string name="chat_typing_indicator">%1$s myśli</string>
     <string name="read_aloud_unavailable">Nie udało się odczytać na głos: brak działającego silnika mowy. Sprawdź ustawienia wyjścia głosowego lub zainstaluj systemowy silnik mowy.</string>
     <string name="chat_error_stream_dropped_partial">Połączenie zostało przerwane — ta odpowiedź może być niepełna. Dotknij Ponów, aby kontynuować.</string>

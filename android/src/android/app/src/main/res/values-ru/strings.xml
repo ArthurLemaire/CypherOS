@@ -509,7 +509,7 @@
     <string name="browser_nav_forward">Вперёд</string>
     <string name="browser_stop">Остановить</string>
     <string name="browser_reload">Обновить</string>
-    <string name="browser_minis_browsing">nanoMuse просматривает страницы</string>
+    <string name="browser_minis_browsing">%1$s просматривает страницы</string>
     <string name="chat_typing_indicator">%1$s думает</string>
     <string name="read_aloud_unavailable">Не удалось озвучить: нет доступного голосового движка. Проверьте настройки голосового вывода или установите системный синтезатор речи.</string>
     <string name="chat_error_stream_dropped_partial">Соединение прервано — этот ответ может быть неполным. Нажмите «Повторить», чтобы продолжить.</string>

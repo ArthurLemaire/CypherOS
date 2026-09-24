@@ -191,6 +191,7 @@ object DeepLinkHandler {
                 DeepLinkAction.OpenSettingsScreen(Routes.LOGS)
             }
             "appearance" -> DeepLinkAction.OpenSettingsScreen(Routes.APPEARANCE)
+            "soul" -> DeepLinkAction.OpenSettingsScreen(Routes.SOUL) // nanoMuse: the chat header's face links here
             "background" -> DeepLinkAction.OpenSettingsScreen(Routes.BACKGROUND)
             "about" -> DeepLinkAction.OpenSettingsScreen(Routes.ABOUT)
             "permissions" -> DeepLinkAction.OpenPermissionSettings
