@@ -17,6 +17,7 @@ The phone drives your computer, as a working demo. A small companion on the PC â
 
 ### Changed
 
+- The Hands settings page removes its lifecycle observer when it leaves the screen.
 - versionCode 14; installs over 0.1.12 without losing data.
 
 ### Known issues
