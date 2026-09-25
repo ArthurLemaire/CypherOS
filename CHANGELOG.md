@@ -2,6 +2,18 @@
 
 All notable changes to nanoMuse. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/). Unreleased changes are on `main`.
 
+## [0.1.14] - 2026-09-25 · Home
+
+Coming back to the app always lands in its own home again.
+
+### Fixed
+
+- **The OpenMinis chat screen on top of the home.** On a phone, every "open this session" entry point — the notification for an approval or a finished task, a tap on the tool capsule, Hands bringing the app back after a run — went through the upstream deep-link path, which pushed `chat/{sessionId}` on the back stack: the OpenMinis chat screen, without the Muse header and tabs, sitting over the home shell until you pressed back. It read as the app falling back to an older look in the middle of a task. `HomeShell.openSession` now takes those requests to the shell (pops back to it if something sits on top, mounts it if the graph started elsewhere) and shows the session there; wide windows keep the upstream list/detail route. The *Launch session → New chat* preference no longer pushes the upstream chat on a warm return either — the shell opens on the main chat by itself, as it already did on a cold start.
+
+### Changed
+
+- versionCode 15; installs over 0.1.13 without losing data.
+
 ## [0.1.13] - 2026-09-25 · Reach
 
 The phone drives your computer, as a working demo. A small companion on the PC — one Python file, standard library only — is paired with the app by a six-digit code on the same network; from then on a sentence on the phone runs there: a command in its shell, a file fetched or dropped, a page opened in its browser, a look at its screen. The results come back to the phone, and so do the approvals: a command for the computer is judged by the same `ShellGuard` as the phone's own shell and waits for the same card before it is sent. One way — the phone drives the computer, never the other way round.

@@ -648,6 +648,9 @@ class MainActivity : ComponentActivity() {
         val mode = getAppearancePrefs(this).getInt(KEY_LAUNCH_SESSION, 0)
         if (mode != 2) return
         val nav = navController ?: return
+        // nanoMuse: the home shell opens on the main chat by itself and the cold-start resolver
+        // already steps aside for it; a warm return must not push the upstream chat on top.
+        if (io.github.nanomuse.ui.home.HomeShell.active) return
         val newRoute = Routes.chat("__new__${java.util.UUID.randomUUID()}")
         AppLogger.info("LaunchSession", "resume → mode=NewChat, navigating to $newRoute")
         nav.safeNavigate(newRoute) {
@@ -717,6 +720,9 @@ class MainActivity : ComponentActivity() {
                 nav.navigate(Routes.terminal(action.initCommand))
             }
             is DeepLinkAction.OpenSession -> {
+                // nanoMuse: in compact windows the home shell shows the chat itself —
+                // pushing chat/{sessionId} here put the OpenMinis chat screen on top of it.
+                if (io.github.nanomuse.ui.home.HomeShell.openSession(nav, action.sessionId)) return
                 // T-double-chat-fix (secondary): mirror AppNavigation's
                 // OpenSession options so a runtime deep-link (notification /
                 // shortcut / onNewIntent) can't stack a duplicate chat on
