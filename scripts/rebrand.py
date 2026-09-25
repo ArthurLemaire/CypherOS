@@ -246,19 +246,19 @@ def notification_faces() -> None:
 COPY: dict[str, dict[str, str]] = {
     "values": {
         "sessionlist_welcome_subtitle": "Three steps, and you have an assistant that lives on your phone.",
-        "about_minis_tagline": "A fully open-source personal agent in the shape of Meta Muse, for every device you own. On this phone today; everything runs here, with your own model.",
+        "about_minis_tagline": "A fully open-source, Muse-style personal agent for every device you own. On this phone today; everything runs here, with your own model.",
         "onboarding_welcome_subtitle": "An AI assistant with its own terminal and browser, running on this phone.",
         "bg_service_notification_title": "nanoMuse is working",
     },
     "values-zh": {
         "sessionlist_welcome_subtitle": "三步之后，你就有一个住在手机里的助理。",
-        "about_minis_tagline": "一个完全开源、Muse 形状的个人智能体，面向你的所有设备。今天在这台手机上：一切都在本机运行，模型由你自己带。",
+        "about_minis_tagline": "一个完全开源、Muse 风格的个人智能体，面向你的所有设备。目前在这台手机上：一切都在本机运行，模型由你自己带。",
         "onboarding_welcome_subtitle": "有自己的终端和浏览器、能用这台手机的 AI 助理。",
         "bg_service_notification_title": "nanoMuse 正在工作",
     },
     "values-zh-rTW": {
         "sessionlist_welcome_subtitle": "三步之後，你就有一個住在手機裡的助理。",
-        "about_minis_tagline": "一個完全開源、Muse 形狀的個人智慧體，面向你的所有裝置。今天在這支手機上：一切都在本機執行，模型由你自己帶。",
+        "about_minis_tagline": "一個完全開源、Muse 風格的個人智慧體，面向你的所有裝置。目前在這支手機上：一切都在本機執行，模型由你自己帶。",
         "onboarding_welcome_subtitle": "有自己的終端機和瀏覽器、能用這支手機的 AI 助理。",
         "bg_service_notification_title": "nanoMuse 正在工作",
     },
