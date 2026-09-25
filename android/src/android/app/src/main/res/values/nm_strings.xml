@@ -320,4 +320,23 @@
     <string name="nm_avatar_model_body">Any provider that speaks the OpenAI images API. Alibaba Model Studio: qwen-image-3.0 (moods via qwen-image-edit-max). OpenAI: gpt-image-1.</string>
     <string name="nm_avatar_model_label">Model</string>
     <string name="nm_avatar_footer">Pictures are stored on this phone under minis-global/nanomuse/avatar. Each face costs five images from your provider: one you chose plus four moods.</string>
+
+    <!-- First run (Muse-style welcome; the steps are OpenMinis' provider and model screens) -->
+    <string name="nm_setup_title">Welcome to nanoMuse</string>
+    <string name="nm_setup_subtitle">Bring your own model. Three steps, and it lives on your phone.</string>
+    <string name="nm_setup_step_provider">Add a model provider</string>
+    <string name="nm_setup_step_provider_sub">An API key, or sign in with an account</string>
+    <string name="nm_setup_step_models">Choose models</string>
+    <string name="nm_setup_step_models_sub">The models your provider serves are listed for you; pick up to three</string>
+    <string name="nm_setup_step_models_locked">After step 1</string>
+    <string name="nm_setup_step_start">Meet %1$s</string>
+    <string name="nm_setup_step_start_sub">A first conversation: it asks what to call you and picks its own name</string>
+    <string name="nm_setup_step_start_locked">After step 2</string>
+    <string name="nm_setup_done">Done</string>
+    <string name="nm_setup_continue">Continue</string>
+    <string name="nm_setup_start">Start</string>
+    <string name="nm_setup_skip_models">Skip for now</string>
+    <string name="nm_setup_fine_print">Your key stays on this phone and is sent only to the provider you chose.</string>
+    <string name="nm_setup_learn_more">Learn more</string>
+    <string name="nm_setup_settings">Settings</string>
 </resources>

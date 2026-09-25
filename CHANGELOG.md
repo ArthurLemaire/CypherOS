@@ -2,6 +2,24 @@
 
 All notable changes to nanoMuse. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/). Unreleased changes are on `main`.
 
+## [0.1.7] - 2026-09-25 · Welcome
+
+The first run is back, in Muse's shape. A fresh install opens on a welcome screen — the mark, three steps, one blue button — instead of a chat that cannot answer: add a model provider, pick from the models it actually serves, meet the agent. The steps are OpenMinis' own provider and model screens.
+
+### Fixed
+
+- On phones, 0.1.3's home replaced the session list and with it the three-step setup OpenMinis shows before the first conversation (`OnboardingLanding` in `SessionListScreen`). A fresh install of 0.1.3–0.1.6 opened straight into the main chat with no provider; the reply to the greeting failed with "No provider configured" and the only way to a provider was Settings in the drawer. `NanoMuseHome` now shows `FirstRunSetupScreen` until the setup is done, and step 2 is OpenMinis' `OnboardingModelSelectionScreen`, which refreshes each enabled provider's catalogue and lists it.
+- The main chat's `ChatViewModel` is not built before the setup is over; one built earlier resolved its model when no default group existed and kept whichever entry it found first.
+
+### Added
+
+- **Welcome screen** (`io.github.nanomuse.ui.onboarding.FirstRunSetup`): the N mark, "Welcome to nanoMuse", the three steps as rows with done / current / locked states, a blue *Continue* that performs the next step (*Start* on the last), *Skip for now* on step 2, the fine print that the key stays on the phone with *Learn more*, a gear to Settings. Gate: shown when there is no provider, or for a brand-new install (no sessions) until *Start* or *Skip for now* sets `setup.done` in the `nanomuse` prefs; loading is gated on `ProviderRepository.configLoaded` and the session list so a returning user never sees it flash.
+- en / zh / zh-TW strings (`nm_setup_*`); `FirstRunSetupTest` (4 tests).
+
+### Changed
+
+- versionCode 8.
+
 ## [0.1.6] - 2026-09-25 · Avatar
 
 The agent gets a face of your choosing. Describe it in a sentence, your own image model draws four, you pick one, and the app poses it for every state the agent can be in — then the face on the disc breathes, bobs, tilts, pops and shakes with what the agent is doing, the way Muse's does. Around it, the small motions that make an app feel finished: pages that cross-fade, feed cards that settle in, a heart that pops.
