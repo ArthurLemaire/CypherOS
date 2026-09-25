@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape // nanoMuse
+import androidx.compose.foundation.border // nanoMuse
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -101,25 +103,16 @@ fun SettingsScaffold(
                     }
                 }
             }
-            if (centerTitle) {
-                CenterAlignedTopAppBar(
-                    title = titleSlot,
-                    navigationIcon = navigationSlot,
-                    actions = { actions?.invoke() },
-                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.background,
-                    ),
-                )
-            } else {
-                TopAppBar(
-                    title = titleSlot,
-                    navigationIcon = navigationSlot,
-                    actions = { actions?.invoke() },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.background,
-                    ),
-                )
-            }
+            // nanoMuse: Muse's bar on every settings page — the back glyph on a
+            // white disc, the title centred (so `centerTitle` is always true), no
+            // container tint. A custom `navigation` slot (a Cancel text action)
+            // is placed as-is, without the disc.
+            io.github.nanomuse.ui.muse.MuseTopAppBar(
+                title = titleSlot,
+                navigationIcon = if (navigation != null || onBack != null) navigationSlot else null,
+                disc = navigation == null,
+                actions = { actions?.invoke() },
+            )
         },
         floatingActionButton = { floatingActionButton?.invoke() },
         containerColor = MaterialTheme.colorScheme.background,
@@ -219,12 +212,12 @@ fun SettingsSection(
             .padding(top = 24.dp),
     ) {
         if (header != null) {
+            // nanoMuse: Muse's section label — small, grey, sentence case, no
+            // tracking (was Material's small caps).
             Text(
-                text = header.uppercaseForDisplay(),
-                style = MaterialTheme.typography.labelSmall,
+                text = header,
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.Medium,
-                letterSpacing = 0.5.sp,
                 // [T-android-settings-ui-md3] #5 header→card gap = 8dp (was 6dp,
                 // off-grid). Horizontal stays 32dp to align the header text with
                 // the inset card's content.
@@ -246,8 +239,9 @@ fun SettingsSection(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainerLow),
+                // nanoMuse: Muse's card — 16dp corners, white on the grey canvas.
+                .clip(RoundedCornerShape(16.dp))
+                .background(io.github.nanomuse.ui.home.MuseTones.surface),
             content = content,
         )
         if (footer != null) {
@@ -300,25 +294,22 @@ fun SettingsRow(
                 // is what made a no-subtitle last row read ~50px shorter.
                 .heightIn(min = minHeight)
                 .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-                .padding(horizontal = 14.dp, vertical = 12.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp), // nanoMuse: 16dp like Muse
             // #10 keep the trailing control (Switch/value) vertically centered
             // against the title — already centered, kept explicit.
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (icon != null) {
-                Box(
-                    modifier = Modifier
-                        .size(30.dp)
-                        .background(iconColor, RoundedCornerShape(8.dp)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
+                // nanoMuse: Muse draws the glyph bare, in ink, 22dp — no coloured
+                // tile behind it. `iconColor` is kept for the callers but only
+                // the glyph remains.
+                @Suppress("UNUSED_EXPRESSION") iconColor
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.size(22.dp),
+                )
                 Spacer(Modifier.width(14.dp))
             }
 
@@ -361,11 +352,11 @@ fun SettingsRow(
         }
 
         if (showDivider) {
-            val insetStart = if (icon != null) 58.dp else 14.dp
+            val insetStart = if (icon != null) 52.dp else 16.dp // nanoMuse: bare glyph inset
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = insetStart, end = 14.dp)
+                    .padding(start = insetStart, end = 16.dp)
                     .height(0.5.dp)
                     .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
             )
@@ -466,13 +457,25 @@ fun SettingsChoiceRow(
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f),
             )
-            if (selected) {
-                Icon(
-                    Icons.Default.Check,
-                    contentDescription = "Selected",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp),
-                )
+            // nanoMuse: Muse's radio — a hollow ring, or an ink disc with a
+            // white check when selected (was a bare blue check mark).
+            Box(
+                modifier = Modifier
+                    .size(22.dp)
+                    .then(
+                        if (selected) Modifier.background(MaterialTheme.colorScheme.onSurface, CircleShape)
+                        else Modifier.border(1.5.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (selected) {
+                    Icon(
+                        Icons.Default.Check,
+                        contentDescription = "Selected",
+                        tint = MaterialTheme.colorScheme.surface,
+                        modifier = Modifier.size(14.dp),
+                    )
+                }
             }
         }
         if (showDivider) {

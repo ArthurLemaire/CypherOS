@@ -68,7 +68,7 @@ fun ScheduledTaskRunsScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            io.github.nanomuse.ui.muse.MuseTopAppBar( // nanoMuse: Muse's bar (drop-in for TopAppBar)
                 title = {
                     Column {
                         Text(

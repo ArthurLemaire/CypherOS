@@ -14,6 +14,10 @@ object MuseTones {
     private val dark: Boolean
         @Composable @ReadOnlyComposable get() = ChatColors.background.luminance() < 0.5f
 
+    /** True in the dark theme (the chat palette's, which follows the in-app override). */
+    val isDark: Boolean
+        @Composable @ReadOnlyComposable get() = dark
+
     /** Cards, pills, round buttons, sheets, the drawer. */
     val surface: Color
         @Composable @ReadOnlyComposable get() = if (dark) Color(0xFF1C1C1E) else Color.White
@@ -21,6 +25,10 @@ object MuseTones {
     /** A selected row, the active segment, the disc under the face. */
     val fill: Color
         @Composable @ReadOnlyComposable get() = if (dark) Color(0xFF2A2A2E) else Color(0xFFF1F1F4)
+
+    /** The agent's message bubble and the composer pill (Muse: #E9EAEC on #FCFCFC). */
+    val bubble: Color
+        @Composable @ReadOnlyComposable get() = if (dark) Color(0xFF26262A) else Color(0xFFE9EAEC)
 
     /** The warm disc under the face (Muse's is a shade warmer than its greys). */
     val disc: Color

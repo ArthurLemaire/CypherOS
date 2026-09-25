@@ -120,6 +120,7 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.outlined.Mic // nanoMuse
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.CloseFullscreen
@@ -372,13 +373,17 @@ internal fun AttachmentChip(
 @Composable
 internal fun InputCircleButton(
     onClick: () -> Unit,
+    plain: Boolean = false, // nanoMuse: bare glyph, no disc (Muse's composer pill)
     content: @Composable () -> Unit,
 ) {
     Box(
         modifier = Modifier
             .size(38.dp)
-            .background(ChatColors.inputIconBg, CircleShape)
-            .border(0.5.dp, ChatColors.inputIconBorder, CircleShape)
+            .then(
+                if (plain) Modifier else Modifier
+                    .background(ChatColors.inputIconBg, CircleShape)
+                    .border(0.5.dp, ChatColors.inputIconBorder, CircleShape),
+            )
             .clip(CircleShape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -404,12 +409,14 @@ internal fun MicButton(
     // [T-android-voice-panel] While the inline voice panel is active the same
     // slot switches back to text input — keyboard glyph (mirrors iOS "T").
     isVoiceActive: Boolean = false,
+    plain: Boolean = false, // nanoMuse: bare glyph, no disc (Muse's composer pill)
 ) {
     val bg = if (isRecording) Color.Red.copy(alpha = 0.15f)
+             else if (plain) Color.Transparent
              else ChatColors.inputIconBg
     val tint = if (isRecording) Color.Red
                else MaterialTheme.colorScheme.onSurfaceVariant
-    val borderColor = if (isRecording) Color.Transparent else ChatColors.inputIconBorder
+    val borderColor = if (isRecording || plain) Color.Transparent else ChatColors.inputIconBorder
     Box(
         modifier = Modifier
             .size(38.dp)
@@ -423,11 +430,11 @@ internal fun MicButton(
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            if (isVoiceActive) Icons.Default.Keyboard else Icons.Default.Mic,
+            if (isVoiceActive) Icons.Default.Keyboard else if (plain) Icons.Outlined.Mic else Icons.Default.Mic,
             contentDescription = if (isVoiceActive) "Switch to keyboard"
             else if (isRecording) "Stop recording" else "Voice input",
             tint = tint,
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(if (plain) 22.dp else 20.dp), // nanoMuse: Muse's outlined mic
         )
         if (!localeBadge.isNullOrEmpty()) {
             Text(

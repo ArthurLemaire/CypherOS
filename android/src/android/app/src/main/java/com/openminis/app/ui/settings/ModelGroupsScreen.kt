@@ -159,7 +159,7 @@ fun ModelGroupsScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            io.github.nanomuse.ui.muse.MuseTopAppBar( // nanoMuse: Muse's bar (drop-in for TopAppBar)
                 title = { Text(stringResource(R.string.model_groups_model_groups)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {

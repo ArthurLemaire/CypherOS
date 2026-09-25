@@ -332,4 +332,16 @@
     <string name="nm_setup_fine_print">你的 key 只保存在這台手機上，只會發給你選擇的服務商。</string>
     <string name="nm_setup_learn_more">了解更多</string>
     <string name="nm_setup_settings">設定</string>
+
+    <!-- 0.1.8 Polish: Muse's settings page, header and composer -->
+    <string name="nm_settings_no_model">還沒有模型</string>
+    <string name="nm_settings_no_model_sub">新增服務商並選擇它的模型</string>
+    <string name="nm_settings_change_model">更換</string>
+    <string name="nm_settings_version">nanoMuse %1$s (%2$d)</string>
+    <string name="nm_appearance_section_home">首頁</string>
+    <string name="nm_appearance_header_model_title">在名字下方顯示模型</string>
+    <string name="nm_appearance_header_model_footer">Muse 只顯示名字。開啟後名字下方會顯示模型群組和服務商 · 模型，點它可以切換。關閉時模型在 ••• → 模型和設定裡。</string>
+    <string name="nm_chat_menu_model">模型</string>
+    <string name="nm_attach_commands">指令</string>
+    <string name="nm_composer_placeholder">訊息</string>
 </resources>

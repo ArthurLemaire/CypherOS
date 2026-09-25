@@ -2,6 +2,25 @@
 
 All notable changes to nanoMuse. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/). Unreleased changes are on `main`.
 
+## [0.1.8] - 2026-09-25 · Polish
+
+The shell, brought level with Muse's. Same features underneath; the type, the home composer, the header and every settings page now follow Muse's own screens rather than OpenMinis' iOS-style chrome.
+
+### Changed
+
+- **Type.** Muse renders in the phone's system face (MiSans on Xiaomi, Roboto elsewhere), so nothing is bundled; what changed is the scale. `MinisTheme` now builds its `Typography` from a Muse-like scale — zero tracking, 16/24 body, 14/20 and 13/18 secondary, SemiBold titles (17/22 for page titles) — instead of Material's defaults (`Theme.kt`, `museTypography()`); the user's text-size setting still scales it.
+- **Home composer** (`ChatScreen.kt`, `ChatComposerWidgets.kt`). In the home shell the composer is Muse's one-row pill on a flat grey capsule (`MuseTones.bubble`, 26dp radius, no shadow, 16dp margins): a bare "+", the text with the placeholder *Message*, a bare mic; a blue send arrow replaces the mic once there is text or an attachment, and the stop button while the agent works. The "/" commands moved into "+" → *Commands*. Voice mode, recording and message editing fall back to OpenMinis' two-row card, which is unchanged elsewhere. The one `BasicTextField` is declared once and placed in either layout.
+- **Header.** The rows under the agent's name — model group, provider · model — are off by default on the main chat, as on Muse, which shows only the name; the bar is 116dp instead of 136dp. *Appearance → Home → Show the model under the name* turns them back on, live (`AppearanceScreen.kt`, `KEY_NM_HEADER_MODEL`, `NmHomeChrome.rememberHeaderModelShown()`); with them off, ••• → *Model* opens the picker. The round header buttons lose their outline in the light theme and get a soft shadow, like Muse's discs.
+- **Replies.** In the home shell the agent's text arrives in grey bubbles, one per paragraph, with no "✦ name" label above each turn — the face in the header says who is talking (`NmAssistantBubble`, wrapping `AssistantText`, `AssistantMarkdownBlock` and legacy content; a 6dp gap stands in for `AssistantHeader`). Code blocks, tables and HTML stay bare so they keep their width.
+- **Settings** (`SettingsScreen.kt`, `SettingsComponents.kt`, `io.github.nanomuse.ui.muse.MuseChrome`). Muse's page: a round back disc, a centred 17sp title, white 16dp cards on the grey canvas, rows of one bare ink glyph + label + chevron, hairline separators, no section headers or subtitles. The main page opens with the model card (default group, provider · model, *Change*) where Muse has its plan card, then *Manage Providers* and *Token Usage*; the agent's card (Soul, Avatar, Memory, System files, Skills, MCP Integrations, Environment Variables); the phone's (Permissions, Background & notifications, Storage, Shared Folders, Mount External Folders, Backup & Restore); the app's (Appearance, Logs); About, Privacy Policy, Feedback; the version at the foot. Every entry OpenMinis had is still there.
+- **Every settings sub-page.** `SettingsScaffold` and the 24 screens that draw their own bar now use `MuseTopAppBar`, a drop-in for Material's `TopAppBar` / `CenterAlignedTopAppBar`. `SettingsSection` labels are sentence-case grey text instead of small caps; cards are 16dp; `SettingsRow` draws its glyph bare in ink (22dp) instead of on a coloured tile; `SettingsChoiceRow` shows Muse's radio — a hollow ring, or an ink disc with a white check.
+- `docs/screenshots/chat-approval.png` (and the web copy) retaken on this build.
+- versionCode 9.
+
+### Kept on purpose
+
+- Every OpenMinis feature and setting; the two-row composer for voice, recording and editing; the status line under the name ("Needs approval", "Working…") and the naming card of the first conversation.
+
 ## [0.1.7] - 2026-09-25 · Welcome
 
 The first run is back, in Muse's shape. A fresh install opens on a welcome screen — the mark, three steps, one blue button — instead of a chat that cannot answer: add a model provider, pick from the models it actually serves, meet the agent. The steps are OpenMinis' own provider and model screens.

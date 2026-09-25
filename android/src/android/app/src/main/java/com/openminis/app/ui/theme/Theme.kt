@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight // nanoMuse
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -172,8 +173,37 @@ fun MinisTheme(
 private fun TextStyle.scale(factor: Float): TextStyle =
     if (factor == 1f) this else copy(fontSize = fontSize * factor)
 
-private fun scaledTypography(factor: Float): Typography {
+// nanoMuse: Muse's type, on the system face. Material's scale carries tracking
+// (0.1–0.5sp) and small labels (11–12sp) that read as "Android"; Muse sets
+// everything at zero tracking, runs body at 16 and its captions at 13, and
+// weights titles SemiBold. The face stays the device's default so the app
+// matches Muse on the same phone (MiSans, Roboto, …) and Chinese and Latin
+// never come from two fonts.
+private fun museTypography(): Typography {
     val base = Typography()
+    fun TextStyle.muse(size: Int, line: Int, weight: FontWeight = FontWeight.Normal) =
+        copy(fontSize = size.sp, lineHeight = line.sp, letterSpacing = 0.sp, fontWeight = weight)
+    return Typography(
+        displayLarge = base.displayLarge.muse(56, 64, FontWeight.SemiBold),
+        displayMedium = base.displayMedium.muse(44, 52, FontWeight.SemiBold),
+        displaySmall = base.displaySmall.muse(36, 44, FontWeight.SemiBold),
+        headlineLarge = base.headlineLarge.muse(32, 40, FontWeight.SemiBold),
+        headlineMedium = base.headlineMedium.muse(28, 36, FontWeight.SemiBold),
+        headlineSmall = base.headlineSmall.muse(24, 32, FontWeight.SemiBold),
+        titleLarge = base.titleLarge.muse(22, 28, FontWeight.SemiBold),
+        titleMedium = base.titleMedium.muse(17, 22, FontWeight.SemiBold),
+        titleSmall = base.titleSmall.muse(15, 20, FontWeight.Medium),
+        bodyLarge = base.bodyLarge.muse(16, 24),
+        bodyMedium = base.bodyMedium.muse(14, 20),
+        bodySmall = base.bodySmall.muse(13, 18),
+        labelLarge = base.labelLarge.muse(15, 20, FontWeight.Medium),
+        labelMedium = base.labelMedium.muse(13, 18, FontWeight.Medium),
+        labelSmall = base.labelSmall.muse(12, 16, FontWeight.Medium),
+    )
+}
+
+private fun scaledTypography(factor: Float): Typography {
+    val base = museTypography() // nanoMuse: was Material's default scale
     return Typography(
         displayLarge = base.displayLarge.scale(factor),
         displayMedium = base.displayMedium.scale(factor),

@@ -131,6 +131,7 @@ import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.StopCircle
 import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.outlined.Tune // nanoMuse
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreHoriz // nanoMuse
 import androidx.compose.material.icons.filled.MoreVert
@@ -569,6 +570,10 @@ fun ChatScreen(
     io.github.nanomuse.status.KeepAwake.Effect(isStreaming)
     val canResume by viewModel.canResume.collectAsState()
     val nmContinueAsk by viewModel.nmContinueAsk.collectAsState() // nanoMuse: "continue?" card replaces the banner while shown
+    // nanoMuse: Muse's header carries only the name; the model rows under it are a
+    // Setting (Appearance → Home), off by default on the main chat of the home shell.
+    val nmHeaderModelShown by io.github.nanomuse.ui.chat.rememberHeaderModelShown()
+    val nmHideModelRows = nmHome != null && nmHome.isMainChat && !nmHeaderModelShown
     // [T-android-compact-progress] null when no compaction is running.
     val compactProgress by viewModel.compactProgress.collectAsState()
     val error by viewModel.error.collectAsState()
@@ -2644,7 +2649,9 @@ fun ChatScreen(
                             // slot shows what it is doing (Muse's status line)
                             // instead of the model rows; idle shows the rows.
                             val nmStatusLine = io.github.nanomuse.ui.header.rememberNanoMuseStatusLine(isStreaming, nmMood)
-                            if (nmStatusLine != null) io.github.nanomuse.ui.header.NanoMuseStatusLine(nmStatusLine, nmMood) else
+                            if (nmStatusLine != null) io.github.nanomuse.ui.header.NanoMuseStatusLine(nmStatusLine, nmMood)
+                            // nanoMuse: no model rows under the name unless the Setting asks for them.
+                            else if (!nmHideModelRows)
                             // Model picker subtitle: green dot + group +
                             // provider/model. Tap opens the model picker —
                             // separated from the title above so tapping the
@@ -2984,6 +2991,20 @@ fun ChatScreen(
                                     Icon(Icons.Default.Edit, contentDescription = null)
                                 },
                             )
+                            // nanoMuse: with the model rows off the header, the
+                            // picker opens from here.
+                            if (nmHideModelRows) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.nm_chat_menu_model)) },
+                                    onClick = {
+                                        showChatMenu = false
+                                        showModelPicker = true
+                                    },
+                                    leadingIcon = {
+                                        Icon(Icons.Outlined.Tune, contentDescription = null)
+                                    },
+                                )
+                            }
                             MinisMenuDivider()
                             // Clear Chat (iOS parity, red)
                             DropdownMenuItem(
@@ -3226,7 +3247,7 @@ fun ChatScreen(
                 // title less.
                 expandedHeight = when {
                     nmHome == null -> 108.dp
-                    nmHome.isMainChat -> 136.dp
+                    nmHome.isMainChat -> if (nmHideModelRows) 116.dp else 136.dp // nanoMuse: face + pill only
                     else -> 72.dp
                 },
             )
@@ -4180,12 +4201,16 @@ fun ChatScreen(
                                 },
                             )
                             } // close UserBubble SideEffect + UserMessageBubble block
-                            is FlatChatItem.AssistantHeader -> AssistantHeader()
+                            // nanoMuse: in the home shell the agent's reply is Muse's —
+                            // grey bubbles per block, no name above each turn (the face
+                            // in the header says who is talking); a small gap keeps the
+                            // turns apart.
+                            is FlatChatItem.AssistantHeader -> if (nmHome != null) Spacer(Modifier.height(6.dp)) else AssistantHeader()
                             is FlatChatItem.AssistantText -> BoundsTrackedBlock(
                                 messageId = item.messageId,
                                 slotKey = "text:${item.block.id}",
                                 markdown = item.messageMarkdown,
-                            ) {
+                            ) { io.github.nanomuse.ui.chat.NmAssistantBubble(enabled = nmHome != null, rawText = item.block.content) {
                                 // T-android-gc-storm-issue17: collapse oversized frozen
                                 // assistant text before feeding the markdown parser, which
                                 // is the GC-storm hotspot for legacy sessions.
@@ -4206,12 +4231,12 @@ fun ChatScreen(
                                         ),
                                     )
                                 }
-                            }
+                            } } // nanoMuse: bubble
                             is FlatChatItem.AssistantMarkdownBlock -> BoundsTrackedBlock(
                                 messageId = item.messageId,
                                 slotKey = "mdblock:${item.parentBlockId}:${item.blockIndex}",
                                 markdown = item.messageMarkdown,
-                            ) {
+                            ) { io.github.nanomuse.ui.chat.NmAssistantBubble(enabled = nmHome != null, rawText = item.rawText) {
                                 LargeContentGuard(
                                     content = item.rawText,
                                     isStreaming = item.isStreaming,
@@ -4229,7 +4254,7 @@ fun ChatScreen(
                                         ),
                                     )
                                 }
-                            }
+                            } } // nanoMuse: bubble
                             is FlatChatItem.AssistantThinking -> {
                                 // T300: hide Deep Thinking block when the user
                                 // currently has thinking turned off — even if
@@ -4342,7 +4367,7 @@ fun ChatScreen(
                                 messageId = item.messageId,
                                 slotKey = "legacy",
                                 markdown = item.messageMarkdown,
-                            ) {
+                            ) { io.github.nanomuse.ui.chat.NmAssistantBubble(enabled = nmHome != null, rawText = item.content) {
                                 LargeContentGuard(
                                     content = item.content,
                                     isStreaming = item.isStreaming,
@@ -4360,7 +4385,7 @@ fun ChatScreen(
                                         ),
                                     )
                                 }
-                            }
+                            } } // nanoMuse: bubble
                         }
                         } // Box (alpha wrapper)
                     }
@@ -4780,6 +4805,19 @@ fun ChatScreen(
             // back by the slash / mention popups below so they line up with it.
             var composerWidthPx by remember { mutableStateOf(0) }
 
+            // nanoMuse: in the home shell the composer is Muse's one-row
+            // pill — "+", the text, the mic (a send arrow once there is
+            // something to send) — on a grey capsule with no shadow. Voice,
+            // recording and message editing fall back to OpenMinis' two-row
+            // card. Decided here so the card's shell and its rows agree.
+            val nmRecState by com.openminis.app.speech.SpeechRecognitionManager.state.collectAsState()
+            val nmRecording = nmRecState == com.openminis.app.speech.RecognitionState.RECORDING ||
+                nmRecState == com.openminis.app.speech.RecognitionState.STARTING ||
+                nmRecState == com.openminis.app.speech.RecognitionState.FINISHING
+            val editingId by viewModel.editingMessageId.collectAsState()
+            val nmPill = nmHome != null &&
+                !com.openminis.app.ui.chat.voice.VoiceModePrefs.isVoiceActive &&
+                !nmRecording && editingId == null
             // ─── Input area (iOS-style: rounded box with text + buttons below) ───
             Column(
                 modifier = Modifier
@@ -4806,7 +4844,7 @@ fun ChatScreen(
                     // looked broken.
                     .onGloballyPositioned { composerWidthPx = it.size.width }
                     .navigationBarsPadding()
-                    .padding(horizontal = 12.dp)
+                    .padding(horizontal = if (nmPill) 16.dp else 12.dp) // nanoMuse: Muse's 16dp margins
                     .padding(top = 2.dp, bottom = 8.dp),
             ) {
                 // T13 banner moved INSIDE the LazyColumn so it renders at the
@@ -5338,7 +5376,15 @@ fun ChatScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        // nanoMuse: Muse's capsule — flat grey, no shadow.
+                        .then(
+                            if (nmPill) Modifier
+                                .clip(RoundedCornerShape(26.dp))
+                                .background(io.github.nanomuse.ui.home.MuseTones.bubble)
+                            else Modifier,
+                        )
                         .drawBehind {
+                            if (nmPill) return@drawBehind
                             val radiusPx = 20.dp.toPx()
                             val canvas = drawContext.canvas.nativeCanvas
                             // Pass 1: symmetric ambient halo — small blur, low alpha.
@@ -5362,7 +5408,7 @@ fun ChatScreen(
                                 shadowPaint,
                             )
                         }
-                        .padding(top = if (attachments.isNotEmpty()) 8.dp else 4.dp),
+                        .padding(top = if (attachments.isNotEmpty()) 8.dp else if (nmPill) 0.dp else 4.dp),
                 ) {
                     // T185: Move-to capsule lives INSIDE the composer card,
                     // pinned 8dp from the top-right corner, mirroring iOS
@@ -5661,51 +5707,10 @@ fun ChatScreen(
                     // InlineVoiceInputView). The legacy in-composer waveform
                     // branch below only serves captures started OUTSIDE the
                     // panel (none today, kept as a safety net).
-                    if (com.openminis.app.ui.chat.voice.VoiceModePrefs.isVoiceActive) {
-                        com.openminis.app.ui.chat.voice.InlineVoiceInputPanel(
-                            providerRepository = providerRepository,
-                            inputText = inputText,
-                            onInputTextChange = { text ->
-                                viewModel.setInputText(text)
-                                viewModel.updateSlashMenuState(text)
-                            },
-                            ensureMicPermission = { ensureMicPermissionFlow() },
-                            // [T-android-correction-context-wiring] Feed AI
-                            // correction the live conversation context. Reads the
-                            // FULL message list (not the windowed uiMessages) so
-                            // older turns still contribute rare-term grounding;
-                            // evaluated lazily at correction time.
-                            conversationContextProvider = {
-                                com.openminis.app.speech.correction.VoiceCorrection
-                                    .buildConversationContext(context, viewModel.messages.value)
-                            },
-                        )
-                    } else if (recIsRecording) {
-                        val levels by com.openminis.app.speech.SpeechRecognitionManager
-                            .audioLevels.collectAsState()
-                        val partial by com.openminis.app.speech.SpeechRecognitionManager
-                            .recognizedText.collectAsState()
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                        ) {
-                            AudioWaveformView(
-                                levels = levels,
-                                barColor = Color.Red.copy(alpha = 0.75f),
-                                heightDp = 28,
-                            )
-                            if (partial.isNotBlank()) {
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(
-                                    text = partial,
-                                    fontSize = 14.sp,
-                                    color = ChatColors.secondaryText,
-                                    maxLines = 2,
-                                )
-                            }
-                        }
-                    } else
+                    // nanoMuse: the text field, declared once and placed either
+                    // on its own row (upstream layout) or between the buttons
+                    // (the pill — see nmPill above).
+                    val nmTextField: @Composable (Modifier) -> Unit = { nmFieldModifier ->
                     // Text field (iOS: placeholder "Message nanoMuse", no border)
                     run {
                         val interactionSource = remember { MutableInteractionSource() }
@@ -5921,8 +5926,7 @@ fun ChatScreen(
                                     caret = value.selection.end,
                                 )
                             },
-                            modifier = Modifier
-                                .fillMaxWidth()
+                            modifier = nmFieldModifier // nanoMuse: fillMaxWidth on its own row, weight(1f) in the pill
                                 .heightIn(min = 25.dp)
                                 .focusRequester(inputFocusRequester)
                                 .onFocusChanged {
@@ -6117,8 +6121,11 @@ fun ChatScreen(
                                         ) { idx ->
                                             Text(
                                                 if (nmChoosingName) stringResource(R.string.nm_naming_placeholder)
+                                                // nanoMuse: Muse's pill says just "Message".
+                                                else if (nmPill) stringResource(R.string.nm_composer_placeholder)
                                                 else composerPlaceholderText(idx, soulName.name),
-                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
+                                                color = if (nmPill) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
                                                 fontSize = 16.5.sp * chatInputFontScale,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis,
@@ -6153,33 +6160,98 @@ fun ChatScreen(
                             },
                         )
                     }
+                    } // nmTextField
+                    if (com.openminis.app.ui.chat.voice.VoiceModePrefs.isVoiceActive) {
+                        com.openminis.app.ui.chat.voice.InlineVoiceInputPanel(
+                            providerRepository = providerRepository,
+                            inputText = inputText,
+                            onInputTextChange = { text ->
+                                viewModel.setInputText(text)
+                                viewModel.updateSlashMenuState(text)
+                            },
+                            ensureMicPermission = { ensureMicPermissionFlow() },
+                            // [T-android-correction-context-wiring] Feed AI
+                            // correction the live conversation context. Reads the
+                            // FULL message list (not the windowed uiMessages) so
+                            // older turns still contribute rare-term grounding;
+                            // evaluated lazily at correction time.
+                            conversationContextProvider = {
+                                com.openminis.app.speech.correction.VoiceCorrection
+                                    .buildConversationContext(context, viewModel.messages.value)
+                            },
+                        )
+                    } else if (recIsRecording) {
+                        val levels by com.openminis.app.speech.SpeechRecognitionManager
+                            .audioLevels.collectAsState()
+                        val partial by com.openminis.app.speech.SpeechRecognitionManager
+                            .recognizedText.collectAsState()
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                        ) {
+                            AudioWaveformView(
+                                levels = levels,
+                                barColor = Color.Red.copy(alpha = 0.75f),
+                                heightDp = 28,
+                            )
+                            if (partial.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = partial,
+                                    fontSize = 14.sp,
+                                    color = ChatColors.secondaryText,
+                                    maxLines = 2,
+                                )
+                            }
+                        }
+                    } else if (!nmPill) nmTextField(Modifier.fillMaxWidth())
 
                     // Button row below text field (iOS layout: + / ... mic send)
+                    // nanoMuse: in the pill this is THE row — "+", the field, mic/send.
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             // T185: 12dp horizontal lines the +/slash and
                             // mic/send icon-button column up with the
                             // attachment row + textfield + Move-to popup.
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                            .padding(
+                                horizontal = if (nmPill) 6.dp else 12.dp,
+                                vertical = if (nmPill) 4.dp else 10.dp,
+                            ),
+                        verticalAlignment = if (nmPill) Alignment.Bottom else Alignment.CenterVertically,
                     ) {
                         // Left: + button (iOS: 34×34 circle, secondary bg)
                         Box {
                             InputCircleButton(
                                 onClick = { showAttachMenu = true },
+                                plain = nmPill, // nanoMuse: a bare glyph inside the pill
                             ) {
                                 Icon(
                                     Icons.Default.Add,
                                     contentDescription = "Attach",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(20.dp),
+                                    tint = if (nmPill) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(if (nmPill) 24.dp else 20.dp),
                                 )
                             }
                             MinisMenu(
                                 expanded = showAttachMenu,
                                 onDismissRequest = { showAttachMenu = false },
                             ) {
+                                // nanoMuse: the "/" button has no seat in the pill,
+                                // so the slash commands open from here (typing "/"
+                                // still opens them inline).
+                                if (nmPill) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.nm_attach_commands)) },
+                                        leadingIcon = { Icon(Icons.Default.Terminal, contentDescription = null) },
+                                        onClick = {
+                                            showAttachMenu = false
+                                            viewModel.setInputText(viewModel.showSlashMenuOverInput(inputText))
+                                            try { inputFocusRequester.requestFocus() } catch (_: IllegalStateException) {}
+                                        },
+                                    )
+                                }
                                 // iOS parity: Take Photo / Choose Photos & Videos / Add File
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.chat_attach_take_photo)) },
@@ -6222,6 +6294,9 @@ fun ChatScreen(
                             }
                         }
 
+                        if (nmPill) {
+                            nmTextField(Modifier.weight(1f)) // nanoMuse: the field between the buttons
+                        } else {
                         Spacer(modifier = Modifier.width(8.dp))
 
                         // Left: "/" slash command button (iOS: italic /, bold)
@@ -6245,7 +6320,7 @@ fun ChatScreen(
                         // is non-null. Tap clears the edit flag + composer text
                         // without truncating history. iOS parity:
                         // AIChatView.swift L1586 editExitButton.
-                        val editingId by viewModel.editingMessageId.collectAsState()
+                        // (nanoMuse: editingId is read once, above the text field.)
                         if (editingId != null) {
                             Spacer(modifier = Modifier.width(8.dp))
                             Surface(
@@ -6266,6 +6341,7 @@ fun ChatScreen(
                         }
 
                         Spacer(modifier = Modifier.weight(1f))
+                        } // nanoMuse: end of the two-row layout's left group
 
                         // Right: Mic button — only renders when a speech engine
                         // is actually available on this device (handles the
@@ -6667,7 +6743,11 @@ fun ChatScreen(
                         // RECOVERABLE states, explained inside the panel with a
                         // link to the relevant settings rather than by silently
                         // removing the control.
-                        if (com.openminis.app.speech.SpeechRecognitionManager.hasMicrophoneHardware) {
+                        // nanoMuse: in the pill the mic gives way to the send
+                        // arrow once there is something to send (or a stop
+                        // square while the agent answers), as on Muse.
+                        val nmPillBusy = nmPill && (inputText.isNotBlank() || attachments.isNotEmpty() || isStreaming)
+                        if (com.openminis.app.speech.SpeechRecognitionManager.hasMicrophoneHardware && !nmPillBusy) {
                             MicButton(
                                 isRecording = !com.openminis.app.ui.chat.voice.VoiceModePrefs.isVoiceActive &&
                                     (sttState == com.openminis.app.speech.RecognitionState.RECORDING ||
@@ -6676,10 +6756,12 @@ fun ChatScreen(
                                 onClick = { triggerVoiceInput() },
                                 onLongClick = { showLangSheet = true },
                                 isVoiceActive = com.openminis.app.ui.chat.voice.VoiceModePrefs.isVoiceActive,
+                                plain = nmPill, // nanoMuse
                             )
                         }
 
-                        Spacer(modifier = Modifier.width(8.dp))
+                        if (!nmPill) Spacer(modifier = Modifier.width(8.dp))
+                        if (!nmPill || nmPillBusy) { // nanoMuse: the pill shows send/stop only when there is something to do
 
                         // Right: 3-state Send / Enqueue / Stop button (mirrors iOS sendButton).
                         //   • streaming + hasText  → SEND (routes through viewModel.sendMessage,
@@ -6750,6 +6832,7 @@ fun ChatScreen(
                                 )
                             }
                         }
+                        } // nanoMuse: send/stop
                     }
                 }
             }

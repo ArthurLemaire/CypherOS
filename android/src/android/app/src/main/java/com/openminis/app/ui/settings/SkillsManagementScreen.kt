@@ -648,7 +648,7 @@ fun SkillDetailScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            io.github.nanomuse.ui.muse.MuseTopAppBar( // nanoMuse: Muse's bar (drop-in for TopAppBar)
                 title = { Text(skill.name) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -1155,7 +1155,7 @@ fun SkillFileViewerScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            io.github.nanomuse.ui.muse.MuseTopAppBar( // nanoMuse: Muse's bar (drop-in for TopAppBar)
                 title = { Text(fileName) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
