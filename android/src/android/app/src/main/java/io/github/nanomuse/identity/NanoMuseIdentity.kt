@@ -14,7 +14,7 @@ import com.openminis.app.agent.SoulStore
  *
  * SOUL.md is the single source of truth for the name (see [SoulStore]); this object only adds
  * the two things notification code needs: a name that is correct even in a process that never
- * warmed [SoulStore.cachedMetadata], and the red panda as a large-icon bitmap.
+ * warmed [SoulStore.cachedMetadata], and the built-in face as a large-icon bitmap.
  */
 object NanoMuseIdentity {
 
@@ -31,7 +31,7 @@ object NanoMuseIdentity {
     @Volatile private var cachedFace: Bitmap? = null
 
     /**
-     * The idle red panda rasterised for `setLargeIcon`; null if the drawable cannot be inflated.
+     * The idle built-in face rasterised for `setLargeIcon`; null if the drawable cannot be inflated.
      * Rasterised once per process: the foreground service rebuilds its notification on every
      * tool change. Any [Context] will do since the drawable is not themed.
      */

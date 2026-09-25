@@ -166,7 +166,7 @@ fun AvatarStudioScreen(onBack: () -> Unit, onOpenSoul: () -> Unit, onOpenMediaMo
                         Modifier.size(148.dp).scale(pop.value).clip(CircleShape).background(avatarDiscColor()),
                         contentAlignment = Alignment.Center,
                     ) {
-                        AgentAvatar(mood = previewMood, size = if (current != null) 148.dp else 128.dp)
+                        AgentAvatar(mood = previewMood, size = 148.dp)
                     }
                     Spacer(Modifier.height(12.dp))
                     Text(name, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)

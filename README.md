@@ -25,7 +25,7 @@
 nanoMuse is an open-source take on Meta's [Muse](https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/): one agent with a name and a face that does things instead of answering questions, keeps working while the app is closed, remembers you, and stops to ask before anything you could not undo. Muse runs in a cloud VM per user; nanoMuse runs **on the phone** — a Linux root file system, a shell, a browser, MCP, skills and scheduled tasks inside the APK, with a model you bring. No server, no account, GPL-3.0.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/avatar-moods.png" width="88%" alt="The same red panda in five states: at rest, working, waiting, pleased, sorry">
+  <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/avatar-moods.png" width="88%" alt="The same small dragon in five states: at rest, working, waiting, pleased, sorry">
 </p>
 
 <p align="center">
@@ -53,7 +53,7 @@ The app checks this repository's releases for updates. Release notes for each ve
 | **Keeps going** | Goals are shaped in the chat and checked on a schedule in their own conversation; routines run while the app is closed; the screen stays on while it drives the phone; at 200 steps it asks "continue?" instead of wrapping up early. |
 | **Writes you a feed** | Every morning, three to six short posts from what it knows about you and what you asked it to follow, as cards you can like, discuss in a side chat, or delete. One sentence steers it. |
 | **Remembers you** | Who it is (`SOUL.md`), what it knows about you (`USER.md`), what it remembers (`GLOBAL.md` and a diary) and when it wakes (`HEARTBEAT.md`) are files you can read and edit in the app. Bring what another assistant knew with *Import memory*. |
-| **Has a face** | Describe one in a sentence; your image model draws four; you pick. The app poses it for every state — working, waiting, pleased, sorry — and it breathes, bobs, tilts, pops and shakes with what the agent is doing; with a video model, each state is a short looping clip. The red panda is the default. |
+| **Has a face** | Describe one in a sentence; your image model draws four; you pick. The app poses it for every state — working, waiting, pleased, sorry — and it breathes, bobs, tilts, pops and shakes with what the agent is doing; with a video model, each state is a short looping clip. A small pale-yellow dragon, stills and clips included, is the default. |
 | **Ideas and Library** | Things to ask next, from your goals and memory; and everything it made, with previews. |
 
 Everything above is a Muse screen or behaviour, rebuilt on the phone; the rest of OpenMinis — the terminal, the in-app browser, MCP and skill management, model groups, token usage, the accessibility executor, shared folders — is kept and reachable from the same menus.
@@ -89,6 +89,7 @@ One small version per stage, each a GitHub release with an APK. The plan and its
 | [0.1.8](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.8) | Polish | The shell level with Muse's: type, the composer pill, only the name under the face, grey bubbles, Muse's settings pages |
 | [0.1.9](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.9) | Portrait | The face, Muse's way: "change your avatar to…" in the chat, four takes to pick from, poses, a share card; the agent's page behind the face; five avatar sizes; the name pill re-measured |
 | [0.1.10](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.10) | Motion | The three models named — chat, image, video — in Settings → Image & video models and in what the agent knows; with a video model the avatar gets a looping clip per state; pictures and clips on request; the agent explains a missing model instead of a fixed message |
+| [0.1.11](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.11) | Hatch | The built-in dragon — stills and looping clips in the APK; the first conversation read by the chat model: a detour is answered and the name asked again later, its own names proposed in your language; one Model Studio key for all three models, or a provider per model |
 | 0.2.0 | Beta | Polish from the first weeks of use; the first beta |
 
 **Next:** a hosted nanoMuse on a VM of your own, reachable from any browser, with the phone app as its client; then a desktop app, local or attached to that VM. The Python line this project started with — the agent and its Sentinel, the web app, the simulated phone — is frozen at tag [`pre-openminis`](https://github.com/nano-muse/nanoMuse/releases/tag/pre-openminis) with its docs under [docs/](docs/), and is the base of those phases.
@@ -103,7 +104,7 @@ One small version per stage, each a GitHub release with an APK. The plan and its
 | Works on goals in the background | Goals checked on a schedule in their own conversation; routines as scheduled tasks; notifications for approvals and results |
 | A feed written for you | A morning routine that writes cards from your memory, goals and one steering sentence |
 | iOS, Android, web, WhatsApp, a Mac app | Android today; the web on a VM of your own and a desktop app next |
-| A plush avatar that changes pose while it works | A face your image model draws and poses, a looping clip per state from your video model; the red panda by default |
+| A plush avatar that changes pose while it works | A face your image model draws and poses, a looping clip per state from your video model; a small dragon, already moving, by default |
 | Meta's models | Three of your own: any OpenAI-compatible chat model (or the OAuth sign-ins the app ships with), an image model, an optional video model |
 | Closed | GPL-3.0-or-later |
 
@@ -121,7 +122,7 @@ nanoMuse stands on other people's work; [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOT
 
 ## Disclaimer
 
-nanoMuse is an independent community project. It is not affiliated with, endorsed by, or derived from Meta Platforms, Inc. or its Muse product; Muse is a trademark of Meta Platforms, Inc. The red panda is the project's own.
+nanoMuse is an independent community project. It is not affiliated with, endorsed by, or derived from Meta Platforms, Inc. or its Muse product; Muse is a trademark of Meta Platforms, Inc. The dragon is the project's own.
 
 ## License
 

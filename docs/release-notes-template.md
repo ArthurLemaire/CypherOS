@@ -2,7 +2,7 @@
 
 <!-- The first line is the GitHub release title (scripts/release-apk.sh reads it).
      English first; the Chinese version of the same notes goes in the <details> block at the end.
-     Codenames so far: Foundation, Identity, Home, Guardrails, Memory, Avatar, Welcome, Polish, Portrait, Motion. One word, capitalised. -->
+     Codenames so far: Foundation, Identity, Home, Guardrails, Memory, Avatar, Welcome, Polish, Portrait, Motion, Hatch. One word, capitalised. -->
 
 <One paragraph: what this version adds, in plain words.>
 

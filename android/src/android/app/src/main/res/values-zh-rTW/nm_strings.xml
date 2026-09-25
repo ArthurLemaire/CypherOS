@@ -27,10 +27,10 @@
     <string name="nm_naming_custom">自己取一個…</string>
     <string name="nm_naming_placeholder">寫個名字…</string>
     <string-array name="nm_name_suggestions">
-        <item>阿福</item>
+        <item>豆丁</item>
         <item>小滿</item>
-        <item>豆豆</item>
         <item>團團</item>
+        <item>叮叮</item>
         <item>小北</item>
         <item>一一</item>
         <item>小竹</item>
@@ -280,7 +280,7 @@
     <string name="nm_avatar_menu_soul">名字與風格</string>
     <string name="nm_avatar_menu_model">圖像模型</string>
     <string name="nm_avatar_menu_regenerate_moods">重畫狀態</string>
-    <string name="nm_avatar_menu_reset">換回小熊貓</string>
+    <string name="nm_avatar_menu_reset">換回內建形象</string>
     <string name="nm_avatar_mood_idle">待命</string>
     <string name="nm_avatar_mood_working">工作中</string>
     <string name="nm_avatar_mood_waiting">等你回覆</string>
@@ -292,7 +292,7 @@
     <string name="nm_avatar_retry">重試</string>
     <string name="nm_avatar_describe_title">描述一張新的臉</string>
     <string name="nm_avatar_describe_body">一句話就夠：它是什麼、穿什麼、什麼氣質。選一種風格，你的圖像模型會畫四張讓你挑。</string>
-    <string name="nm_avatar_default_description">一隻圓圓的、友善的小熊貓，戴著一條小圍巾</string>
+    <string name="nm_avatar_default_description">一隻圓滾滾的奶黃色小龍，橙色小角，摺著小翅膀</string>
     <string name="nm_avatar_style_flat">扁平插畫</string>
     <string name="nm_avatar_style_clay">3D 黏土</string>
     <string name="nm_avatar_style_watercolor">水彩</string>
@@ -318,7 +318,7 @@
     <string name="nm_setup_title">歡迎使用 nanoMuse</string>
     <string name="nm_setup_subtitle">帶上你自己的模型，三步之後它就住在你的手機裡。</string>
     <string name="nm_setup_step_provider">新增模型服務商</string>
-    <string name="nm_setup_step_provider_sub">填一個 API key，或用帳號登入</string>
+    <string name="nm_setup_step_provider_sub">填一個 API key，或用帳號登入。一把阿里雲百煉的 key 還能順帶畫形象、產生影片</string>
     <string name="nm_setup_step_models">選擇模型</string>
     <string name="nm_setup_step_models_sub">自動列出服務商提供的模型，最多選三個</string>
     <string name="nm_setup_step_models_locked">先完成第 1 步</string>
@@ -402,17 +402,17 @@
     <string name="nm_avatar_share_tagline">你的個人 AI 智慧體，開源 · github.com/nano-muse/nanoMuse</string>
     <!-- 0.1.10 · Motion -->
     <string name="nm_media_title">圖像與影片模型</string>
-    <string name="nm_media_intro">Muse 的圖像和影片模型是官方內建的。nanoMuse 用的是你自己設定的三個模型：和你對話的對話模型、畫形象和你要的圖片的圖像模型、讓形象動起來和產生短片的影片模型。每一個都來自你自己的服務商、用你自己的 key。</string>
+    <string name="nm_media_intro">Muse 的圖像和影片模型是官方內建的。nanoMuse 用的是你自己設定的三個模型：和你對話的對話模型、畫形象和你要的圖片的圖像模型、讓形象動起來和產生短片的影片模型。最省事的做法：一把阿里雲百煉的 key 三個全包——通義千問對話模型、qwen-image-3.0-pro、MiniMax-H3。三個模型各自單獨選擇，任何一個都可以換成別的服務商、用它自己的 key。</string>
     <string name="nm_media_section_chat">對話模型</string>
     <string name="nm_media_chat_footer">預設模型群組。所有對話、動態和每日例程都跑在它上面。</string>
     <string name="nm_media_section_image">圖像模型</string>
-    <string name="nm_media_image_footer">用於更換形象（四張候選和各個姿勢）以及你在對話裡要的任何圖片。阿里雲百煉：qwen-image-3.0（編輯走 qwen-image-edit-max）。OpenAI：gpt-image-1。任何提供 OpenAI images 介面的服務商都可以。</string>
+    <string name="nm_media_image_footer">用於更換形象（四張候選和各個姿勢）以及你在對話裡要的任何圖片。阿里雲百煉：qwen-image-3.0-pro（畫圖和擺姿勢都用它）。OpenAI：gpt-image-1。任何提供 OpenAI images 介面的服務商都可以。</string>
     <string name="nm_media_image_none">你的服務商裡沒有能畫圖的。新增一個 OpenAI 相容的服務商（阿里雲百煉、OpenAI、xAI、OpenRouter 或自訂網址）並填入 API key；形象是用你自己的 key 畫的。</string>
     <string name="nm_media_image_off">設定之前無法更換形象，也畫不了圖。你問起時它會告訴你。</string>
     <string name="nm_media_need_model">在下方填寫模型名稱</string>
     <string name="nm_media_section_video">影片模型</string>
     <string name="nm_media_video_footer">讓形象動起來——每個狀態一段循環短片——以及你要的任何短片。阿里雲百煉：MiniMax/MiniMax-H3，需在百煉主控台的模型卡片上開通一次。按影片秒數計費；一套形象是四段幾秒的短片。</string>
-    <string name="nm_media_video_none">還沒有阿里雲百煉的服務商——nanoMuse 目前對接的是它的影片介面。新增之前形象保持靜態圖。</string>
+    <string name="nm_media_video_none">還沒有阿里雲百煉的服務商——nanoMuse 目前對接的是它的影片介面。新增一個（可以和圖像模型用同一把 key）形象就會動起來；之前保持靜態圖。</string>
     <string name="nm_media_video_off">可選。不設定的話形象保持靜態，也做不了影片。</string>
     <string name="nm_media_video_off_option">不用影片模型</string>
     <string name="nm_media_not_set">未設定</string>
@@ -426,4 +426,5 @@
     <string name="nm_media_clips_redo">重做</string>
     <string name="nm_media_clips_running">產生中…</string>
     <string name="nm_avatar_status_animating">正在產生動態 %1$d/%2$d…</string>
+    <string name="nm_avatar_clips_coming">我還會做四段短片讓自己動起來——在背景用你的影片模型，要幾分鐘。</string>
 </resources>

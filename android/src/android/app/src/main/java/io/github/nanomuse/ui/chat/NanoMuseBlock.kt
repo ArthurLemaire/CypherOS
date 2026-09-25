@@ -50,6 +50,8 @@ fun NanoMuseBlock(language: String, code: String) {
         language == GoalFlow.BLOCK_UPDATE && json != null -> GoalUpdateCard(json)
         language == io.github.nanomuse.feed.FeedFlow.BLOCK && json != null -> FeedPostedCard(json)
         language == io.github.nanomuse.avatar.AvatarFlow.BLOCK_OPTIONS && json != null -> io.github.nanomuse.ui.avatar.AvatarOptionsFenceCard(json)
+        // The first conversation's naming block is for the app (FirstConversation.afterTurn), not for the eye.
+        language == io.github.nanomuse.onboarding.FirstConversation.BLOCK -> Unit
         else -> Text(code, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

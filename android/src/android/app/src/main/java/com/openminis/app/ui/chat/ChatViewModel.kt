@@ -6326,11 +6326,9 @@ class ChatViewModel(
         // nanoMuse: "change your avatar to …" (and a pick while the options are
         // up) is handled in the app, not by the model.
         if (nmInterceptAvatar(text)) return
-        // nanoMuse: the first conversation listens in. A short reply to "what
-        // should I call you?" is saved as the form of address; a name typed
-        // while the chooser is up names the agent (the text still goes out as
-        // the user's message, as in Muse); anything else dismisses the chooser.
-        nmBeforeSend(text)
+        // nanoMuse: during the first conversation the text goes to the model as
+        // it is; the model says what it meant in a `nanomuse-naming` block and
+        // nmAfterTurn moves the phase (see FirstConversation).
         sendMessage(text, skipContextCheck = false)
     }
 
@@ -6380,6 +6378,7 @@ class ChatViewModel(
         // The first conversation's "what should I call you?" is not answered by this.
         nmFirstConversation.takeIf { it.isBoundTo(sid) }?.let { fc ->
             if (fc.phase == io.github.nanomuse.onboarding.Phase.ASK_AGENT_NAME) {
+                fc.dismissChooser()
                 _messages.value = _messages.value.filterNot { it.id == nmNamingCardId }
             }
         }
@@ -6446,7 +6445,8 @@ class ChatViewModel(
         val files = flow.choose(context, index) ?: return
         _messages.value = _messages.value.filterNot { it.id == nmAvatarCardId }
         // Muse announces the new face at once; the poses land in the header as they finish.
-        nmAppendAssistantLine(sid, flow.adoptedText(context, desc) + "\n\n" + flow.optionsFence(desc, index, files))
+        val clipsNote = if (io.github.nanomuse.avatar.AvatarMotion.enabled(context)) " " + context.getString(R.string.nm_avatar_clips_coming) else ""
+        nmAppendAssistantLine(sid, flow.adoptedText(context, desc) + clipsNote + "\n\n" + flow.optionsFence(desc, index, files))
         viewModelScope.launch {
             val done = flow.done.first { it.sessionId == sid }
             if (_messages.value.none { it.id == nmAvatarShareId }) {
@@ -6517,19 +6517,9 @@ class ChatViewModel(
         )
     }
 
-    private fun nmBeforeSend(text: String) {
-        val fc = nmFirstConversation
-        if (!fc.isBoundTo(realSessionId.ifEmpty { sessionId })) return
-        when (fc.phase) {
-            io.github.nanomuse.onboarding.Phase.ASK_USER_NAME -> fc.onUserNameReply(text)
-            io.github.nanomuse.onboarding.Phase.ASK_AGENT_NAME -> {
-                if (fc.interceptWhileChoosing(text) == null) {
-                    _messages.value = _messages.value.filterNot { it.id == nmNamingCardId }
-                }
-            }
-            else -> Unit
-        }
-    }
+    // nanoMuse: what the user typed during the first conversation goes to the model as it is —
+    // the model reads it (a name, a "no thanks", or something else entirely) and reports back in
+    // a `nanomuse-naming` block; see FirstConversation.afterTurn.
 
     /** A suggestion chip was tapped: name the agent and send the name as the user's message. */
     fun nmPickName(name: String) {
@@ -6548,8 +6538,13 @@ class ChatViewModel(
         }
         val fc = nmFirstConversation
         if (!fc.isBoundTo(sid)) return
-        fc.onTurnFinished()
-        if (fc.phase == io.github.nanomuse.onboarding.Phase.ASK_AGENT_NAME) nmShowNamingCard()
+        val reply = _messages.value.lastOrNull { it.role == "assistant" }?.content
+        if (fc.afterTurn(reply)) {
+            // The chooser sits under the latest question, so it moves down when the model
+            // steered back after a detour.
+            _messages.value = _messages.value.filterNot { it.id == nmNamingCardId }
+            nmShowNamingCard()
+        }
     }
     // ───────────────────────────────────────────────────────────────────────
 
