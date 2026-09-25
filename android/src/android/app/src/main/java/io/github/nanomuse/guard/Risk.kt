@@ -23,6 +23,8 @@ enum class GuardKind {
     BROWSER,
     /** A tap on the phone's own screen, by the hands (0.1.12). [RiskRequest.pageUrl] carries the app. */
     SCREEN,
+    /** A shell command or a file change on a paired computer (0.1.13). [RiskRequest.pageUrl] carries its name. */
+    COMPUTER,
 }
 
 /**

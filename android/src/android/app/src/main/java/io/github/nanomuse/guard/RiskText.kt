@@ -9,7 +9,7 @@ object RiskText {
         null -> null
         ShellGuard.WORKSPACE -> context.getString(R.string.nm_risk_target_workspace)
         ShellGuard.SHARED -> context.getString(R.string.nm_risk_target_shared)
-        else -> target.removePrefix("lark:").removePrefix("git:")
+        else -> target.removePrefix("lark:").removePrefix("git:").removePrefix("pc:")
     }
 
     fun title(context: Context, request: RiskRequest, agentName: String): String {
@@ -40,7 +40,7 @@ object RiskText {
             return context.getString(R.string.nm_risk_desc_screen, agentName, request.elementText ?: "", app)
         }
         val target = targetLabel(context, a.target)
-        return when (a.riskClass) {
+        val shell = when (a.riskClass) {
             RiskClass.DESTRUCTIVE -> if (target != null) context.getString(R.string.nm_risk_desc_shell_destructive, agentName, target)
             else context.getString(R.string.nm_risk_desc_shell_destructive_generic, agentName)
             RiskClass.MONEY -> if (target != null) context.getString(R.string.nm_risk_desc_shell_money, agentName, target)
@@ -48,6 +48,11 @@ object RiskText {
             else -> if (target != null) context.getString(R.string.nm_risk_desc_shell_outbound, agentName, target)
             else context.getString(R.string.nm_risk_desc_shell_outbound_generic, agentName)
         }
+        // On a paired computer, not on this phone (0.1.13).
+        if (request.kind == GuardKind.COMPUTER) {
+            return shell + " " + context.getString(R.string.nm_risk_desc_on_computer, request.pageUrl ?: "")
+        }
+        return shell
     }
 
     fun classLabel(context: Context, riskClass: RiskClass): String = when (riskClass) {

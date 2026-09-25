@@ -633,6 +633,10 @@ fun AppNavigation(
                 onOpenProviders = { navController.safeNavigate(Routes.PROVIDER_LIST) },
             )
         }
+        // nanoMuse: the computers this phone drives — paired ones, and pairing a new one.
+        composable(io.github.nanomuse.ui.reach.ROUTE_COMPUTERS) {
+            io.github.nanomuse.ui.reach.ComputersScreen(onBack = { navController.safePopBackStack() })
+        }
         // nanoMuse: the agent's page behind the face — today's activity, approvals, daily,
         // soul & memory; the pen offers "Change avatar" (back to the chat, pre-typed) and
         // "Edit name".
@@ -714,6 +718,7 @@ fun AppNavigation(
                 onAvatarClick = { navController.safeNavigate(io.github.nanomuse.ui.avatar.ROUTE_AVATAR_STUDIO) }, // nanoMuse
                 onMediaModelsClick = { navController.safeNavigate(io.github.nanomuse.ui.media.ROUTE_MEDIA_MODELS) }, // nanoMuse
                 onHandsClick = { navController.safeNavigate(io.github.nanomuse.ui.hands.ROUTE_HANDS) }, // nanoMuse
+                onComputersClick = { navController.safeNavigate(io.github.nanomuse.ui.reach.ROUTE_COMPUTERS) }, // nanoMuse
                 onPermissionsClick = { navController.safeNavigate(Routes.PERMISSIONS) },
                 onUsageClick = { navController.safeNavigate(Routes.USAGE_STATS) },
                 onAppearanceClick = { navController.safeNavigate(Routes.APPEARANCE) },

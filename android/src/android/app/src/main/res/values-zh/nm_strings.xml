@@ -484,4 +484,36 @@
     <!-- the approval card -->
     <string name="nm_risk_desc_screen">%1$s 想在%3$s里点「%2$s」。</string>
     <string name="nm_risk_preview_screen">屏幕上</string>
+
+    <!-- Reach (0.1.13): the phone drives your computer -->
+    <string name="nm_pc_title">电脑</string>
+    <string name="nm_pc_none_short">未配对</string>
+    <string name="nm_pc_intro">配对一次，手机上的一句话就能在电脑上执行：在它的终端里跑一条命令、取一个或放一个文件、在它的浏览器里打开一个页面、看一眼它的屏幕。只是单向的——手机操作电脑，反过来不行——每一次审批都在这里、在发出之前决定。</string>
+    <string name="nm_pc_section_paired">已配对的电脑</string>
+    <string name="nm_pc_none">还没有电脑</string>
+    <string name="nm_pc_none_footer">配对之前，任务该在电脑上做的时候它会直接告诉你。</string>
+    <string name="nm_pc_paired_footer">点一下可以看它是否在线。「忘记」会丢掉这台手机对它的密钥；电脑那边只保存密钥的哈希。</string>
+    <string name="nm_pc_last_seen">上次 %1$s</string>
+    <string name="nm_pc_checking">正在检查…</string>
+    <string name="nm_pc_answering">%1$s 在线</string>
+    <string name="nm_pc_not_answering">%1$s 没有响应——host 在跑吗？是同一个网络吗？</string>
+    <string name="nm_pc_forget">忘记</string>
+    <string name="nm_pc_section_pair">配对一台电脑</string>
+    <string name="nm_pc_step1">1. 在电脑上，从 nanoMuse 仓库下载 host/nanomuse_host.py（一个文件，Python 3，不用安装任何东西），然后运行：</string>
+    <string name="nm_pc_step2">2. 它会打印一个地址和一个六位数字的配对码。十分钟内在这里输入这两项。</string>
+    <string name="nm_pc_address">地址</string>
+    <string name="nm_pc_code">配对码</string>
+    <string name="nm_pc_pair">配对</string>
+    <string name="nm_pc_pairing">正在配对…</string>
+    <string name="nm_pc_paired_with">已和 %1$s 配对。</string>
+    <string name="nm_pc_bad_address">请照屏幕上打印的填写地址，例如 192.168.1.23:7333。</string>
+    <string name="nm_pc_pair_footer">手机和电脑要在同一个网络里。一个配对码只对一台手机有效；再配一台就再运行一次 host。</string>
+    <string name="nm_pc_section_how">它是怎么工作的</string>
+    <string name="nm_pc_how_1">命令的判定和手机自己的终端一样：删除、发送、付款要先在这里得到你的同意。</string>
+    <string name="nm_pc_how_2">电脑以你的身份执行——同一个账户，同一批文件。</string>
+    <string name="nm_pc_how_3">流量只在你的局域网里，中间没有云；目前还没有加密，请在你信任的网络里使用。</string>
+    <string name="nm_pc_how_4">电脑永远碰不到手机。</string>
+    <!-- the approval card -->
+    <string name="nm_risk_desc_on_computer">在电脑「%1$s」上，不是在这台手机上。</string>
+    <string name="nm_risk_preview_computer">电脑上的命令</string>
 </resources>

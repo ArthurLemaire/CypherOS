@@ -2,6 +2,30 @@
 
 All notable changes to nanoMuse. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/). Unreleased changes are on `main`.
 
+## [0.1.13] - 2026-09-25 · Reach
+
+The phone drives your computer, as a working demo. A small companion on the PC — one Python file, standard library only — is paired with the app by a six-digit code on the same network; from then on a sentence on the phone runs there: a command in its shell, a file fetched or dropped, a page opened in its browser, a look at its screen. The results come back to the phone, and so do the approvals: a command for the computer is judged by the same `ShellGuard` as the phone's own shell and waits for the same card before it is sent. One way — the phone drives the computer, never the other way round.
+
+### Added
+
+- **`host/nanomuse_host.py`** — the companion. `python3 nanomuse_host.py` prints the computer's LAN address and a pairing code (six digits, ten minutes, one phone, five wrong tries lock it) and serves JSON over HTTP: `POST /pair` (code → bearer token; only the token's SHA-256 is kept in `~/.nanomuse/host.json`), `GET /info`, `POST /shell` (`command`, `cwd`, `timeout` ≤ 15 min; exit code, stdout and stderr capped at 200 KB, `timed_out`), `GET /files?path=`, `GET /file?path=` (≤ 50 MB), `PUT /file?path=`, `POST /open` (`http(s)`/`file` URLs only, the default browser), `GET /screen` (mss + Pillow when installed, else `screencapture` / `grim` / `gnome-screenshot` / `spectacle` / `import` / `scrot` / PowerShell; 501 when nothing works). `--forget` drops every paired phone; `--no-pair` starts without a code. `tests/test_host.py` (9 tests) drives it end to end on Linux, macOS and Windows in CI.
+- **`nanomuse-pc`** (`io.github.nanomuse.reach.ReachOffloadHandler`): `status` (which paired computers answer), `run "<command>" [--on <computer>] [--cwd] [--timeout]`, `ls [<path>]`, `get <remote> [--name]` (into the chat's attachments; pictures come with a `markdown` line), `put <local> <remote> [--force]` (never overwrites quietly: an existing file needs `--force`, and `--force` needs the card), `open <url>`, `screen` (a picture of the computer's screen into the attachments). Exit codes 0 ok · 1 failed · 2 usage · 3 no computer / refused · 4 the user said no. When the host does not answer, the reply says so and points to the setting.
+- **Approvals on the phone** (`GuardKind.COMPUTER`): a command for the computer goes through `ShellGuard.assess` and `RiskGate` exactly like one for the phone; the card and the notification add *On the computer “desk”, not on this phone.* Grants are kept apart from the phone's (`pc:` targets), so *always allow* for a folder here never covers the same folder there.
+- **Settings → Computers** (`io.github.nanomuse.ui.reach.ComputersScreen`, `minis://settings/computers`): the paired computers with system, address and when each last answered — tap to check, *Forget* to drop the key; *Pair a computer* in two steps (run the script, enter the address and the code) with the errors the host returns in plain words; *How it works* in four lines (judged like the phone's shell; runs as you; local network, no encryption yet; the computer never reaches into the phone). The Settings list shows the count.
+- **The agent knows its computers** (`Computers.promptParagraph`): which are paired, the verbs, the one-way rule, and — with none paired — the one-time pairing it should explain instead of pretending.
+- `Computers` (store + OkHttp client, tokens in the app's private preferences); `ReachTest` (4 tests); en / zh / zh-TW strings (`nm_pc_*`, `nm_risk_desc_on_computer`, `nm_risk_preview_computer`); CI lints and formats `host/` with the Python line.
+
+### Changed
+
+- versionCode 14; installs over 0.1.12 without losing data.
+
+### Known issues
+
+- No TLS between the phone and the computer in this version: the token travels in clear on your local network. Use a network you trust; `--forget` when a phone is gone. Certificates pinned at pairing are the plan for the next Reach step.
+- The address is typed, not discovered: when the computer's IP changes (DHCP), forget and pair again — mDNS discovery is not in yet.
+- `put` reads the whole file into memory on both sides; fine for documents and pictures, not for gigabytes.
+- The computer's screen is a picture for the agent to look at, not yet a hand: mouse and keyboard on the PC (the UI-TARS-style operator) come later, on the same host.
+
 ## [0.1.12] - 2026-09-25 · Hands
 
 The phone's screen as a hand, as a working demo. For the apps that have no API — 12306, 微信, 支付宝, 美团 — the agent can now use the phone the way you do: it looks at a screenshot, decides one action, taps, types or swipes, and looks again. Perception is the screenshot alone; no accessibility tree is read. The accessibility service is only the hand — it takes the screenshot, performs the gesture and types into the field that has the cursor. A capsule at the top of the screen shows each step with *Stop*; logins, passwords and codes are handed to you; a tap that pays, sends, posts or deletes waits for the same approval card as the shell and the browser. Off by default, under *Settings → Hands*.

@@ -479,4 +479,36 @@
     <!-- the approval card -->
     <string name="nm_risk_desc_screen">%1$s 想在%3$s裡點「%2$s」。</string>
     <string name="nm_risk_preview_screen">螢幕上</string>
+
+    <!-- Reach (0.1.13): the phone drives your computer -->
+    <string name="nm_pc_title">電腦</string>
+    <string name="nm_pc_none_short">未配對</string>
+    <string name="nm_pc_intro">配對一次，手機上的一句話就能在電腦上執行：在它的終端機裡跑一條命令、取一個或放一個檔案、在它的瀏覽器裡打開一個頁面、看一眼它的螢幕。只是單向的——手機操作電腦，反過來不行——每一次審批都在這裡、在送出之前決定。</string>
+    <string name="nm_pc_section_paired">已配對的電腦</string>
+    <string name="nm_pc_none">還沒有電腦</string>
+    <string name="nm_pc_none_footer">配對之前，任務該在電腦上做的時候它會直接告訴你。</string>
+    <string name="nm_pc_paired_footer">點一下可以看它是否在線。「忘記」會丟掉這台手機對它的金鑰；電腦那邊只保存金鑰的雜湊。</string>
+    <string name="nm_pc_last_seen">上次 %1$s</string>
+    <string name="nm_pc_checking">正在檢查…</string>
+    <string name="nm_pc_answering">%1$s 在線</string>
+    <string name="nm_pc_not_answering">%1$s 沒有回應——host 在跑嗎？是同一個網路嗎？</string>
+    <string name="nm_pc_forget">忘記</string>
+    <string name="nm_pc_section_pair">配對一台電腦</string>
+    <string name="nm_pc_step1">1. 在電腦上，從 nanoMuse 儲存庫下載 host/nanomuse_host.py（一個檔案，Python 3，不用安裝任何東西），然後執行：</string>
+    <string name="nm_pc_step2">2. 它會印出一個位址和一個六位數字的配對碼。十分鐘內在這裡輸入這兩項。</string>
+    <string name="nm_pc_address">位址</string>
+    <string name="nm_pc_code">配對碼</string>
+    <string name="nm_pc_pair">配對</string>
+    <string name="nm_pc_pairing">正在配對…</string>
+    <string name="nm_pc_paired_with">已和 %1$s 配對。</string>
+    <string name="nm_pc_bad_address">請照螢幕上印出的填寫位址，例如 192.168.1.23:7333。</string>
+    <string name="nm_pc_pair_footer">手機和電腦要在同一個網路裡。一個配對碼只對一台手機有效；再配一台就再執行一次 host。</string>
+    <string name="nm_pc_section_how">它是怎麼工作的</string>
+    <string name="nm_pc_how_1">命令的判定和手機自己的終端機一樣：刪除、傳送、付款要先在這裡得到你的同意。</string>
+    <string name="nm_pc_how_2">電腦以你的身分執行——同一個帳戶，同一批檔案。</string>
+    <string name="nm_pc_how_3">流量只在你的區域網路裡，中間沒有雲；目前還沒有加密，請在你信任的網路裡使用。</string>
+    <string name="nm_pc_how_4">電腦永遠碰不到手機。</string>
+    <!-- the approval card -->
+    <string name="nm_risk_desc_on_computer">在電腦「%1$s」上，不是在這台手機上。</string>
+    <string name="nm_risk_preview_computer">電腦上的命令</string>
 </resources>

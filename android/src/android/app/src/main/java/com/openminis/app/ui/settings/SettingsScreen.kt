@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.Computer // nanoMuse: Computers row
 import androidx.compose.material.icons.outlined.TouchApp // nanoMuse: Hands row
 import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.BatteryFull
@@ -97,6 +98,7 @@ fun SettingsScreen(
     onAvatarClick: () -> Unit = {}, // nanoMuse
     onMediaModelsClick: () -> Unit = {}, // nanoMuse: Settings → Image & video models
     onHandsClick: () -> Unit = {}, // nanoMuse: Settings → Hands (the screen as a hand)
+    onComputersClick: () -> Unit = {}, // nanoMuse: Settings → Computers (the phone drives a PC)
     onPermissionsClick: () -> Unit = {},
     onUsageClick: () -> Unit = {},
     onAppearanceClick: () -> Unit = {},
@@ -227,6 +229,17 @@ fun SettingsScreen(
                     value = stringResource(if (io.github.nanomuse.hands.Hands.enabled(context)) R.string.nm_hands_on else R.string.nm_hands_off),
                     onClick = onHandsClick,
                 )
+                io.github.nanomuse.ui.muse.MuseRowDivider()
+                // nanoMuse: the computers this phone drives.
+                run {
+                    val paired = io.github.nanomuse.reach.Computers.list(context).size
+                    io.github.nanomuse.ui.muse.MuseRow(
+                        title = stringResource(R.string.nm_pc_title),
+                        icon = Icons.Outlined.Computer,
+                        value = if (paired == 0) stringResource(R.string.nm_pc_none_short) else paired.toString(),
+                        onClick = onComputersClick,
+                    )
+                }
                 io.github.nanomuse.ui.muse.MuseRowDivider()
                 io.github.nanomuse.ui.muse.MuseRow(title = stringResource(R.string.settings_env_vars), icon = Icons.Outlined.Terminal, onClick = onEnvVarsClick)
             }

@@ -180,6 +180,7 @@ private fun Preview(request: RiskRequest) {
                     GuardKind.SHELL -> R.string.nm_risk_preview_shell
                     GuardKind.BROWSER -> R.string.nm_risk_preview_browser
                     GuardKind.SCREEN -> R.string.nm_risk_preview_screen
+                    GuardKind.COMPUTER -> R.string.nm_risk_preview_computer
                 },
             ),
             fontSize = 11.sp,
