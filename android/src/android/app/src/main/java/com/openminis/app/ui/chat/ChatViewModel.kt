@@ -3613,6 +3613,17 @@ class ChatViewModel(
     val nmNamingCard: StateFlow<io.github.nanomuse.onboarding.NamingCardState?>
         get() = nmFirstConversation.namingCard
 
+    // nanoMuse: the home shell asks the composer to take focus (profile page →
+    // "Change avatar" pre-fills the text and wants the keyboard up).
+    private val _nmFocusComposer = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val nmFocusComposer: kotlinx.coroutines.flow.SharedFlow<Unit> = _nmFocusComposer
+
+    /** Pre-fill the composer with [text] and ask for the keyboard. */
+    fun nmPrefillComposer(text: String) {
+        setInputText(text)
+        _nmFocusComposer.tryEmit(Unit)
+    }
+
     init {
         loadSession()
         // [T-session-paused-badge-active-false-positive] Drive the session-list
@@ -6312,6 +6323,9 @@ class ChatViewModel(
     }
 
     fun sendMessage(text: String) {
+        // nanoMuse: "change your avatar to …" (and a pick while the options are
+        // up) is handled in the app, not by the model.
+        if (nmInterceptAvatar(text)) return
         // nanoMuse: the first conversation listens in. A short reply to "what
         // should I call you?" is saved as the form of address; a name typed
         // while the chooser is up names the agent (the text still goes out as
@@ -6319,6 +6333,148 @@ class ChatViewModel(
         nmBeforeSend(text)
         sendMessage(text, skipContextCheck = false)
     }
+
+    // ─── nanoMuse: changing the face from the chat ─────────────────────────
+    // See io.github.nanomuse.avatar.AvatarFlow. The request and the pick are
+    // persisted as ordinary user/assistant messages (so the history stays
+    // consistent and the model later sees what happened); the options card is
+    // virtual while the choice is open and is persisted as a `nanomuse-avatar`
+    // fence once made. The share card is virtual only — the profile page has
+    // the same share button.
+
+    private val nmAvatarCardId = "nm_avatar_options_card"
+    private val nmAvatarShareId = "nm_avatar_share_card"
+
+    private fun nmInterceptAvatar(text: String): Boolean {
+        val flow = io.github.nanomuse.avatar.AvatarFlow
+        val sid = realSessionId.ifEmpty { sessionId }
+        // A pick or "again" while the options are up in this chat.
+        if (realSessionId.isNotEmpty() && flow.stage.value is io.github.nanomuse.avatar.AvatarFlow.Stage.Choosing && flow.isActiveIn(sid)) {
+            when (val c = flow.parseChoice(text)) {
+                is io.github.nanomuse.avatar.AvatarFlow.Choice.Index -> {
+                    if (io.github.nanomuse.avatar.AvatarStudio.slots.value.getOrNull(c.index) is io.github.nanomuse.avatar.AvatarStudio.Slot.Ready) {
+                        viewModelScope.launch {
+                            nmAppendUserLine(sid, text)
+                            nmChooseAvatarInternal(sid, c.index)
+                        }
+                        return true
+                    }
+                }
+                io.github.nanomuse.avatar.AvatarFlow.Choice.Regenerate -> {
+                    viewModelScope.launch { nmAppendUserLine(sid, text) }
+                    flow.regenerate(context)
+                    return true
+                }
+                null -> Unit
+            }
+        }
+        val desc = flow.parseRequest(text) ?: return false
+        val referenceUri = _attachments.value.firstOrNull { it.isImage }?.uri
+        _attachments.value = emptyList()
+        // The first conversation's "what should I call you?" is not answered by this.
+        nmFirstConversation.takeIf { it.isBoundTo(sid) }?.let { fc ->
+            if (fc.phase == io.github.nanomuse.onboarding.Phase.ASK_AGENT_NAME) {
+                _messages.value = _messages.value.filterNot { it.id == nmNamingCardId }
+            }
+        }
+        viewModelScope.launch {
+            // A draft main chat gets its session row first, so the request and the
+            // reply persist like any other turn.
+            val realSid = ensureSession()
+            nmAppendUserLine(realSid, text)
+            val reference = withContext(Dispatchers.IO) { flow.loadReference(context, referenceUri) }
+            if (flow.start(context, realSid, desc, reference)) {
+                // The reply is persisted right away so the transcript never ends on an
+                // unanswered user turn (which the resume banner would flag on reload).
+                nmAppendAssistantLine(realSid, flow.optionsReadyText(context, desc))
+                nmShowAvatarCard()
+            } else {
+                // No image model: say so as the agent, and point at the setting.
+                val why = io.github.nanomuse.avatar.AvatarStudio.error.value
+                    ?: context.getString(R.string.nm_avatar_no_provider)
+                nmAppendAssistantLine(realSid, context.getString(R.string.nm_avatar_cannot_start, why))
+            }
+        }
+        return true
+    }
+
+    private fun nmShowAvatarCard() {
+        if (_messages.value.any { it.id == nmAvatarCardId }) return
+        _messages.value = _messages.value.filterNot { it.id == nmAvatarShareId } + ChatMessage(
+            id = nmAvatarCardId,
+            role = "system",
+            content = "",
+            toolBlocks = listOf(AssistantBlock(id = "${nmAvatarCardId}_block", kind = "nm_avatar_options")),
+        )
+    }
+
+    /** A tile on the options card was tapped. */
+    fun nmChooseAvatar(index: Int) {
+        val sid = realSessionId.ifEmpty { sessionId }
+        val flow = io.github.nanomuse.avatar.AvatarFlow
+        if (!flow.isActiveIn(sid)) return
+        viewModelScope.launch {
+            nmAppendUserLine(sid, context.getString(R.string.nm_avatar_pick_line, index + 1))
+            nmChooseAvatarInternal(sid, index)
+        }
+    }
+
+    /** "Again" on the options card. */
+    fun nmRegenerateAvatar() {
+        io.github.nanomuse.avatar.AvatarFlow.regenerate(context)
+    }
+
+    /** The options card was dismissed without a pick. */
+    fun nmCancelAvatar() {
+        io.github.nanomuse.avatar.AvatarFlow.cancel()
+        _messages.value = _messages.value.filterNot { it.id == nmAvatarCardId }
+    }
+
+    fun nmDismissAvatarShare() {
+        _messages.value = _messages.value.filterNot { it.id == nmAvatarShareId }
+    }
+
+    private suspend fun nmChooseAvatarInternal(sid: String, index: Int) {
+        val flow = io.github.nanomuse.avatar.AvatarFlow
+        val desc = (flow.stage.value as? io.github.nanomuse.avatar.AvatarFlow.Stage.Choosing)?.description ?: return
+        val files = flow.choose(context, index) ?: return
+        _messages.value = _messages.value.filterNot { it.id == nmAvatarCardId }
+        // Muse announces the new face at once; the poses land in the header as they finish.
+        nmAppendAssistantLine(sid, flow.adoptedText(context, desc) + "\n\n" + flow.optionsFence(desc, index, files))
+        viewModelScope.launch {
+            val done = flow.done.first { it.sessionId == sid }
+            if (_messages.value.none { it.id == nmAvatarShareId }) {
+                _messages.value = _messages.value + ChatMessage(
+                    id = nmAvatarShareId,
+                    role = "system",
+                    content = "", // the description travels in the block; text here would render as a bubble
+                    toolBlocks = listOf(AssistantBlock(id = "${nmAvatarShareId}_block", kind = "nm_avatar_share", content = done.description)),
+                )
+            }
+        }
+    }
+
+    private suspend fun nmAppendUserLine(sid: String, text: String) {
+        val partsJson = """[{"type":"text","value":${escapeJson(text)}}]"""
+        val entity = chatRepository.appendMessage(sid, "user", partsJson)
+        agentHistory.add(LLMMessage(role = LLMMessage.Role.USER, content = text))
+        _messages.value = _messages.value + ChatMessage(id = entity.id, role = "user", content = text)
+    }
+
+    private suspend fun nmAppendAssistantLine(sid: String, text: String) {
+        val parts = listOf<AgentContentPart>(AgentContentPart.Text(text))
+        val entity = chatRepository.appendMessage(sid, "assistant", buildAssistantPartsJson(parts))
+        agentHistory.add(LLMMessage(role = LLMMessage.Role.ASSISTANT, content = text, contentParts = parts))
+        // The transcript now ends on a reply, so a stale "interrupted" banner no longer applies.
+        _canResume.value = false
+        _messages.value = _messages.value + ChatMessage(
+            id = entity.id,
+            role = "assistant",
+            content = text,
+            toolBlocks = listOf(AssistantBlock(id = "${entity.id}_text", kind = "text", content = text)),
+        )
+    }
+    // ───────────────────────────────────────────────────────────────────────
 
     // ─── nanoMuse: first conversation ──────────────────────────────────────
     // See io.github.nanomuse.onboarding.FirstConversation for the flow. The

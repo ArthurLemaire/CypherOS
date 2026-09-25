@@ -16,6 +16,8 @@ object HomeBus {
     sealed class Request {
         data class ShowTab(val tab: HomeTab) : Request()
         data class ShowSession(val sessionId: String) : Request()
+        /** Show the main chat with [text] typed into the composer and the keyboard up. */
+        data class PrefillComposer(val text: String) : Request()
     }
 
     private val _requests = MutableSharedFlow<Request>(replay = 1, extraBufferCapacity = 8)
@@ -24,6 +26,8 @@ object HomeBus {
     fun showTab(tab: HomeTab) { _requests.tryEmit(Request.ShowTab(tab)) }
 
     fun showSession(sessionId: String) { _requests.tryEmit(Request.ShowSession(sessionId)) }
+
+    fun prefillComposer(text: String) { _requests.tryEmit(Request.PrefillComposer(text)) }
 
     @Suppress("EXPERIMENTAL_API_USAGE")
     fun handled() { _requests.resetReplayCache() }

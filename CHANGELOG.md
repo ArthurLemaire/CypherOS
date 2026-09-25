@@ -2,6 +2,30 @@
 
 All notable changes to nanoMuse. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/). Unreleased changes are on `main`.
 
+## [0.1.9] - 2026-09-25 · Portrait
+
+The face, Muse's way. Changing the avatar is a sentence in the chat — "change your avatar to a corgi", with a reference picture if you like — answered by four takes in a 2×2 card; tap one or say "the second one", and the agent announces its new look while the poses are drawn. Behind the face is the agent's own page. The name pill under the face is re-measured against Muse's, and the face comes in five sizes.
+
+### Added
+
+- **Avatar change in the chat** (`io.github.nanomuse.avatar.AvatarFlow`, `ChatViewModel.nmInterceptAvatar`). Requests in Chinese and English are recognised before the model sees them — 把/将 … (虚拟)形象/头像 换成/改成/变成 X, 换个形象：X, 变成 X; change/switch/set (your/the) avatar to X, new avatar: X, become X. The first image attached goes in as a reference (`ImageGen.edit`). Four candidates are drawn in parallel into a 2×2 card (`AvatarOptionsCard`: numbered tiles, a breathing placeholder, per-tile retry, *Again*, *Keep current*); the pick is a tap or a typed choice (第二个, 2, "the second one", 左上, "last"; "again" redraws). The chosen face is adopted at once, the announcement is persisted with a `nanomuse-avatar` fence that renders as the frozen card (chosen tile highlighted), the poses land in the header as they finish, and a line goes into MEMORY. A draft main chat gets its session row first, and the reply is persisted with the request so the transcript never ends on an unanswered turn.
+- **House-style prompts** (`AvatarStudio`). New default style *3D toy*: soft matte collectible-vinyl render, full body, facing the viewer, centred on pure white, square, one character; the four takes vary colouring, a lighter and a darker breed with an accessory, a playful outfit. Poses follow Muse's fixed set: headphones and a laptop (working), a crystal ball (waiting), a five-pointed star (happy), a sweat drop (error).
+- **Share** (`io.github.nanomuse.avatar.AvatarShare`, `AvatarShareSheet`, `AvatarShareCard`). After the new look lands, a card offers to share it; the sheet shows five pastel 1080×1350 cards (the face on a rounded white card with a soft shadow, a speech bubble, the wordmark and tagline) and hands the chosen one to the system share sheet through the `FileProvider`. Also from the agent's page.
+- **The agent's page** (`io.github.nanomuse.ui.profile.AgentProfileScreen`, `minis://settings/profile`), opened from the face or the name on any home tab: ×, share, the face with a pen badge (→ *Change avatar* / *Edit name* / *Avatar studio*), the name, *online*, and four panes — today's and yesterday's activity from the sessions (title, tools used or the reply, time; tap to open), approvals kept as *Always* with a link to Permissions, the daily routines with a link to Scheduled tasks, and the SOUL and Memory gradient cards with an *Edit* row for the name. *Change avatar* returns to the chat with "Change your avatar to " / "把虚拟形象改成" already typed and the keyboard up (`HomeBus.PrefillComposer`, `ChatViewModel.nmPrefillComposer`).
+- **Avatar size** (`io.github.nanomuse.ui.avatar.AvatarSize`; *Settings → Appearance → Avatar size*): Small 44dp, Medium 56, Large 66, Extra large 76 (default), Hidden — the header follows live.
+- Status lines *Generating options* / *Finishing the new look* while the flow draws; the face shows the working mood meanwhile.
+- en / zh / zh-TW strings (`nm_avatar_*`, `nm_profile_*`, `nm_appearance_avatar_size*`); `AvatarFlowTest` (5 tests), `AvatarStudioTest` updated for the new prompts.
+
+### Changed
+
+- **Name pill** (`MuseHeader.MuseNamePill`), measured against Muse's screens: white, 14dp radius, 2dp shadow, 12×4dp padding, the name 14sp *regular* (it was 15sp SemiBold) and the status as an 11.5sp grey second line inside the pill instead of a separate row; the pill overlaps the face by 10dp.
+- The setup is marked done the first time the home is shown, so an empty main chat (a draft with no session row) can no longer bring the welcome screen back after a trip to another page.
+- versionCode 10.
+
+### Fixed
+
+- `AvatarStudio` (since 0.1.6) updated its four candidate slots with a read-modify-write from four coroutines; one result could overwrite another and leave a tile loading forever. The updates are atomic now (`MutableStateFlow.update`).
+
 ## [0.1.8] - 2026-09-25 · Polish
 
 The shell, brought level with Muse's. Same features underneath; the type, the home composer, the header and every settings page now follow Muse's own screens rather than OpenMinis' iOS-style chrome.

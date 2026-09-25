@@ -14,6 +14,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
@@ -30,6 +31,9 @@ object AvatarStudio {
     const val CANDIDATES = 4
 
     enum class Style(val id: String, @StringRes val label: Int, val phrase: String) {
+        // Muse's house style: a small 3D toy figure, soft studio light, white ground — the
+        // default, and the one the in-chat "change your avatar to …" flow uses.
+        MUSE("muse", R.string.nm_avatar_style_muse, "cute 3D character render in the style of a collectible vinyl toy, soft matte materials with subtle sheen, rounded simplified forms, big friendly eyes, soft studio lighting with gentle shadows, pastel accents"),
         FLAT("flat", R.string.nm_avatar_style_flat, "flat vector illustration, soft pastel colours, clean simple shapes, subtle shading"),
         CLAY("clay", R.string.nm_avatar_style_clay, "3D clay render, soft studio lighting, matte rounded forms, gentle colours"),
         WATERCOLOR("watercolor", R.string.nm_avatar_style_watercolor, "gentle watercolour painting, soft edges, light paper texture"),
@@ -38,7 +42,7 @@ object AvatarStudio {
         STICKER("sticker", R.string.nm_avatar_style_sticker, "glossy sticker style, thick white outline, bold saturated colours");
 
         companion object {
-            fun byId(id: String?): Style = entries.firstOrNull { it.id == id } ?: FLAT
+            fun byId(id: String?): Style = entries.firstOrNull { it.id == id } ?: MUSE
         }
     }
 
@@ -57,6 +61,8 @@ object AvatarStudio {
     /** Image endpoints throttle hard; two in flight is what most of them tolerate. */
     private val lane = Semaphore(2)
     private var lastRequest: Triple<String, Style, ImageGen.Endpoint>? = null
+    /** A picture the user attached with the request ("make it look like this"), for the current candidates. */
+    private var reference: Bitmap? = null
 
     internal fun looksRateLimited(e: Throwable): Boolean {
         val m = e.message.orEmpty().lowercase()
@@ -88,7 +94,7 @@ object AvatarStudio {
 
     /** Description and style of the current candidates, so the page can restore its fields. */
     val description = MutableStateFlow("")
-    val style = MutableStateFlow(Style.FLAT)
+    val style = MutableStateFlow(Style.MUSE)
 
     private const val PREFS = "nanomuse"
 
@@ -110,12 +116,17 @@ object AvatarStudio {
 
     fun dismissError() { _error.value = null }
 
-    /** Four pictures from one sentence; each slot fills in as its picture arrives. */
-    fun generateCandidates(context: Context, desc: String, chosen: Style) {
+    /**
+     * Four pictures from one sentence; each slot fills in as its picture arrives. With a
+     * [referenceImage] the pictures are drawn *from* it (the edit endpoint) so the character
+     * keeps what the user showed — "make it look like my cat".
+     * @return false when no image model is configured (the error flow says which).
+     */
+    fun generateCandidates(context: Context, desc: String, chosen: Style, referenceImage: Bitmap? = null): Boolean {
         val ep = ImageGen.endpoint(context) ?: run {
-            _error.value = context.getString(R.string.nm_avatar_no_provider); return
+            _error.value = context.getString(R.string.nm_avatar_no_provider); return false
         }
-        if (ep.model.isBlank()) { _error.value = context.getString(R.string.nm_avatar_no_model); return }
+        if (ep.model.isBlank()) { _error.value = context.getString(R.string.nm_avatar_no_model); return false }
         val text = desc.trim().ifEmpty { context.getString(R.string.nm_avatar_default_description) }
         description.value = text
         style.value = chosen
@@ -126,26 +137,40 @@ object AvatarStudio {
         _error.value = null
         _slots.value = List(CANDIDATES) { Slot.Loading }
         lastRequest = Triple(text, chosen, ep)
+        reference = referenceImage
         candidateJob = scope.launch {
             (0 until CANDIDATES).map { i -> async { drawCandidate(context, ep, text, chosen, i) } }.awaitAll()
             if (_slots.value.all { it is Slot.Failed }) {
                 _error.value = (_slots.value.first() as Slot.Failed).message
             }
         }
+        return true
+    }
+
+    /** The same sentence again — a fresh set of four. */
+    fun regenerate(context: Context): Boolean {
+        val (text, chosen, _) = lastRequest ?: return false
+        return generateCandidates(context, text, chosen, reference)
     }
 
     /** One tile again, after a failure. */
     fun retrySlot(context: Context, index: Int) {
         val (text, chosen, ep) = lastRequest ?: return
         if (_slots.value.getOrNull(index) !is Slot.Failed) return
-        _slots.value = _slots.value.toMutableList().also { it[index] = Slot.Loading }
+        _slots.update { list -> list.toMutableList().also { it[index] = Slot.Loading } }
         scope.launch { drawCandidate(context, ep, text, chosen, index) }
     }
 
     private suspend fun drawCandidate(context: Context, ep: ImageGen.Endpoint, text: String, chosen: Style, i: Int) {
         val dir = AvatarStore.candidatesDir()
         val prompt = buildPrompt(text, chosen, i)
-        val result = runCatching { throttled { ImageGen.generate(context, ep, prompt) } }
+        val ref = reference
+        val result = runCatching {
+            throttled {
+                if (ref != null) ImageGen.edit(context, ep, ref, REFERENCE_PREFIX + prompt)
+                else ImageGen.generate(context, ep, prompt)
+            }
+        }
         val slot = result.fold(
             onSuccess = { bmp ->
                 val f = File(dir, "$i.png")
@@ -157,7 +182,9 @@ object AvatarStudio {
                 Slot.Failed(e.message ?: "failed")
             },
         )
-        _slots.value = _slots.value.toMutableList().also { it[i] = slot }
+        // Atomic: the four candidates finish on different threads, and a plain
+        // read-modify-write here would let one tile's result overwrite another's.
+        _slots.update { list -> list.toMutableList().also { it[i] = slot } }
     }
 
     /** The picked candidate becomes the face; the moods follow in the background. */
@@ -200,27 +227,42 @@ object AvatarStudio {
 
     fun clearMoodProgress() { if (_moodProgress.value?.running == false) _moodProgress.value = null }
 
+    /** Prepended when the candidates are drawn from a picture the user attached. */
+    private const val REFERENCE_PREFIX = "Redraw the subject of this picture as the character described, keeping its recognisable features (species, colours, markings, hairstyle, accessories). "
+
+    /**
+     * Muse's house rules for the four candidates: the same subject four times, each a different
+     * breed / colouring / outfit, full body, facing the viewer, centred on pure white, square. The
+     * style phrase decides 3D toy (default) vs the older 2D styles kept for the studio page.
+     */
     internal fun buildPrompt(desc: String, style: Style, index: Int): String {
         val variation = listOf(
-            "warm palette, three-quarter view",
-            "cool palette, facing the viewer",
-            "playful mood, slight head tilt",
-            "calm mood, soft light from the left",
+            "variation 1: the most typical, classic colouring",
+            "variation 2: a different breed or colour pattern, lighter tones",
+            "variation 3: a different breed or colour pattern, darker or warmer tones, a small accessory such as a scarf or glasses",
+            "variation 4: a playful take — unusual colouring or a tiny outfit, slight head tilt",
         )[index % 4]
-        val subject = desc.trim().trimEnd('.', '。', '!', '！')
-        return "$subject. ${style.phrase}. Character portrait for an app avatar: head and shoulders, " +
-            "centred, large readable face, friendly expression, plain single-colour soft background, " +
-            "$variation. No text, no watermark, no border, no extra characters."
+        val subject = desc.trim().trimEnd('.', '。', '!', '！', ',', '，')
+        return "A cute character based on: $subject. ${style.phrase}. Full body, standing, facing the viewer, " +
+            "centred, whole figure visible with margin on all sides, big head and small body, friendly expression, " +
+            "pure white background, soft ground shadow only. $variation. " +
+            "Square composition. No text, no watermark, no border, no props other than what is described, one character only."
     }
 
+    /**
+     * The fixed poses the face cycles through — Muse's set: idle (the picture itself), working
+     * with headphones at a laptop, waiting with a crystal ball, happy with a star, sorry with a
+     * sweat drop. Each is an edit of the chosen picture so the character stays the same.
+     */
     internal fun moodInstruction(mood: AgentMood): String {
-        val keep = "Keep this exact character — same face, colours, outfit, art style, framing and background. "
+        val keep = "Keep this exact character — same face, colours, outfit, art style, proportions, framing, " +
+            "camera angle and pure white background. Change only the pose and props described. "
         return keep + when (mood) {
-            AgentMood.WORKING -> "It now wears headphones and is typing on a small laptop in front of it, focused and content."
-            AgentMood.WAITING -> "It now looks up at the viewer expectantly with raised eyebrows, one hand slightly raised, a small question mark floating beside its head."
-            AgentMood.HAPPY -> "It is now celebrating, hugging a big glowing yellow star, eyes closed with a wide smile. " +
-                "Keep the same plain background; no confetti, no night sky, no extra decoration."
-            AgentMood.ERROR -> "It now looks sheepish and apologetic, a small sweat drop on its forehead, one hand behind its head."
+            AgentMood.WORKING -> "It now wears over-ear headphones and sits typing on a small open laptop in front of it, focused and content, a faint glow from the screen on its face."
+            AgentMood.WAITING -> "It now holds a small glowing crystal ball in both hands at chest height and gazes into it with wide curious eyes, waiting for an answer."
+            AgentMood.HAPPY -> "It is now celebrating, hugging a big glowing yellow five-pointed star, eyes closed with a wide smile. " +
+                "Same white background; no confetti, no night sky, no extra decoration."
+            AgentMood.ERROR -> "It now looks sheepish and apologetic, a small sweat drop beside its head, one hand behind its head, shoulders slightly raised."
             AgentMood.IDLE -> "No change."
         }
     }

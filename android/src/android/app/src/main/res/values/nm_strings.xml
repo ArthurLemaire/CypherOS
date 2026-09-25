@@ -351,4 +351,60 @@
     <string name="nm_chat_menu_model">Model</string>
     <string name="nm_attach_commands">Commands</string>
     <string name="nm_composer_placeholder">Message</string>
+
+    <!-- 0.1.9 · Portrait -->
+    <string name="nm_appearance_section_avatar_size">Avatar size</string>
+    <string name="nm_appearance_avatar_size_footer">How big the face is on the home header. Hidden keeps the name only.</string>
+    <string name="nm_avatar_size_small">Small</string>
+    <string name="nm_avatar_size_medium">Medium</string>
+    <string name="nm_avatar_size_large">Large</string>
+    <string name="nm_avatar_size_extra_large">Extra large</string>
+    <string name="nm_avatar_size_hidden">Hidden</string>
+    <string name="nm_avatar_style_muse">3D toy (Muse)</string>
+    <!-- The agent's page -->
+    <string name="nm_profile_online">online</string>
+    <string name="nm_profile_edit">Edit</string>
+    <string name="nm_profile_change_avatar">Change avatar</string>
+    <string name="nm_profile_edit_name">Edit name</string>
+    <string name="nm_profile_avatar_studio">Avatar studio…</string>
+    <string name="nm_profile_change_avatar_prefill">"Change your avatar to "</string>
+    <string name="nm_profile_pane_activity">Activity</string>
+    <string name="nm_profile_pane_approvals">Approvals</string>
+    <string name="nm_profile_pane_daily">Daily</string>
+    <string name="nm_profile_pane_soul">Soul &amp; memory</string>
+    <string name="nm_profile_today">Today</string>
+    <string name="nm_profile_yesterday">Yesterday</string>
+    <string name="nm_profile_activity_empty">Nothing yet today. What you ask for and what the agent does about it shows up here.</string>
+    <string name="nm_profile_approvals_empty">No standing approvals. When you answer "always allow" to a risky step, it is listed here and can be revoked.</string>
+    <string name="nm_profile_approvals_always">Always allowed</string>
+    <string name="nm_profile_always_allowed">Always allowed · %1$s</string>
+    <string name="nm_profile_manage_permissions">Manage permissions</string>
+    <string name="nm_profile_daily_empty">No routines yet. Ask the agent for something "every morning" and it will appear here.</string>
+    <string name="nm_profile_manage_routines">Manage routines</string>
+    <string name="nm_profile_card_soul">SOUL</string>
+    <string name="nm_profile_card_memory">Memory</string>
+    <string name="nm_profile_handle_with_care">Handle with care</string>
+    <!-- Changing the face from the chat -->
+    <string name="nm_avatar_status_options">Generating options</string>
+    <string name="nm_avatar_status_finalizing">Finalizing avatar</string>
+    <string name="nm_avatar_options_drawing">Drawing four takes on "%1$s"…</string>
+    <string name="nm_avatar_options_pick_hint">Tap the one you like, or tell me — "the second one".</string>
+    <string name="nm_avatar_options_failed">The pictures did not come through. Check the image model under ••• → Avatar studio and try again.</string>
+    <string name="nm_avatar_options_again">Again</string>
+    <string name="nm_avatar_options_keep">Keep current</string>
+    <string name="nm_avatar_option_n">Option %1$d</string>
+    <string name="nm_avatar_option_retry">Retry</string>
+    <string name="nm_avatar_options_ready">Here are a few takes on "%1$s" — pick the one you like best!</string>
+    <string name="nm_avatar_adopted">Done — my new look is on. I\'m %1$s now!</string>
+    <string name="nm_avatar_pick_line">Option %1$d</string>
+    <string name="nm_avatar_cannot_start">I can\'t draw a new look yet: %1$s</string>
+    <string name="nm_avatar_memory_line">- %1$s: the user changed my avatar to "%2$s".</string>
+    <string name="nm_avatar_share_text">My new look is here — %1$s. Show it to your friends!</string>
+    <string name="nm_avatar_share_button">Share avatar</string>
+    <string name="nm_avatar_share_later">Later</string>
+    <string name="nm_avatar_share_title">Share my avatar</string>
+    <string name="nm_avatar_share_subtitle">Pick a card. It goes out through the system share sheet.</string>
+    <string name="nm_avatar_share_system">Share</string>
+    <string name="nm_avatar_share_bubble">Hi, I\'m %1$s, a personal AI agent. Meet nanoMuse — open source, runs on your phone.</string>
+    <string name="nm_avatar_share_tagline">Your personal AI agent, open source · github.com/nano-muse/nanoMuse</string>
 </resources>

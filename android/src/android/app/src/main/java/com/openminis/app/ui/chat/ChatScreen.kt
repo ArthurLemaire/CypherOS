@@ -574,6 +574,7 @@ fun ChatScreen(
     // Setting (Appearance → Home), off by default on the main chat of the home shell.
     val nmHeaderModelShown by io.github.nanomuse.ui.chat.rememberHeaderModelShown()
     val nmHideModelRows = nmHome != null && nmHome.isMainChat && !nmHeaderModelShown
+    val nmAvatarSize by io.github.nanomuse.ui.avatar.rememberAvatarSize() // nanoMuse: Settings → Appearance → Avatar size
     // [T-android-compact-progress] null when no compaction is running.
     val compactProgress by viewModel.compactProgress.collectAsState()
     val error by viewModel.error.collectAsState()
@@ -2242,6 +2243,20 @@ fun ChatScreen(
             }
         }
     }
+    // nanoMuse: the profile page's "Change avatar" pre-fills the composer and
+    // asks for the keyboard (Muse hands you back to the chat with "把虚拟形象改成"
+    // already typed). Same guard as above.
+    LaunchedEffect(viewModel) {
+        viewModel.nmFocusComposer.collect {
+            kotlinx.coroutines.delay(250)
+            try {
+                inputFocusRequester.requestFocus()
+                keyboardController?.show()
+            } catch (e: IllegalStateException) {
+                AppLogger.debug(tagScroll, "focus request skipped: ${e.message}")
+            }
+        }
+    }
 
     // Show top-level error in snackbar (only for errors without an assistant message)
     LaunchedEffect(error) {
@@ -2593,20 +2608,28 @@ fun ChatScreen(
                                     modifier = Modifier.padding(bottom = 1.dp),
                                 )
                             } else if (nmMainChat) {
-                                io.github.nanomuse.ui.avatar.AgentAvatarDisc(
-                                    mood = nmMood,
-                                    discSize = 76.dp,
-                                    contentDescription = stringResource(R.string.nm_avatar_content_description),
-                                    onClick = { io.github.nanomuse.ui.header.openAvatarStudio(context) },
-                                )
+                                // nanoMuse: the disc follows Settings → Appearance → Avatar size;
+                                // "hidden" leaves the name tag alone. Tapping the face opens the
+                                // agent's profile page, as in Muse.
+                                val nmDisc = nmAvatarSize.disc
+                                if (nmDisc != null) {
+                                    io.github.nanomuse.ui.avatar.AgentAvatarDisc(
+                                        mood = nmMood,
+                                        discSize = nmDisc,
+                                        contentDescription = stringResource(R.string.nm_avatar_content_description),
+                                        onClick = { io.github.nanomuse.ui.header.openAgentProfile(context) },
+                                    )
+                                } else {
+                                    Spacer(Modifier.height(10.dp))
+                                }
                             } else
                             io.github.nanomuse.ui.avatar.AgentAvatar(
                                 mood = nmMood,
                                 size = 36.dp,
                                 contentDescription = stringResource(R.string.nm_avatar_content_description),
-                                onClick = { io.github.nanomuse.ui.header.openAvatarStudio(context) },
+                                onClick = { io.github.nanomuse.ui.header.openAgentProfile(context) },
                             )
-                            if (!nmSideChat) Spacer(Modifier.height(2.dp))
+                            if (!nmSideChat && !nmMainChat) Spacer(Modifier.height(2.dp))
                             // nanoMuse: the pill is the agent's name (Muse's
                             // header), never the session title — that one
                             // stays in the session list and in the chat
@@ -2620,9 +2643,31 @@ fun ChatScreen(
                             val topBarSoul by com.openminis.app.agent.SoulStore
                                 .cachedMetadata.collectAsState()
                             val displayTitle = topBarSoul.name.trim().ifEmpty { stringResource(R.string.app_name) }
+                            // nanoMuse: while the agent works or waits, the
+                            // status line says what it is doing (Muse's
+                            // "Generating options" / "正在等待批准").
+                            val nmStatusLine = io.github.nanomuse.ui.header.rememberNanoMuseStatusLine(isStreaming, nmMood)
                             // nanoMuse: no name pill on side chats — their
                             // title took the slot above.
-                            if (!nmSideChat) Text(
+                            if (nmMainChat) {
+                                // nanoMuse: Muse's name tag hangs off the chin
+                                // of the face and carries the status as its
+                                // second line; two lines are always reserved so
+                                // the bar never jumps. Tap: the profile page.
+                                Box(
+                                    modifier = Modifier
+                                        .height(io.github.nanomuse.ui.home.PILL_AREA_HEIGHT)
+                                        .then(io.github.nanomuse.ui.home.pullUp(if (nmAvatarSize.shown) io.github.nanomuse.ui.home.PILL_OVERLAP else 0.dp)),
+                                    contentAlignment = Alignment.TopCenter,
+                                ) {
+                                    io.github.nanomuse.ui.home.MuseNamePill(
+                                        name = displayTitle,
+                                        statusLine = nmStatusLine,
+                                        statusColor = if (nmMood == io.github.nanomuse.ui.avatar.AgentMood.WAITING) ChatColors.sendButton else ChatColors.secondaryText,
+                                        onClick = { io.github.nanomuse.ui.header.openAgentProfile(context) },
+                                    )
+                                }
+                            } else if (!nmSideChat) Text(
                                 text = displayTitle,
                                 fontSize = 16.sp,
                                 lineHeight = 19.sp,
@@ -2632,24 +2677,16 @@ fun ChatScreen(
                                 overflow = TextOverflow.Ellipsis,
                                 style = noFontPad,
                                 modifier = Modifier
-                                    // nanoMuse: on the main chat the pill hangs
-                                    // off the disc's chin, as in Muse.
-                                    .then(if (nmMainChat) io.github.nanomuse.ui.home.pullUp(14.dp) else Modifier)
-                                    .then(
-                                        if (nmMainChat) Modifier.shadow(3.dp, CircleShape, clip = false, ambientColor = Color.Black.copy(alpha = 0.18f))
-                                        else Modifier,
-                                    )
                                     // nanoMuse: the name sits in a capsule under the face (Muse's name pill).
                                     .clip(CircleShape)
-                                    .background(if (nmMainChat) MaterialTheme.colorScheme.surface else ChatColors.userBubble)
+                                    .background(ChatColors.userBubble)
                                     .clickable { io.github.nanomuse.ui.header.openSoulSettings(context) }
-                                    .padding(horizontal = if (nmMainChat) 14.dp else 12.dp, vertical = if (nmMainChat) 6.dp else 3.dp),
+                                    .padding(horizontal = 12.dp, vertical = 3.dp),
                             )
-                            // nanoMuse: while the agent works or waits, this
-                            // slot shows what it is doing (Muse's status line)
-                            // instead of the model rows; idle shows the rows.
-                            val nmStatusLine = io.github.nanomuse.ui.header.rememberNanoMuseStatusLine(isStreaming, nmMood)
-                            if (nmStatusLine != null) io.github.nanomuse.ui.header.NanoMuseStatusLine(nmStatusLine, nmMood)
+                            // nanoMuse: outside the home shell the status line
+                            // takes the model rows' slot; on the main chat it
+                            // is inside the name tag, so the rows stay put.
+                            if (nmStatusLine != null && !nmMainChat) io.github.nanomuse.ui.header.NanoMuseStatusLine(nmStatusLine, nmMood)
                             // nanoMuse: no model rows under the name unless the Setting asks for them.
                             else if (!nmHideModelRows)
                             // Model picker subtitle: green dot + group +
@@ -3247,7 +3284,9 @@ fun ChatScreen(
                 // title less.
                 expandedHeight = when {
                     nmHome == null -> 108.dp
-                    nmHome.isMainChat -> if (nmHideModelRows) 116.dp else 136.dp // nanoMuse: face + pill only
+                    // nanoMuse: disc (per the Avatar size setting; 10dp spacer when hidden)
+                    // + the two-line name tag area, + the model rows when on.
+                    nmHome.isMainChat -> (nmAvatarSize.disc ?: 10.dp) + 55.dp + (if (nmHideModelRows) 0.dp else 20.dp)
                     else -> 72.dp
                 },
             )
@@ -3738,6 +3777,8 @@ fun ChatScreen(
                     is FlatChatItem.AssistantToolUse -> grayedMap[originalMessageId(messageId)] == true
                     is FlatChatItem.AssistantInfo -> false  // system rows never grayed
                     is FlatChatItem.NanoMuseNaming -> false // nanoMuse
+                    is FlatChatItem.NanoMuseAvatarOptions -> false // nanoMuse
+                    is FlatChatItem.NanoMuseAvatarShare -> false // nanoMuse
                     is FlatChatItem.AssistantTyping -> false
                     is FlatChatItem.AssistantError -> grayedMap[originalMessageId(messageId)] == true
                     is FlatChatItem.AssistantLegacyContent -> grayedMap[originalMessageId(messageId)] == true
@@ -4355,6 +4396,18 @@ fun ChatScreen(
                                     )
                                 }
                             }
+                            // nanoMuse: the four candidates for a new face;
+                            // tapping one adopts it (typing "第二个" works too).
+                            is FlatChatItem.NanoMuseAvatarOptions -> io.github.nanomuse.ui.avatar.AvatarOptionsCard(
+                                onPick = { index -> viewModel.nmChooseAvatar(index) },
+                                onAgain = { viewModel.nmRegenerateAvatar() },
+                                onDismiss = { viewModel.nmCancelAvatar() },
+                            )
+                            // nanoMuse: the new face is done — show it off.
+                            is FlatChatItem.NanoMuseAvatarShare -> io.github.nanomuse.ui.avatar.AvatarShareCard(
+                                description = item.description,
+                                onDismiss = { viewModel.nmDismissAvatarShare() },
+                            )
                             is FlatChatItem.AssistantTyping -> TypingIndicator()
                             is FlatChatItem.AssistantError -> InlineErrorBanner(
                                 error = item.error,

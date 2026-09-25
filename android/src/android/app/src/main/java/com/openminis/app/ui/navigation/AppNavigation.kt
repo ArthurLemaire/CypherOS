@@ -617,6 +617,29 @@ fun AppNavigation(
                 onOpenSoul = { navController.safeNavigate(Routes.SOUL) },
             )
         }
+        // nanoMuse: the agent's page behind the face — today's activity, approvals, daily,
+        // soul & memory; the pen offers "Change avatar" (back to the chat, pre-typed) and
+        // "Edit name".
+        composable(io.github.nanomuse.ui.profile.ROUTE_AGENT_PROFILE) {
+            val ctx = LocalContext.current
+            io.github.nanomuse.ui.profile.AgentProfileScreen(
+                chatRepository = chatRepository,
+                onBack = { navController.safePopBackStack() },
+                onEditName = { navController.safeNavigate(Routes.SOUL) },
+                onChangeAvatar = {
+                    io.github.nanomuse.ui.home.HomeBus.prefillComposer(ctx.getString(com.openminis.app.R.string.nm_profile_change_avatar_prefill))
+                    navController.safePopBackStack()
+                },
+                onOpenAvatarStudio = { navController.safeNavigate(io.github.nanomuse.ui.avatar.ROUTE_AVATAR_STUDIO) },
+                onOpenSession = { id ->
+                    io.github.nanomuse.ui.home.HomeBus.showSession(id)
+                    navController.safePopBackStack()
+                },
+                onOpenPermissions = { navController.safeNavigate(Routes.PERMISSIONS) },
+                onOpenRoutines = { navController.safeNavigate(Routes.SCHEDULED_TASKS) },
+                onOpenSystemFile = { kind -> navController.safeNavigate(io.github.nanomuse.ui.sysfiles.systemFileRoute(kind)) },
+            )
+        }
 
         // nanoMuse: the full OpenMinis session list (folders, search, bulk
         // actions), one tap behind the drawer's archive glyph. Picking a chat

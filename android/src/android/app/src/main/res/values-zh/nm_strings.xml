@@ -349,4 +349,60 @@
     <string name="nm_chat_menu_model">模型</string>
     <string name="nm_attach_commands">命令</string>
     <string name="nm_composer_placeholder">消息</string>
+
+    <!-- 0.1.9 · Portrait -->
+    <string name="nm_appearance_section_avatar_size">虚拟形象大小</string>
+    <string name="nm_appearance_avatar_size_footer">首页顶部形象的大小。选择"已隐藏"时只显示名字。</string>
+    <string name="nm_avatar_size_small">小</string>
+    <string name="nm_avatar_size_medium">中</string>
+    <string name="nm_avatar_size_large">大</string>
+    <string name="nm_avatar_size_extra_large">超大型</string>
+    <string name="nm_avatar_size_hidden">已隐藏</string>
+    <string name="nm_avatar_style_muse">3D 玩偶（Muse）</string>
+    <!-- 智能体主页 -->
+    <string name="nm_profile_online">online</string>
+    <string name="nm_profile_edit">编辑</string>
+    <string name="nm_profile_change_avatar">更换虚拟形象</string>
+    <string name="nm_profile_edit_name">编辑名称</string>
+    <string name="nm_profile_avatar_studio">形象工坊…</string>
+    <string name="nm_profile_change_avatar_prefill">把虚拟形象改成</string>
+    <string name="nm_profile_pane_activity">动态</string>
+    <string name="nm_profile_pane_approvals">批准记录</string>
+    <string name="nm_profile_pane_daily">每日</string>
+    <string name="nm_profile_pane_soul">SOUL 与记忆</string>
+    <string name="nm_profile_today">今天</string>
+    <string name="nm_profile_yesterday">昨天</string>
+    <string name="nm_profile_activity_empty">今天还没有动态。你提的要求和它做的事会显示在这里。</string>
+    <string name="nm_profile_approvals_empty">还没有长期批准。对有风险的操作选择"始终允许"后，会列在这里，随时可以撤回。</string>
+    <string name="nm_profile_approvals_always">已始终允许</string>
+    <string name="nm_profile_always_allowed">已始终允许 · %1$s</string>
+    <string name="nm_profile_manage_permissions">管理权限</string>
+    <string name="nm_profile_daily_empty">还没有每日任务。跟它说"每天早上……"，就会出现在这里。</string>
+    <string name="nm_profile_manage_routines">管理每日任务</string>
+    <string name="nm_profile_card_soul">SOUL</string>
+    <string name="nm_profile_card_memory">记忆</string>
+    <string name="nm_profile_handle_with_care">请谨慎访问</string>
+    <!-- 在对话里更换形象 -->
+    <string name="nm_avatar_status_options">正在生成选项</string>
+    <string name="nm_avatar_status_finalizing">正在完成形象</string>
+    <string name="nm_avatar_options_drawing">正在画四个"%1$s"的样子…</string>
+    <string name="nm_avatar_options_pick_hint">点一个你喜欢的，或者直接告诉我"第二个"。</string>
+    <string name="nm_avatar_options_failed">图片没有生成出来。到 ••• → 形象工坊检查一下图像模型，再试一次。</string>
+    <string name="nm_avatar_options_again">再来一组</string>
+    <string name="nm_avatar_options_keep">先不换了</string>
+    <string name="nm_avatar_option_n">第 %1$d 个</string>
+    <string name="nm_avatar_option_retry">重试</string>
+    <string name="nm_avatar_options_ready">好啦，几个"%1$s"的形象已经准备好了，选一个你最喜欢的吧！</string>
+    <string name="nm_avatar_adopted">好啦，我的新形象已经换上了，现在是%1$s！</string>
+    <string name="nm_avatar_pick_line">第 %1$d 个</string>
+    <string name="nm_avatar_cannot_start">现在还画不了新形象：%1$s</string>
+    <string name="nm_avatar_memory_line">- %1$s：用户把我的虚拟形象换成了"%2$s"。</string>
+    <string name="nm_avatar_share_text">我的新形象出炉啦！%1$s，分享给朋友们看看吧！</string>
+    <string name="nm_avatar_share_button">分享形象</string>
+    <string name="nm_avatar_share_later">以后再说</string>
+    <string name="nm_avatar_share_title">分享我的虚拟形象</string>
+    <string name="nm_avatar_share_subtitle">选一张卡片，通过系统分享发出去。</string>
+    <string name="nm_avatar_share_system">分享</string>
+    <string name="nm_avatar_share_bubble">你好，我是你的个人 AI 智能体%1$s。nanoMuse——开源、在手机上本地运行。</string>
+    <string name="nm_avatar_share_tagline">你的个人 AI 智能体，开源 · github.com/nano-muse/nanoMuse</string>
 </resources>

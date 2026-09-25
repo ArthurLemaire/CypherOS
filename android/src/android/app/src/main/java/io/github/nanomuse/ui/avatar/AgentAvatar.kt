@@ -98,9 +98,15 @@ fun rememberAgentMood(isStreaming: Boolean, error: String?): AgentMood {
         previousStreaming = isStreaming
     }
 
+    // Drawing a new face is work too (the chat's "change your avatar" flow).
+    val avatarStage by io.github.nanomuse.avatar.AvatarFlow.stage.collectAsState()
+    val avatarSlots by io.github.nanomuse.avatar.AvatarStudio.slots.collectAsState()
+    val drawing = avatarStage is io.github.nanomuse.avatar.AvatarFlow.Stage.Finalizing ||
+        (avatarStage is io.github.nanomuse.avatar.AvatarFlow.Stage.Choosing && avatarSlots.any { it is io.github.nanomuse.avatar.AvatarStudio.Slot.Loading })
+
     return when {
         waiting -> AgentMood.WAITING
-        isStreaming -> AgentMood.WORKING
+        isStreaming || drawing -> AgentMood.WORKING
         else -> afterglow ?: AgentMood.IDLE
     }
 }
