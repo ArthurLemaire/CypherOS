@@ -476,6 +476,24 @@
     <string name="nm_hands_secret_field">這是密碼或驗證碼輸入框，請你自己填好，然後點「繼續」。</string>
     <string name="nm_hands_approval_title">等你確認</string>
     <string name="nm_hands_approval_detail">要點「%1$s」——請在 nanoMuse 裡或通知中回答。</string>
+    <!-- 光圈旁的動作名（0.1.15） -->
+    <string name="nm_hands_fx_tap">點按</string>
+    <string name="nm_hands_fx_tap_target">點按「%1$s」</string>
+    <string name="nm_hands_fx_double_tap">雙擊</string>
+    <string name="nm_hands_fx_double_tap_target">雙擊「%1$s」</string>
+    <string name="nm_hands_fx_hold">長按</string>
+    <string name="nm_hands_fx_hold_target">長按「%1$s」</string>
+    <string name="nm_hands_fx_swipe">滑動</string>
+    <string name="nm_hands_fx_scroll_up">向上捲動</string>
+    <string name="nm_hands_fx_scroll_down">向下捲動</string>
+    <string name="nm_hands_fx_scroll_left">向左捲動</string>
+    <string name="nm_hands_fx_scroll_right">向右捲動</string>
+    <string name="nm_hands_fx_type">輸入「%1$s」</string>
+    <string name="nm_hands_fx_enter">Enter</string>
+    <string name="nm_hands_fx_back">返回</string>
+    <string name="nm_hands_fx_home">回主畫面</string>
+    <string name="nm_hands_fx_open">開啟 %1$s</string>
+    <string name="nm_hands_fx_wait">等 %1$d 秒</string>
     <!-- the approval card -->
     <string name="nm_risk_desc_screen">%1$s 想在%3$s裡點「%2$s」。</string>
     <string name="nm_risk_preview_screen">螢幕上</string>

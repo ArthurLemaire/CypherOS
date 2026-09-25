@@ -2,6 +2,23 @@
 
 All notable changes to nanoMuse. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/). Unreleased changes are on `main`.
 
+## [0.1.15] - 2026-09-25 · Stage
+
+What the hands do is now something to watch, and the capsule no longer gets in their way.
+
+### Added
+
+- **The stage** (`io.github.nanomuse.hands.HandsStage`) — a second full-screen overlay window that never takes a touch, drawn on an Android Canvas after UI-TARS-desktop's ScreenMarker (`ScreenMarker.ts`, `setOfMarks.ts`; Apache-2.0): a glow breathing along the screen's edges for as long as the run is on (blue while the hands work, amber while they wait for you; a 5 s cycle); at the point the model chose, a red dashed ring turning once a second with a dot at its centre and the action's name beside it — *Tap “Search”*, *Hold*, *Double-tap* — shown 260 ms before the finger lands, then a ripple as it lands; a long press fills a second ring for as long as it is held; a swipe or scroll sends the ring along its path with a trail and an arrowhead; typing, Enter, Back, Home, opening an app and waiting write their name where the last ring was. Hidden, like the capsule, for the instant of every screenshot, so the model never sees any of it. Labels in en / zh / zh-TW (`nm_hands_fx_*`).
+
+### Fixed
+
+- **The capsule caught the hands' own taps.** The model cannot see what is under the capsule (it is hidden from the screenshot), so a tap it asked for could land on the capsule — on *Stop*. For the length of every injected gesture the capsule's window now lets touches through (`FLAG_NOT_TOUCHABLE`, applied and confirmed before the gesture, put back after), and when the target is under it, it first moves to the other end of the screen so the ring there can be seen.
+- **App-icon quick actions on a phone** (long-press the icon → New chat / Voice / Camera) mounted the NavHost straight into the upstream OpenMinis chat screen, cold or warm. They now open the draft inside the home shell, which consumes the pending voice or camera action as before. The draft's id is decided once per launch (`remember`), so a recomposition no longer mints a new one.
+
+### Changed
+
+- versionCode 16; installs over 0.1.14 without losing data.
+
 ## [0.1.14] - 2026-09-25 · Home
 
 Coming back to the app always lands in its own home again.
