@@ -290,7 +290,7 @@
     <string name="settings_feedback_telegram">反馈 (Telegram)</string>
     <string name="settings_feedback_email">反馈 (邮件)</string>
     <string name="about_title">关于</string>
-    <string name="about_minis_tagline">nanoMuse 是完全本地、完全私密的设备端 Agent。</string>
+    <string name="about_minis_tagline">一个完全开源、Muse 形状的个人智能体，面向你的所有设备。今天在这台手机上：一切都在本机运行，模型由你自己带。</string>
     <string name="about_links">链接</string>
     <string name="about_github_repository">GitHub 仓库</string>
     <string name="about_version_format">版本 %1$s (%2$s)</string>
