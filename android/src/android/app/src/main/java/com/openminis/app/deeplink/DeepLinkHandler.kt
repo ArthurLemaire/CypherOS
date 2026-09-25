@@ -193,6 +193,7 @@ object DeepLinkHandler {
             "appearance" -> DeepLinkAction.OpenSettingsScreen(Routes.APPEARANCE)
             "soul" -> DeepLinkAction.OpenSettingsScreen(Routes.SOUL) // nanoMuse: the name pill links here
             "avatar", "face" -> DeepLinkAction.OpenSettingsScreen(io.github.nanomuse.ui.avatar.ROUTE_AVATAR_STUDIO) // nanoMuse: the avatar studio
+            "media", "models" -> DeepLinkAction.OpenSettingsScreen(io.github.nanomuse.ui.media.ROUTE_MEDIA_MODELS) // nanoMuse: image & video models
             "profile" -> DeepLinkAction.OpenSettingsScreen(io.github.nanomuse.ui.profile.ROUTE_AGENT_PROFILE) // nanoMuse: the face links here
             "background" -> DeepLinkAction.OpenSettingsScreen(Routes.BACKGROUND)
             "about" -> DeepLinkAction.OpenSettingsScreen(Routes.ABOUT)

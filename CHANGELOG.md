@@ -2,6 +2,24 @@
 
 All notable changes to nanoMuse. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/). Unreleased changes are on `main`.
 
+## [0.1.10] - 2026-09-25 · Motion
+
+The face moves, and the three models are named. Muse has its image and video models built in; nanoMuse runs on three of your own — the chat model, an image model, a video model — and now says so in one place, in the settings and in the conversation. With a video model set, the avatar gets a short looping clip for each state: a head shake at rest, a crystal ball while it waits for you, a star when pleased, a laptop while it works. The agent can also make pictures and short clips on request through the same two models, and when one is missing it explains what to set up instead of pretending.
+
+### Added
+
+- **Settings → Image & video models** (`io.github.nanomuse.ui.media.MediaModelsScreen`, `minis://settings/media`). One page for the three models: the chat model (the default group, a row to its picker); the image model — a provider among those that can draw, the model name with the catalogue's quick picks, *Ready* / *Not set* / *Type a model name below*, and what stops working without it; the video model — opt-in, a provider on Alibaba Cloud Model Studio and `MiniMax/MiniMax-H3`, the *Animate the avatar after a change* switch, and a row for the current face's clips (n of 4, *Make* / *Redo*, the stage while it draws). The Settings list shows the row with *Not set* while no image model is usable; the avatar studio's *Image model* entries open this page.
+- **The moving avatar** (`io.github.nanomuse.avatar.AvatarMotion`, `io.github.nanomuse.media.VideoGen`). After a new face is adopted and its poses are drawn, four 4-second clips are made in the background — one per state from that state's pose as the first frame, sequentially, through Model Studio's asynchronous video API (temporary upload → `video-synthesis` task → poll → download). The header and the studio play the current state's clip in a loop, muted, inside the same circle (`AgentAvatar.LoopingClip`: `TextureView` + `MediaPlayer`, first frame faded in, paused with the app), and fall back to the still pose where there is no clip. The status line reads *Animating 1/4…* meanwhile. Clips are cleared with the face they belong to.
+- **`nanomuse-media`** (`io.github.nanomuse.media.MediaOffloadHandler`): a sandbox command for the agent. `image --prompt … [--from <picture>] [--size WxH]` draws or edits through the image model, `video --prompt … [--from <picture>] [--seconds 4-15]` makes a clip through the video model, `status` prints what is configured; results land in the session's attachments with a `markdown` line the agent puts in its reply so the file shows inline. When the model needed is not set, the command exits with a `tell_user` message and the link to the setting.
+- **The agent knows its three models** (`MediaModels.promptParagraph`, appended to the system prompt): which are set, how to use `nanomuse-media`, and — when the image model is missing — to explain that changing its look or drawing needs one, that unlike Muse this is something the user sets up, and to link *Image & video models*. A "change your avatar to …" request with no usable image model goes to the chat model with a one-turn note (`SessionAddenda`), so the answer comes from the agent in the user's language rather than from a fixed string.
+- en / zh / zh-TW strings (`nm_media_*`, `nm_avatar_status_animating`); `MediaTest` (6 tests: argv parsing, DashScope host detection, task-failure wording, motion prompts, the missing-model note, the CLI help).
+
+### Changed
+
+- `MediaModels.imageEndpoint` counts an image model as set only when it has a provider with a key *and* a model name; a provider the catalogue does not know shows *Type a model name below* instead of *Not set*, and the avatar flow no longer starts and fails with "set an image model first".
+- The image-model sheet in the avatar studio is gone; its entries lead to the new page.
+- versionCode 11; installs over 0.1.9 without losing data.
+
 ## [0.1.9] - 2026-09-25 · Portrait
 
 The face, Muse's way. Changing the avatar is a sentence in the chat — "change your avatar to a corgi", with a reference picture if you like — answered by four takes in a 2×2 card; tap one or say "the second one", and the agent announces its new look while the poses are drawn. Behind the face is the agent's own page. The name pill under the face is re-measured against Muse's, and the face comes in five sizes.

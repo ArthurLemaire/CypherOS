@@ -615,6 +615,15 @@ fun AppNavigation(
             io.github.nanomuse.ui.avatar.AvatarStudioScreen(
                 onBack = { navController.safePopBackStack() },
                 onOpenSoul = { navController.safeNavigate(Routes.SOUL) },
+                onOpenMediaModels = { navController.safeNavigate(io.github.nanomuse.ui.media.ROUTE_MEDIA_MODELS) },
+            )
+        }
+        // nanoMuse: the three models — chat, image, video — and what stops without each.
+        composable(io.github.nanomuse.ui.media.ROUTE_MEDIA_MODELS) {
+            io.github.nanomuse.ui.media.MediaModelsScreen(
+                onBack = { navController.safePopBackStack() },
+                onOpenModelGroups = { navController.safeNavigate(Routes.MODEL_GROUPS) },
+                onOpenProviders = { navController.safeNavigate(Routes.PROVIDER_LIST) },
             )
         }
         // nanoMuse: the agent's page behind the face — today's activity, approvals, daily,
@@ -696,6 +705,7 @@ fun AppNavigation(
                 onSoulClick = { navController.safeNavigate(Routes.SOUL) },
                 onSystemFilesClick = { navController.safeNavigate(io.github.nanomuse.ui.sysfiles.ROUTE_SYSTEM_FILES) }, // nanoMuse
                 onAvatarClick = { navController.safeNavigate(io.github.nanomuse.ui.avatar.ROUTE_AVATAR_STUDIO) }, // nanoMuse
+                onMediaModelsClick = { navController.safeNavigate(io.github.nanomuse.ui.media.ROUTE_MEDIA_MODELS) }, // nanoMuse
                 onPermissionsClick = { navController.safeNavigate(Routes.PERMISSIONS) },
                 onUsageClick = { navController.safeNavigate(Routes.USAGE_STATS) },
                 onAppearanceClick = { navController.safeNavigate(Routes.APPEARANCE) },

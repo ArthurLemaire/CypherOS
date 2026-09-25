@@ -126,6 +126,7 @@ fun AgentAvatar(
     onClick: (() -> Unit)? = null,
 ) {
     val custom by AvatarStore.current.collectAsState()
+    val clips by io.github.nanomuse.avatar.AvatarMotion.clips.collectAsState()
     val density = LocalDensity.current
     val motion = rememberInfiniteTransition(label = "avatarMotion")
 
@@ -205,6 +206,14 @@ fun AgentAvatar(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.size(size),
             )
+            // The clip for this mood, when the video model has made one: it plays over the
+            // still and shows only once its first frame is on screen, so nothing flickers.
+            val clip = clips[current]
+            if (clip != null) {
+                androidx.compose.runtime.key(clip.path) {
+                    LoopingClip(file = clip, modifier = Modifier.size(size))
+                }
+            }
         } else {
             Image(
                 painter = painterResource(current.drawable),
@@ -242,4 +251,65 @@ fun AgentAvatarDisc(
             onClick = onClick,
         )
     }
+}
+
+/**
+ * A muted, looping MP4 on a [android.view.TextureView] — the platform player, no extra
+ * dependency; the clips are small H.264 files the video model made. Transparent until the first
+ * frame renders, paused while the app is in the background, released with the surface.
+ */
+@Composable
+private fun LoopingClip(file: java.io.File, modifier: Modifier = Modifier) {
+    var ready by remember(file.path) { mutableStateOf(false) }
+    val player = remember(file.path) { android.media.MediaPlayer() }
+    val lifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current.lifecycle
+    androidx.compose.runtime.DisposableEffect(file.path) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            runCatching {
+                when (event) {
+                    androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> if (player.isPlaying) player.pause()
+                    androidx.lifecycle.Lifecycle.Event.ON_RESUME -> if (ready && !player.isPlaying) player.start()
+                    else -> {}
+                }
+            }
+        }
+        lifecycle.addObserver(observer)
+        onDispose {
+            lifecycle.removeObserver(observer)
+            runCatching { player.release() }
+        }
+    }
+    androidx.compose.ui.viewinterop.AndroidView(
+        factory = { ctx ->
+            android.view.TextureView(ctx).apply {
+                isOpaque = false
+                surfaceTextureListener = object : android.view.TextureView.SurfaceTextureListener {
+                    override fun onSurfaceTextureAvailable(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {
+                        runCatching {
+                            player.reset()
+                            player.setDataSource(file.path)
+                            player.setSurface(android.view.Surface(surface))
+                            player.isLooping = true
+                            player.setVolume(0f, 0f)
+                            player.setVideoScalingMode(android.media.MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING)
+                            player.setOnPreparedListener { it.start() }
+                            player.setOnInfoListener { _, what, _ ->
+                                if (what == android.media.MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) ready = true
+                                false
+                            }
+                            player.setOnErrorListener { _, _, _ -> true }
+                            player.prepareAsync()
+                        }
+                    }
+                    override fun onSurfaceTextureSizeChanged(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {}
+                    override fun onSurfaceTextureUpdated(surface: android.graphics.SurfaceTexture) {}
+                    override fun onSurfaceTextureDestroyed(surface: android.graphics.SurfaceTexture): Boolean {
+                        runCatching { player.setSurface(null) }
+                        return true
+                    }
+                }
+            }
+        },
+        modifier = modifier.graphicsLayer { alpha = if (ready) 1f else 0f },
+    )
 }

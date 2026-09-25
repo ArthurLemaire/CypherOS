@@ -92,7 +92,7 @@ const val ROUTE_AVATAR_STUDIO = "nanomuse/avatar"
  */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-fun AvatarStudioScreen(onBack: () -> Unit, onOpenSoul: () -> Unit) {
+fun AvatarStudioScreen(onBack: () -> Unit, onOpenSoul: () -> Unit, onOpenMediaModels: () -> Unit = {}) {
     val context = LocalContext.current
     val current by AvatarStore.current.collectAsState()
     val slots by AvatarStudio.slots.collectAsState()
@@ -107,10 +107,10 @@ fun AvatarStudioScreen(onBack: () -> Unit, onOpenSoul: () -> Unit) {
     var description by remember(savedDescription) { mutableStateOf(savedDescription) }
     var style by remember(savedStyle) { mutableStateOf(savedStyle) }
     var menu by remember { mutableStateOf(false) }
-    var modelSheet by remember { mutableStateOf(false) }
     var previewMood by remember { mutableStateOf(AgentMood.IDLE) }
     val generating = slots.any { it is AvatarStudio.Slot.Loading }
-    val endpoint = remember(modelSheet, current) { ImageGen.endpoint(context) }
+    // Read each time: the media page may have changed it while this screen was below it.
+    val endpoint = ImageGen.endpoint(context)
 
     // The preview face cycles through its moods so the user sees what they got.
     LaunchedEffect(current?.createdAt) {
@@ -137,7 +137,7 @@ fun AvatarStudioScreen(onBack: () -> Unit, onOpenSoul: () -> Unit) {
                     }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         DropdownMenuItem(text = { Text(stringResource(R.string.nm_avatar_menu_soul)) }, onClick = { menu = false; onOpenSoul() })
-                        DropdownMenuItem(text = { Text(stringResource(R.string.nm_avatar_menu_model)) }, onClick = { menu = false; modelSheet = true })
+                        DropdownMenuItem(text = { Text(stringResource(R.string.nm_avatar_menu_model)) }, onClick = { menu = false; onOpenMediaModels() })
                         if (current != null) {
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.nm_avatar_menu_regenerate_moods)) },
@@ -260,7 +260,7 @@ fun AvatarStudioScreen(onBack: () -> Unit, onOpenSoul: () -> Unit) {
                         }
                     }
                     Spacer(Modifier.height(8.dp))
-                    Row(Modifier.fillMaxWidth().clickable { modelSheet = true }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().clickable { onOpenMediaModels() }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             if (endpoint == null) stringResource(R.string.nm_avatar_no_provider)
                             else stringResource(R.string.nm_avatar_using, endpoint.label, endpoint.model.ifBlank { "—" }),
@@ -344,9 +344,6 @@ fun AvatarStudioScreen(onBack: () -> Unit, onOpenSoul: () -> Unit) {
         }
     }
 
-    if (modelSheet) {
-        ImageModelSheet(onDismiss = { modelSheet = false })
-    }
 }
 
 @Composable
@@ -388,78 +385,6 @@ private fun CandidateTile(slot: AvatarStudio.Slot, selected: Boolean, onClick: (
                 Text(stringResource(R.string.nm_avatar_retry), fontSize = 12.sp, fontWeight = FontWeight.Medium, color = MuseTones.action)
             }
             AvatarStudio.Slot.Empty -> {}
-        }
-    }
-}
-
-/** Which provider draws, and with which model. Only OpenAI-shaped providers are offered. */
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-@Composable
-private fun ImageModelSheet(onDismiss: () -> Unit) {
-    val context = LocalContext.current
-    val instances = remember { ImageGen.eligibleInstances(context) }
-    val current = remember { ImageGen.endpoint(context) }
-    var chosen by remember { mutableStateOf(current?.instanceId ?: instances.firstOrNull()?.id) }
-    var model by remember { mutableStateOf(current?.model.orEmpty()) }
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MuseTones.surface) {
-        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
-            Text(stringResource(R.string.nm_avatar_menu_model), fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-            Spacer(Modifier.height(4.dp))
-            Text(stringResource(R.string.nm_avatar_model_body), fontSize = 13.sp, lineHeight = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(12.dp))
-            if (instances.isEmpty()) {
-                Text(stringResource(R.string.nm_avatar_no_provider), fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            instances.forEach { inst ->
-                Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable {
-                        chosen = inst.id
-                        model = ImageGen.suggestedModel(context, inst)
-                    }.padding(vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    RadioButton(selected = chosen == inst.id, onClick = null)
-                    Spacer(Modifier.width(8.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(inst.label, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface)
-                        Text(ImageGen.baseUrlOf(inst), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-                    }
-                }
-                // The catalogue's image models for this provider, one tap each.
-                val quick = remember(inst.id) { ImageGen.imageEntries(context, inst) }
-                if (chosen == inst.id && quick.isNotEmpty()) {
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(start = 40.dp, bottom = 6.dp)) {
-                        items(quick.size) { i ->
-                            val id = quick[i].model.id
-                            Surface(onClick = { model = id }, shape = CircleShape, color = if (model == id) MaterialTheme.colorScheme.onSurface else MuseTones.fill, contentColor = if (model == id) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.onSurface) {
-                                Text(id, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
-                            }
-                        }
-                    }
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-            OutlinedTextField(
-                value = model,
-                onValueChange = { model = it },
-                label = { Text(stringResource(R.string.nm_avatar_model_label)) },
-                placeholder = { Text("qwen-image-3.0 · gpt-image-1 · …") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = MuseTones.action, unfocusedBorderColor = MuseTones.hairline),
-            )
-            Spacer(Modifier.height(16.dp))
-            Button(
-                onClick = {
-                    chosen?.let { ImageGen.save(context, it, model) }
-                    onDismiss()
-                },
-                enabled = chosen != null,
-                modifier = Modifier.fillMaxWidth().height(48.dp),
-                shape = CircleShape,
-                colors = ButtonDefaults.buttonColors(containerColor = MuseTones.action, contentColor = Color.White),
-            ) { Text(stringResource(R.string.nm_save), fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
         }
     }
 }

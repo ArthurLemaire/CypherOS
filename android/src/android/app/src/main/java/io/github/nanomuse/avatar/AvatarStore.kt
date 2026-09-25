@@ -42,6 +42,7 @@ object AvatarStore {
     fun init(context: Context) {
         dir = File(context.filesDir, "minis-global/nanomuse/avatar").apply { mkdirs() }
         reload()
+        AvatarMotion.init()
     }
 
     fun root(): File = dir
@@ -67,6 +68,7 @@ object AvatarStore {
     /** Makes [bitmap] the face. Old mood pictures are dropped — they belonged to the old face. */
     fun adopt(bitmap: Bitmap, prompt: String, style: String, model: String) {
         AgentMood.entries.forEach { moodFile(it).delete() }
+        AvatarMotion.clear()
         write(baseFile(), bitmap)
         metaFile().writeText(
             JSONObject().put("prompt", prompt).put("style", style).put("model", model)
@@ -83,6 +85,7 @@ object AvatarStore {
 
     /** Back to the red panda. Candidates are kept so the user can pick again without paying. */
     fun reset() {
+        AvatarMotion.clear()
         baseFile().delete()
         AgentMood.entries.forEach { moodFile(it).delete() }
         metaFile().delete()

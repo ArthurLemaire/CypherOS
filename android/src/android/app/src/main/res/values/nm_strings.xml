@@ -312,7 +312,7 @@
     <string name="nm_avatar_using">Drawn by %1$s · %2$s</string>
     <string name="nm_avatar_change">Change</string>
     <string name="nm_avatar_no_provider">Add an OpenAI-compatible provider in Settings → Providers first; the face is drawn with your own key.</string>
-    <string name="nm_avatar_no_model">Set an image model first (Image model in the ⋯ menu).</string>
+    <string name="nm_avatar_no_model">Set an image model first (Settings → Image &amp; video models).</string>
     <string name="nm_avatar_pick_title">Pick one</string>
     <string name="nm_avatar_pick_body">Tap a picture to choose it. You can draw four more any time; the old ones are kept until you do.</string>
     <string name="nm_avatar_use_this">Use this one</string>
@@ -407,4 +407,30 @@
     <string name="nm_avatar_share_system">Share</string>
     <string name="nm_avatar_share_bubble">Hi, I\'m %1$s, a personal AI agent. Meet nanoMuse — open source, runs on your phone.</string>
     <string name="nm_avatar_share_tagline">Your personal AI agent, open source · github.com/nano-muse/nanoMuse</string>
+    <!-- 0.1.10 · Motion -->
+    <string name="nm_media_title">Image &amp; video models</string>
+    <string name="nm_media_intro">Muse has its image and video models built in. nanoMuse runs on three models you set up yourself: the chat model you talk to, an image model that draws the avatar and pictures you ask for, and a video model that makes the avatar move and short clips. Each is one of your own providers, on your own key.</string>
+    <string name="nm_media_section_chat">Chat model</string>
+    <string name="nm_media_chat_footer">The default model group. Every conversation, the feed and the daily routines run on it.</string>
+    <string name="nm_media_section_image">Image model</string>
+    <string name="nm_media_image_footer">Avatar changes, the four candidates and the poses, and any picture you ask for in the chat. Alibaba Cloud Model Studio: qwen-image-3.0 (edits via qwen-image-edit-max). OpenAI: gpt-image-1. Any provider with the OpenAI images endpoint works.</string>
+    <string name="nm_media_image_none">None of your providers can draw. Add an OpenAI-compatible provider (Alibaba Cloud Model Studio, OpenAI, xAI, OpenRouter or a custom base URL) with an API key; the avatar is drawn with your own key.</string>
+    <string name="nm_media_image_off">Until one is set, the avatar cannot be changed and no pictures can be drawn. The agent will say so if you ask.</string>
+    <string name="nm_media_need_model">Type a model name below</string>
+    <string name="nm_media_section_video">Video model</string>
+    <string name="nm_media_video_footer">Makes the avatar move — a short looping clip for each state — and any clip you ask for. Alibaba Cloud Model Studio: MiniMax/MiniMax-H3, which you activate once on the model\'s card in the Model Studio console. Billed per second of video; an avatar takes four clips of a few seconds.</string>
+    <string name="nm_media_video_none">No provider on Alibaba Cloud Model Studio yet — that is the video API nanoMuse speaks. The avatar stays as still pictures until one is added.</string>
+    <string name="nm_media_video_off">Optional. Without one, the avatar stays still and no clips can be made.</string>
+    <string name="nm_media_video_off_option">No video model</string>
+    <string name="nm_media_not_set">Not set</string>
+    <string name="nm_media_ready">Ready</string>
+    <string name="nm_media_add_provider">Add a provider</string>
+    <string name="nm_media_animate">Animate the avatar after a change</string>
+    <string name="nm_media_animate_sub">%1$d clips of %2$d s, one per state, drawn in the background once the poses are done</string>
+    <string name="nm_media_clips_title">Clips for the current face: %1$d of %2$d</string>
+    <string name="nm_media_clips_sub">Head shake at rest, crystal ball while waiting, star when pleased, laptop while working</string>
+    <string name="nm_media_clips_make">Make</string>
+    <string name="nm_media_clips_redo">Redo</string>
+    <string name="nm_media_clips_running">Drawing…</string>
+    <string name="nm_avatar_status_animating">Animating %1$d/%2$d…</string>
 </resources>

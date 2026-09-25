@@ -38,6 +38,7 @@ import androidx.compose.material.icons.outlined.FrontHand
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.automirrored.outlined.Send
@@ -93,6 +94,7 @@ fun SettingsScreen(
     onSoulClick: () -> Unit = {},
     onSystemFilesClick: () -> Unit = {}, // nanoMuse
     onAvatarClick: () -> Unit = {}, // nanoMuse
+    onMediaModelsClick: () -> Unit = {}, // nanoMuse: Settings → Image & video models
     onPermissionsClick: () -> Unit = {},
     onUsageClick: () -> Unit = {},
     onAppearanceClick: () -> Unit = {},
@@ -184,6 +186,14 @@ fun SettingsScreen(
                     title = stringResource(R.string.settings_manage_providers),
                     icon = Icons.Outlined.Lock,
                     onClick = onProvidersClick,
+                )
+                io.github.nanomuse.ui.muse.MuseRowDivider()
+                // nanoMuse: the image and video models, which Muse has built in and we set ourselves.
+                io.github.nanomuse.ui.muse.MuseRow(
+                    title = stringResource(R.string.nm_media_title),
+                    icon = Icons.Outlined.Movie,
+                    value = if (io.github.nanomuse.media.MediaModels.imageEndpoint(context) == null) stringResource(R.string.nm_media_not_set) else null,
+                    onClick = onMediaModelsClick,
                 )
                 io.github.nanomuse.ui.muse.MuseRowDivider()
                 io.github.nanomuse.ui.muse.MuseRow(

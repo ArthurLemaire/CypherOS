@@ -305,7 +305,7 @@
     <string name="nm_avatar_using">由 %1$s · %2$s 繪製</string>
     <string name="nm_avatar_change">更換</string>
     <string name="nm_avatar_no_provider">先在 設定 → 模型提供方 裡新增一個 OpenAI 相容的提供方；形象用你自己的 key 生成。</string>
-    <string name="nm_avatar_no_model">先設定圖像模型（⋯ 選單裡的「圖像模型」）。</string>
+    <string name="nm_avatar_no_model">先設定圖像模型（設定 → 圖像與影片模型）。</string>
     <string name="nm_avatar_pick_title">挑一張</string>
     <string name="nm_avatar_pick_body">點一張選中它。隨時可以再畫四張；沒重畫之前舊的會留著。</string>
     <string name="nm_avatar_use_this">就用這個</string>
@@ -400,4 +400,30 @@
     <string name="nm_avatar_share_system">分享</string>
     <string name="nm_avatar_share_bubble">你好，我是你的個人 AI 智慧體%1$s。nanoMuse——開源、在手機上本地執行。</string>
     <string name="nm_avatar_share_tagline">你的個人 AI 智慧體，開源 · github.com/nano-muse/nanoMuse</string>
+    <!-- 0.1.10 · Motion -->
+    <string name="nm_media_title">圖像與影片模型</string>
+    <string name="nm_media_intro">Muse 的圖像和影片模型是官方內建的。nanoMuse 用的是你自己設定的三個模型：和你對話的對話模型、畫形象和你要的圖片的圖像模型、讓形象動起來和產生短片的影片模型。每一個都來自你自己的服務商、用你自己的 key。</string>
+    <string name="nm_media_section_chat">對話模型</string>
+    <string name="nm_media_chat_footer">預設模型群組。所有對話、動態和每日例程都跑在它上面。</string>
+    <string name="nm_media_section_image">圖像模型</string>
+    <string name="nm_media_image_footer">用於更換形象（四張候選和各個姿勢）以及你在對話裡要的任何圖片。阿里雲百煉：qwen-image-3.0（編輯走 qwen-image-edit-max）。OpenAI：gpt-image-1。任何提供 OpenAI images 介面的服務商都可以。</string>
+    <string name="nm_media_image_none">你的服務商裡沒有能畫圖的。新增一個 OpenAI 相容的服務商（阿里雲百煉、OpenAI、xAI、OpenRouter 或自訂網址）並填入 API key；形象是用你自己的 key 畫的。</string>
+    <string name="nm_media_image_off">設定之前無法更換形象，也畫不了圖。你問起時它會告訴你。</string>
+    <string name="nm_media_need_model">在下方填寫模型名稱</string>
+    <string name="nm_media_section_video">影片模型</string>
+    <string name="nm_media_video_footer">讓形象動起來——每個狀態一段循環短片——以及你要的任何短片。阿里雲百煉：MiniMax/MiniMax-H3，需在百煉主控台的模型卡片上開通一次。按影片秒數計費；一套形象是四段幾秒的短片。</string>
+    <string name="nm_media_video_none">還沒有阿里雲百煉的服務商——nanoMuse 目前對接的是它的影片介面。新增之前形象保持靜態圖。</string>
+    <string name="nm_media_video_off">可選。不設定的話形象保持靜態，也做不了影片。</string>
+    <string name="nm_media_video_off_option">不用影片模型</string>
+    <string name="nm_media_not_set">未設定</string>
+    <string name="nm_media_ready">就緒</string>
+    <string name="nm_media_add_provider">新增服務商</string>
+    <string name="nm_media_animate">換形象後自動產生動態</string>
+    <string name="nm_media_animate_sub">%1$d 段 %2$d 秒的短片，每個狀態一段，姿勢畫完後在背景產生</string>
+    <string name="nm_media_clips_title">目前形象的短片：%1$d / %2$d</string>
+    <string name="nm_media_clips_sub">待機搖頭、等待時玩水晶球、開心時玩五角星、工作時敲電腦</string>
+    <string name="nm_media_clips_make">產生</string>
+    <string name="nm_media_clips_redo">重做</string>
+    <string name="nm_media_clips_running">產生中…</string>
+    <string name="nm_avatar_status_animating">正在產生動態 %1$d/%2$d…</string>
 </resources>

@@ -40,6 +40,7 @@ nanoMuse 是 Meta [Muse](https://about.fb.com/news/2026/09/introducing-muse-pers
 1. 从[最新版本](https://github.com/nano-muse/nanoMuse/releases/latest)下载 `nanoMuse-<版本>-arm64.apk`——Android 8.0 以上的 64 位手机。想校验就 `sha256sum -c nanoMuse-<版本>-arm64.apk.sha256`。
 2. 打开安装。Android 会问一次是否允许；每个版本都用同一把签名，直接覆盖安装升级，数据不丢。
 3. 添加一个模型：任何 OpenAI 兼容接口配你自己的 key，或者 App 自带的 OAuth 登录。第一次对话它会问你叫什么，并给自己起名字。
+4. 可选——「设置 → 图像与视频模型」：图像模型（阿里云百炼的 qwen-image-3.0、gpt-image-1，或任何有 OpenAI images 接口的服务商）让它能换脸、画图；视频模型（百炼上的 MiniMax-H3）让脸动起来。Muse 这两样是官方自带的，nanoMuse 用你自己的，缺哪个它会开口告诉你。
 
 App 会到本仓库的 Releases 检查更新。每个版本的说明在 [docs/releases/](docs/releases/) 和 [CHANGELOG](CHANGELOG.md)。
 
@@ -52,7 +53,7 @@ App 会到本仓库的 Releases 检查更新。每个版本的说明在 [docs/re
 | **一直在干** | 目标在对话里定下来，然后在自己的会话里按时检查；例程在 App 关着时照跑；操作手机时屏幕不灭；到 200 步问你「继续？」而不是草草收尾。 |
 | **写给你的动态** | 每天早上三到六条短帖，来自它对你的了解和你让它盯的事，做成卡片：可以点赞、在旁聊里讨论、删除。一句话就能调它的方向。 |
 | **记得你** | 它是谁（`SOUL.md`）、知道你什么（`USER.md`）、记住了什么（`GLOBAL.md` 和日记）、什么时候醒（`HEARTBEAT.md`），是 App 里能看能改的文件。别的助手记住的你，用「导入记忆」贴过来。 |
-| **有一张脸** | 一句话描述；你的图像模型画四张；你挑一张。App 再给它摆出每种状态的姿势——工作、等你、开心、抱歉——它会随着智能体在做的事呼吸、点头、歪头、跳一下、抖一下。默认是小熊猫。 |
+| **有一张脸** | 一句话描述；你的图像模型画四张；你挑一张。App 再给它摆出每种状态的姿势——工作、等你、开心、抱歉——它会随着智能体在做的事呼吸、点头、歪头、跳一下、抖一下；设了视频模型，每个状态是一段循环短片。默认是小熊猫。 |
 | **点子与资料库** | 从目标和记忆里来的、接下来可以问的事；以及它做出来的所有东西，带预览。 |
 
 以上每一项都是 Muse 的某个页面或行为，在手机上重做了一遍；OpenMinis 其余的部分——终端、应用内浏览器、MCP 与技能管理、模型组、token 用量、无障碍执行器、共享文件夹——都保留着，从同样的菜单进。
@@ -87,6 +88,7 @@ App 是修改过的 [OpenMinis](https://github.com/OpenMinis/OpenMinis) 1.13：�
 | [0.1.7](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.7) | Welcome | 第一次运行：欢迎页带三步——服务商、它提供的模型、认识它 |
 | [0.1.8](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.8) | Polish | 壳子对齐 Muse：字体排印、胶囊输入框、脸下只有名字、灰色气泡、Muse 样式的设置页 |
 | [0.1.9](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.9) | Portrait | 换脸照 Muse 的路：对话里说「把虚拟形象换成…」，四张候选任选，姿势、分享卡；点脸进入它的资料页；形象大小五档；名字牌按 Muse 重测 |
+| [0.1.10](https://github.com/nano-muse/nanoMuse/releases/tag/v0.1.10) | Motion | 三个模型说清楚——对话、图像、视频——在「设置 → 图像与视频模型」里，也在它自己知道的事里；设了视频模型，形象每个状态一段循环短片；按需生图生视频；缺模型时由它开口说明，不是写死的提示 |
 | 0.2.0 | Beta | 头几周使用后的打磨；第一个 beta |
 
 **之后：**托管在你自己一台云端 VM 上的 nanoMuse，任何浏览器都能打开，手机 App 是它的客户端；再之后是桌面 App，本地跑或者连到那台 VM。项目起步时的 Python 线——智能体和它的 Sentinel、网页 App、模拟手机——冻结在 tag [`pre-openminis`](https://github.com/nano-muse/nanoMuse/releases/tag/pre-openminis)，文档在 [docs/](docs/)，是后面这几步的底座。
@@ -101,8 +103,8 @@ App 是修改过的 [OpenMinis](https://github.com/OpenMinis/OpenMinis) 1.13：�
 | 在后台推进目标 | 目标在自己的会话里按时检查；例程就是定时任务；审批和结果都有通知 |
 | 写给你的动态 | 每天早上的例程，从你的记忆、目标和一句指示写成卡片 |
 | iOS、Android、网页、WhatsApp、Mac App | 现在是 Android；接下来是你自己 VM 上的网页版和桌面 App |
-| 一个干活时会换姿势的毛绒形象 | 你的图像模型画出并摆好姿势的脸，按状态动起来；默认是小熊猫 |
-| Meta 的模型 | 任何 OpenAI 兼容模型，或 App 自带的 OAuth 登录 |
+| 一个干活时会换姿势的毛绒形象 | 你的图像模型画出并摆好姿势的脸，每个状态一段你的视频模型做的循环短片；默认是小熊猫 |
+| Meta 的模型 | 你自己的三个：任何 OpenAI 兼容对话模型（或 App 自带的 OAuth 登录）、一个图像模型、一个可选的视频模型 |
 | 闭源 | GPL-3.0-or-later |
 
 ## 参与
