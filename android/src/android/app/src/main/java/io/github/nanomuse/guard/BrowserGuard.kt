@@ -58,22 +58,8 @@ object BrowserGuard {
         }
     }
 
-    private val secretField = Regex(
-        "passw|pwd|密码|口令|verif|otp|一次性|验证码|校验码|动态码|短信码|sms.?code|auth.?code|security.?code|\\bpin\\b|captcha|图形码|cvv|cvc|安全码",
-        RegexOption.IGNORE_CASE,
-    )
-    private val moneyTap = Regex(
-        "支付|付款|立即购买|确认购买|去支付|确认支付|结算|下单|提交订单|立即下单|买单|充值|转账|打赏|购买|订阅|开通|续费|确认付款|立即支付|\\bpay\\b|pay now|payment|checkout|place order|buy now|purchase|subscribe|donate|transfer|top ?up|confirm order|complete order|confirm purchase|book now|reserve",
-        RegexOption.IGNORE_CASE,
-    )
-    private val destructiveTap = Regex(
-        "删除|移除|清空|注销|解绑|退订|取消订单|退款|\\bdelete\\b|\\bremove\\b|clear all|unsubscribe|deactivate|cancel order|\\brefund\\b|\\bdiscard\\b|\\berase\\b",
-        RegexOption.IGNORE_CASE,
-    )
-    private val outboundTap = Regex(
-        "^发送$|发送|发布|回复|投递|转发|评论|发表|发帖|提交|确认发送|\\bsend\\b|\\bpost\\b|\\bpublish\\b|\\breply\\b|\\bshare\\b|\\btweet\\b|\\bcomment\\b|\\bsubmit\\b|\\bapply\\b",
-        RegexOption.IGNORE_CASE,
-    )
+    // The words themselves live in [TapWords], shared with the phone screen (0.1.12).
+    private val secretField get() = TapWords.secretField
 
     /** The JS that describes the element a click/type will land on. Returns a JSON object. */
     fun describeJs(selector: String?, x: Int?, y: Int?): String {
@@ -124,18 +110,8 @@ object BrowserGuard {
         if (!t.found) return Verdict.Proceed
         val label = listOf(t.text, t.aria).firstOrNull { it.isNotBlank() } ?: return Verdict.Proceed
         val host = t.host.ifBlank { null }
-        val cls = when {
-            moneyTap.containsMatchIn(label) -> RiskClass.MONEY
-            destructiveTap.containsMatchIn(label) -> RiskClass.DESTRUCTIVE
-            outboundTap.containsMatchIn(label) -> RiskClass.OUTBOUND
-            else -> return Verdict.Proceed
-        }
+        val cls = TapWords.classify(label) ?: return Verdict.Proceed
         val short = label.take(40)
-        val reason = when (cls) {
-            RiskClass.MONEY -> "taps “$short” — looks like a payment"
-            RiskClass.DESTRUCTIVE -> "taps “$short” — looks like it deletes something"
-            else -> "taps “$short” — looks like it sends or posts"
-        } + (host?.let { " on $it" } ?: "")
-        return Verdict.Ask(RiskAssessment(cls, reason, host), short)
+        return Verdict.Ask(RiskAssessment(cls, TapWords.reason(cls, short, host), host), short)
     }
 }

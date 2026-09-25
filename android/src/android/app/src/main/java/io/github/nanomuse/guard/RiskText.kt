@@ -35,6 +35,10 @@ object RiskText {
             val host = a.target ?: request.pageUrl ?: ""
             return context.getString(R.string.nm_risk_desc_browser, agentName, request.elementText ?: "", host)
         }
+        if (request.kind == GuardKind.SCREEN) {
+            val app = request.pageUrl ?: a.target ?: context.getString(R.string.nm_hands_this_phone)
+            return context.getString(R.string.nm_risk_desc_screen, agentName, request.elementText ?: "", app)
+        }
         val target = targetLabel(context, a.target)
         return when (a.riskClass) {
             RiskClass.DESTRUCTIVE -> if (target != null) context.getString(R.string.nm_risk_desc_shell_destructive, agentName, target)
