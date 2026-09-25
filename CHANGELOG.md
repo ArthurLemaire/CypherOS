@@ -2,6 +2,24 @@
 
 All notable changes to nanoMuse. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/). Unreleased changes are on `main`.
 
+## [0.1.16] - 2026-09-26 · Palette
+
+The image and video models are picked the way the chat model is — from what the key can actually use — and drawing on Alibaba Cloud Model Studio works again.
+
+### Fixed
+
+- **Avatar and pictures on Alibaba Cloud Model Studio answered HTTP 404.** `ImageGen.generate` sent Model Studio hosts to `compatible-mode/v1/images/generations`, which does not exist there (the public host answers 404 to every model; a dedicated `maas` host happens to serve it). Generation now takes the native `multimodal-generation/generation` path the poses already used (`callDashScope`, shared by generate and edit): a text-only turn, `size` as `W*H`, `watermark` off, `prompt_extend` off for qwen-image. Verified against qwen-image-3.0-pro, qwen-image-2.0-pro, qwen-image-max and wan2.7-image-pro.
+- **Default image model vs. the page's hint.** `suggestedModel` took the catalogue's first image entry (wan2.7-image-pro) over the host's recommended model; it now prefers `recommendedModel` (qwen-image-3.0-pro on Model Studio) whenever the provider lists it, else the first model that draws, else the recommendation alone.
+
+### Added
+
+- **Image and video models listed from the key** (Settings → Image & video models). `ImageGen.availableModels`: the provider's model entries — the same `/models` fetch the chat models come from, refreshed once when the provider has none and on *Check again* — filtered to models that draw by catalogue modality or by name (`looksLikeImageModel`; edit-only models and, on Model Studio, models outside the native endpoint's qwen-image / wan-image are left out), dated snapshots hidden behind their alias, the recommended model first. `MediaModels.checkVideoModels`: Model Studio's `/models` says nothing about video, so `VideoGen.KNOWN_DASHSCOPE_MODELS` (MiniMax-H3, wan2.6 / 2.5 / 2.2 i2v and t2v) plus anything on the list named like a video model are probed with `VideoGen.probe` — an empty task, answered 404 "Model not exist" or accepted and failed at once, nothing billed — and remembered per provider for a day. Both sections show the result as choice rows with a *Recommended* mark, a checking line and *Check again*; the free-text field stays for any other name. Strings in en / zh / zh-TW.
+- **Wan video models.** `VideoGen` builds the body per family: MiniMax keeps `media[first_frame]` / `resolution 768P` / `ratio` / `duration 4–15`; Wan gets `img_url`, `resolution 720P` or a pixel `size`, and a `duration` only where the model takes one (2–15 on wan2.6, 5 or 10 on wan2.5, none on wan2.2). A Wan `-i2v` / `-t2v` pick is swapped for its sibling when the job is the other kind.
+
+### Changed
+
+- versionCode 17; installs over 0.1.15 without losing data.
+
 ## [0.1.15] - 2026-09-25 · Stage
 
 What the hands do is now something to watch, and the capsule no longer gets in their way.

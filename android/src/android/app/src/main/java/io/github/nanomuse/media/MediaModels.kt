@@ -7,6 +7,9 @@ import com.openminis.app.R
 import com.openminis.app.data.model.ProviderCredential
 import com.openminis.app.data.model.ProviderInstance
 import io.github.nanomuse.avatar.ImageGen
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
 
 /**
  * The three models nanoMuse runs on. Muse ships with all of them built in; here each is one of
@@ -86,6 +89,55 @@ object MediaModels {
             .apply()
     }
 
+    // ── which video models the key can use ────────────────────────────────
+
+    private const val KEY_VIDEO_AVAILABLE = "media.video.available."
+    private const val KEY_VIDEO_CHECKED = "media.video.checked."
+    private const val VIDEO_CHECK_TTL_MS = 24 * 60 * 60_000L
+
+    /**
+     * The video models of [inst] that answered the last check, recommended first; null when it
+     * has never been checked (the page then runs [checkVideoModels]). Model Studio does not list
+     * video models on `/models`, so this is what "which models does this key have" means for
+     * video: the known candidates, each probed once and remembered for a day.
+     */
+    fun availableVideoModels(context: Context, inst: ProviderInstance): List<String>? {
+        val raw = prefs(context).getString(KEY_VIDEO_AVAILABLE + inst.id, null) ?: return null
+        val arr = runCatching { JSONArray(raw) }.getOrNull() ?: return null
+        return List(arr.length()) { arr.optString(it) }.filter { it.isNotBlank() }
+    }
+
+    fun videoCheckIsFresh(context: Context, inst: ProviderInstance): Boolean =
+        System.currentTimeMillis() - prefs(context).getLong(KEY_VIDEO_CHECKED + inst.id, 0L) < VIDEO_CHECK_TTL_MS
+
+    /**
+     * Asks the host which of the known video models exist for this key — plus anything on the
+     * provider's own list that is named like a video model — and remembers the answer. Returns
+     * the models found, or null when the host could not be reached at all.
+     */
+    suspend fun checkVideoModels(context: Context, inst: ProviderInstance): List<String>? = withContext(Dispatchers.IO) {
+        val app = context.applicationContext as? MinisApp ?: return@withContext null
+        val repo = app.providerRepositoryOrNull ?: return@withContext null
+        val key = repo.usableApiKey(inst) ?: return@withContext null
+        val host = VideoGen.Endpoint(inst, key, "").host
+        val listed = repo.config.value.modelEntries
+            .filter { it.providerInstanceId == inst.id && !it.isHidden && VideoGen.looksLikeVideoModel(it.model.id) }
+            .map { it.model.id }
+        val candidates = (VideoGen.KNOWN_DASHSCOPE_MODELS + listed).distinct()
+        var reached = false
+        val found = candidates.filter { model ->
+            val ok = VideoGen.probe(host, key, model)
+            if (ok != null) reached = true
+            ok == true
+        }
+        if (!reached) return@withContext null
+        prefs(context).edit()
+            .putString(KEY_VIDEO_AVAILABLE + inst.id, JSONArray(found).toString())
+            .putLong(KEY_VIDEO_CHECKED + inst.id, System.currentTimeMillis())
+            .apply()
+        found
+    }
+
     /** Whether a new face is animated after its poses (four short clips through the video model). */
     fun animateAvatar(context: Context): Boolean = prefs(context).getBoolean(KEY_ANIMATE, true)
     fun setAnimateAvatar(context: Context, on: Boolean) { prefs(context).edit().putBoolean(KEY_ANIMATE, on).apply() }
@@ -122,7 +174,7 @@ object MediaModels {
             }
             if (video == null) {
                 append("- No video model is set: the avatar stays as still pictures, and clips cannot be made. If asked, explain that a video model is needed ")
-                append("(Alibaba Cloud Model Studio: MiniMax/MiniMax-H3, activated in their console) and give the link [Image & video models](").append(DEEP_LINK).append(").")
+                append("(Alibaba Cloud Model Studio: MiniMax/MiniMax-H3 or a Wan video model, picked in the setting) and give the link [Image & video models](").append(DEEP_LINK).append(").")
             }
         }.trimEnd()
     }

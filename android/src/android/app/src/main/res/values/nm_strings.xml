@@ -413,12 +413,12 @@
     <string name="nm_media_section_chat">Chat model</string>
     <string name="nm_media_chat_footer">The default model group. Every conversation, the feed and the daily routines run on it.</string>
     <string name="nm_media_section_image">Image model</string>
-    <string name="nm_media_image_footer">Avatar changes, the four candidates and the poses, and any picture you ask for in the chat. Alibaba Cloud Model Studio: qwen-image-3.0-pro (draws and poses). OpenAI: gpt-image-1. Any provider with the OpenAI images endpoint works.</string>
+    <string name="nm_media_image_footer">Avatar changes, the four candidates and the poses, and any picture you ask for in the chat. The list is what your provider reports for this key, filtered to models that draw. Alibaba Cloud Model Studio: qwen-image-3.0-pro (draws and poses). OpenAI: gpt-image-1. Any provider with the OpenAI images endpoint works.</string>
     <string name="nm_media_image_none">None of your providers can draw. Add an OpenAI-compatible provider (Alibaba Cloud Model Studio, OpenAI, xAI, OpenRouter or a custom base URL) with an API key; the avatar is drawn with your own key.</string>
     <string name="nm_media_image_off">Until one is set, the avatar cannot be changed and no pictures can be drawn. The agent will say so if you ask.</string>
     <string name="nm_media_need_model">Type a model name below</string>
     <string name="nm_media_section_video">Video model</string>
-    <string name="nm_media_video_footer">Makes the avatar move — a short looping clip for each state — and any clip you ask for. Alibaba Cloud Model Studio: MiniMax/MiniMax-H3, which you activate once on the model\'s card in the Model Studio console. Billed per second of video; an avatar takes four clips of a few seconds.</string>
+    <string name="nm_media_video_footer">Makes the avatar move — a short looping clip for each state — and any clip you ask for. Alibaba Cloud Model Studio: MiniMax/MiniMax-H3 (recommended) or a Wan video model; the list shows the ones this key can use, each activated once on the model\'s card in the Model Studio console. Billed per second of video; an avatar takes four clips of a few seconds.</string>
     <string name="nm_media_video_none">No provider on Alibaba Cloud Model Studio yet — that is the video API nanoMuse speaks. Add one (it can be the same key as the image model) and the avatar starts moving; until then it stays as still pictures.</string>
     <string name="nm_media_video_off">Optional. Without one, the avatar stays still and no clips can be made.</string>
     <string name="nm_media_video_off_option">No video model</string>
@@ -432,6 +432,13 @@
     <string name="nm_media_clips_make">Make</string>
     <string name="nm_media_clips_redo">Redo</string>
     <string name="nm_media_clips_running">Drawing…</string>
+    <string name="nm_media_models_on">Models on %1$s</string>
+    <string name="nm_media_recommended">Recommended</string>
+    <string name="nm_media_checking">Checking which models this key can use…</string>
+    <string name="nm_media_recheck">Check again</string>
+    <string name="nm_media_image_none_found">No image model found on this provider. Type one below, or check again once the key is in.</string>
+    <string name="nm_media_video_none_found">No video model answered for this key. Type one below, or check again.</string>
+    <string name="nm_media_other_model">Other model name</string>
     <string name="nm_avatar_status_animating">Animating %1$d/%2$d…</string>
     <string name="nm_avatar_clips_coming">I\'ll also make four short clips so I can move — a few minutes in the background, through your video model.</string>
 

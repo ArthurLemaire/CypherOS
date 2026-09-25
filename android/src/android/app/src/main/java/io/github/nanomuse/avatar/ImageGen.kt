@@ -30,8 +30,9 @@ import java.util.concurrent.TimeUnit
  * Text-to-image and image-edit through the user's own providers — the same instances, keys and
  * model entries OpenMinis' `model-use` CLI drives. Generation and OpenAI-style edits go through
  * [OpenAIProvider.generateImage] / [OpenAIProvider.editImage] (Azure paths, header overrides and
- * the `response_format` retry included). Alibaba Model Studio has no `images/edits`; there the
- * moods are posed through DashScope's native multimodal endpoint with the same qwen-image-3.x (or a `qwen-image-edit-*`)
+ * the `response_format` retry included). Alibaba Model Studio's compatible host has neither
+ * `images/generations` nor `images/edits`; there both drawing and posing go through DashScope's
+ * native multimodal endpoint with the same qwen-image-3.x / wan-image (or a `qwen-image-edit-*`)
  * model on the same host and key.
  */
 object ImageGen {
@@ -74,26 +75,82 @@ object ImageGen {
         }
     }
 
-    /** Model entries of [instance] the catalogue marks as producing images — the quick picks. */
+    /**
+     * Model entries of [instance] that draw: the catalogue says so (`image` among the output
+     * modalities) or the name does ([looksLikeImageModel]). Providers' `/models` lists rarely
+     * carry modalities — Model Studio's says nothing beyond the id — so the name is what tells
+     * qwen-image-3.0-pro apart from qwen3-max. Edit-only models are left out: they need a
+     * picture to start from.
+     */
     fun imageEntries(context: Context, instance: ProviderInstance): List<ModelEntry> {
         val app = context.applicationContext as? MinisApp ?: return emptyList()
         val repo = app.providerRepositoryOrNull ?: return emptyList()
+        val dashScope = speaksDashScope(baseUrlOf(instance))
         return repo.config.value.modelEntries.filter {
-            it.providerInstanceId == instance.id && !it.isHidden && "image" in it.model.outputModalities.orEmpty()
+            it.providerInstanceId == instance.id && !it.isHidden && run {
+                val id = it.model.id
+                val draws = "image" in it.model.outputModalities.orEmpty() || looksLikeImageModel(id)
+                // Model Studio's native endpoint takes qwen-image and wan-image; z-image and the
+                // rest go through a different (asynchronous) API this build does not speak.
+                val native = id.startsWith("qwen-image", ignoreCase = true) ||
+                    (id.startsWith("wan", ignoreCase = true) && id.contains("-image", ignoreCase = true))
+                draws && !id.contains("edit", ignoreCase = true) && (!dashScope || native)
+            }
         }
     }
 
-    fun suggestedModel(context: Context, instance: ProviderInstance): String {
-        imageEntries(context, instance).firstOrNull()?.let { return it.model.id }
+    /** Names that mean "text to image" across the providers nanoMuse meets. */
+    fun looksLikeImageModel(id: String): Boolean {
+        val s = id.lowercase()
+        if (s.contains("embedding") || s.contains("-vl") || s.contains("vision") || s.contains("caption")) return false
+        return listOf("image", "dall-e", "flux", "stable-diffusion", "sdxl", "sd3", "seedream", "kolors", "imagen", "ideogram", "recraft", "hidream", "cogview")
+            .any { s.contains(it) }
+    }
+
+    /**
+     * The models of [instance] the user can pick from, once the provider's list has been
+     * fetched (the same `/models` call the chat models come from). The recommended one for the
+     * host leads; dated snapshots (`…-2026-03-03`) hide behind their undated alias.
+     */
+    fun availableModels(context: Context, instance: ProviderInstance): List<String> {
+        val ids = imageEntries(context, instance).map { it.model.id }.distinct()
+        val undated = ids.filterNot { DATED.containsMatchIn(it) }.toSet()
+        val shown = ids.filter { id -> !DATED.containsMatchIn(id) || DATED.replace(id, "") !in undated }
+        val rec = recommendedModel(instance)
+        return if (rec in shown) listOf(rec) + shown.filterNot { it == rec } else shown
+    }
+
+    private val DATED = Regex("-\\d{4}-\\d{2}-\\d{2}$")
+
+    /** The model nanoMuse would pick on this host, list or no list. Empty when the host is unknown. */
+    fun recommendedModel(instance: ProviderInstance): String {
         val base = baseUrlOf(instance)
         return when {
-            base.contains("aliyuncs.com") || base.contains("dashscope") -> "qwen-image-3.0-pro"
+            speaksDashScope(base) -> "qwen-image-3.0-pro"
             base.contains("api.openai.com") -> "gpt-image-1"
             base.contains("api.x.ai") -> "grok-2-image"
             base.contains("openrouter.ai") -> "google/gemini-2.5-flash-image"
             else -> ""
         }
     }
+
+    /**
+     * The default when nothing was chosen: the host's recommended model if the provider lists
+     * it (or lists nothing yet), otherwise the first model that draws. So a Model Studio key
+     * lands on qwen-image-3.0-pro — the model the page talks about — not on whichever image
+     * model happens to sort first.
+     */
+    fun suggestedModel(context: Context, instance: ProviderInstance): String {
+        val available = availableModels(context, instance)
+        val rec = recommendedModel(instance)
+        return when {
+            available.isEmpty() -> rec
+            rec in available -> rec
+            else -> available.first()
+        }
+    }
+
+    fun speaksDashScope(baseUrl: String): Boolean = baseUrl.contains("aliyuncs.com") || baseUrl.contains("dashscope")
 
     fun baseUrlOf(inst: ProviderInstance): String =
         inst.effectiveBaseURL ?: when (inst.providerType) {
@@ -136,6 +193,9 @@ object ImageGen {
 
     suspend fun generate(context: Context, ep: Endpoint, prompt: String, size: String = "1024x1024"): Bitmap = withContext(Dispatchers.IO) {
         if (ep.model.isBlank()) throw ImageGenException("No image model set")
+        // Model Studio's OpenAI-compatible host has no `images/generations` (the public one
+        // answers 404 to every model); its native endpoint draws with the same key.
+        if (ep.isDashScope) return@withContext generateDashScope(ep, prompt, size)
         val response = try {
             provider(context, ep, ep.model).generateImage(prompt = prompt, n = 1, size = size)
         } catch (e: ImageGenException) {
@@ -167,18 +227,35 @@ object ImageGen {
         decode(bytes)
     }
 
+    /**
+     * DashScope text-to-image: the native multimodal endpoint with a text-only turn. qwen-image
+     * (2.x, 3.x, plus, max) and wan-image all take `size` as `W*H`; prompt extension stays off
+     * so the avatar prompts are drawn as written.
+     */
+    private fun generateDashScope(ep: Endpoint, prompt: String, size: String): Bitmap {
+        val parameters = JSONObject().put("size", size.replace('x', '*')).put("watermark", false)
+        if (ep.model.startsWith("qwen-image")) parameters.put("prompt_extend", false)
+        val content = JSONArray().put(JSONObject().put("text", prompt))
+        return callDashScope(ep, ep.model, content, parameters, what = "generation")
+    }
+
     /** DashScope image editing: same host and key, native path, data-URI input. */
     private fun editDashScope(ep: Endpoint, image: Bitmap, instruction: String): Bitmap {
-        val host = ep.baseUrl.substringBefore("/compatible-mode").substringBefore("/api/v1").trimEnd('/')
-        // qwen-image-3.x and the qwen-image-edit-* models take a picture themselves; an older
-        // text-only qwen-image is posed by qwen-image-edit-max on the same key.
-        val threeX = ep.model.startsWith("qwen-image-3")
+        // qwen-image-3.x, wan-image and the qwen-image-edit-* models take a picture themselves;
+        // an older text-only qwen-image is posed by qwen-image-edit-max on the same key.
+        val threeX = ep.model.startsWith("qwen-image-3") || ep.model.startsWith("wan")
         val model = if (threeX || ep.model.contains("edit")) ep.model else "qwen-image-edit-max"
         val parameters = if (threeX) JSONObject().put("size", "1024*1024").put("prompt_extend", false).put("watermark", false)
         else JSONObject().put("n", 1).put("watermark", false)
         val content = JSONArray()
             .put(JSONObject().put("image", "data:image/png;base64," + Base64.encodeToString(pngBytes(image), Base64.NO_WRAP)))
             .put(JSONObject().put("text", instruction))
+        return callDashScope(ep, model, content, parameters, what = "edit")
+    }
+
+    /** One call to `multimodal-generation/generation`; returns the first image of the reply. */
+    private fun callDashScope(ep: Endpoint, model: String, content: JSONArray, parameters: JSONObject, what: String): Bitmap {
+        val host = ep.baseUrl.substringBefore("/compatible-mode").substringBefore("/api/v1").trimEnd('/')
         val body = JSONObject()
             .put("model", model)
             .put("input", JSONObject().put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", content))))
@@ -193,15 +270,15 @@ object ImageGen {
             val text = resp.body?.string().orEmpty()
             if (!resp.isSuccessful) {
                 val msg = runCatching { JSONObject(text).optString("message") }.getOrNull()
-                AppLogger.warning(TAG, "DashScope edit HTTP ${resp.code}: ${text.take(300)}")
+                AppLogger.warning(TAG, "DashScope $what HTTP ${resp.code}: ${text.take(300)}")
                 throw ImageGenException("HTTP ${resp.code}" + (msg?.takeIf { it.isNotBlank() }?.let { ": $it" } ?: ""))
             }
-            runCatching { JSONObject(text) }.getOrElse { throw ImageGenException("Unreadable edit response") }
+            runCatching { JSONObject(text) }.getOrElse { throw ImageGenException("Unreadable $what response") }
         }
         val url = json.optJSONObject("output")?.optJSONArray("choices")?.optJSONObject(0)
             ?.optJSONObject("message")?.optJSONArray("content")?.optJSONObject(0)?.optString("image")
             ?.takeIf { it.isNotBlank() }
-            ?: throw ImageGenException(json.optString("message").ifBlank { "Empty edit response" })
+            ?: throw ImageGenException(json.optString("message").ifBlank { "Empty $what response" })
         val bytes = http.newCall(Request.Builder().url(url).build()).execute().use { r ->
             if (!r.isSuccessful) throw ImageGenException("Image download failed (${r.code})")
             r.body?.bytes() ?: throw ImageGenException("Empty image")
