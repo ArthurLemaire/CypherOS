@@ -1,7 +1,8 @@
 # The landing page (legacy)
 
 The nanoMuse homepage now lives in [nano-muse/nano-muse.github.io](https://github.com/nano-muse/nano-muse.github.io)
-and is served at <https://nano-muse.github.io/>. `site/index.html` here is a redirect to it;
+and is served at <https://nanomuse.cn/>, with a GitHub Pages copy at <https://nano-muse.github.io/>.
+`site/index.html` here is a redirect to it;
 the page below — the Python line's site with the promo film — is kept as `legacy.html` and
 still published by `.github/workflows/pages.yml` under `https://nano-muse.github.io/nanoMuse/legacy.html`.
 
@@ -34,5 +35,6 @@ brings the page along.
 
 ## Domain
 
-For a domain of your own, add a `CNAME` file to the homepage repository with the host name and
-point a CNAME record at `nano-muse.github.io`; GitHub Pages does the rest.
+`nanomuse.cn` is served by the showcase server, which pulls the homepage repository every minute
+(`demo/showcase/README.md`, "Other sites on the same Caddy"); GitHub Pages publishes the same
+repository at `nano-muse.github.io`. One push to that repository's `main` updates both.
