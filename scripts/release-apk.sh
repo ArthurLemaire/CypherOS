@@ -2,7 +2,7 @@
 # Build, sign, name and (optionally) publish a nanoMuse release APK.
 #
 #   scripts/release-apk.sh <version> [--publish] [--publish-only] [--target COMMIT]
-#                          [--notes FILE] [--allow-debug-key]
+#                          [--notes FILE] [--allow-debug-key] [--prerelease]
 #
 # 1. checks that android/src/android/app/build.gradle.kts carries versionName <version>
 #    (scripts/rebrand.py sets it),
@@ -11,8 +11,9 @@
 # 4. verifies the signature and refuses the debug key unless --allow-debug-key,
 # 5. writes dist/nanoMuse-<version>-arm64.apk and .sha256,
 # 6. with --publish: tags v<version> (annotated, at --target or HEAD, unless the tag already
-#    exists), pushes the tag, then gh release create v<version> --prerelease with the APK,
-#    the checksum and the notes (default docs/releases/v<version>.md).
+#    exists), pushes the tag, then gh release create v<version> --latest with the APK, the
+#    checksum and the notes (default docs/releases/v<version>.md); --prerelease marks it as
+#    one instead and leaves Latest alone.
 #
 # --publish-only skips 1-5 and publishes the dist/ APK that is already there — for a version
 # whose sources are an older commit (pass --target <commit> so the tag lands on it). The APK
@@ -21,15 +22,16 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/android/env.sh"
 
 version="${1:-}"
-[ -n "$version" ] || { echo "usage: $0 <version> [--publish] [--publish-only] [--target COMMIT] [--notes FILE] [--allow-debug-key]" >&2; exit 2; }
+[ -n "$version" ] || { echo "usage: $0 <version> [--publish] [--publish-only] [--target COMMIT] [--notes FILE] [--allow-debug-key] [--prerelease]" >&2; exit 2; }
 shift
-publish=0 publish_only=0 allow_debug=0 notes="" target=""
+publish=0 publish_only=0 allow_debug=0 prerelease=0 notes="" target=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --publish) publish=1 ;;
     --publish-only) publish=1; publish_only=1 ;;
     --target) target="$2"; shift ;;
     --allow-debug-key) allow_debug=1 ;;
+    --prerelease) prerelease=1 ;;
     --notes) notes="$2"; shift ;;
     *) echo "unknown option $1" >&2; exit 2 ;;
   esac
@@ -108,6 +110,7 @@ if [ $publish = 1 ]; then
     echo "release $tag already exists on GitHub — nothing published" >&2
     exit 1
   fi
-  echo "== gh release create $tag --prerelease"
-  gh release create "$tag" "$out" "$out.sha256" --verify-tag --prerelease --title "$title" --notes-file "$notes"
+  if [ "$prerelease" = 1 ]; then kind="--prerelease"; else kind="--latest"; fi
+  echo "== gh release create $tag $kind"
+  gh release create "$tag" "$out" "$out.sha256" --verify-tag $kind --title "$title" --notes-file "$notes"
 fi
