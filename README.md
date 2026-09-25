@@ -22,7 +22,7 @@
   </p>
 </div>
 
-nanoMuse is a fully open-source, Muse-style personal agent for every device you own: one agent with a name and a face, like Meta's [Muse](https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/), that does things instead of answering questions, keeps working while the app is closed, remembers you, and stops to ask before anything you could not undo. Today it is an Android app that runs the whole agent **on the phone**: a Linux root file system, a shell, a browser, MCP, skills and scheduled tasks inside the APK, with a model you bring. Next it gets hands for the apps that never had an API — the phone's own screen, with your permission — and then reaches your other devices: say it on the phone, it gets done on your computer. No server, no account, GPL-3.0.
+nanoMuse is a fully open-source, Muse-style personal agent for every device you own: one agent with a name and a look of its own, like Meta's [Muse](https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/), that does things instead of answering questions, keeps working while the app is closed, remembers you, and stops to ask before anything you could not undo. Today it is an Android app that runs the whole agent **on the phone**: a Linux root file system, a shell, a browser, MCP, skills and scheduled tasks inside the APK, with a model you bring. It has hands for the apps that never had an API — the phone's own screen, with your permission — and reaches your computer: say it on the phone, it gets done there. A desktop app, iOS, a self-hosted web version and glasses come next. No server, no account, GPL-3.0.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/avatar-moods.png" width="88%" alt="The same small dragon in five states: at rest, working, waiting, pleased, sorry">
@@ -32,7 +32,7 @@ nanoMuse is a fully open-source, Muse-style personal agent for every device you 
   <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/screenshots/chat-approval.png" width="23%" alt="Chat: the agent stops before deleting files and asks">
   <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/screenshots/feed.png" width="23%" alt="Feed: posts written for you this morning">
   <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/screenshots/goals.png" width="23%" alt="Goals: tracked on a schedule, with routines">
-  <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/screenshots/avatar.png" width="23%" alt="Avatar: describe a face, your image model draws four, pick one">
+  <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/screenshots/avatar.png" width="23%" alt="Avatar: describe a look, your image model draws four, pick one">
 </p>
 
 ## Why nanoMuse
@@ -41,7 +41,7 @@ Four things define the project. All four are in the app today.
 
 | | | |
 |---|---|---|
-| **Muse-style** | today | One agent, not a toolbox: a name and a face, a first conversation, a feed written for you, goals worked on in the background, memory you can read and edit, an approval before anything you could not undo. |
+| **Muse-style** | today | One agent, not a toolbox: a name and a look of its own, a first conversation, a feed written for you, goals worked on in the background, memory you can read and edit, an approval before anything you could not undo. |
 | **Fully open** | today | GPL-3.0-or-later, the whole repository. No closed component, no account, no server you have to trust, no model you have to use; every release is built from its tag and installed by hand. Muse, 豆包 and 千问 are products you are given; nanoMuse is one you own. |
 | **Any app, API or not** | today | Most of a day in China runs through apps that never had an API. The agent climbs a ladder — a skill, a CLI or an MCP server first, then a page fetched with your login, then the in-app browser, and, when you allow it, the device's own screen, looking and tapping the way you would — with the same approvals before paying, sending or deleting. Off by default. Since 0.1.12, and tried on a phone. |
 | **Every device** | today | One agent, and every device you own is a pair of hands and a front door: say it on the phone, it happens on your PC; say it to your glasses, it happens on both. The phone drives your computer since 0.1.13; a desktop app, iOS, the web on a machine of your own and glasses follow. |
@@ -66,7 +66,7 @@ The app checks this repository's releases for updates. Release notes for each ve
 | **Keeps going** | Goals are shaped in the chat and checked on a schedule in their own conversation; routines run while the app is closed; the screen stays on while it drives the phone; at 200 steps it asks "continue?" instead of wrapping up early. |
 | **Writes you a feed** | Every morning, three to six short posts from what it knows about you and what you asked it to follow, as cards you can like, discuss in a side chat, or delete. One sentence steers it. |
 | **Remembers you** | Who it is (`SOUL.md`), what it knows about you (`USER.md`), what it remembers (`GLOBAL.md` and a diary) and when it wakes (`HEARTBEAT.md`) are files you can read and edit in the app. Bring what another assistant knew with *Import memory*. |
-| **Has a face** | Describe one in a sentence; your image model draws four; you pick. The app poses it for every state — working, waiting, pleased, sorry — and it breathes, bobs, tilts, pops and shakes with what the agent is doing; with a video model, each state is a short looping clip. A small pale-yellow dragon, stills and clips included, is the default. |
+| **A look of its own** | Describe one in a sentence; your image model draws four; you pick. The app poses it for every state — working, waiting, pleased, sorry — and it breathes, bobs, tilts, pops and shakes with what the agent is doing; with a video model, each state is a short looping clip. A small pale-yellow dragon, stills and clips included, is the default. |
 | **Ideas and Library** | Things to ask next, from your goals and memory; and everything it made, with previews. |
 
 All of it runs on the phone; the rest of OpenMinis — the terminal, the in-app browser, MCP and skill management, model groups, token usage, the accessibility executor, shared folders — is kept and reachable from the same menus.
@@ -117,8 +117,8 @@ One small version per stage, each a GitHub release with an APK. The plan and its
 | | Meta Muse | OpenMinis | nanoMuse |
 |---|---|---|---|
 | What it is | A personal agent as a service: iOS, Android, web, WhatsApp and Mac clients of one cloud VM per user | An on-device agent app for iOS and Android: a Linux sandbox, a browser, device tools, skills, memory, workspaces | A Muse-style agent on OpenMinis' on-device runtime, as free software, headed for every device you own |
-| Where the agent runs | Meta's cloud VM | The phone it is installed on | The phone, today; a computer of yours next; wherever you say, later |
-| Shape | One agent with a name and a face, a feed, goals, a Sentinel | Sessions, tools and settings — a workbench | One agent, a name and a face, a first conversation, a feed, goals on a schedule, memory you can edit |
+| Where the agent runs | Meta's cloud VM | The phone it is installed on | The phone; a sentence there runs on a computer of yours; wherever you say, later |
+| Shape | One agent with a name and a look of its own, a feed, goals, a Sentinel | Sessions, tools and settings — a workbench | One agent, a name and a look of its own, a first conversation, a feed, goals on a schedule, memory you can edit |
 | Before something irreversible | The Sentinel model approves | Per-tool permissions | `RiskGate` stops the call: allow once, this chat, always for this recipient / domain / folder, or deny; passwords and codes are never typed by the agent |
 | Apps without an API | Out of reach — the VM has a browser, never your phone | An accessibility CLI (`android-a11y-cli`) the model can call on Android | The screen as a first-class hand: screenshots only, a ladder that tries APIs first, a take-over for logins, the same approvals — since 0.1.12 |
 | Other devices | Many clients of one VM; the VM does not touch your devices | The one device it is installed on | One agent across your devices: the phone drives your PC since 0.1.13 (`host/nanomuse_host.py`, paired by code), then every device, both ways |
