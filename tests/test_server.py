@@ -984,11 +984,17 @@ def test_feed_and_upcoming(server):
     client.put("/api/settings", json={"profile": {"proactivity": "default"}})
     wake2 = datetime.fromisoformat(client.get("/api/upcoming").json()["next_wake_at"])
     assert wake2 < wake
-    # the alarm ends the scheduler's nap at once
-    service.wake()
-    started = time.monotonic()
-    asyncio.run(service._nap(5))
-    assert time.monotonic() - started < 1
+
+    # the alarm ends the scheduler's nap at once. On the service's own loop: the Event binds
+    # to the first loop that waits on it, which is the scheduler's, not a fresh asyncio.run().
+    async def nap_after_wake() -> float:
+        service.wake()
+        started = time.monotonic()
+        await service._nap(5)
+        return time.monotonic() - started
+
+    assert client.portal is not None
+    assert client.portal.call(nap_after_wake) < 1
 
     # a pending approval is something the Feed shows, whatever thread it belongs to
     side = client.post("/api/threads", json={"title": "Side"}).json()

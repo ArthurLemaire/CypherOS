@@ -502,8 +502,8 @@ def test_cli_memory_recall(settings: Settings, tmp_path: Path, fake: FakeEmbeddi
     seed(MemoryStore(settings.memory_db))
     cfg = tmp_path / "config.toml"
     cfg.write_text(
-        f'data_dir = "{settings.data_dir}"\n[llm]\napi_key = "k"\nstream = false\n'
-        f'[agent]\nworkspace = "{settings.agent.workspace}"\n'
+        f'data_dir = "{settings.data_dir.as_posix()}"\n[llm]\napi_key = "k"\nstream = false\n'
+        f'[agent]\nworkspace = "{settings.agent.workspace.as_posix()}"\n'
         '[memory]\nembedding_base_url = "http://127.0.0.1:11434/v1"\n'
     )
     runner = CliRunner()

@@ -192,6 +192,7 @@ def _bridge_command(*args: str) -> str:
     return f"{shlex.quote(sys.executable)} -c {shlex.quote(code)}"
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="the shell tool assumes a POSIX shell")
 def test_a_command_reaches_the_phone_through_the_bridge(settings: Settings):
     """The whole way round, on a real loopback port: the model runs a shell command, the
     command runs `nanomuse-device clipboard read`, the request comes back in as a tool call

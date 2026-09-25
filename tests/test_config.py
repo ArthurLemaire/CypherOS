@@ -75,7 +75,7 @@ def test_provider_key_fallback_follows_the_host(tmp_path: Path, monkeypatch: pyt
 
     def key_for(base_url: str | None) -> str | None:
         line = f'base_url = "{base_url}"\n' if base_url else ""
-        cfg.write_text(f'data_dir = "{tmp_path / "data"}"\n[llm]\n{line}')
+        cfg.write_text(f'data_dir = "{(tmp_path / "data").as_posix()}"\n[llm]\n{line}')
         return load_settings(cfg).llm.api_key
 
     assert key_for(None) == "sk-deepseek"  # the default endpoint is DeepSeek's
