@@ -281,7 +281,7 @@
 
     <!-- 0.1.6 · appearance -->
     <string name="nm_avatar_title">形象</string>
-    <string name="nm_avatar_settings_subtitle">用你的图像模型生成一张脸；它会随着工作状态动起来</string>
+    <string name="nm_avatar_settings_subtitle">用你的图像模型画一个形象；它会随着工作状态动起来</string>
     <string name="nm_avatar_menu_soul">名字与风格</string>
     <string name="nm_avatar_menu_model">图像模型</string>
     <string name="nm_avatar_menu_regenerate_moods">重画状态</string>
@@ -295,7 +295,7 @@
     <string name="nm_avatar_moods_done">五个状态都画好了。</string>
     <string name="nm_avatar_moods_partial">画好了 %2$d 个状态里的 %1$d 个，其余先用主图。</string>
     <string name="nm_avatar_retry">重试</string>
-    <string name="nm_avatar_describe_title">描述一张新的脸</string>
+    <string name="nm_avatar_describe_title">描述一个新形象</string>
     <string name="nm_avatar_describe_body">一句话就够：它是什么、穿什么、什么气质。选一种风格，你的图像模型会画四张让你挑。</string>
     <string name="nm_avatar_default_description">一只圆滚滚的奶黄色小龙，橙色小角，折着小翅膀</string>
     <string name="nm_avatar_style_flat">扁平插画</string>
@@ -317,7 +317,7 @@
     <string name="nm_avatar_use_this_hint">接下来会在后台以它为底画出各个状态——干活、等你、搞定、出错。</string>
     <string name="nm_avatar_model_body">任何支持 OpenAI images 接口的提供方都行。阿里云百炼：qwen-image-3.0（状态图用 qwen-image-edit-max）。OpenAI：gpt-image-1。</string>
     <string name="nm_avatar_model_label">模型</string>
-    <string name="nm_avatar_footer">图片存在这台手机的 minis-global/nanomuse/avatar 下。每换一张脸会向你的提供方要五张图：你选的那张加四个状态。</string>
+    <string name="nm_avatar_footer">图片存在这台手机的 minis-global/nanomuse/avatar 下。每换一次形象会向你的提供方要五张图：你选的那张加四个状态。</string>
 
     <!-- 首次运行 -->
     <string name="nm_setup_title">欢迎使用 nanoMuse</string>
