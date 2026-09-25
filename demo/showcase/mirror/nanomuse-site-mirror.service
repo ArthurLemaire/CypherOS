@@ -1,0 +1,12 @@
+# One sync of the project site's mirror; nanomuse-site-mirror.timer runs it every minute.
+# Installed by install.sh, which also links sync.sh to /usr/local/bin/nanomuse-site-mirror.
+[Unit]
+Description=nanoMuse site mirror (nanomuse.cn): sync from GitHub
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# WWW_ROOT / MIRROR_* overrides, if any (see sync.sh); absent is fine
+EnvironmentFile=-/etc/default/nanomuse-site-mirror
+ExecStart=/usr/local/bin/nanomuse-site-mirror

@@ -70,3 +70,9 @@
 	header -Server
 	reverse_proxy gateway:8000
 }
+
+# Other sites on the same box — the project site's mirror at nanomuse.cn, for one (see mirror/).
+# One file per site in sites.d/, which git ignores; what they serve lives under /srv/www
+# (WWW_ROOT in docker-compose.yml). An empty sites.d/ is fine: a glob that matches nothing is
+# a warning, not an error.
+import /etc/caddy/sites.d/*.caddy

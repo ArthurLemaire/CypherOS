@@ -32,6 +32,9 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./data/mobilegym-data:/srv/cdn:ro
+      # other sites on this Caddy: their site blocks, and the files they serve (README, "Other sites")
+      - ./sites.d:/etc/caddy/sites.d:ro
+      - ${WWW_ROOT:-./www}:/srv/www:ro
       - caddy-data:/data
       - caddy-config:/config
     networks:
