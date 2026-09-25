@@ -31,10 +31,12 @@ install -m 644 "$here/nanomuse.cn.caddy" "$showcase/sites.d/nanomuse.cn.caddy"
 ln -sfn "$here/sync.sh" /usr/local/bin/nanomuse-site-mirror
 install -m 644 "$here/nanomuse-site-mirror.service" "$here/nanomuse-site-mirror.timer" /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable -q --now nanomuse-site-mirror.timer
 
+# the first sync before the timer: an elapsed timer fires the moment it is enabled, and two
+# clones into the same directory do not mix
 echo "first sync"
 "$here/sync.sh"
+systemctl enable -q --now nanomuse-site-mirror.timer
 
 cd "$showcase"
 echo "caddy: validating"
