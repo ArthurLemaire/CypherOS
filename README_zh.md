@@ -4,7 +4,7 @@
 
 <h1 align="center">nanoMuse</h1>
 
-<p align="center">一个完全开源、Muse 风格的个人智能体，面向你的所有设备。目前是 Android 版。</p>
+<p align="center">完全开源、Muse 风格的个人智能体，面向你的每一台设备。</p>
 
 <div align="center">
   <p>
@@ -22,38 +22,38 @@
   </p>
 </div>
 
-nanoMuse 是一个完全开源、Muse 风格的个人智能体，面向你的每一台设备。和 Meta 的 [Muse](https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/) 一样，它是一个有名字、有自己形象的智能体：不只回答问题，而是动手做事；App 关掉了也继续干活；记得你；遇到无法撤销的操作会先停下来问你。目前它是一个 Android App，整个智能体跑在**手机上**：Linux 根文件系统、shell、浏览器、MCP、技能和定时任务都在 APK 里，模型由你自己带。它有一双手，能去碰那些没有 API 的 App——经你允许后，直接操作手机屏幕；也能伸到你的电脑上：在手机上说一句，事情在电脑上办好。之后是桌面 App、iOS、部署在你自己机器上的网页版，还有眼镜。没有服务器，不用注册，GPL-3.0。
+nanoMuse 是一个完全开源、Muse 风格的个人智能体，面向你的每一台设备。和 Meta 的 [Muse](https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/) 一样，它是一个有名字、有自己形象的智能体：不只回答问题，而是动手做事；App 关掉了也继续干活；记得你；遇到无法撤销的操作会先停下来问你。Android App 把整个智能体跑在**手机上**：Linux 根文件系统、shell、浏览器、MCP、技能和定时任务都在 APK 里，模型由你自己带。它有一双手，能去碰那些没有 API 的 App——经你允许后，直接操作手机屏幕；也能伸到你的电脑上：在手机上说一句，事情在电脑上办好。之后是桌面 App、iOS、部署在你自己机器上的网页版，还有眼镜。没有服务器，不用注册，GPL-3.0——可以在它的基础上定制一个属于自己的 Muse。
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/avatar-moods.png" width="88%" alt="同一只小龙的五种状态：休息、工作、等你、开心、抱歉">
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/screenshots/chat-approval.png" width="23%" alt="对话：删除文件前停下来问你">
-  <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/screenshots/feed.png" width="23%" alt="动态：今天早上写给你的几条">
-  <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/screenshots/goals.png" width="23%" alt="目标：按时检查，还有例程">
-  <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/screenshots/avatar.png" width="23%" alt="形象：描述一句，你的图像模型画四张，你挑一张">
+  <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/screenshots/zh/chat-approval.png" width="23%" alt="对话：删工作区里的东西之前停下来问你——只此一次、本次对话、对工作区总是允许，或者拒绝">
+  <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/screenshots/zh/feed.png" width="23%" alt="动态：今天早上写给你的几条">
+  <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/screenshots/zh/goals.png" width="23%" alt="目标：按时检查，还有例程">
+  <img src="https://raw.githubusercontent.com/nano-muse/nanoMuse/main/docs/screenshots/zh/avatar.png" width="23%" alt="形象：描述一句，你的图像模型来画，你挑一张喜欢的">
 </p>
 
 ## 为什么是 nanoMuse
 
-这个项目由四件事定义，四件都已经在 App 里。
+这个项目由四件事定义。
 
-| | | |
-|---|---|---|
-| **Muse 风格** | 已有 | 一个智能体，而不是一堆工具：有名字、有自己的形象，第一次见面先聊一聊，每天有写给你的动态，目标在后台持续推进，记忆能看也能改，无法撤销的操作前先问你。 |
-| **完全开源** | 已有 | 整个仓库 GPL-3.0-or-later。没有闭源组件，不用注册账号，不用信任任何服务器，也不绑定任何模型；每个版本都从对应的 tag 构建，手动安装。Muse、豆包、千问是别人给你用的产品；nanoMuse 是你自己拥有的。 |
-| **通用：有没有 API 都能做** | 已有 | 国内日常用的 App，大多从来没有 API。智能体会顺着一把梯子往上试：先是技能、CLI 或 MCP 服务，再是用你的登录态抓一页，再是应用内浏览器，最后在你允许之后直接操作设备屏幕，像你一样看、一样点——付款、发送、删除前照样要经你审批。默认关闭。0.1.12 起，真机上试过。 |
-| **多端协同** | 已有 | 一个智能体，你的每台设备都是它的一双手、一个入口：在手机上说一句，事情在电脑上办好；对眼镜说，两边一起办。手机操作电脑 0.1.13 起已经能用；之后是桌面 App、iOS、部署在你自己机器上的网页版，还有眼镜。 |
+| | |
+|---|---|
+| **Muse 风格** | 一个智能体，而不是一堆工具：有名字、有自己的形象，第一次见面先聊一聊，每天有写给你的动态，目标在后台持续推进，记忆能看也能改，无法撤销的操作前先问你。 |
+| **完全开源** | 整个仓库 GPL-3.0-or-later。没有闭源组件，不用注册账号，不用信任任何服务器，也不绑定任何模型；每个版本都从对应的 tag 构建，手动安装。Muse、豆包、千问是别人给你用的产品；nanoMuse 是你自己拥有的——可以依赖开源定制属于自己的 Muse：改名字、换形象、重写性格、接上自己的模型和工具。 |
+| **通用：有没有 API 都能做** | 国内日常用的 App，大多从来没有 API。智能体会顺着一把梯子往上试：先是技能、CLI 或 MCP 服务，再是用你的登录态抓一页，再是应用内浏览器，最后在你允许之后直接操作设备屏幕，像你一样看、一样点——付款、发送、删除前照样要经你审批。默认关闭。 |
+| **多端协同** | 一个智能体，你的每台设备都是它的一双手、一个入口：在手机上说一句，事情在电脑上办好；对眼镜说，两边一起办。手机操作电脑已经能用；之后是桌面 App、iOS、部署在你自己机器上的网页版，还有眼镜。 |
 
-和 Muse、以及 App 所基于的运行时 OpenMinis 有什么区别：[见下](#与-meta-muse-和-openminis-的比较)。计划和理由：[docs/roadmap.md](docs/roadmap.md)。
+和 Muse、以及 App 所基于的运行时 OpenMinis 有什么区别：[见下](#和-museopenminis-的对比)。计划和理由：[docs/roadmap.md](docs/roadmap.md)。
 
 ## 安装
 
 1. 从[最新版本](https://github.com/nano-muse/nanoMuse/releases/latest)下载 `nanoMuse-<版本>-arm64.apk`——Android 8.0 以上的 64 位手机。想校验就 `sha256sum -c nanoMuse-<版本>-arm64.apk.sha256`。
 2. 打开安装。Android 会问一次是否允许；每个版本都用同一把签名，直接覆盖安装升级，数据不丢。
 3. 添加一个模型：任何 OpenAI 兼容接口配你自己的 key，或者 App 自带的 OAuth 登录。第一次对话它会问你叫什么，并给自己起名字。
-4. 可选——「设置 → 图像与视频模型」：图像模型（阿里云百炼的 qwen-image-3.0、gpt-image-1，或任何有 OpenAI images 接口的服务商）让它能换脸、画图；视频模型（百炼上的 MiniMax-H3）让脸动起来。Muse 这两样是官方自带的，nanoMuse 用你自己的，缺哪个它会开口告诉你。
+4. 可选——「设置 → 图像与视频模型」：图像模型（阿里云百炼的 qwen-image-3.0、gpt-image-1，或任何有 OpenAI images 接口的服务商）让它能换形象、画图；视频模型（百炼上的 MiniMax-H3）让形象动起来。Muse 这两样是官方自带的，nanoMuse 用你自己的，缺哪个它会开口告诉你。
 
 App 会到本仓库的 Releases 检查更新。每个版本的说明在 [docs/releases/](docs/releases/) 和 [CHANGELOG](CHANGELOG.md)。
 
@@ -66,7 +66,7 @@ App 会到本仓库的 Releases 检查更新。每个版本的说明在 [docs/re
 | **一直在干** | 目标在对话里定下来，之后在各自的会话里按时检查；例程在 App 关着时照样跑；操作手机时屏幕不会熄灭；到 200 步会问你「继续？」，而不是草草收尾。 |
 | **写给你的动态** | 每天早上三到六条短帖，来自它对你的了解和你让它留意的事，做成卡片：可以点赞、在旁聊里讨论，也可以删除。说一句话就能调整方向。 |
 | **记得你** | 它是谁（`SOUL.md`）、了解你什么（`USER.md`）、记住了什么（`GLOBAL.md` 和日记）、什么时候醒来（`HEARTBEAT.md`），都是 App 里能看、能改的文件。别的助手对你的记忆，用「导入记忆」贴过来就行。 |
-| **有自己的形象** | 一句话描述；你的图像模型画四张；你挑一张。App 再给它摆出每种状态的姿势——工作、等你、开心、抱歉——它会跟着智能体正在做的事呼吸、点头、歪头、跳一下、抖一下；设了视频模型，每个状态是一段循环短片。默认是一只奶黄色的小龙，静态图和短片都内置。 |
+| **有自己的形象** | 一句话描述；你的图像模型来画；你挑一张喜欢的。App 再给它摆出每种状态的姿势——工作、等你、开心、抱歉——它会跟着智能体正在做的事呼吸、点头、歪头、跳一下、抖一下；设了视频模型，每个状态是一段循环短片。默认是一只奶黄色的小龙，静态图和短片都内置。 |
 | **点子与资料库** | 从目标和记忆里冒出来的、接下来可以问的事；以及它做出来的所有东西，都带预览。 |
 
 以上这些都跑在手机上；OpenMinis 原有的其他部分——终端、应用内浏览器、MCP 与技能管理、模型组、token 用量、无障碍执行器、共享文件夹——都保留着，入口还在原来的菜单里。
@@ -77,12 +77,12 @@ App 是修改过的 [OpenMinis](https://github.com/OpenMinis/OpenMinis) 1.13：�
 
 | 包 | 内容 |
 |---|---|
-| `ui/home`、`ui/header` | 首页外壳：一条主聊天、抽屉里的旁聊、动态 · 点子 · 目标 · 资料库底栏，以及页头——脸、名字胶囊、状态行 |
+| `ui/home`、`ui/header` | 首页外壳：一条主聊天、抽屉里的旁聊、动态 · 点子 · 目标 · 资料库底栏，以及页头——形象、名字胶囊、状态行 |
 | `guard` | `ShellGuard` 与 `BrowserGuard` 给命令和页面动作分类；`RiskGate` 拦下工具调用并弹出审批卡；授权按范围记住 |
 | `goals`、`ideas`、`library` | 目标是带计划和检查的定时会话；点子来自记忆和目标；资料库是它写出来的东西 |
 | `feed`、`sysfiles` | 每天早上把 ` ```nanomuse-feed ` 段写进 `minis-global/nanomuse/feed/` 的例程、卡片、那句指示；系统文件页和记忆导入 |
 | `avatar`、`ui/avatar` | 架在 OpenMinis 图像接口（`images/generations`、`images/edits`、DashScope 原生编辑）上的 `ImageGen`、形象页、`AvatarStore`，以及会动的 `AgentAvatar` |
-| `status` | 两级状态（脸下面是工具标题，卡片上是动作 chips）、`KeepAwake`、每个步骤的最后一帧浏览器画面 |
+| `status` | 两级状态（形象下面是工具标题，卡片上是动作 chips）、`KeepAwake`、每个步骤的最后一帧浏览器画面 |
 
 改到上游文件的地方都标着 `// nanoMuse:`；每次 subtree 拉取之后 `scripts/rebrand.py` 重新套一遍品牌。从源码构建见 [CONTRIBUTING.md](CONTRIBUTING.md)。你的消息只发给你配置的模型；文件、记忆和形象图片都在 App 的私有存储里。
 
@@ -112,7 +112,7 @@ App 是修改过的 [OpenMinis](https://github.com/OpenMinis/OpenMinis) 1.13：�
 
 **再之后**，依次：一个桌面 App，既是独立的智能体，也是手机上那个的客户端；iOS；部署在你自己机器上——一台 VM、一台家里的服务器——的网页版，任何浏览器都能打开；眼镜。每加一台设备，同一个智能体就多一双手、多一个入口。项目起步时的 Python 线——智能体和它的 Sentinel、网页 App、模拟手机——冻结在 tag [`pre-openminis`](https://github.com/nano-muse/nanoMuse/releases/tag/pre-openminis)，文档在 [docs/](docs/)，是桌面和网页这两个入口的底座。
 
-## 与 Meta Muse 和 OpenMinis 的比较
+## 和 Muse、OpenMinis 的对比
 
 | | Meta Muse | OpenMinis | nanoMuse |
 |---|---|---|---|
@@ -122,7 +122,7 @@ App 是修改过的 [OpenMinis](https://github.com/OpenMinis/OpenMinis) 1.13：�
 | 无法撤销的操作前 | Sentinel 模型审批 | 按工具授权 | `RiskGate` 拦下这次调用，问你：只此一次、本次对话、对这个收件人 / 域名 / 目录一直允许，或者拒绝；密码和验证码从不由它输入 |
 | 没有 API 的 App | 碰不到——VM 里有浏览器，但够不着你的手机 | Android 上有一个模型可以调用的无障碍 CLI（`android-a11y-cli`） | 把屏幕当成一双正式的手：只看截图，先试 API 再上屏幕，登录由你接管，同一套审批——0.1.12 起 |
 | 其他设备 | 多个客户端连同一台 VM；VM 不碰你的设备 | 只有装了它的那一台 | 一个智能体，跨你的所有设备：0.1.13 起手机能操作电脑（`host/nanomuse_host.py`，配对码配对），之后所有设备双向互通 |
-| 形象 | 一个干活时会换姿势的毛绒形象 | — | 你的图像模型画出并摆好姿势的脸，每个状态一段你的视频模型做的循环短片；默认是一只已经会动的小龙 |
+| 形象 | 一个干活时会换姿势的毛绒形象 | — | 你的图像模型画出并摆好姿势的形象，每个状态一段你的视频模型做的循环短片；默认是一只已经会动的小龙 |
 | 模型 | Meta 的 | 自己带 | 自己带——对话、图像、视频三个模型，或一把百炼 key 全包；OpenMinis 自带的 OAuth 登录保留 |
 | 许可 | 闭源 | GPL-3.0 | GPL-3.0-or-later，基于 OpenMinis——致谢；上游版本仍可合并 |
 
