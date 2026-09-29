@@ -1,0 +1,13 @@
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC", "RUF"]
+ignore = ["B008"]  # typer uses function calls in defaults
+
+[lint.isort]
+known-first-party = ["dots"]
+
+[format]
+quote-style = "double"
