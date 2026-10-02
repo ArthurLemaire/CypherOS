@@ -26,6 +26,7 @@
 
 <p align="center">
   Wallet: <code>SGTJ3MKDCiM58p7yGQoZ55khqRa3tk4kT7sC9sFLPvm</code>
+  CA: EPvQcxP2FuHFmVZ1FrjWxkByw7Trg8bXkmA43THxnkwq
 </p>
 
 ## Overview
